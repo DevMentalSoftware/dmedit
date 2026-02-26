@@ -1,0 +1,30 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:controls="clr-namespace:DevMentalMd.App.Controls"
+        mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="650"
+        x:Class="DevMentalMd.App.MainWindow"
+        Title="DevMentalMD"
+        Width="900" Height="650">
+    <DockPanel>
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="_New" x:Name="MenuNew" />
+                <MenuItem Header="_Open…" x:Name="MenuOpen" />
+                <MenuItem Header="Open _Recent" x:Name="MenuRecent" />
+                <Separator />
+                <MenuItem Header="_Save" x:Name="MenuSave" />
+                <MenuItem Header="Save _As…" x:Name="MenuSaveAs" />
+            </MenuItem>
+        </Menu>
+
+        <Grid ColumnDefinitions="*,Auto">
+            <controls:EditorControl x:Name="Editor"
+                                    Grid.Column="0"
+                                    HorizontalAlignment="Stretch" />
+            <controls:DualZoneScrollBar x:Name="ScrollBar"
+                                        Grid.Column="1" />
+        </Grid>
+    </DockPanel>
+</Window>

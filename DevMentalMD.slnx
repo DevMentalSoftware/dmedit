@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="src/DevMentalMd.App/DevMentalMd.App.csproj" />
+  <Project Path="src/DevMentalMd.Core/DevMentalMd.Core.csproj" />
+  <Project Path="src/DevMentalMd.Rendering/DevMentalMd.Rendering.csproj" />
+  <Project Path="tests/DevMentalMd.Core.Tests/DevMentalMd.Core.Tests.csproj" />
+  <Project Path="tests/DevMentalMd.Rendering.Tests/DevMentalMd.Rendering.Tests.csproj" />
+</Solution>

@@ -24,7 +24,8 @@ public sealed class TextLayoutEngine {
         Typeface typeface,
         double fontSize,
         IBrush foreground,
-        double maxWidth) {
+        double maxWidth,
+        long viewportBase = 0L) {
 
         var lines = new List<LayoutLine>();
         var y = 0.0;
@@ -46,7 +47,7 @@ public sealed class TextLayoutEngine {
             lines.Add(new LayoutLine(0, 0, 0.0, layout));
         }
 
-        return new LayoutResult(lines);
+        return new LayoutResult(lines, viewportBase);
     }
 
     /// <summary>

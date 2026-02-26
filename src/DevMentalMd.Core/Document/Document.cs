@@ -18,12 +18,20 @@ public sealed class Document {
         _table = new PieceTable(initialContent);
     }
 
+    /// <summary>
+    /// Constructs a document wrapping an existing <see cref="PieceTable"/>.
+    /// Used by <c>FileLoader</c> when loading from an <see cref="Buffers.IBuffer"/>.
+    /// </summary>
+    public Document(PieceTable table) {
+        _table = table;
+    }
+
     // -------------------------------------------------------------------------
     // State access
     // -------------------------------------------------------------------------
 
     public PieceTable Table => _table;
-    public Selection Selection { get; set; } = Selection.Collapsed(0);
+    public Selection Selection { get; set; } = Selection.Collapsed(0L);
 
     public bool CanUndo => _history.CanUndo;
     public bool CanRedo => _history.CanRedo;
@@ -73,7 +81,7 @@ public sealed class Document {
             return;
         }
         var ofs = Selection.Caret;
-        if (ofs == 0) {
+        if (ofs == 0L) {
             return;
         }
         // Handle \r\n as a single unit
@@ -146,8 +154,8 @@ public sealed class Document {
     // Internal helpers
     // -------------------------------------------------------------------------
 
-    private void DeleteRange(int ofs, int len) {
-        var deleted = _table.GetText(ofs, len);
+    private void DeleteRange(long ofs, long len) {
+        var deleted = _table.GetText(ofs, (int)len);
         _history.Push(new DeleteEdit(ofs, deleted), _table);
     }
 }
