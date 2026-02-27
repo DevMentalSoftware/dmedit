@@ -110,6 +110,12 @@ public sealed class DualZoneScrollBar : Control {
         set => _lineHeight = Math.Max(1, value);
     }
 
+    /// <summary>
+    /// Multiplier applied to the outer-thumb fixed scroll rate.
+    /// 1.0 = baseline (~100-line-doc feel). Higher = faster scanning.
+    /// </summary>
+    public double OuterScrollRateMultiplier { get; set; } = 2.0;
+
     /// <summary>Fired when the user drags or clicks. Carries the requested new scroll value.</summary>
     public event Action<double>? ScrollRequested;
 
@@ -131,6 +137,7 @@ public sealed class DualZoneScrollBar : Control {
     private HitZone _hoverZone = HitZone.None;
     private HitZone _pressedZone = HitZone.None;
     private bool _isDragging;
+    private bool _isMiddleDrag;
     private double _dragStartMouseY;
     private double _dragStartValue;
     private double _outerDragVisualOffset;
@@ -203,13 +210,12 @@ public sealed class DualZoneScrollBar : Control {
                 totalThumbHeight = trackHeight;
             }
 
-            // At extremes, unused outer zone shrinks and inner grows.
-            // fraction=0 (top): outer-top=0, fraction=1 (bottom): outer-bottom=0
-            var topFade = Math.Min(fraction * 5.0, 1.0);   // ramp 0→1 in first 20%
-            var botFade = Math.Min((1 - fraction) * 5.0, 1.0); // ramp 1→0 in last 20%
-
-            outerTopHeight = topFade * MinOuterZoneHeight;
-            outerBottomHeight = botFade * MinOuterZoneHeight;
+            // At the very extremes, the outer zone pointing toward the boundary
+            // is hidden (can't scroll further) and its space goes to inner.
+            // Otherwise both zones stay at full size — no gradual fade that
+            // creates tiny ungrabable zones.
+            outerTopHeight = fraction > 0.005 ? MinOuterZoneHeight : 0;
+            outerBottomHeight = fraction < 0.995 ? MinOuterZoneHeight : 0;
             innerHeight = totalThumbHeight - outerTopHeight - outerBottomHeight;
             innerHeight = Math.Max(innerHeight, MinInnerThumbHeight);
         }
@@ -250,7 +256,7 @@ public sealed class DualZoneScrollBar : Control {
             return 1.0;
         }
         var refMaxScroll = refExtent - refViewport;
-        return refMaxScroll / refDragRange;
+        return (refMaxScroll / refDragRange) * OuterScrollRateMultiplier;
     }
 
     // -------------------------------------------------------------------------
@@ -438,12 +444,30 @@ public sealed class DualZoneScrollBar : Control {
 
     protected override void OnPointerPressed(PointerPressedEventArgs e) {
         base.OnPointerPressed(e);
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) {
+        var props = e.GetCurrentPoint(this).Properties;
+        var isLeft = props.IsLeftButtonPressed;
+        var isMiddle = props.IsMiddleButtonPressed;
+        if (!isLeft && !isMiddle) {
             return;
         }
 
         var pt = e.GetPosition(this);
         var zone = HitTestZone(pt);
+
+        // Middle-click anywhere on the scrollbar → fixed-rate outer drag.
+        // The visual zone flips dynamically in HandleDragMove based on
+        // the drag direction.
+        if (isMiddle) {
+            _isMiddleDrag = true;
+            _pressedZone = HitZone.OuterBottom; // initial; HandleDragMove will flip
+            StartOuterDrag(pt.Y, HitZone.OuterBottom);
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            InvalidateVisual();
+            return;
+        }
+
+        // Left-click: normal zone-specific behavior
         _pressedZone = zone;
 
         switch (zone) {
@@ -488,6 +512,7 @@ public sealed class DualZoneScrollBar : Control {
 
         if (_isDragging) {
             _isDragging = false;
+            _isMiddleDrag = false;
             _outerDragVisualOffset = 0;
         }
         _pressedZone = HitZone.None;
@@ -536,14 +561,25 @@ public sealed class DualZoneScrollBar : Control {
                 RequestScroll(newValue);
             }
         } else if (_pressedZone == HitZone.OuterTop || _pressedZone == HitZone.OuterBottom) {
-            // Fixed-rate drag
+            // Middle-drag: flip the visual zone based on drag direction so
+            // dragging up shows the outer-top separating and dragging down
+            // shows the outer-bottom separating.
+            if (_isMiddleDrag) {
+                _pressedZone = deltaPixels < 0 ? HitZone.OuterTop : HitZone.OuterBottom;
+            }
+
+            // Fixed-rate drag — direction comes from deltaPixels sign naturally.
             var rate = ComputeFixedScrollRate();
-            var sign = _pressedZone == HitZone.OuterTop ? -1.0 : 1.0;
-            // Outer-top drag: dragging up (negative delta) scrolls up
-            // Outer-bottom drag: dragging down (positive delta) scrolls down
-            // In both cases, the drag direction matches the scroll direction naturally.
-            var newValue = _dragStartValue + deltaPixels * rate;
-            RequestScroll(newValue);
+            var unclamped = _dragStartValue + deltaPixels * rate;
+            RequestScroll(unclamped);
+
+            // If scroll hit a boundary (top or bottom), reset the drag anchor
+            // so that reversing direction immediately starts scrolling again
+            // instead of having dead travel back to the original anchor point.
+            if (Math.Abs(_value - unclamped) > 0.01) {
+                _dragStartMouseY = mouseY;
+                _dragStartValue = _value;
+            }
 
             // Visual offset: the grabbed zone separates from the inner thumb
             _outerDragVisualOffset = deltaPixels;

@@ -10,4 +10,8 @@
     <PackageReference Include="Avalonia" Version="11.3.12" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\DevMentalMd.Core\DevMentalMd.Core.csproj" />
+  </ItemGroup>
+
 </Project>

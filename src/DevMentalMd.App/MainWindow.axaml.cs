@@ -12,6 +12,7 @@ namespace DevMentalMd.App;
 public partial class MainWindow : Window {
     private string? _currentPath;
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
+    private readonly AppSettings _settings = AppSettings.Load();
 
     public MainWindow() {
         InitializeComponent();
@@ -23,6 +24,7 @@ public partial class MainWindow : Window {
 
         RebuildRecentMenu();
         WireScrollBar();
+        WireDevMenu();
 
         var sampleText =
             "# Welcome to DevMentalMD\n" +
@@ -63,6 +65,30 @@ public partial class MainWindow : Window {
         ScrollBar.ViewportSize = Editor.ScrollViewportHeight;
         ScrollBar.ExtentSize = Editor.ScrollExtentHeight;
         ScrollBar.LineHeight = Editor.LineHeightValue;
+    }
+
+    // -------------------------------------------------------------------------
+    // Dev menu wiring
+    // -------------------------------------------------------------------------
+
+    private void WireDevMenu() {
+        MenuDev.IsVisible = DevMode.IsEnabled;
+
+        // Initialize slider from settings
+        SliderOuterScrollRate.Value = _settings.OuterThumbScrollRateMultiplier;
+        ScrollBar.OuterScrollRateMultiplier = _settings.OuterThumbScrollRateMultiplier;
+        LabelOuterScrollRate.Text = _settings.OuterThumbScrollRateMultiplier.ToString("F1");
+
+        SliderOuterScrollRate.PropertyChanged += (_, e) => {
+            if (e.Property.Name != "Value") {
+                return;
+            }
+            var val = SliderOuterScrollRate.Value;
+            ScrollBar.OuterScrollRateMultiplier = val;
+            LabelOuterScrollRate.Text = val.ToString("F1");
+            _settings.OuterThumbScrollRateMultiplier = val;
+            _settings.Save();
+        };
     }
 
     // -------------------------------------------------------------------------

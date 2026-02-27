@@ -169,6 +169,60 @@ public class LargeDocumentTests {
     }
 
     // -------------------------------------------------------------------------
+    // Regression: WholeBufSentinel after split
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void PieceTable_InsertNewline_InProceduralBuffer_CorrectLineCount() {
+        // Simulates the user's bug: load 100-line ProceduralBuffer, insert \n after line 9.
+        // Before the fix, Length was over-counted and VisitPieces read past the split boundary.
+        using var buf = MakeBuffer(100);
+        var table = new PieceTable(buf);
+
+        var originalLen = table.Length;
+        var originalText = table.GetText();
+        Assert.Equal(100L, table.LineCount);
+
+        // Insert a newline at the end of line 9 (just before the \n that already terminates line 9)
+        var line9End = table.LineStartOfs(9) + "This is line 9".Length;
+        table.Insert(line9End, "\n");
+
+        // Length should grow by exactly 1
+        Assert.Equal(originalLen + 1, table.Length);
+
+        // Line count should grow by exactly 1
+        Assert.Equal(101L, table.LineCount);
+
+        // Full text should be the original with a \n inserted at the right spot
+        var expected = originalText.Insert((int)line9End, "\n");
+        var actual = table.GetText();
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void PieceTable_InsertText_InProceduralBuffer_GetTextSubstring_Correct() {
+        // Verify that GetText(start, len) works correctly after a split of a WholeBufSentinel piece.
+        using var buf = MakeBuffer(50);
+        var table = new PieceTable(buf);
+
+        // Insert "INSERTED" in the middle
+        var midpoint = table.Length / 2;
+        table.Insert(midpoint, "INSERTED");
+
+        // Read a window around the insertion point
+        var windowStart = midpoint - 10;
+        var windowLen = 30;
+        var window = table.GetText(windowStart, windowLen);
+
+        // The window should contain the inserted text
+        Assert.Contains("INSERTED", window);
+
+        // Full text round-trip should also work
+        var fullOriginal = buf.Length;
+        Assert.Equal(fullOriginal + 8, table.Length); // "INSERTED" is 8 chars
+    }
+
+    // -------------------------------------------------------------------------
     // FileLoader / FileSaver round-trip
     // -------------------------------------------------------------------------
 

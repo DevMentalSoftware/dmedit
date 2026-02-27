@@ -69,7 +69,7 @@ public sealed class PieceTable {
         get {
             var total = 0L;
             foreach (var p in _pieces) {
-                total += p.Len == WholeBufSentinel ? _origBuf!.Length : p.Len;
+                total += p.Len == WholeBufSentinel ? _origBuf!.Length - p.Start : p.Len;
             }
             return total;
         }
@@ -189,9 +189,9 @@ public sealed class PieceTable {
         var sb = new StringBuilder((int)Math.Min(len, int.MaxValue));
         foreach (var p in _pieces) {
             if (p.Len == WholeBufSentinel) {
-                var bufLen = _origBuf!.Length;
-                var chars = new char[(int)bufLen];
-                _origBuf.CopyTo(p.Start, chars, (int)bufLen);
+                var bufLen = (int)(_origBuf!.Length - p.Start);
+                var chars = new char[bufLen];
+                _origBuf.CopyTo(p.Start, chars, bufLen);
                 sb.Append(chars);
             } else {
                 sb.Append(BufFor(p.Which), (int)p.Start, (int)p.Len);
@@ -343,11 +343,15 @@ public sealed class PieceTable {
 
             if (p.Len == WholeBufSentinel) {
                 // Unknown-length IBuffer piece: read directly without materialising the whole buffer.
-                var take = (int)remaining;
-                var chars = new char[take];
-                _origBuf!.CopyTo(p.Start + pieceOfs, chars, take);
-                visitor(chars);
-                remaining = 0;
+                // After a split, the piece covers [p.Start .. end-of-buffer), so clamp to actual available chars.
+                var bufAvail = _origBuf!.Length - (p.Start + pieceOfs);
+                var take = (int)Math.Min(remaining, bufAvail);
+                if (take > 0) {
+                    var chars = new char[take];
+                    _origBuf.CopyTo(p.Start + pieceOfs, chars, take);
+                    visitor(chars);
+                }
+                remaining -= take;
             } else {
                 var avail = p.Len - pieceOfs;
                 var take = (int)Math.Min(avail, remaining);

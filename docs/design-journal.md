@@ -399,3 +399,332 @@ Since editing is scoped to a block, the caret lives within a specific block. Nav
 
 The EditorControl needs to know which block is focused and where the caret is within
 that block, rather than tracking a single global character offset.
+
+## 2026-02-26 — Block tree implementation + design problems found
+
+### What was implemented
+
+- **FenwickTree** (`Collections/FenwickTree.cs`) — O(log n) point update, prefix sum query,
+  and FindByPrefixSum. Used for both character-length and height prefix sums. 16 tests.
+
+- **Block types** (`Blocks/BlockType.cs`, `InlineSpanType.cs`, `InlineSpan.cs`) — Enums for
+  block types (Paragraph, H1–H6, CodeBlock, BlockQuote, Lists, HorizontalRule, Image, Table)
+  and inline span types (Bold, Italic, InlineCode, Strikethrough, Link). `InlineSpan` is a
+  record with Shift/Resize/Overlaps/Contains helpers.
+
+- **Block** (`Blocks/Block.cs`) — Single block with text editing, inline span management,
+  split/merge. Span adjustment on text edits (shift, expand, shrink, remove). 40 tests.
+  Key design: spans auto-adjust when text is inserted/deleted, and adjacent/overlapping
+  spans of the same type merge automatically.
+
+- **BlockDocument** (`Blocks/BlockDocument.cs`) — Ordered block list with parallel Fenwick
+  trees for char-length and height prefix sums. Structural operations: InsertBlock,
+  RemoveBlock, SplitBlock, MergeBlocks, ChangeBlockType. Lookup: FindBlockByCharOffset
+  (O(log n)), FindBlockByScrollPosition (O(log n)), BlockTopY, BlockCharStart. 51 tests.
+
+- **Style system** (`Styles/BlockStyle.cs`, `InlineStyle.cs`, `StyleSheet.cs`) — Per-block-type
+  visual properties (font, spacing, colors, max visible lines). Per-inline-type overrides.
+  Style-aware height estimation using AvgCharWidth. Font metrics fed back from renderer.
+  Default stylesheet with sensible values for all types. 20 tests.
+
+- **BlockLayoutEngine** (`Rendering/Layout/BlockLayoutEngine.cs`) — Lays out a BlockDocument
+  range using StyleSheet properties. Each block gets its own Avalonia TextLayout with the
+  appropriate font/size/weight. Also feeds actual heights back into the document's Fenwick
+  tree and actual font metrics back into the StyleSheet for future estimates.
+
+- **InternalsVisibleTo** added to `DevMentalMd.Core.csproj` for test access to `SplitAt`/`MergeFrom`.
+- **Rendering → Core** project reference added for block types and styles.
+
+### Design problems found during implementation
+
+**1. Block separator ambiguity in character offsets**
+
+The char-length Fenwick tree stores each block's text length. A global "document character
+offset" is the sum of preceding block lengths. But there is no separator between blocks.
+If block 0 has "Hello" (5 chars) and block 1 has "World" (5 chars), characters 0–4 are in
+block 0 and characters 5–9 are in block 1. There is no position that means "at the boundary
+between blocks."
+
+This works for the `BlockPosition(blockIndex, localOffset)` caret model because the caret
+lives inside a specific block. But `FindBlockByCharOffset` is ambiguous at block boundaries:
+should offset 5 map to `(0, 5)` or `(1, 0)`? Currently it maps to `(1, 0)` because the
+prefix sum for block 0 equals 5.
+
+**Impact**: Low for editing (caret model avoids the problem). Moderate for features that
+need a flat character offset (e.g., search-and-replace, text export). May need a separator
+concept (+1 per block boundary) if a flat offset API is exposed later.
+
+**2. Structural operations rebuild Fenwick trees in O(n)**
+
+InsertBlock, RemoveBlock, SplitBlock, and MergeBlocks all call `RebuildTrees()` which is
+O(n). The FenwickTree supports O(log n) point updates, but not element insertion or removal
+— the underlying array would need shifting.
+
+**Impact**: Fine for typical documents (hundreds to low thousands of blocks). Could become
+a bottleneck for programmatic transformations that batch many structural changes (e.g.,
+importing a 10,000-block markdown file one block at a time). Mitigation: batch structural
+changes and rebuild once, or add insert/remove support to FenwickTree via a gap buffer.
+
+**3. Block.Changed uses IndexOf for O(n) lookup**
+
+When a block fires its `Changed` event, `BlockDocument.OnBlockChanged` calls
+`_blocks.IndexOf(block)` to find the block's position. This is O(n) per edit.
+
+**Impact**: Noticeable for documents with 10K+ blocks if edits are frequent. Fix: store a
+back-pointer from Block to its index (requires updating indices on structural changes), or
+use a Dictionary<Block, int>.
+
+**4. Undo/redo not wired to block model**
+
+The existing `EditHistory` (PieceTable-based) doesn't apply to the block model. The design
+calls for two layers: text-level undo within a block + tree-level undo for structural changes,
+composing into a single user-facing stream. Neither is implemented yet.
+
+**Decision needed**: Should each Block own its own undo stack, or should the document own a
+single stack that records all changes? A single stack is simpler for the user (one Ctrl+Z
+stream) but requires the document to intercept all block-level edits. A per-block stack is
+simpler to implement but creates a confusing UX when undoing across block boundaries.
+
+**Recommendation**: Single document-level undo stack. Each edit (text insert, text delete,
+span change, block split, block merge, type change) is a command object pushed onto the stack.
+Block text edits are recorded as `(blockIndex, offset, text)` tuples. Structural changes
+record enough state to reverse them.
+
+**5. Empty blocks and FindByPrefixSum edge case**
+
+A document with empty blocks (0 chars) creates zero-width entries in the char-length Fenwick
+tree. FindByPrefixSum skips zero-width entries because the prefix sum doesn't increase.
+This means `FindBlockByCharOffset(0)` returns block 0 even if block 0 is empty and block 1
+has content — which is correct. But a sequence of empty blocks makes the mapping meaningless
+for intermediate indices.
+
+**Impact**: Low. The caret model doesn't use global char offsets for navigation. The issue
+only arises in edge cases like "cursor between two empty blocks." These are rare in practice
+and handled by the block-level caret model.
+
+**6. Height estimation is content-length-unaware without font metrics**
+
+The default height estimate (before the renderer feeds back font metrics) uses only block
+type, not content length. A 1-character paragraph and a 1000-character paragraph get the
+same estimate (24px). This makes the scroll position inaccurate until the renderer has laid
+out blocks and updated the Fenwick tree.
+
+**Mitigation**: The `BlockLayoutEngine.LayoutRange()` feeds actual heights back into the
+document's Fenwick tree as blocks are rendered. The first time each block is rendered, its
+height estimate is corrected. The scrollbar adjusts subtly as the user scrolls through
+"uncharted territory." This is the intended design from the height estimation strategy —
+it's working correctly, just noting that initial estimates are rough.
+
+**7. Caret model transition is the biggest remaining challenge**
+
+The current EditorControl uses a global `long` character offset for the caret (from the
+PieceTable-based Document). The block model uses `BlockPosition(blockIndex, localOffset)`.
+Transitioning requires:
+- Changing all input handling to scope edits to the focused block
+- Enter → SplitBlock, Backspace-at-start → MergeBlocks
+- Arrow up/down at block boundary → move to adjacent block
+- Click → hit-test to (blockIndex, localOffset) instead of global offset
+- Selection model needs to span multiple blocks: (startBlock, startOffset, endBlock, endOffset)
+- The existing TextLayoutEngine (global text → layout lines) is replaced by BlockLayoutEngine
+  (per-block layouts)
+
+This is a fundamental refactoring that should be done carefully. The existing plain-text
+editing must continue to work during the transition (or there should be a clean switchover).
+
+**Recommendation**: The cleanest approach is to build a new `BlockEditorControl` alongside
+the existing `EditorControl`, then swap in MainWindow when ready. This avoids a half-working
+intermediate state. The new control uses `BlockDocument` + `StyleSheet` + `BlockLayoutEngine`
+from the start, with the `BlockPosition` caret model.
+
+### What exists but isn't wired yet
+
+The following are implemented and tested but not yet integrated into the running editor:
+- `BlockDocument` + structural operations (Insert/Remove/Split/Merge/ChangeType)
+- `StyleSheet` with per-type styles and height estimation
+- `BlockLayoutEngine` that produces per-block layouts with proper font/size/weight
+- `FenwickTree` for O(log n) scroll-to-block and char-offset-to-block mapping
+
+The next milestone should wire these into a `BlockEditorControl` that replaces the current
+plain-text `EditorControl`.
+
+## 2026-02-26 — Block content rules, code blocks, and flat-vs-nested
+
+### Block content rules by type
+
+Not all blocks treat text the same way. The key distinction is how `\n` behaves:
+
+- **Paragraph, Headings (H1–H6)**: Text never contains `\n`. It is a single logical
+  line that may become multi-line only through word wrapping. Pressing Enter triggers
+  `SplitBlock()`, creating a new block. The Block class should **enforce** this invariant
+  for these types (reject `\n` in `InsertText`, strip on `SetText`).
+
+- **CodeBlock**: Text routinely contains `\n`. Each `\n`-delimited segment is an
+  independent line. Pressing Enter inserts `\n` into the block's text (does NOT split
+  the block). The code block is one structural unit.
+
+- **BlockQuote, ListItems**: Treated as single-line text blocks (like paragraphs) for now.
+  See "Flat model with IndentLevel" below for nesting.
+
+### Code block wrapping
+
+Code blocks have a **per-line wrapping** model, distinct from paragraph wrapping:
+
+- Each `\n`-delimited line within the code block is an independent wrap unit.
+- Wrapping within a code line is **optional** (user setting, default off for code).
+- When enabled, a **wrap indicator glyph** (e.g., `↩` or `⤸`) can be rendered to show
+  where wrapping occurred. The glyph sits in the block's left padding / gutter area and
+  is allowed to exceed the wrap boundary — it's visual chrome, not content, so it doesn't
+  affect text layout or the wrap calculation.
+- This means the code block layout path differs from paragraph layout: iterate `\n`-split
+  segments, optionally wrap each one individually, stack the visual lines.
+
+### Code blocks as AST (future direction)
+
+A more powerful model stores code blocks not as text but as a parsed AST (tree-sitter
+style). Syntax highlighting becomes a rendering of the AST rather than regex-based span
+coloring. Benefits:
+- Structural editing (fold, refactor, navigate by symbol)
+- Accurate highlighting that doesn't break on edge cases
+- Jump-to-definition, hover info, etc.
+
+**For now**: store code as text. Apply syntax highlighting as a **separate read-only span
+layer** — not `InlineSpan` (which is user-applied formatting), but something like
+`SyntaxHighlightSpan` computed on content change, purely for rendering. This design leaves
+the door open for AST-backed highlighting later: the text-editing API doesn't change, only
+the highlight source switches from regex to tree walks.
+
+### Flat model with IndentLevel (avoiding blocks-within-blocks)
+
+The document model stays **flat** — `BlockDocument` is a list of `Block`, no nesting.
+Hierarchical relationships (nested lists, block quotes containing paragraphs) are modeled
+with properties on the block rather than tree nesting:
+
+- `Block.IndentLevel` (int, default 0): controls visual indentation and logical grouping.
+  A nested list item has `IndentLevel = 1` (or 2, 3…). The renderer increases left padding
+  by `indentLevel × indentWidth`.
+
+- Adjacent list items at different indent levels form a visual tree but are structurally
+  flat. Tab/Shift+Tab adjusts `IndentLevel`.
+
+- Block quotes are `BlockQuote`-typed blocks that happen to be adjacent. A block quote
+  "containing" a code block is just a `BlockQuote` block followed by a `CodeBlock` block,
+  both at the same indent level. The renderer draws the quote bar alongside both.
+
+**Edge cases that the flat model handles imperfectly**:
+- A list item containing multiple paragraphs: modeled as an `UnorderedListItem` followed
+  by a `Paragraph` with a "continuation" flag or matching indent level signaling it belongs
+  to the preceding list item.
+- A block quote containing mixed content (headings, code): adjacent blocks with a shared
+  `isBlockQuoteChild` flag or indent context.
+
+These are minor compromises. True nesting would make the Fenwick trees more complex (tree
+of trees), complicate undo/redo, and require a recursive layout engine. The flat model with
+IndentLevel keeps everything O(1) per block for editing and O(log n) for lookup, and covers
+90%+ of real markdown documents without nesting.
+
+**Reserved for the future**: If the project forks into a full word processor with
+multi-column layout or complex nesting, a proper tree model can be introduced then.
+The current flat model is the right choice for a markdown-centric WYSIWYG editor.
+
+## 2026-02-26 — WholeBufSentinel bug fix
+
+After inserting a newline into a ProceduralBuffer-backed document and scrolling to the
+bottom, lines beyond the edit point were concatenated without separators and text was
+truncated mid-word. Root cause: three places assumed a `WholeBufSentinel` piece spans the
+entire buffer, but after `Insert()` splits such a piece the right half starts partway in.
+
+Fixes applied in `PieceTable.cs`:
+1. `Length` property: `_origBuf.Length` → `_origBuf.Length - p.Start`
+2. `GetText()`: same correction — read `bufLen - p.Start` chars, not `bufLen`
+3. `VisitPieces()`: clamp to `_origBuf.Length - (p.Start + pieceOfs)` instead of
+   blindly reading `remaining` chars
+
+Two regression tests added in `LargeDocumentTests.cs`.
+
+## 2026-02-26 — Persistence architecture and the role of PieceTable
+
+### PieceTable is orphaned by the block model
+
+With the block model, each `Block` owns a small `string _text`. The `PieceTable` was
+designed for a single-buffer whole-document world. The block model eliminates that need:
+a 100,000-line document is 100,000 blocks, each with a tiny string. The PieceTable, IBuffer,
+ProceduralBuffer, LazyFileBuffer, and related infrastructure solve a problem the block model
+doesn't have.
+
+### Pristine/dirty blocks (zero-copy loading)
+
+When loading a file, `File.ReadAllText()` produces one `string`. The Markdown parser walks
+it and creates blocks, but instead of copying substrings, each block holds a
+`ReadOnlyMemory<char>` slice into the original string — zero allocation per block.
+
+A block can be in one of two states:
+- **Pristine** — text is a `ReadOnlyMemory<char>` slice of the load buffer. Zero copy.
+- **Dirty** — user edited the block. It now owns a mutable `string`.
+
+The first edit to a pristine block "materializes" the slice into a string. The 99% of
+blocks the user never touches remain as zero-cost slices. The original string stays alive
+via GC references from pristine blocks and is collected when no pristine blocks remain.
+
+This captures the piece table's key insight (original buffer is immutable, edits go elsewhere)
+at the block level, without the piece list machinery. A single paragraph is small enough that
+once touched, copying to a mutable string is fine.
+
+### File I/O as block streaming
+
+The document should never be materialized as a single string:
+- **Load**: `File.ReadAllText()` → one string → parser creates blocks as `ReadOnlyMemory<char>`
+  slices → original string is the only allocation
+- **Save**: stream block-by-block to a `StreamWriter`. Pristine blocks write their slice
+  directly. Dirty blocks write their string. No single allocation of the whole document.
+- **`GetText()` returning a full `string` is unnecessary.** Even file export streams
+  `ReadOnlySpan<char>` per block.
+
+### Three-layer persistence architecture
+
+| Concern | Mechanism |
+|---|---|
+| Fast reopen, parsed block cache, editor state | Local persistence store |
+| Version history, named checkpoints, collaboration | Git |
+| Interchange with other tools | `.md` file |
+
+**Local persistence store**: When opening a `.md` file, the parser creates blocks and
+persists the block structure to a local cache (sidecar file or cache directory). A
+fingerprint of the `.md` file (size + last-modified, or hash) is stored alongside.
+
+On subsequent opens:
+- Fingerprint matches → load from persistence. Blocks are already parsed, spans resolved,
+  indent levels set. With memory-mapped access, blocks not on screen don't need to be in
+  RAM at all.
+- Fingerprint mismatch → re-parse the `.md`, rebuild persistence.
+
+The persistence store is a **cache** — lossy is fine, rebuild from `.md` if corrupted or
+missing. It can also store editor state (cursor position, undo history, scroll position,
+collapsed sections).
+
+Volante (https://github.com/sergiy/volante) was investigated in prior research as a
+high-performance embedded object database for .NET with memory-mapped access. It
+outperformed all other persistence mechanisms tested for the goal of avoiding loading
+objects into memory. Compatibility with modern .NET needs verification; the concept
+applies regardless of the specific library chosen.
+
+**Git for history**: Rather than building custom versioning:
+- Auto-commit on save — each Ctrl+S is a git commit (auto-message or user-named)
+- History panel — `git log` for the current file with diff preview
+- Restore — checkout a previous version of just that file
+- Branching — "try a different direction" = git branch
+
+This avoids reinventing diffing, deduplication, and history traversal.
+
+**`.md` as interchange**: The Markdown file is the human-readable, git-friendly,
+tool-interoperable format. It's what gets committed, shared, and read by other programs.
+
+### Bundled document format (future)
+
+For sharing documents with embedded resources (images, editor state, history) outside of
+git, a zipped format (like `.docx`) could bundle:
+- The `.md` file
+- Embedded images
+- Editor state metadata
+- Custom metadata
+
+Low priority — git + `.md` covers most workflows.
