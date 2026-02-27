@@ -667,6 +667,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     protected override void OnPointerPressed(PointerPressedEventArgs e) {
         base.OnPointerPressed(e);
+        // Force caret visible (pause blinking) while any button is held.
+        _caretVisible = true;
+        _caretTimer.Stop();
+        InvalidateVisual();
+        var props = e.GetCurrentPoint(this).Properties;
+        if (props.IsMiddleButtonPressed) {
+            return; // middle-click is reserved for scrollbar drag
+        }
         Focus();
         var doc = Document;
         if (doc == null) {
@@ -677,21 +685,27 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var layoutPt = new Point(pt.X, pt.Y - _renderOffsetY);
         var localOfs = _layoutEngine.HitTest(layoutPt, layout);
         var ofs = layout.ViewportBase + localOfs;
-        var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-        doc.Selection = shift
-            ? doc.Selection.ExtendTo(ofs)
-            : Selection.Collapsed(ofs);
-        _pointerDown = true;
-        e.Pointer.Capture(this);
+        var isLeft = props.IsLeftButtonPressed;
+        // Left-click: place caret or extend selection (with Shift).
+        // Right-click: place caret only (no Shift-extend, no drag-select).
+        if (isLeft) {
+            var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            doc.Selection = shift
+                ? doc.Selection.ExtendTo(ofs)
+                : Selection.Collapsed(ofs);
+            _pointerDown = true;
+            e.Pointer.Capture(this);
+        } else {
+            doc.Selection = Selection.Collapsed(ofs);
+        }
         e.Handled = true;
-        ResetCaretBlink();
         InvalidateVisual();
     }
 
     protected override void OnPointerMoved(PointerEventArgs e) {
         base.OnPointerMoved(e);
         if (!_pointerDown) {
-            return;
+            return; // only left-drag extends selection
         }
         var doc = Document;
         if (doc == null) {
@@ -710,6 +724,11 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         base.OnPointerReleased(e);
         _pointerDown = false;
         e.Pointer.Capture(null);
+        // Hide caret immediately; the blink timer will show it on its next tick.
+        _caretVisible = false;
+        _caretTimer.Stop();
+        _caretTimer.Start();
+        InvalidateVisual();
     }
 
     protected override void OnGotFocus(GotFocusEventArgs e) {
