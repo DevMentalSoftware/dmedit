@@ -96,6 +96,13 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private double _renderOffsetY;
     private EventHandler? _scrollInvalidated;
 
+    // Incremental scroll tracking — used by LayoutWindowed to produce
+    // pixel-perfect smooth scrolling even when topLine changes.
+    private long _winTopLine = -1;
+    private double _winScrollOffset;
+    private double _winRenderOffsetY;
+    private double _winFirstLineHeight;
+
     // -------------------------------------------------------------------------
     // Performance stats
     // -------------------------------------------------------------------------
@@ -302,6 +309,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     public void InvalidateLayout() {
         _layout?.Dispose();
         _layout = null;
+        _winTopLine = -1; // reset incremental scroll (content changed)
         InvalidateMeasure();
         InvalidateVisual();
     }
@@ -441,6 +449,42 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // Map scroll offset → top logical line using the average height
         var topLine = Math.Clamp((long)(_scrollOffset.Y / avgLineHeight), 0, Math.Max(0, lineCount - 1));
 
+        // For single-row scrolls (arrow buttons), constrain topLine to change
+        // by at most ±1 from the previous frame.  This lets the incremental
+        // render-offset logic use the actual cached line height instead of
+        // avgLineHeight, giving pixel-perfect smooth scrolling.
+        // Everything else (wheel, drag, page-down) uses the formula-based
+        // topLine directly — the threshold of 2*rh cleanly separates arrow
+        // clicks (ds = rh) from wheel notches (ds = 3*rh).
+        var isSmallScroll = _winTopLine >= 0
+            && Math.Abs(_scrollOffset.Y - _winScrollOffset) < 2 * rh;
+
+        if (isSmallScroll) {
+            var ds = _scrollOffset.Y - _winScrollOffset;
+
+            if (topLine > _winTopLine) {
+                // Would advance.  Only allow +1, and only when the first
+                // line is fully scrolled above the viewport.
+                var firstLineBottom = _winRenderOffsetY - ds + _winFirstLineHeight;
+                if (firstLineBottom > 0) {
+                    topLine = _winTopLine;      // not fully off-screen yet
+                } else {
+                    topLine = _winTopLine + 1;  // advance by exactly 1
+                }
+            } else if (topLine < _winTopLine) {
+                topLine = _winTopLine - 1;      // retreat by exactly 1
+            }
+
+            // If topLine stayed the same but scrolling up would leave a gap
+            // (render offset goes positive), retreat to include the previous line.
+            if (topLine == _winTopLine) {
+                var wouldBeOffset = _winRenderOffsetY - ds;
+                if (wouldBeOffset > 0 && topLine > 0) {
+                    topLine--;
+                }
+            }
+        }
+
         // Fetch enough lines to fill the viewport (+ buffer for partial rows)
         var visibleRows = (int)(_viewport.Height / rh) + 4;
         var bottomLine = Math.Min(lineCount, topLine + visibleRows);
@@ -458,7 +502,47 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, maxWidth, startOfs);
         _extent = new Size(maxWidth, totalVisualRows * rh);
-        _renderOffsetY = topLine * avgLineHeight - _scrollOffset.Y;
+
+        // Compute render offset.  For small topLine changes (arrow keys, wheel)
+        // use an incremental offset based on the actual cached line height so
+        // each rh of scroll produces exactly rh of visual movement.
+        // For large jumps (thumb drag, page-down) use the formula estimate.
+        var deltaTop = topLine - _winTopLine;
+
+        if (_winTopLine >= 0 && deltaTop == 0) {
+            // topLine unchanged — pure scroll, trivially smooth.
+            _renderOffsetY = _winRenderOffsetY - (_scrollOffset.Y - _winScrollOffset);
+        } else if (_winTopLine >= 0 && deltaTop == 1 && _winFirstLineHeight > 0) {
+            // topLine advanced by 1.  Compensate for the departed line's
+            // actual height (not avgLineHeight) to avoid a visual jump.
+            _renderOffsetY = _winRenderOffsetY
+                - (_scrollOffset.Y - _winScrollOffset)
+                + _winFirstLineHeight;
+        } else if (_winTopLine >= 0 && deltaTop == -1 && _layout.Lines.Count > 0) {
+            // topLine retreated by 1.  The new first line was prepended;
+            // subtract its actual height to keep content in place.
+            _renderOffsetY = _winRenderOffsetY
+                - (_scrollOffset.Y - _winScrollOffset)
+                - _layout.Lines[0].Height;
+        } else {
+            // First layout or large jump — use formula estimate.
+            _renderOffsetY = topLine * avgLineHeight - _scrollOffset.Y;
+        }
+
+        // Safety: prevent any remaining gap at the viewport top.
+        if (_renderOffsetY > 0) {
+            _renderOffsetY = 0;
+        }
+
+        // Safety: prevent gap at the viewport bottom.  If the layout has
+        // enough content to fill the viewport but the render offset pushes
+        // it too far above, snap it down so the content reaches the bottom.
+        if (_layout.TotalHeight >= _viewport.Height) {
+            var contentBottom = _renderOffsetY + _layout.TotalHeight;
+            if (contentBottom < _viewport.Height) {
+                _renderOffsetY = _viewport.Height - _layout.TotalHeight;
+            }
+        }
 
         // When at max scroll and the layout includes the end of the document,
         // anchor content bottom to viewport bottom so the last line is visible.
@@ -470,6 +554,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 _renderOffsetY = _viewport.Height - _layout.TotalHeight;
             }
         }
+
+        // Cache state for next incremental frame.
+        _winTopLine = topLine;
+        _winScrollOffset = _scrollOffset.Y;
+        _winRenderOffsetY = _renderOffsetY;
+        _winFirstLineHeight = _layout.Lines.Count > 0 ? _layout.Lines[0].Height : rh;
     }
 
     // -------------------------------------------------------------------------
