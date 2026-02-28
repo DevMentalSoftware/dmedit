@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using DevMentalMd.App.Services;
+using DevMentalMd.Core.Buffers;
 using DevMentalMd.Core.Documents;
 using DevMentalMd.Core.IO;
 
@@ -67,7 +68,7 @@ public partial class MainWindow : Window {
         ScrollBar.Value = Editor.ScrollValue;
         ScrollBar.ViewportSize = Editor.ScrollViewportHeight;
         ScrollBar.ExtentSize = Editor.ScrollExtentHeight;
-        ScrollBar.LineHeight = Editor.LineHeightValue;
+        ScrollBar.RowHeight = Editor.RowHeightValue;
     }
 
     // -------------------------------------------------------------------------
@@ -109,12 +110,18 @@ public partial class MainWindow : Window {
             // would invalidate a visual mid-pass and throw.
             Dispatcher.UIThread.Post(() => {
                 var s = Editor.PerfStats;
+                var editStat = s.Edit.Count > 0 ? $"  |  Edit: {s.Edit.Format()}" : "";
                 StatsBar.Text =
                     $"Layout: {s.Layout.Format()}  |  " +
-                    $"Render: {s.Render.Format()}  |  " +
+                    $"Render: {s.Render.Format()}{editStat}  |  " +
                     $"{s.LogicalLines:N0} lines, {s.ViewportLines} in view ({s.ViewportRows} rows)  |  " +
                     $"{s.ScrollPercent:F1}%";
-                var load = s.LoadTimeMs > 0 ? $"{s.LoadTimeMs:F1}ms" : "—";
+                string load;
+                if (s.FirstChunkTimeMs > 0) {
+                    load = $"{s.FirstChunkTimeMs:F1}ms + {s.LoadTimeMs:F1}ms";
+                } else {
+                    load = s.LoadTimeMs > 0 ? $"{s.LoadTimeMs:F1}ms" : "—";
+                }
                 var save = s.SaveTimeMs > 0 ? $"{s.SaveTimeMs:F1}ms" : "—";
                 StatsBarIO.Text = $"Load: {load}  |  Save: {save}";
             }, DispatcherPriority.Background);
@@ -151,8 +158,7 @@ public partial class MainWindow : Window {
 
         var sw = Stopwatch.StartNew();
         Editor.Document = await FileLoader.LoadAsync(path);
-        sw.Stop();
-        Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+        WireStreamingProgress(sw);
 
         _currentPath = path;
         Title = $"DevMentalMD — {Path.GetFileName(path)}";
@@ -213,8 +219,7 @@ public partial class MainWindow : Window {
 
         var sw = Stopwatch.StartNew();
         Editor.Document = await FileLoader.LoadAsync(path);
-        sw.Stop();
-        Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+        WireStreamingProgress(sw);
 
         _currentPath = path;
         Title = $"DevMentalMD — {Path.GetFileName(path)}";
@@ -273,5 +278,50 @@ public partial class MainWindow : Window {
         await FileSaver.SaveAsync(Editor.Document, path);
         sw.Stop();
         Editor.PerfStats.SaveTimeMs = sw.Elapsed.TotalMilliseconds;
+    }
+
+    // -------------------------------------------------------------------------
+    // Streaming file load progress
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// If the current document is backed by a <see cref="StreamingFileBuffer"/>,
+    /// subscribes to its progress events so the editor re-layouts incrementally
+    /// and the stats bar shows the running load time. For small (non-streaming)
+    /// files the stopwatch is stopped immediately.
+    /// </summary>
+    private void WireStreamingProgress(Stopwatch sw) {
+        if (Editor.Document?.Table.OrigBuffer is StreamingFileBuffer streamBuf) {
+            // Streaming load — capture time to first renderable chunk, then keep
+            // the stopwatch running until fully loaded.
+            var firstChunkCaptured = false;
+            Editor.PerfStats.FirstChunkTimeMs = 0;
+            Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+
+            streamBuf.ProgressChanged += () => {
+                Dispatcher.UIThread.Post(() => {
+                    if (!firstChunkCaptured) {
+                        firstChunkCaptured = true;
+                        Editor.PerfStats.FirstChunkTimeMs = sw.Elapsed.TotalMilliseconds;
+                    }
+                    Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+                    Editor.InvalidateLayout();
+                }, DispatcherPriority.Background);
+            };
+
+            streamBuf.LoadComplete += () => {
+                Dispatcher.UIThread.Post(() => {
+                    sw.Stop();
+                    Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+                    Editor.InvalidateLayout();
+                }, DispatcherPriority.Background);
+            };
+        } else {
+            // Small file — loaded synchronously, stop the clock.
+            // No streaming, so first-chunk time is the same as total load time.
+            sw.Stop();
+            Editor.PerfStats.FirstChunkTimeMs = 0;
+            Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+        }
     }
 }

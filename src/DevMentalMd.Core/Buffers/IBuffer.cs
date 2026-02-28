@@ -4,7 +4,7 @@ namespace DevMentalMd.Core.Buffers;
 /// Abstraction over a read-only character store of arbitrary size.
 /// Implementations include <see cref="StringBuffer"/> (in-memory string),
 /// <see cref="ProceduralBuffer"/> (generated content), and
-/// <see cref="LazyFileBuffer"/> (memory-mapped file).
+/// <see cref="StreamingFileBuffer"/> (incremental background file loading).
 /// </summary>
 public interface IBuffer : IDisposable {
     /// <summary>Total number of characters, if known.</summary>

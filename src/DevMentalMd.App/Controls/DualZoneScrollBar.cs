@@ -72,7 +72,7 @@ public sealed class DualZoneScrollBar : Control {
     private double _value;
     private double _viewportSize;
     private double _extentSize;
-    private double _lineHeight = 20;
+    private double _rowHeight = 20;
 
     /// <summary>Maximum scroll value (extent − viewport). Must be ≥ 0.</summary>
     public double Maximum {
@@ -104,10 +104,10 @@ public sealed class DualZoneScrollBar : Control {
         set { _extentSize = value; InvalidateVisual(); }
     }
 
-    /// <summary>Height of a single line in pixels (used for fixed-rate calculation).</summary>
-    public double LineHeight {
-        get => _lineHeight;
-        set => _lineHeight = Math.Max(1, value);
+    /// <summary>Height of a single visual row in pixels (used for fixed-rate calculation).</summary>
+    public double RowHeight {
+        get => _rowHeight;
+        set => _rowHeight = Math.Max(1, value);
     }
 
     /// <summary>
@@ -244,7 +244,7 @@ public sealed class DualZoneScrollBar : Control {
     /// </summary>
     private double ComputeFixedScrollRate() {
         var trackHeight = Math.Max(1, Bounds.Height - 2 * ArrowHeight);
-        var refExtent = ReferenceDocLines * _lineHeight;
+        var refExtent = ReferenceDocLines * _rowHeight;
         var refViewport = _viewportSize;
         if (refExtent <= refViewport) {
             return 1.0; // trivial doc — fallback
@@ -481,13 +481,13 @@ public sealed class DualZoneScrollBar : Control {
                 break;
 
             case HitZone.ArrowUp:
-                ScrollByLines(-1);
-                StartRepeat(() => ScrollByLines(-1));
+                ScrollByRows(-1);
+                StartRepeat(() => ScrollByRows(-1));
                 break;
 
             case HitZone.ArrowDown:
-                ScrollByLines(+1);
-                StartRepeat(() => ScrollByLines(+1));
+                ScrollByRows(+1);
+                StartRepeat(() => ScrollByRows(+1));
                 break;
 
             case HitZone.TrackAbove:
@@ -601,18 +601,28 @@ public sealed class DualZoneScrollBar : Control {
     // Scroll helpers
     // -------------------------------------------------------------------------
 
-    private void ScrollByLines(int lines) {
-        RequestScroll(_value + lines * _lineHeight);
+    private void ScrollByRows(int rows) {
+        // Snap to row boundaries so each arrow click aligns to a full row.
+        // If already aligned, moves by exactly |rows| rows.
+        // If mid-row (e.g. from a thumb drag), the first click finishes
+        // the partial row, then subsequent clicks move full rows.
+        double newValue;
+        if (rows > 0) {
+            newValue = (Math.Floor(_value / _rowHeight) + rows) * _rowHeight;
+        } else {
+            newValue = (Math.Ceiling(_value / _rowHeight) + rows) * _rowHeight;
+        }
+        RequestScroll(newValue);
     }
 
     private void ScrollByPage(int direction) {
-        // Page = viewport minus one line, rounded down to show full lines
-        var pageSize = _viewportSize - _lineHeight;
-        if (pageSize < _lineHeight) {
-            pageSize = _lineHeight;
+        // Page = viewport minus one row, rounded down to show full rows
+        var pageSize = _viewportSize - _rowHeight;
+        if (pageSize < _rowHeight) {
+            pageSize = _rowHeight;
         }
         // Round to whole lines
-        pageSize = Math.Floor(pageSize / _lineHeight) * _lineHeight;
+        pageSize = Math.Floor(pageSize / _rowHeight) * _rowHeight;
         RequestScroll(_value + direction * pageSize);
     }
 
@@ -650,8 +660,8 @@ public sealed class DualZoneScrollBar : Control {
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e) {
         base.OnPointerWheelChanged(e);
-        // Scroll 3 lines per wheel notch
-        var delta = -e.Delta.Y * _lineHeight * 3;
+        // Scroll 3 rows per wheel notch
+        var delta = -e.Delta.Y * _rowHeight * 3;
         RequestScroll(_value + delta);
         e.Handled = true;
     }

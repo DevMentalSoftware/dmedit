@@ -22,7 +22,8 @@ public sealed class PieceTable {
 
     // Sorted list of logical character offsets at which each line begins.
     // Index 0 is always 0 (start of document). Rebuilt lazily after mutations.
-    // Guarded by EagerIndexThreshold to avoid 10M-entry lists on huge documents.
+    // Guarded by EagerIndexThreshold to avoid huge lists on very large documents.
+    // 10M chars ≈ 20 MB UTF-16; at ~100 chars/line that's ~100K line-start entries (800 KB).
     private List<long>? _lineStartCache;
 
     private const long EagerIndexThreshold = 10_000_000L; // 10 M chars
@@ -64,6 +65,19 @@ public sealed class PieceTable {
     // Properties
     // -------------------------------------------------------------------------
 
+    /// <summary>
+    /// The underlying <see cref="IBuffer"/> when constructed from a buffer, or <c>null</c>
+    /// when constructed from a string.
+    /// </summary>
+    public IBuffer? OrigBuffer => _origBuf;
+
+    /// <summary>
+    /// <c>true</c> when the document content is the unedited original buffer
+    /// (no inserts or deletes have been applied).
+    /// </summary>
+    public bool IsOriginalContent =>
+        _origBuf != null && _pieces.Count == 1 && _pieces[0].Which == BufferKind.Original;
+
     /// <summary>Total number of characters in the document.</summary>
     public long Length {
         get {
@@ -77,16 +91,21 @@ public sealed class PieceTable {
 
     /// <summary>
     /// Number of logical lines (always at least 1), or -1 if the document is too large
-    /// for eager line indexing (> <c>EagerIndexThreshold</c> characters).
+    /// for eager line indexing and no buffer-level line index is available.
     /// </summary>
     public long LineCount {
         get {
-            // If the underlying buffer already knows the line count, use it.
+            // Fast path: unedited buffer — exact.
             if (_origBuf?.LineCount >= 0 && _pieces.Count == 1 &&
                 _pieces[0].Which == BufferKind.Original) {
                 return _origBuf.LineCount;
             }
             if (Length > EagerIndexThreshold) {
+                // Too large for eager indexing. If the buffer has a line count,
+                // use it as an approximation (off by ±edits, but prevents freeze).
+                if (_origBuf?.LineCount >= 0) {
+                    return _origBuf.LineCount;
+                }
                 return -1L;
             }
             return LineStarts.Count;
@@ -237,6 +256,14 @@ public sealed class PieceTable {
                 return result;
             }
         }
+        // Approximate path: edited but document is too large for eager indexing.
+        // Use the buffer's line starts (off by ±edit chars, but prevents freeze).
+        if (_origBuf != null && Length > EagerIndexThreshold) {
+            var result = _origBuf.GetLineStart(lineIdx);
+            if (result >= 0) {
+                return result;
+            }
+        }
         var lc = LineCount;
         if (lc >= 0) {
             ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(lineIdx, lc);
@@ -249,6 +276,17 @@ public sealed class PieceTable {
         ArgumentOutOfRangeException.ThrowIfNegative(ofs);
         if (_origBuf == null || _origBuf.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs, Length);
+        }
+
+        // Fast path: unedited buffer with a line index.
+        if (_origBuf != null && _pieces.Count == 1 && _pieces[0].Which == BufferKind.Original
+            && _origBuf.LineCount >= 0) {
+            return BinarySearchBufferLines(_origBuf, ofs);
+        }
+
+        // Approximate path: edited large document — binary search the buffer's line index.
+        if (_origBuf != null && Length > EagerIndexThreshold && _origBuf.LineCount >= 0) {
+            return BinarySearchBufferLines(_origBuf, ofs);
         }
 
         var starts = LineStarts;
@@ -265,6 +303,25 @@ public sealed class PieceTable {
         return lo;
     }
 
+    /// <summary>
+    /// Binary search the buffer's line-start index to find which line contains <paramref name="ofs"/>.
+    /// </summary>
+    private static long BinarySearchBufferLines(IBuffer buf, long ofs) {
+        var lc = buf.LineCount;
+        var lo = 0L;
+        var hi = lc - 1;
+        while (lo < hi) {
+            var mid = (lo + hi + 1) / 2;
+            var start = buf.GetLineStart(mid);
+            if (start >= 0 && start <= ofs) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        return lo;
+    }
+
     /// <summary>Returns the text content of line <paramref name="lineIdx"/> without any trailing newline.</summary>
     public string GetLine(long lineIdx) {
         ArgumentOutOfRangeException.ThrowIfNegative(lineIdx);
@@ -273,19 +330,43 @@ public sealed class PieceTable {
             ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(lineIdx, lc);
         }
 
+        // Approximate path for large documents: use buffer's line-start index.
+        if (_origBuf != null && Length > EagerIndexThreshold && _origBuf.LineCount >= 0) {
+            var lineStart = _origBuf.GetLineStart(lineIdx);
+            if (lineStart < 0) {
+                return string.Empty;
+            }
+            long lineEnd;
+            if (lineIdx + 1 < _origBuf.LineCount) {
+                lineEnd = _origBuf.GetLineStart(lineIdx + 1);
+                if (lineEnd < 0) {
+                    lineEnd = Length;
+                } else {
+                    lineEnd--; // back up before newline
+                    if (lineEnd > lineStart && CharAt(lineEnd - 1) == '\r') {
+                        lineEnd--;
+                    }
+                }
+            } else {
+                lineEnd = Length;
+            }
+            var len = (int)Math.Max(0, lineEnd - lineStart);
+            return len <= 0 ? string.Empty : GetText(lineStart, len);
+        }
+
         var starts = LineStarts;
-        var lineStart = starts[(int)lineIdx];
-        long lineEnd;
+        var lineStart2 = starts[(int)lineIdx];
+        long lineEnd2;
         if (lineIdx + 1 < starts.Count) {
-            lineEnd = starts[(int)(lineIdx + 1)] - 1;
-            if (lineEnd > lineStart && CharAt(lineEnd - 1) == '\r') {
-                lineEnd--;
+            lineEnd2 = starts[(int)(lineIdx + 1)] - 1;
+            if (lineEnd2 > lineStart2 && CharAt(lineEnd2 - 1) == '\r') {
+                lineEnd2--;
             }
         } else {
-            lineEnd = Length;
+            lineEnd2 = Length;
         }
-        var len = (int)(lineEnd - lineStart);
-        return len <= 0 ? string.Empty : GetText(lineStart, len);
+        var len2 = (int)(lineEnd2 - lineStart2);
+        return len2 <= 0 ? string.Empty : GetText(lineStart2, len2);
     }
 
     // -------------------------------------------------------------------------

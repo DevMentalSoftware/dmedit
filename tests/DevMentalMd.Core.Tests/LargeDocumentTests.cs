@@ -307,11 +307,11 @@ public class LargeDocumentTests {
     }
 
     [Fact]
-    public void FileSaver_LargeDoc_StreamsWithoutFullAlloc() {
-        // 10_000 lines of ~20 chars each = ~200 KB — small enough for a unit test
-        // but exercises the chunked streaming path.
+    public void FileSaver_LargeDoc_UneditedBuffer_UsesDirectPath() {
+        // Unedited buffer-backed document → fast path (SaveFromBuffer).
+        // Budget accounts for 1 MB chunk buffer + 1 MB StreamWriter buffer + overhead.
         const long lineCount = 10_000L;
-        const long maxBytes = 5L * 1024 * 1024; // 5 MB
+        const long maxBytes = 15L * 1024 * 1024; // 15 MB
 
         var path = Path.Combine(Path.GetTempPath(), $"devmentalmd_test_{Guid.NewGuid():N}.md");
         try {
@@ -322,7 +322,40 @@ public class LargeDocumentTests {
             var allocBytes = MeasureAlloc(() => FileSaver.Save(doc, path));
 
             Assert.True(allocBytes < maxBytes,
-                $"FileSaver allocated {allocBytes / 1024} KB, expected < 5 MB");
+                $"FileSaver (unedited) allocated {allocBytes / 1024} KB, expected < {maxBytes / 1024} KB");
+        } finally {
+            if (File.Exists(path)) {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [Fact]
+    public void FileSaver_LargeDoc_EditedBuffer_StreamsWithoutFullAlloc() {
+        // A single insert breaks IsOriginalContent → forces SaveFromPieceTable path.
+        // The WholeBufSentinel piece still covers the bulk of the document, exercising
+        // the per-chunk allocation in VisitPieces. Budget must stay well below the
+        // full document size (~200 KB chars = ~400 KB, so 15 MB is generous).
+        const long lineCount = 10_000L;
+        const long maxBytes = 15L * 1024 * 1024; // 15 MB
+
+        var path = Path.Combine(Path.GetTempPath(), $"devmentalmd_test_{Guid.NewGuid():N}.md");
+        try {
+            using var buf = new ProceduralBuffer(lineCount, i => $"Line number {i:D6}", stride: 100);
+            var table = new PieceTable(buf);
+            table.Insert(0, "# Edited\n");
+            var doc = new Document(table);
+
+            Assert.False(table.IsOriginalContent, "Insert should break IsOriginalContent");
+
+            var allocBytes = MeasureAlloc(() => FileSaver.Save(doc, path));
+
+            Assert.True(allocBytes < maxBytes,
+                $"FileSaver (edited) allocated {allocBytes / 1024} KB, expected < {maxBytes / 1024} KB");
+
+            // Verify the edit is present in the saved file.
+            var firstLine = File.ReadLines(path).First();
+            Assert.Equal("# Edited", firstLine);
         } finally {
             if (File.Exists(path)) {
                 File.Delete(path);

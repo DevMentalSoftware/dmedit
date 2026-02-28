@@ -91,7 +91,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private Size _extent;
     private Size _viewport;
     private Vector _scrollOffset;
-    private double _lineHeight;
+    private double _rowHeight;
     private double _charWidth;
     private double _renderOffsetY;
     private EventHandler? _scrollInvalidated;
@@ -136,20 +136,26 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     public sealed class PerfStatsData {
         public TimingStat Layout { get; } = new();
         public TimingStat Render { get; } = new();
+        public TimingStat Edit { get; } = new();
         public long LogicalLines { get; set; }
         public int ViewportLines { get; set; }
         public int ViewportRows { get; set; }
         public double ScrollPercent { get; set; }
+        /// <summary>Time from open to first renderable chunk (streaming loads only).</summary>
+        public double FirstChunkTimeMs { get; set; }
+        /// <summary>Total time from open to fully loaded.</summary>
         public double LoadTimeMs { get; set; }
         public double SaveTimeMs { get; set; }
 
         public void Reset() {
             Layout.Reset();
             Render.Reset();
+            Edit.Reset();
         }
     }
 
     private readonly Stopwatch _perfSw = new();
+    private readonly Stopwatch _editSw = new();
 
     /// <summary>Live performance stats. Updated after each render.</summary>
     public PerfStatsData PerfStats { get; } = new();
@@ -195,8 +201,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// <summary>Total content extent height in pixels.</summary>
     public double ScrollExtentHeight => _extent.Height;
 
-    /// <summary>Height of a single line in pixels.</summary>
-    public double LineHeightValue => GetLineHeight();
+    /// <summary>Height of a single visual row in pixels.</summary>
+    public double RowHeightValue => GetRowHeight();
 
     // -------------------------------------------------------------------------
     // Construction
@@ -237,10 +243,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     }
 
     Size ILogicalScrollable.ScrollSize =>
-        new(10, _lineHeight > 0 ? _lineHeight : 20);
+        new(10, _rowHeight > 0 ? _rowHeight : 20);
 
     Size ILogicalScrollable.PageScrollSize =>
-        new(0, Math.Max(_viewport.Height - GetLineHeight(), GetLineHeight()));
+        new(0, Math.Max(_viewport.Height - GetRowHeight(), GetRowHeight()));
 
     event EventHandler? ILogicalScrollable.ScrollInvalidated {
         add => _scrollInvalidated += value;
@@ -271,14 +277,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 doc.Changed += OnDocumentChanged;
             }
             _scrollOffset = default; // reset scroll to top
-            _lineHeight = 0;         // force line-height recomputation
+            _rowHeight = 0;         // force line-height recomputation
             _charWidth = 0;
             PerfStats.Reset();
             InvalidateLayout();
         } else if (e.Property == FontFamilyProperty
                    || e.Property == FontSizeProperty
                    || e.Property == ForegroundBrushProperty) {
-            _lineHeight = 0;
+            _rowHeight = 0;
             _charWidth = 0;
             InvalidateLayout();
         }
@@ -288,23 +294,28 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     // Layout
     // -------------------------------------------------------------------------
 
-    private void InvalidateLayout() {
+    /// <summary>
+    /// Invalidates the cached layout, forcing a rebuild on the next render pass.
+    /// Public so that <c>MainWindow</c> can trigger re-layout when a streaming buffer
+    /// reports progress.
+    /// </summary>
+    public void InvalidateLayout() {
         _layout?.Dispose();
         _layout = null;
         InvalidateMeasure();
         InvalidateVisual();
     }
 
-    private double GetLineHeight() {
-        if (_lineHeight > 0) {
-            return _lineHeight;
+    private double GetRowHeight() {
+        if (_rowHeight > 0) {
+            return _rowHeight;
         }
         var typeface = new Typeface(FontFamily);
         using var tl = new TextLayout(
             " ", typeface, FontSize, ForegroundBrush,
             maxWidth: double.PositiveInfinity, maxHeight: double.PositiveInfinity);
-        _lineHeight = tl.Height > 0 ? tl.Height : 20.0;
-        return _lineHeight;
+        _rowHeight = tl.Height > 0 ? tl.Height : 20.0;
+        return _rowHeight;
     }
 
     private double GetCharWidth() {
@@ -332,7 +343,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         var doc = Document;
         var typeface = new Typeface(FontFamily);
-        var lh = GetLineHeight();
+        var rh = GetRowHeight();
         var maxW = Bounds.Width > 0 ? Bounds.Width : 900;
         var lineCount = doc?.Table.LineCount ?? 0;
 
@@ -359,12 +370,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     private static int CountVisualRows(LayoutResult? layout) {
         if (layout == null) return 0;
-        var lh = 0.0;
+        var rh = 0.0;
         var rows = 0;
         foreach (var line in layout.Lines) {
             // First line establishes the single-row height
-            if (lh <= 0 && line.Height > 0) lh = line.Layout.Height > 0 ? GetSingleRowHeight(line) : line.Height;
-            rows += lh > 0 ? Math.Max(1, (int)Math.Round(line.Height / lh)) : 1;
+            if (rh <= 0 && line.Height > 0) rh = line.Layout.Height > 0 ? GetSingleRowHeight(line) : line.Height;
+            rows += rh > 0 ? Math.Max(1, (int)Math.Round(line.Height / rh)) : 1;
         }
         return rows;
     }
@@ -384,7 +395,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         var doc = Document;
         var typeface = new Typeface(FontFamily);
-        var lh = GetLineHeight();
+        var rh = GetRowHeight();
         var maxW = double.IsInfinity(availableSize.Width) ? 0 : availableSize.Width;
         _viewport = availableSize;
 
@@ -415,7 +426,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// close approximation.
     /// </remarks>
     private void LayoutWindowed(Document doc, long lineCount, Typeface typeface, double maxWidth) {
-        var lh = GetLineHeight();
+        var rh = GetRowHeight();
         var cw = GetCharWidth();
         var charsPerRow = Math.Max(1, (int)(maxWidth / cw));
 
@@ -425,14 +436,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         // Average visual rows per logical line → average height per logical line
         var avgRowsPerLine = Math.Max(1.0, (double)totalVisualRows / lineCount);
-        var avgLineHeight = avgRowsPerLine * lh;
+        var avgLineHeight = avgRowsPerLine * rh;
 
         // Map scroll offset → top logical line using the average height
         var topLine = Math.Clamp((long)(_scrollOffset.Y / avgLineHeight), 0, Math.Max(0, lineCount - 1));
 
-        // Fetch enough logical lines to fill the viewport (+ buffer for partial lines)
-        var visibleLines = (int)(_viewport.Height / lh) + 4;
-        var bottomLine = Math.Min(lineCount, topLine + visibleLines);
+        // Fetch enough lines to fill the viewport (+ buffer for partial rows)
+        var visibleRows = (int)(_viewport.Height / rh) + 4;
+        var bottomLine = Math.Min(lineCount, topLine + visibleRows);
 
         var startOfs = topLine > 0 ? doc.Table.LineStartOfs(topLine) : 0L;
         long endOfs;
@@ -446,8 +457,19 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var text = len > 0 ? doc.Table.GetText(startOfs, len) : string.Empty;
 
         _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, maxWidth, startOfs);
-        _extent = new Size(maxWidth, totalVisualRows * lh);
+        _extent = new Size(maxWidth, totalVisualRows * rh);
         _renderOffsetY = topLine * avgLineHeight - _scrollOffset.Y;
+
+        // When at max scroll and the layout includes the end of the document,
+        // anchor content bottom to viewport bottom so the last line is visible.
+        // Only at max scroll — otherwise scrolling up from the bottom would be stuck.
+        var scrollMax = _extent.Height - _viewport.Height;
+        if (bottomLine >= lineCount && _scrollOffset.Y >= scrollMax - 1.0) {
+            var contentBottom = _renderOffsetY + _layout.TotalHeight;
+            if (contentBottom > _viewport.Height) {
+                _renderOffsetY = _viewport.Height - _layout.TotalHeight;
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -578,7 +600,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null || string.IsNullOrEmpty(e.Text)) {
             return;
         }
+        _editSw.Restart();
         doc.Insert(e.Text);
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         e.Handled = true;
         InvalidateLayout();
         ResetCaretBlink();
@@ -596,14 +621,20 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         switch (e.Key) {
             case Key.Back:
+                _editSw.Restart();
                 doc.DeleteBackward();
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
                 break;
 
             case Key.Delete:
+                _editSw.Restart();
                 doc.DeleteForward();
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
@@ -640,14 +671,20 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
 
             case Key.Z when ctrl:
+                _editSw.Restart();
                 doc.Undo();
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
                 break;
 
             case Key.Y when ctrl:
+                _editSw.Restart();
                 doc.Redo();
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
@@ -660,14 +697,20 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
 
             case Key.Return:
+                _editSw.Restart();
                 doc.Insert("\n");
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
                 break;
 
             case Key.Tab:
+                _editSw.Restart();
                 doc.Insert("    ");
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
@@ -885,8 +928,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e) {
         base.OnPointerWheelChanged(e);
-        var lh = GetLineHeight();
-        var delta = -e.Delta.Y * lh * 3; // 3 lines per wheel notch
+        var rh = GetRowHeight();
+        var delta = -e.Delta.Y * rh * 3; // 3 rows per wheel notch
         ScrollValue += delta;
         e.Handled = true;
     }
@@ -895,12 +938,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// Scrolls by one page (viewport minus one line, rounded down to whole lines).
     /// </summary>
     private void ScrollByPage(int direction) {
-        var lh = GetLineHeight();
-        var pageSize = _viewport.Height - lh;
-        if (pageSize < lh) {
-            pageSize = lh;
+        var rh = GetRowHeight();
+        var pageSize = _viewport.Height - rh;
+        if (pageSize < rh) {
+            pageSize = rh;
         }
-        pageSize = Math.Floor(pageSize / lh) * lh;
+        pageSize = Math.Floor(pageSize / rh) * rh;
         ScrollValue += direction * pageSize;
     }
 

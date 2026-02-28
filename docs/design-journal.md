@@ -764,3 +764,96 @@ segments visible in all modes:
 - Word count may be useful for Markdown mode (writing-focused editors like iA Writer show this)
 - File dirty indicator (●) complements the title bar asterisk
 - Git branch display deferred — adds dependency, not core to text editing
+
+## 2026-02-28 — Streaming file loader (StreamingFileBuffer)
+
+Replaced `LazyFileBuffer` (mmap, UTF-16 LE only) with `StreamingFileBuffer` — a true
+streaming IBuffer that reads files in 1 MB binary chunks on a ThreadPool worker thread.
+
+Key design:
+- Pre-allocates `char[]` sized to file byte length (worst-case UTF-8)
+- Uses `System.Text.Decoder` for incremental UTF-8 decoding (handles split multi-byte
+  sequences at chunk boundaries)
+- BOM detection: UTF-8, UTF-16 LE, UTF-16 BE; default UTF-8
+- Builds line-start index (`long[]`) incrementally as chunks arrive via `ScanNewlines`
+- Thread safety: `volatile _loadedLen` acts as memory barrier; background writes to
+  `_data[_loadedLen..]`, UI reads `_data[0.._loadedLen-1]`; `_lineStarts` growth
+  protected by `lock`
+- Events: `ProgressChanged` (per chunk), `LoadComplete` (when done)
+- Integrates with existing `WholeBufSentinel` — PieceTable's `Length` / `VisitPieces`
+  call `ResolveLen()` which reads `_loadedLen`, growing seamlessly as chunks arrive
+
+`FileLoader` threshold lowered from 200 MB to 10 MB. Files ≤ 10 MB use
+`File.ReadAllText` + `StringBuffer`. Files > 10 MB use `StreamingFileBuffer`.
+`LazyFileBuffer.cs` deleted.
+
+Stats bar shows two-part load time for streaming files: "Load: 17.5ms + 553.0ms"
+(first renderable chunk + total). Non-streaming files show a single time.
+
+Performance: 185 MB UTF-8 file — first chunk 17.5ms, total 553ms (was a UI freeze).
+
+## 2026-02-28 — Save optimization (two-path FileSaver)
+
+Save was 1034ms for 185 MB (slower than load). Three bottlenecks identified:
+1. 64 KB chunk size → 2800 iterations
+2. `VisitPieces` WholeBufSentinel path allocated `new char[take]` per chunk
+3. `StreamWriter` default buffer is small
+
+Rewrote `FileSaver` with two paths:
+- **Fast path** (`SaveFromBuffer`): unedited buffer-backed docs (`IsOriginalContent`),
+  reads directly from `IBuffer.CopyTo` in 1 MB chunks, bypasses PieceTable entirely.
+  Thread-safe, no PieceTable access. Result: 180ms.
+- **General path** (`SaveFromPieceTable`): edited docs, 1 MB chunks with 1 MB
+  StreamWriter buffer via `table.ForEachPiece`.
+
+Added `PieceTable.IsOriginalContent` and `PieceTable.OrigBuffer` properties.
+Save already uses `Task.Run` (non-blocking UI).
+
+## 2026-02-28 — Fix: UI lockup on Enter key in 185 MB document
+
+After pressing Enter in a 185 MB document, PieceTable splits from 1 piece to 2–3.
+The single-piece delegation fast path (`LineCount`, `LineStartOfs`) no longer applies.
+`LineCount` saw `Length > EagerIndexThreshold` and returned `-1`. `EnsureLayout()`
+interpreted `-1` as "small enough for full layout" and called `GetText()`, materializing
+100M+ chars → freeze.
+
+Fix: `PieceTable.LineCount`, `LineStartOfs`, `LineFromOfs`, and `GetLine` now fall back
+to the buffer's line index (`_origBuf.LineCount`, `_origBuf.GetLineStart(idx)`) when the
+document exceeds `EagerIndexThreshold` and the buffer has a line index. These are
+**approximate** (off by ±edit chars) but prevent the freeze by keeping windowed layout
+engaged. Added `BinarySearchBufferLines` helper for `LineFromOfs`.
+
+A slight one-time JIT hesitation on the very first edit is expected — .NET compiles the
+new buffer-fallback code paths on first execution. Subsequent edits are instant.
+
+## 2026-02-28 — Edit timing stat
+
+Added `TimingStat Edit` to `PerfStatsData` and `_editSw` stopwatch to `EditorControl`.
+All edit operations in `OnKeyDown` (Enter, Tab, Backspace, Delete, Undo, Redo) and
+`OnTextInput` are instrumented. Stats bar shows "Edit: 0.12ms (0.08–0.45)" after any
+edit occurs.
+
+Test count: **216** (195 Core + 21 Rendering).
+
+## 2026-02-28 — Fix: scroll-to-bottom with word wrap
+
+When scrolled to the bottom of a large document with word-wrapping, the last few lines
+were clipped below the viewport. Root cause: `LayoutWindowed` maps scroll offset to
+`topLine` using a **global** `avgLineHeight`, but lines near the end may wrap more than
+average. The actual rendered content is taller than estimated, pushing the last lines
+below the viewport.
+
+Fix: after laying out the windowed content, if `bottomLine >= lineCount` (we're at the
+end) **and** we're at max scroll (`_scrollOffset.Y >= scrollMax - 1`), check whether the
+content bottom extends past the viewport. If so, anchor `_renderOffsetY` to
+`_viewport.Height - _layout.TotalHeight` so the last line sits at the viewport bottom.
+
+The `>= scrollMax - 1` guard is critical — without it, the anchor fires continuously
+while scrolling up from the bottom (because the fetched lines still include the end),
+making scroll-up appear stuck. With the guard, the anchor only engages at actual max
+scroll; the first scroll-up click starts moving immediately.
+
+Note: Notepad++ has a much worse version of this same problem with word-wrap enabled —
+scrolling to the bottom consistently shows 200–800 lines short of the real end, and the
+position is non-deterministic. Our approach is approximate (global-average scroll mapping)
+but deterministic, and the bottom-anchor ensures the true end is always reachable.
