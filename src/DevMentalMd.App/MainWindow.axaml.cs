@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using DevMentalMd.App.Services;
 using DevMentalMd.Core.Documents;
 using DevMentalMd.Core.IO;
@@ -25,6 +27,7 @@ public partial class MainWindow : Window {
         RebuildRecentMenu();
         WireScrollBar();
         WireDevMenu();
+        WireStatsBar();
 
         var sampleText =
             "# Welcome to DevMentalMD\n" +
@@ -92,6 +95,33 @@ public partial class MainWindow : Window {
     }
 
     // -------------------------------------------------------------------------
+    // Stats bar wiring
+    // -------------------------------------------------------------------------
+
+    private int _statsThrottle;
+
+    private void WireStatsBar() {
+        StatusBar.IsVisible = DevMode.IsEnabled;
+        Editor.StatsUpdated += () => {
+            // Throttle: update every 5th frame to avoid layout thrash
+            if (++_statsThrottle % 5 != 0) return;
+            // Defer to after the render pass — updating Text during Render()
+            // would invalidate a visual mid-pass and throw.
+            Dispatcher.UIThread.Post(() => {
+                var s = Editor.PerfStats;
+                StatsBar.Text =
+                    $"Layout: {s.Layout.Format()}  |  " +
+                    $"Render: {s.Render.Format()}  |  " +
+                    $"{s.LogicalLines:N0} lines, {s.ViewportLines} in view ({s.ViewportRows} rows)  |  " +
+                    $"{s.ScrollPercent:F1}%";
+                var load = s.LoadTimeMs > 0 ? $"{s.LoadTimeMs:F1}ms" : "—";
+                var save = s.SaveTimeMs > 0 ? $"{s.SaveTimeMs:F1}ms" : "—";
+                StatsBarIO.Text = $"Load: {load}  |  Save: {save}";
+            }, DispatcherPriority.Background);
+        };
+    }
+
+    // -------------------------------------------------------------------------
     // File menu handlers
     // -------------------------------------------------------------------------
 
@@ -119,7 +149,11 @@ public partial class MainWindow : Window {
             return;
         }
 
+        var sw = Stopwatch.StartNew();
         Editor.Document = await FileLoader.LoadAsync(path);
+        sw.Stop();
+        Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+
         _currentPath = path;
         Title = $"DevMentalMD — {Path.GetFileName(path)}";
 
@@ -177,7 +211,11 @@ public partial class MainWindow : Window {
             return;
         }
 
+        var sw = Stopwatch.StartNew();
         Editor.Document = await FileLoader.LoadAsync(path);
+        sw.Stop();
+        Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+
         _currentPath = path;
         Title = $"DevMentalMD — {Path.GetFileName(path)}";
 
@@ -187,7 +225,11 @@ public partial class MainWindow : Window {
     }
 
     private void OpenDevSample(ProceduralSample sample) {
+        var sw = Stopwatch.StartNew();
         Editor.Document = sample.CreateDocument();
+        sw.Stop();
+        Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+
         _currentPath = null;
         Title = $"DevMentalMD — {sample.DisplayName}";
     }
@@ -227,6 +269,9 @@ public partial class MainWindow : Window {
         if (Editor.Document is null) {
             return;
         }
+        var sw = Stopwatch.StartNew();
         await FileSaver.SaveAsync(Editor.Document, path);
+        sw.Stop();
+        Editor.PerfStats.SaveTimeMs = sw.Elapsed.TotalMilliseconds;
     }
 }

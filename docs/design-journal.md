@@ -728,3 +728,39 @@ git, a zipped format (like `.docx`) could bundle:
 - Custom metadata
 
 Low priority — git + `.md` covers most workflows.
+
+## 2026-02-28 — Performance stats panel (Phase 1 complete)
+
+Added a `PerfStats` infrastructure to `EditorControl` for measuring layout and render
+performance. `TimingStat` tracks exponential moving average (α=0.1), min, and max.
+Stats displayed in a status bar at the bottom of the window (DevMode only), updated
+every 5th render frame via `Dispatcher.UIThread.Post` to avoid invalidating visuals
+mid-render pass. Also fixed `ClipToBounds` on `EditorControl` — wrapped text was
+painting past the control's bounds into the status bar area.
+
+## 2026-02-28 — Status bar design (TODO — deferred)
+
+The status bar infrastructure is in place (Border + TextBlock, docked bottom). Currently
+it only shows dev stats. The following items should be added as permanent status bar
+segments visible in all modes:
+
+### Left section
+- **Caret position**: `Ln 42, Col 17` — line and column of the caret
+- **Selection count**: `(42 selected)` — character count when text is selected
+
+### Center section (DevMode only)
+- **Perf stats**: Layout/Render timing (EMA + min/max), line counts, scroll %
+
+### Right section
+- **Indent style**: `Spaces: 4` or `Tab Size: 4` — clickable to toggle/change
+- **Line endings**: `CRLF` or `LF` — clickable to convert
+- **Encoding**: `UTF-8`, `ANSI`, etc. — clickable to change
+- **Document type**: `Text`, `Markdown`, `XML`, etc. — dropdown, initially just `Text`
+- **Zoom**: percentage, TBD
+
+### Design notes
+- Inspired by VS Code / Visual Studio status bars
+- Each segment should eventually be clickable (opens a picker or toggles the setting)
+- Word count may be useful for Markdown mode (writing-focused editors like iA Writer show this)
+- File dirty indicator (●) complements the title bar asterisk
+- Git branch display deferred — adds dependency, not core to text editing

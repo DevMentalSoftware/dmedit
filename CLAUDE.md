@@ -1,0 +1,39 @@
+# DevMentalMD — Claude Session Context
+
+## First steps for every session
+
+1. Read `docs/design-journal.md` — chronological record of all design decisions and
+   architectural direction. The latest entries describe current work and deferred TODOs.
+2. Read `docs/csharp-style.md` — K&R braces, naming conventions, modern C# features.
+3. Read `docs/project-conventions.md` — abbreviations, reserved names, markdown preferences.
+
+## Project structure
+
+```
+src/
+  DevMentalMd.Core/        — Document model, PieceTable, IBuffer, blocks, FenwickTree, IO
+  DevMentalMd.Rendering/   — TextLayoutEngine (Avalonia TextLayout wrapper)
+  DevMentalMd.App/         — Avalonia desktop app: EditorControl, DualZoneScrollBar, MainWindow
+tests/
+  DevMentalMd.Core.Tests/
+  DevMentalMd.Rendering.Tests/
+docs/
+  design-journal.md        — append-only design history (READ THIS FIRST)
+  csharp-style.md          — coding style guide
+  project-conventions.md   — naming, abbreviations, reserved names
+```
+
+## Build and test
+
+```
+dotnet build
+dotnet test
+```
+
+All tests must pass before and after any change. Current baseline: **215 tests**
+(194 Core + 21 Rendering).
+
+## Dev mode
+
+Debug builds enable DevMode automatically. In Release builds, set `DEVMENTALMD_DEV=1`.
+DevMode shows: Dev menu, procedural sample documents in Recent menu, performance stats bar.

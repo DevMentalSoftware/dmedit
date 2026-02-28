@@ -261,6 +261,52 @@ public class LargeDocumentTests {
     }
 
     [Fact]
+    public void FileSaver_100KLines_ComplexContent_CompletesInReasonableTime() {
+        // 100K lines with varied content — headings, long paragraphs, blank lines.
+        // Verifies that save doesn't have a pathological performance issue.
+        const long lineCount = 100_000L;
+        var phrases = new[] {
+            "The quick brown fox jumps over the lazy dog.",
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+            "Debugging is twice as hard as writing the code in the first place.",
+            "All that glitters is not gold; not all those who wander are lost.",
+            "A journey of a thousand miles begins with a single step.",
+        };
+
+        string Generator(long i) {
+            var h = (uint)(i * 2654435761L);
+            if (i % 500 == 0) return $"# Section {i / 500 + 1}";
+            if (i % 50 == 0) return "";
+            var count = (int)(h % 4) + 1;
+            var parts = new string[count];
+            for (var p = 0; p < count; p++)
+                parts[p] = phrases[(h + (uint)p * 7919) % (uint)phrases.Length];
+            return $"[{i + 1:D6}] {string.Join(" ", parts)}";
+        }
+
+        var path = Path.Combine(Path.GetTempPath(), $"devmentalmd_perf_{Guid.NewGuid():N}.md");
+        try {
+            using var buf = new ProceduralBuffer(lineCount, Generator, stride: 100);
+            var table = new PieceTable(buf);
+            var doc = new Document(table);
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            FileSaver.Save(doc, path);
+            sw.Stop();
+
+            // Should complete in well under 30 seconds for 100K lines
+            Assert.True(sw.Elapsed.TotalSeconds < 30,
+                $"FileSaver took {sw.Elapsed.TotalSeconds:F1}s for {lineCount} lines, expected < 30s");
+
+            // Verify file was written and is non-empty
+            var fi = new FileInfo(path);
+            Assert.True(fi.Length > 1_000_000, $"File is only {fi.Length} bytes, expected > 1MB");
+        } finally {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void FileSaver_LargeDoc_StreamsWithoutFullAlloc() {
         // 10_000 lines of ~20 chars each = ~200 KB — small enough for a unit test
         // but exercises the chunked streaming path.

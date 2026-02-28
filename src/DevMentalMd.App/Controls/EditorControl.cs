@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -91,8 +92,70 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private Size _viewport;
     private Vector _scrollOffset;
     private double _lineHeight;
+    private double _charWidth;
     private double _renderOffsetY;
     private EventHandler? _scrollInvalidated;
+
+    // -------------------------------------------------------------------------
+    // Performance stats
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Tracks timing statistics with exponential moving average, min, and max.
+    /// </summary>
+    public sealed class TimingStat {
+        private const double Alpha = 0.1; // EMA smoothing factor
+        public double Avg { get; private set; }
+        public double Min { get; private set; } = double.MaxValue;
+        public double Max { get; private set; }
+        public int Count { get; private set; }
+
+        public void Record(double ms) {
+            Count++;
+            if (Count == 1) {
+                Avg = ms;
+            } else {
+                Avg = Alpha * ms + (1 - Alpha) * Avg;
+            }
+            if (ms < Min) Min = ms;
+            if (ms > Max) Max = ms;
+        }
+
+        public void Reset() {
+            Avg = 0;
+            Min = double.MaxValue;
+            Max = 0;
+            Count = 0;
+        }
+
+        public string Format() =>
+            Count == 0 ? "—" : $"{Avg:F2}ms ({Min:F2}–{Max:F2})";
+    }
+
+    /// <summary>Performance statistics exposed for the stats panel.</summary>
+    public sealed class PerfStatsData {
+        public TimingStat Layout { get; } = new();
+        public TimingStat Render { get; } = new();
+        public long LogicalLines { get; set; }
+        public int ViewportLines { get; set; }
+        public int ViewportRows { get; set; }
+        public double ScrollPercent { get; set; }
+        public double LoadTimeMs { get; set; }
+        public double SaveTimeMs { get; set; }
+
+        public void Reset() {
+            Layout.Reset();
+            Render.Reset();
+        }
+    }
+
+    private readonly Stopwatch _perfSw = new();
+
+    /// <summary>Live performance stats. Updated after each render.</summary>
+    public PerfStatsData PerfStats { get; } = new();
+
+    /// <summary>Fired after each render with updated stats.</summary>
+    public event Action? StatsUpdated;
 
     /// <summary>
     /// Documents with more logical lines than this use windowed layout —
@@ -141,6 +204,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     public EditorControl() {
         Focusable = true;
+        ClipToBounds = true;
         _caretTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(530) };
         _caretTimer.Tick += OnCaretTick;
         _caretTimer.Start();
@@ -208,11 +272,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             }
             _scrollOffset = default; // reset scroll to top
             _lineHeight = 0;         // force line-height recomputation
+            _charWidth = 0;
+            PerfStats.Reset();
             InvalidateLayout();
         } else if (e.Property == FontFamilyProperty
                    || e.Property == FontSizeProperty
                    || e.Property == ForegroundBrushProperty) {
             _lineHeight = 0;
+            _charWidth = 0;
             InvalidateLayout();
         }
     }
@@ -240,6 +307,18 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         return _lineHeight;
     }
 
+    private double GetCharWidth() {
+        if (_charWidth > 0) {
+            return _charWidth;
+        }
+        var typeface = new Typeface(FontFamily);
+        using var tl = new TextLayout(
+            "0", typeface, FontSize, ForegroundBrush,
+            maxWidth: double.PositiveInfinity, maxHeight: double.PositiveInfinity);
+        _charWidth = tl.WidthIncludingTrailingWhitespace > 0 ? tl.WidthIncludingTrailingWhitespace : 8.0;
+        return _charWidth;
+    }
+
     /// <summary>
     /// Builds or retrieves the current layout.
     /// For small documents (&lt; <see cref="WindowedLayoutThreshold"/> lines), the entire text is laid out.
@@ -249,6 +328,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (_layout != null) {
             return _layout;
         }
+        _perfSw.Restart();
+
         var doc = Document;
         var typeface = new Typeface(FontFamily);
         var lh = GetLineHeight();
@@ -263,7 +344,38 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             _extent = new Size(maxW, _layout.TotalHeight);
             _renderOffsetY = -_scrollOffset.Y;
         }
+
+        _perfSw.Stop();
+        PerfStats.Layout.Record(_perfSw.Elapsed.TotalMilliseconds);
+        PerfStats.LogicalLines = lineCount;
+        PerfStats.ViewportLines = _layout?.Lines.Count ?? 0;
+        PerfStats.ViewportRows = CountVisualRows(_layout);
+        PerfStats.ScrollPercent = _extent.Height > _viewport.Height
+            ? _scrollOffset.Y / (_extent.Height - _viewport.Height) * 100
+            : 0;
+
         return _layout!;
+    }
+
+    private static int CountVisualRows(LayoutResult? layout) {
+        if (layout == null) return 0;
+        var lh = 0.0;
+        var rows = 0;
+        foreach (var line in layout.Lines) {
+            // First line establishes the single-row height
+            if (lh <= 0 && line.Height > 0) lh = line.Layout.Height > 0 ? GetSingleRowHeight(line) : line.Height;
+            rows += lh > 0 ? Math.Max(1, (int)Math.Round(line.Height / lh)) : 1;
+        }
+        return rows;
+    }
+
+    private static double GetSingleRowHeight(LayoutLine line) {
+        // TextLayout.Height for a single unwrapped line is the row height.
+        // For a wrapped line, we need the height of one row.
+        // TextLayout stores line metrics — approximate by dividing total height
+        // by the number of visual lines it produces.
+        var textLines = line.Layout.TextLines;
+        return textLines.Count > 0 ? line.Height / textLines.Count : line.Height;
     }
 
     protected override Size MeasureOverride(Size availableSize) {
@@ -296,16 +408,35 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// Fetches only the text visible in the current scroll viewport and lays it out.
     /// Sets <see cref="_layout"/>, <see cref="_extent"/>, and <see cref="_renderOffsetY"/>.
     /// </summary>
+    /// <remarks>
+    /// The scroll math estimates total visual rows from character count and character width,
+    /// so that the extent accounts for word-wrap and the scroll-to-line mapping works in
+    /// visual-row units. For monospace fonts this is exact; for proportional fonts it's a
+    /// close approximation.
+    /// </remarks>
     private void LayoutWindowed(Document doc, long lineCount, Typeface typeface, double maxWidth) {
         var lh = GetLineHeight();
-        var topLine = Math.Clamp((long)(_scrollOffset.Y / lh), 0, Math.Max(0, lineCount - 1));
-        var visibleLines = (int)(_viewport.Height / lh) + 4; // a few extra for partial lines
+        var cw = GetCharWidth();
+        var charsPerRow = Math.Max(1, (int)(maxWidth / cw));
+
+        // Estimate total visual rows from document character count
+        var totalChars = doc.Table.Length;
+        var totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
+
+        // Average visual rows per logical line → average height per logical line
+        var avgRowsPerLine = Math.Max(1.0, (double)totalVisualRows / lineCount);
+        var avgLineHeight = avgRowsPerLine * lh;
+
+        // Map scroll offset → top logical line using the average height
+        var topLine = Math.Clamp((long)(_scrollOffset.Y / avgLineHeight), 0, Math.Max(0, lineCount - 1));
+
+        // Fetch enough logical lines to fill the viewport (+ buffer for partial lines)
+        var visibleLines = (int)(_viewport.Height / lh) + 4;
         var bottomLine = Math.Min(lineCount, topLine + visibleLines);
 
         var startOfs = topLine > 0 ? doc.Table.LineStartOfs(topLine) : 0L;
         long endOfs;
         if (bottomLine >= lineCount) {
-            // At the very bottom — need document length (expensive first time, cached after).
             endOfs = doc.Table.Length;
         } else {
             endOfs = doc.Table.LineStartOfs(bottomLine);
@@ -315,8 +446,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var text = len > 0 ? doc.Table.GetText(startOfs, len) : string.Empty;
 
         _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, maxWidth, startOfs);
-        _extent = new Size(maxWidth, lineCount * lh);
-        _renderOffsetY = topLine * lh - _scrollOffset.Y;
+        _extent = new Size(maxWidth, totalVisualRows * lh);
+        _renderOffsetY = topLine * avgLineHeight - _scrollOffset.Y;
     }
 
     // -------------------------------------------------------------------------
@@ -324,6 +455,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     // -------------------------------------------------------------------------
 
     public override void Render(DrawingContext context) {
+        _perfSw.Restart();
+
         var layout = EnsureLayout();
         var doc = Document;
 
@@ -351,6 +484,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc != null && _caretVisible && IsFocused) {
             DrawCaret(context, layout, doc.Selection.Caret);
         }
+
+        _perfSw.Stop();
+        PerfStats.Render.Record(_perfSw.Elapsed.TotalMilliseconds);
+        StatsUpdated?.Invoke();
     }
 
     private void DrawSelection(DrawingContext context, LayoutResult layout, Selection sel) {

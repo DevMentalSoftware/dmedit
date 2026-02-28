@@ -34,6 +34,27 @@
             </MenuItem>
         </Menu>
 
+        <Border x:Name="StatusBar"
+                DockPanel.Dock="Bottom"
+                BorderBrush="#D0D0D0"
+                BorderThickness="0,1,0,0"
+                Background="#F0F0F0">
+            <StackPanel>
+                <TextBlock x:Name="StatsBar"
+                           FontFamily="Cascadia Code, Consolas, Courier New"
+                           FontSize="11"
+                           Foreground="#606060"
+                           Padding="6,2,6,0"
+                           Text="Stats: —" />
+                <TextBlock x:Name="StatsBarIO"
+                           FontFamily="Cascadia Code, Consolas, Courier New"
+                           FontSize="11"
+                           Foreground="#606060"
+                           Padding="6,0,6,2"
+                           Text="Load: —  |  Save: —" />
+            </StackPanel>
+        </Border>
+
         <Grid ColumnDefinitions="*,Auto">
             <controls:EditorControl x:Name="Editor"
                                     Grid.Column="0"
