@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
@@ -17,6 +18,7 @@ public partial class MainWindow : Window {
     private LoadResult? _lastLoadResult;
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
     private readonly AppSettings _settings = AppSettings.Load();
+    private int _staticMenuItemCount;
 
     public MainWindow() {
         InitializeComponent();
@@ -25,6 +27,10 @@ public partial class MainWindow : Window {
         MenuOpen.Click += OnOpen;
         MenuSave.Click += OnSave;
         MenuSaveAs.Click += OnSaveAs;
+        MenuClose.Click += (_, _) => CloseDocument();
+        MenuCloseAll.Click += (_, _) => CloseDocument();
+
+        _staticMenuItemCount = MenuFile.Items.Count;
 
         RebuildRecentMenu();
         WireScrollBar();
@@ -135,7 +141,9 @@ public partial class MainWindow : Window {
     // File menu handlers
     // -------------------------------------------------------------------------
 
-    private void OnNew(object? sender, RoutedEventArgs e) {
+    private void OnNew(object? sender, RoutedEventArgs e) => CloseDocument();
+
+    private void CloseDocument() {
         Editor.Document = new Document();
         _currentPath = null;
         _lastLoadResult = null;
@@ -189,29 +197,39 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     private void RebuildRecentMenu() {
-        MenuRecent.Items.Clear();
+        // Remove previous dynamic items (recent files + dev samples).
+        while (MenuFile.Items.Count > _staticMenuItemCount) {
+            MenuFile.Items.RemoveAt(MenuFile.Items.Count - 1);
+        }
 
-        foreach (var path in _recentFiles.Paths) {
-            var captured = path;
-            var item = new MenuItem { Header = path };
-            item.Click += async (_, _) => await OpenRecentFileAsync(captured);
-            MenuRecent.Items.Add(item);
+        var recentPaths = _recentFiles.Paths;
+        var visibleCount = Math.Min(recentPaths.Count, _settings.RecentFileCount);
+
+        if (visibleCount > 0) {
+            MenuFile.Items.Add(new Separator());
+            for (var i = 0; i < visibleCount; i++) {
+                var captured = recentPaths[i];
+                var item = new MenuItem { Header = Path.GetFileName(captured) };
+                ToolTip.SetTip(item, captured);
+                item.Click += async (_, _) => {
+                    MenuFile.IsSubMenuOpen = false;
+                    await OpenRecentFileAsync(captured);
+                };
+                MenuFile.Items.Add(item);
+            }
         }
 
         if (DevMode.IsEnabled) {
-            if (_recentFiles.Paths.Count > 0) {
-                MenuRecent.Items.Add(new Separator());
-            }
+            MenuFile.Items.Add(new Separator());
             foreach (var sample in DevSamples.All) {
                 var captured = sample;
                 var item = new MenuItem { Header = sample.DisplayName };
-                item.Click += (_, _) => OpenDevSample(captured);
-                MenuRecent.Items.Add(item);
+                item.Click += (_, _) => {
+                    MenuFile.IsSubMenuOpen = false;
+                    OpenDevSample(captured);
+                };
+                MenuFile.Items.Add(item);
             }
-        }
-
-        if (MenuRecent.Items.Count == 0) {
-            MenuRecent.Items.Add(new MenuItem { Header = "(no recent files)", IsEnabled = false });
         }
     }
 

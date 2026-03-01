@@ -76,20 +76,24 @@ public static class DevSamples {
     }
 
     public static IReadOnlyList<ProceduralSample> All { get; } = [
-        new("[DEV] 100 lines",
+        new("100 lines",
             100L,
             i => $"Line {i + 1}: Sample content for interactive testing."),
 
-        new("[DEV] 10 000 lines",
+        new("10,000 lines",
             10_000L,
             i => $"Line {i + 1:D5}: The quick brown fox jumps over the lazy dog."),
 
-        new("[DEV] 1 000 000 lines (simple)",
+        new("1,000,000 lines (simple)",
             1_000_000L,
-            i => $"Line {i + 1:D7}: Generated document stress test."),
+            i => $"Line {i + 1:D7}: All work and no play makes Jack a dull boy."),
 
-        new("[DEV] 1 000 000 lines (complex)",
+        new("1,000,000 lines (complex)",
             1_000_000L,
+            GenerateComplexLine),
+
+        new("5,000,000 lines (complex)",
+            5_000_000L,
             GenerateComplexLine),
     ];
 }

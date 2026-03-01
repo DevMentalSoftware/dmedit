@@ -9,13 +9,15 @@
         Width="900" Height="650">
     <DockPanel>
         <Menu DockPanel.Dock="Top">
-            <MenuItem Header="_File">
+            <MenuItem Header="_File" x:Name="MenuFile">
                 <MenuItem Header="_New" x:Name="MenuNew" />
                 <MenuItem Header="_Open…" x:Name="MenuOpen" />
-                <MenuItem Header="Open _Recent" x:Name="MenuRecent" />
                 <Separator />
                 <MenuItem Header="_Save" x:Name="MenuSave" />
                 <MenuItem Header="Save _As…" x:Name="MenuSaveAs" />
+                <Separator />
+                <MenuItem Header="_Close" x:Name="MenuClose" InputGesture="Ctrl+F4" />
+                <MenuItem Header="Close A_ll" x:Name="MenuCloseAll" InputGesture="Ctrl+Shift+F4" />
             </MenuItem>
             <MenuItem Header="_Dev" x:Name="MenuDev">
                 <MenuItem>

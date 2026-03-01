@@ -6,7 +6,7 @@ using System.Text.Json;
 namespace DevMentalMd.App.Services;
 
 public sealed class RecentFilesStore {
-    private const int MaxEntries = 10;
+    private const int MaxEntries = 25;
 
     private static readonly string StorePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

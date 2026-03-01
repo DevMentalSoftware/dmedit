@@ -33,6 +33,15 @@ public sealed class AppSettings {
     public double OuterThumbScrollRateMultiplier { get; set; } = 2.0;
 
     // -----------------------------------------------------------------
+    // Recent files
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Number of recent files to display in the File menu.
+    /// </summary>
+    public int RecentFileCount { get; set; } = 10;
+
+    // -----------------------------------------------------------------
     // (future settings go here)
     // -----------------------------------------------------------------
 
