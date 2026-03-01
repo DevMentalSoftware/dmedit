@@ -119,6 +119,12 @@ public sealed class DualZoneScrollBar : Control {
     /// <summary>Fired when the user drags or clicks. Carries the requested new scroll value.</summary>
     public event Action<double>? ScrollRequested;
 
+    /// <summary>True while any drag operation is in progress (inner, outer, or middle).</summary>
+    public bool IsDragging => _isDragging;
+
+    /// <summary>Fired when any pointer interaction ends (drag release, arrow-hold release, etc.).</summary>
+    public event Action? InteractionEnded;
+
     // -------------------------------------------------------------------------
     // Interaction state
     // -------------------------------------------------------------------------
@@ -519,6 +525,7 @@ public sealed class DualZoneScrollBar : Control {
         e.Pointer.Capture(null);
         UpdateHover(e.GetPosition(this));
         InvalidateVisual();
+        InteractionEnded?.Invoke();
     }
 
     private void UpdateHover(Point pt) {
@@ -594,6 +601,41 @@ public sealed class DualZoneScrollBar : Control {
             }
         }
 
+        InvalidateVisual();
+    }
+
+    // -------------------------------------------------------------------------
+    // External middle-drag (initiated from EditorControl)
+    // -------------------------------------------------------------------------
+
+    /// <summary>Begin a middle-drag initiated from outside (e.g. EditorControl).</summary>
+    public void BeginExternalMiddleDrag() {
+        _isMiddleDrag = true;
+        _isDragging = true;
+        _pressedZone = HitZone.OuterBottom;
+        _dragStartMouseY = 0;
+        _dragStartValue = _value;
+        _outerDragVisualOffset = 0;
+        InvalidateVisual();
+    }
+
+    /// <summary>Update the external middle-drag with a pixel delta from the press point.</summary>
+    public void UpdateExternalMiddleDrag(double deltaPixels) {
+        if (!_isMiddleDrag) {
+            return;
+        }
+        HandleDragMove(_dragStartMouseY + deltaPixels);
+    }
+
+    /// <summary>End the external middle-drag; snap visuals back.</summary>
+    public void EndExternalMiddleDrag() {
+        if (!_isMiddleDrag) {
+            return;
+        }
+        _isDragging = false;
+        _isMiddleDrag = false;
+        _outerDragVisualOffset = 0;
+        _pressedZone = HitZone.None;
         InvalidateVisual();
     }
 

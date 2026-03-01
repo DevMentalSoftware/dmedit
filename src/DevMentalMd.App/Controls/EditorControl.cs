@@ -87,6 +87,11 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private bool _caretVisible = true;
     private readonly DispatcherTimer _caretTimer;
     private bool _pointerDown;
+    private bool _middleDrag;
+    private double _middleDragStartY;
+
+    /// <summary>Optional reference to the scrollbar for middle-drag visual feedback.</summary>
+    public DualZoneScrollBar? ScrollBar { get; set; }
 
     // Scroll state
     private Size _extent;
@@ -209,6 +214,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 _scrollOffset = newOffset;
                 _layout?.Dispose();
                 _layout = null;
+                // Hide caret during scroll. For drags the !scrollDrag render
+                // guard suppresses drawing; InteractionEnded shows it on
+                // release. For wheel/arrow the timer naturally recovers.
+                _caretVisible = false;
                 InvalidateVisual();
                 ScrollChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -679,8 +688,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             line.Layout.Draw(context, new Point(0, y));
         }
 
-        // Draw caret
-        if (doc != null && _caretVisible && IsFocused) {
+        // Draw caret (hidden during any scroll-drag operation)
+        var scrollDrag = ScrollBar?.IsDragging ?? false;
+        if (doc != null && _caretVisible && IsFocused && !_middleDrag && !scrollDrag) {
             DrawCaret(context, layout, doc.Selection.Caret);
         }
 
@@ -753,11 +763,17 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     // -------------------------------------------------------------------------
 
     private void OnCaretTick(object? sender, EventArgs e) {
+        if (_middleDrag) {
+            return;
+        }
         _caretVisible = !_caretVisible;
         InvalidateVisual();
     }
 
-    private void ResetCaretBlink() {
+    public void ResetCaretBlink() {
+        if (_middleDrag) {
+            return;
+        }
         _caretVisible = true;
         _caretTimer.Stop();
         _caretTimer.Start();
@@ -1025,7 +1041,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         InvalidateVisual();
         var props = e.GetCurrentPoint(this).Properties;
         if (props.IsMiddleButtonPressed) {
-            return; // middle-click is reserved for scrollbar drag
+            _middleDrag = true;
+            _middleDragStartY = e.GetPosition(this).Y;
+            Cursor = new Cursor(StandardCursorType.None);
+            ScrollBar?.BeginExternalMiddleDrag();
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            InvalidateVisual();
+            return;
         }
         Focus();
         var doc = Document;
@@ -1056,6 +1079,11 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     protected override void OnPointerMoved(PointerEventArgs e) {
         base.OnPointerMoved(e);
+        if (_middleDrag) {
+            var deltaY = e.GetPosition(this).Y - _middleDragStartY;
+            ScrollBar?.UpdateExternalMiddleDrag(deltaY);
+            return;
+        }
         if (!_pointerDown) {
             return; // only left-drag extends selection
         }
@@ -1074,6 +1102,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e) {
         base.OnPointerReleased(e);
+        if (_middleDrag) {
+            _middleDrag = false;
+            Cursor = new Cursor(StandardCursorType.Ibeam);
+            ScrollBar?.EndExternalMiddleDrag();
+            e.Pointer.Capture(null);
+            ResetCaretBlink();
+            return;
+        }
         _pointerDown = false;
         e.Pointer.Capture(null);
         // Hide caret immediately; the blink timer will show it on its next tick.

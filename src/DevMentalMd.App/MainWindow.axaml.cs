@@ -62,6 +62,9 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     private void WireScrollBar() {
+        // Give the editor a reference so it can drive middle-drag visuals.
+        Editor.ScrollBar = ScrollBar;
+
         // Editor → ScrollBar: push scroll state whenever it changes
         Editor.ScrollChanged += (_, _) => SyncScrollBarFromEditor();
 
@@ -69,6 +72,9 @@ public partial class MainWindow : Window {
         ScrollBar.ScrollRequested += newValue => {
             Editor.ScrollValue = newValue;
         };
+
+        // Show caret immediately when any scrollbar interaction ends
+        ScrollBar.InteractionEnded += () => Editor.ResetCaretBlink();
     }
 
     private void SyncScrollBarFromEditor() {
