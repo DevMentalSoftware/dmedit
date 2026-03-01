@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
@@ -700,6 +701,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         StatsUpdated?.Invoke();
     }
 
+    private const double SelCornerRadius = 3.0;
+
     private void DrawSelection(DrawingContext context, LayoutResult layout, Selection sel) {
         var localStart = (int)(sel.Start - layout.ViewportBase);
         var localEnd = (int)(sel.End - layout.ViewportBase);
@@ -715,6 +718,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             return;
         }
 
+        // Collect all selection rects so we know first/last for corner rounding.
+        var rects = new List<Rect>();
         foreach (var line in layout.Lines) {
             var lineY = line.Y + _renderOffsetY;
             if (lineY + line.Height < 0) {
@@ -723,12 +728,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             if (lineY > Bounds.Height) {
                 break;
             }
-            // Skip lines outside the selection
             if (line.CharEnd <= localStart || line.CharStart >= localEnd) {
                 continue;
             }
 
-            // Selected range in line-local coordinates
             var rangeStart = Math.Max(0, localStart - line.CharStart);
             var rangeEnd = Math.Min(line.CharLen, localEnd - line.CharStart);
             var rangeLen = rangeEnd - rangeStart;
@@ -736,12 +739,70 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 continue;
             }
 
-            // HitTestTextRange returns per-visual-row rects sized to the actual text.
             foreach (var rect in line.Layout.HitTestTextRange(rangeStart, rangeLen)) {
-                var selRect = new Rect(rect.X, lineY + rect.Y, rect.Width, rect.Height);
-                context.FillRectangle(SelectionBrush, selRect);
+                rects.Add(new Rect(rect.X, lineY + rect.Y, rect.Width, rect.Height));
             }
         }
+
+        if (rects.Count == 0) {
+            return;
+        }
+
+        // Round a corner only when it is truly "exposed" — the adjacent
+        // rect doesn't cover it.  A corner is covered when the neighbour
+        // extends at least as far in that direction.
+        //   TL: covered when above.Left  <= cur.Left   (above reaches left)
+        //   TR: covered when above.Right >= cur.Right   (above reaches right)
+        //   BL: covered when below.Left  <= cur.Left
+        //   BR: covered when below.Right >= cur.Right
+        const double r = SelCornerRadius;
+        const double eps = 0.5;
+        for (var i = 0; i < rects.Count; i++) {
+            var cur = rects[i];
+            var hasAbove = i > 0;
+            var hasBelow = i < rects.Count - 1;
+            var above = hasAbove ? rects[i - 1] : default;
+            var below = hasBelow ? rects[i + 1] : default;
+
+            var tl = !hasAbove || above.Left  > cur.Left  + eps ? r : 0;
+            var tr = !hasAbove || above.Right < cur.Right - eps ? r : 0;
+            var bl = !hasBelow || below.Left  > cur.Left  + eps ? r : 0;
+            var br = !hasBelow || below.Right < cur.Right - eps ? r : 0;
+
+            FillRoundedRect(context, SelectionBrush, cur, tl, tr, br, bl);
+        }
+    }
+
+    /// <summary>Fills a rectangle with individually rounded corners.</summary>
+    private static void FillRoundedRect(
+        DrawingContext ctx, IBrush brush, Rect r,
+        double tl, double tr, double br, double bl) {
+        if (tl == 0 && tr == 0 && br == 0 && bl == 0) {
+            ctx.FillRectangle(brush, r);
+            return;
+        }
+        var g = new StreamGeometry();
+        using (var c = g.Open()) {
+            c.BeginFigure(new Point(r.Left + tl, r.Top), true);
+            c.LineTo(new Point(r.Right - tr, r.Top));
+            if (tr > 0) {
+                c.ArcTo(new Point(r.Right, r.Top + tr), new Size(tr, tr), 0, false, SweepDirection.Clockwise);
+            }
+            c.LineTo(new Point(r.Right, r.Bottom - br));
+            if (br > 0) {
+                c.ArcTo(new Point(r.Right - br, r.Bottom), new Size(br, br), 0, false, SweepDirection.Clockwise);
+            }
+            c.LineTo(new Point(r.Left + bl, r.Bottom));
+            if (bl > 0) {
+                c.ArcTo(new Point(r.Left, r.Bottom - bl), new Size(bl, bl), 0, false, SweepDirection.Clockwise);
+            }
+            c.LineTo(new Point(r.Left, r.Top + tl));
+            if (tl > 0) {
+                c.ArcTo(new Point(r.Left + tl, r.Top), new Size(tl, tl), 0, false, SweepDirection.Clockwise);
+            }
+            c.EndFigure(true);
+        }
+        ctx.DrawGeometry(brush, null, g);
     }
 
     private void DrawCaret(DrawingContext context, LayoutResult layout, long caretOfs) {
