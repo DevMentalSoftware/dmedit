@@ -14,6 +14,7 @@ namespace DevMentalMd.App;
 
 public partial class MainWindow : Window {
     private string? _currentPath;
+    private LoadResult? _lastLoadResult;
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
     private readonly AppSettings _settings = AppSettings.Load();
 
@@ -123,7 +124,9 @@ public partial class MainWindow : Window {
                     load = s.LoadTimeMs > 0 ? $"{s.LoadTimeMs:F1}ms" : "—";
                 }
                 var save = s.SaveTimeMs > 0 ? $"{s.SaveTimeMs:F1}ms" : "—";
-                StatsBarIO.Text = $"Load: {load}  |  Save: {save}";
+                StatsBarIO.Text =
+                    $"Load: {load}  |  Save: {save}  |  " +
+                    $"Mem: {s.MemoryMb:F0} MB (max {s.PeakMemoryMb:F0} MB)";
             }, DispatcherPriority.Background);
         };
     }
@@ -135,6 +138,7 @@ public partial class MainWindow : Window {
     private void OnNew(object? sender, RoutedEventArgs e) {
         Editor.Document = new Document();
         _currentPath = null;
+        _lastLoadResult = null;
         Title = "DevMentalMD";
     }
 
@@ -143,8 +147,8 @@ public partial class MainWindow : Window {
             Title = "Open Markdown File",
             AllowMultiple = false,
             FileTypeFilter = [
-                new FilePickerFileType("Markdown") { Patterns = ["*.md", "*.markdown"] },
-                new FilePickerFileType("All files") { Patterns = ["*.*"] }
+                new FilePickerFileType("All files") { Patterns = ["*.*"] },
+                new FilePickerFileType("Markdown") { Patterns = ["*.md", "*.markdown"] }
             ]
         });
 
@@ -157,11 +161,13 @@ public partial class MainWindow : Window {
         }
 
         var sw = Stopwatch.StartNew();
-        Editor.Document = await FileLoader.LoadAsync(path);
+        var result = await FileLoader.LoadAsync(path);
+        _lastLoadResult = result;
+        Editor.Document = result.Document;
         WireStreamingProgress(sw);
 
         _currentPath = path;
-        Title = $"DevMentalMD — {Path.GetFileName(path)}";
+        Title = $"DevMentalMD — {result.DisplayName}";
 
         _recentFiles.Push(path);
         _recentFiles.Save();
@@ -218,11 +224,13 @@ public partial class MainWindow : Window {
         }
 
         var sw = Stopwatch.StartNew();
-        Editor.Document = await FileLoader.LoadAsync(path);
+        var result = await FileLoader.LoadAsync(path);
+        _lastLoadResult = result;
+        Editor.Document = result.Document;
         WireStreamingProgress(sw);
 
         _currentPath = path;
-        Title = $"DevMentalMD — {Path.GetFileName(path)}";
+        Title = $"DevMentalMD — {result.DisplayName}";
 
         _recentFiles.Push(path);
         _recentFiles.Save();
@@ -236,6 +244,7 @@ public partial class MainWindow : Window {
         Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
 
         _currentPath = null;
+        _lastLoadResult = null;
         Title = $"DevMentalMD — {sample.DisplayName}";
     }
 
@@ -244,9 +253,15 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     private async Task SaveAsAsync() {
-        var suggestedName = _currentPath is null
-            ? "untitled.md"
-            : Path.GetFileName(_currentPath);
+        // For zip files, suggest the inner entry name (e.g., "model.xml" not "model.zip").
+        string suggestedName;
+        if (_lastLoadResult is { WasZipped: true, InnerEntryName: { } innerName }) {
+            suggestedName = innerName;
+        } else if (_currentPath is not null) {
+            suggestedName = Path.GetFileName(_currentPath);
+        } else {
+            suggestedName = "untitled.md";
+        }
 
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions {
             Title = "Save Markdown File",

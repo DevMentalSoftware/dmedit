@@ -3,9 +3,9 @@ using System.Text;
 namespace DevMentalMd.Core.Buffers;
 
 /// <summary>
-/// An <see cref="IBuffer"/> that reads a file in binary chunks on a background thread,
-/// decoding to UTF-8 (or BOM-detected encoding) incrementally. The first chunk is available
-/// almost immediately, and the line index is built as each chunk arrives.
+/// An <see cref="IBuffer"/> that reads from a file or arbitrary stream in binary chunks on a
+/// background thread, decoding to UTF-8 (or BOM-detected encoding) incrementally. The first
+/// chunk is available almost immediately, and the line index is built as each chunk arrives.
 /// </summary>
 /// <remarks>
 /// Thread safety: the background thread writes to <c>_data[_loadedLen..]</c> while the UI
@@ -22,14 +22,16 @@ public sealed class StreamingFileBuffer : IBuffer {
     private volatile bool _done;
 
     // Line index — built incrementally as chunks arrive.
-    private long[] _lineStarts;
-    private volatile int _lineCount; // number of valid entries in _lineStarts
+    private long[] _lineStarts = null!; // initialized by InitBuffers, called from all constructors
+    private volatile int _lineCount;    // number of valid entries in _lineStarts
     private bool _prevWasCr;         // \r at end of previous chunk (background thread only)
 
     private readonly object _lock = new();
     private readonly CancellationTokenSource _cts = new();
-    private readonly string _path;
-    private readonly long _byteLen;
+    private readonly string? _path;
+    private readonly long _estimatedLen;
+    private readonly Stream? _externalStream;
+    private readonly IDisposable? _owner;
 
     /// <summary>Fired after each chunk is decoded (on the background thread).</summary>
     public event Action? ProgressChanged;
@@ -45,15 +47,31 @@ public sealed class StreamingFileBuffer : IBuffer {
     /// <param name="byteLen">File size in bytes (from <c>new FileInfo(path).Length</c>).</param>
     public StreamingFileBuffer(string path, long byteLen) {
         _path = path;
-        _byteLen = byteLen;
+        _estimatedLen = byteLen;
+        InitBuffers(byteLen);
+    }
 
+    /// <summary>
+    /// Creates a streaming buffer that reads from an arbitrary <paramref name="stream"/>.
+    /// The caller provides an estimated uncompressed size for pre-allocation.
+    /// The <paramref name="owner"/> (e.g., a <c>ZipArchive</c>) is disposed when loading
+    /// completes or the buffer is disposed.
+    /// </summary>
+    public StreamingFileBuffer(Stream stream, long estimatedCharLen, IDisposable? owner = null) {
+        _externalStream = stream;
+        _owner = owner;
+        _estimatedLen = estimatedCharLen;
+        InitBuffers(estimatedCharLen);
+    }
+
+    private void InitBuffers(long estimatedLen) {
         // Worst case for UTF-8: 1 char per byte. Clamp to int.MaxValue.
-        var maxChars = (int)Math.Min(byteLen, int.MaxValue);
-        _data = new char[maxChars];
+        var maxChars = (int)Math.Min(estimatedLen, int.MaxValue);
+        _data = new char[Math.Max(maxChars, 1024)];
 
         // Initial line-starts: line 0 always starts at offset 0.
         // Pre-allocate a reasonable estimate (~1 line per 80 bytes).
-        var estimatedLines = Math.Max(16, (int)Math.Min(byteLen / 80, int.MaxValue / 8));
+        var estimatedLines = Math.Max(16, (int)Math.Min(estimatedLen / 80, int.MaxValue / 8));
         _lineStarts = new long[estimatedLines];
         _lineStarts[0] = 0L;
         _lineCount = 1;
@@ -102,6 +120,7 @@ public sealed class StreamingFileBuffer : IBuffer {
     public void Dispose() {
         _cts.Cancel();
         _cts.Dispose();
+        _owner?.Dispose();
         _data = null; // allow GC
     }
 
@@ -110,7 +129,7 @@ public sealed class StreamingFileBuffer : IBuffer {
     // -----------------------------------------------------------------
 
     /// <summary>
-    /// Starts reading the file on a thread-pool worker. Returns immediately.
+    /// Starts reading the file or stream on a thread-pool worker. Returns immediately.
     /// The first chunk fires <see cref="ProgressChanged"/> within a few milliseconds.
     /// </summary>
     public void StartLoading(CancellationToken externalCt = default) {
@@ -120,52 +139,55 @@ public sealed class StreamingFileBuffer : IBuffer {
     }
 
     private void LoadWorker(CancellationTokenSource linkedCts) {
+        Stream? ownedStream = null;
         try {
             var ct = linkedCts.Token;
-            using var fs = new FileStream(_path, FileMode.Open, FileAccess.Read,
-                FileShare.Read, ChunkSize, FileOptions.SequentialScan);
 
-            var decoder = DetectEncodingAndCreateDecoder(fs);
+            // Open a FileStream if constructed with a path; otherwise use the external stream.
+            Stream stream;
+            if (_path is not null) {
+                ownedStream = new FileStream(_path, FileMode.Open, FileAccess.Read,
+                    FileShare.Read, ChunkSize, FileOptions.SequentialScan);
+                stream = ownedStream;
+            } else {
+                stream = _externalStream!;
+            }
+
+            var (decoder, prefetched) = DetectEncodingAndCreateDecoder(stream);
             var byteBuf = new byte[ChunkSize];
 
+            // If BOM detection consumed bytes on a non-seekable stream, decode them first.
+            if (prefetched is { Length: > 0 }) {
+                DecodeChunk(decoder, prefetched, prefetched.Length, isLastChunk: false);
+            }
+
+            var reachedEnd = false;
             while (true) {
                 ct.ThrowIfCancellationRequested();
 
-                var bytesRead = fs.Read(byteBuf, 0, ChunkSize);
+                var bytesRead = stream.Read(byteBuf, 0, ChunkSize);
                 if (bytesRead == 0) {
                     break;
                 }
 
-                var isLastChunk = fs.Position >= _byteLen;
+                // For file streams we know the total byte length; for arbitrary streams
+                // we detect end-of-stream when the next Read returns 0.
+                var isLastChunk = _path is not null && stream.Position >= _estimatedLen;
 
-                // Decode bytes → chars directly into _data past _loadedLen.
-                var charCount = decoder.GetCharCount(byteBuf, 0, bytesRead, isLastChunk);
-
-                // Ensure _data has room (multibyte chars mean we may need less than pre-allocated,
-                // but defensive resize in case estimate was wrong).
-                var needed = _loadedLen + charCount;
-                if (needed > _data!.Length) {
-                    lock (_lock) {
-                        var newSize = Math.Max(_data.Length * 2, needed);
-                        var newData = new char[newSize];
-                        Array.Copy(_data, newData, _loadedLen);
-                        _data = newData;
-                    }
-                }
-
-                decoder.GetChars(byteBuf, 0, bytesRead, _data, _loadedLen, isLastChunk);
-
-                // Scan the newly decoded chars for newlines.
-                ScanNewlines(_data, _loadedLen, charCount);
-
-                // Publish the new length (volatile write = memory barrier).
-                _loadedLen += charCount;
-
+                DecodeChunk(decoder, byteBuf, bytesRead, isLastChunk);
                 ProgressChanged?.Invoke();
 
                 if (isLastChunk) {
+                    reachedEnd = true;
                     break;
                 }
+            }
+
+            // For non-seekable streams (zip entries), the loop exits on bytesRead == 0
+            // without ever setting isLastChunk. Flush the decoder to emit any buffered
+            // bytes from an incomplete multi-byte sequence at end-of-stream.
+            if (!reachedEnd) {
+                DecodeChunk(decoder, [], 0, isLastChunk: true);
             }
 
             // Finalize: handle trailing bare \r.
@@ -182,36 +204,91 @@ public sealed class StreamingFileBuffer : IBuffer {
             // On any I/O error, mark as done with whatever we have.
             _done = true;
         } finally {
+            ownedStream?.Dispose();
             linkedCts.Dispose();
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Chunk decoding (shared by main loop and prefetched-byte path)
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Decodes <paramref name="bytesRead"/> bytes from <paramref name="byteBuf"/> using
+    /// <paramref name="decoder"/>, appends the resulting chars to <c>_data</c>, scans for
+    /// newlines, and publishes the updated <c>_loadedLen</c>.
+    /// </summary>
+    private void DecodeChunk(Decoder decoder, byte[] byteBuf, int bytesRead, bool isLastChunk) {
+        var charCount = decoder.GetCharCount(byteBuf, 0, bytesRead, isLastChunk);
+
+        // Ensure _data has room.
+        var needed = _loadedLen + charCount;
+        if (needed > _data!.Length) {
+            lock (_lock) {
+                var newSize = Math.Max(_data.Length * 2, needed);
+                var newData = new char[newSize];
+                Array.Copy(_data, newData, _loadedLen);
+                _data = newData;
+            }
+        }
+
+        decoder.GetChars(byteBuf, 0, bytesRead, _data, _loadedLen, isLastChunk);
+
+        // Scan the newly decoded chars for newlines.
+        ScanNewlines(_data, _loadedLen, charCount);
+
+        // Publish the new length (volatile write = memory barrier).
+        _loadedLen += charCount;
     }
 
     // -----------------------------------------------------------------
     // BOM detection
     // -----------------------------------------------------------------
 
-    private static Decoder DetectEncodingAndCreateDecoder(FileStream fs) {
-        Span<byte> bom = stackalloc byte[3];
-        var bomRead = fs.Read(bom);
+    /// <summary>
+    /// Reads up to 3 bytes from <paramref name="stream"/> to detect a BOM.
+    /// Returns the appropriate decoder and any bytes that were consumed but not part
+    /// of a BOM (for non-seekable streams where we can't rewind).
+    /// </summary>
+    private static (Decoder decoder, byte[]? prefetched) DetectEncodingAndCreateDecoder(Stream stream) {
+        var bom = new byte[3];
+        var bomRead = stream.Read(bom, 0, 3);
 
         if (bomRead >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF) {
-            // UTF-8 BOM — skip it, continue reading as UTF-8.
-            return Encoding.UTF8.GetDecoder();
+            // UTF-8 BOM — consumed, continue reading as UTF-8.
+            return (Encoding.UTF8.GetDecoder(), null);
         }
         if (bomRead >= 2 && bom[0] == 0xFF && bom[1] == 0xFE) {
             // UTF-16 LE BOM.
-            fs.Position = 2;
-            return Encoding.Unicode.GetDecoder();
+            if (stream.CanSeek) {
+                stream.Position = 2;
+                return (Encoding.Unicode.GetDecoder(), null);
+            }
+            // Non-seekable: the 3rd byte (if read) is data, not BOM.
+            return bomRead > 2
+                ? (Encoding.Unicode.GetDecoder(), [bom[2]])
+                : (Encoding.Unicode.GetDecoder(), null);
         }
         if (bomRead >= 2 && bom[0] == 0xFE && bom[1] == 0xFF) {
             // UTF-16 BE BOM.
-            fs.Position = 2;
-            return Encoding.BigEndianUnicode.GetDecoder();
+            if (stream.CanSeek) {
+                stream.Position = 2;
+                return (Encoding.BigEndianUnicode.GetDecoder(), null);
+            }
+            return bomRead > 2
+                ? (Encoding.BigEndianUnicode.GetDecoder(), [bom[2]])
+                : (Encoding.BigEndianUnicode.GetDecoder(), null);
         }
 
-        // No BOM — rewind and assume UTF-8.
-        fs.Position = 0;
-        return Encoding.UTF8.GetDecoder();
+        // No BOM — rewind if possible; otherwise return consumed bytes as prefetched data.
+        if (stream.CanSeek) {
+            stream.Position = 0;
+            return (Encoding.UTF8.GetDecoder(), null);
+        }
+        // Non-seekable: return the consumed bytes so the caller can decode them.
+        return bomRead > 0
+            ? (Encoding.UTF8.GetDecoder(), bom[..bomRead])
+            : (Encoding.UTF8.GetDecoder(), null);
     }
 
     // -----------------------------------------------------------------

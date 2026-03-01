@@ -857,3 +857,54 @@ Note: Notepad++ has a much worse version of this same problem with word-wrap ena
 scrolling to the bottom consistently shows 200–800 lines short of the real end, and the
 position is non-deterministic. Our approach is approximate (global-average scroll mapping)
 but deterministic, and the bottom-anchor ensures the true end is always reachable.
+
+## 2026-02-28 — Smooth partial-row scrolling with wrapped lines
+
+Windowed layout's formula `_renderOffsetY = topLine * avgLineHeight - scrollOffset` had
+discontinuities when `topLine` changed — the render offset jumped by `avgLineHeight` while
+scroll only moved by one row height. This caused jitter and whitespace gaps.
+
+Fix: incremental render offset tracking with four cached fields (`_winTopLine`,
+`_winScrollOffset`, `_winRenderOffsetY`, `_winFirstLineHeight`). For single-row scrolls
+(ds < 2*rh, i.e., arrow button clicks), topLine is constrained to change by ±1 and the
+offset is computed using actual cached line heights. Multiple safety clamps prevent top gaps
+(`_renderOffsetY > 0`), bottom gaps (content doesn't reach viewport bottom), and resize
+instability (incremental state is NOT reset on viewport resize, only on content changes).
+
+## 2026-02-28 — Transparent zip file support
+
+Auto-detect zip files by magic bytes (PK header: `50 4B 03 04`). Single-entry zips are
+transparently decompressed and streamed into the existing `StreamingFileBuffer`. Multi-entry
+zips are rejected with an informative error.
+
+Key changes:
+- `StreamingFileBuffer` gained a second constructor accepting a `Stream` + `IDisposable?`
+  owner. Refactored `LoadWorker` and `DetectEncodingAndCreateDecoder` to work with any
+  `Stream` (not just `FileStream`). BOM detection handles non-seekable streams by returning
+  prefetched bytes.
+- `FileLoader` now returns `LoadResult(Document, DisplayName, WasZipped)` instead of raw
+  `Document`. Added `IsZipFile()` helper and `LoadZip()` for the zip path. Small zips
+  (≤ 10 MB uncompressed) read entirely into memory; larger ones stream via
+  `StreamingFileBuffer`. The `ZipArchive` is owned by the buffer and disposed when loading
+  completes.
+- `MainWindow` updated to use `LoadResult.DisplayName` for the title bar (shows
+  "archive.zip → inner.txt" for zips). `SaveAs` suggests the inner entry name for zipped
+  sources.
+- Save always writes plain text (no re-zipping).
+
+13 new tests in `ZipFileTests.cs`. Test count: **229** (208 Core + 21 Rendering).
+
+## 2026-02-28 — Memory usage in stats bar
+
+Added `MemoryMb` and `PeakMemoryMb` fields to `PerfStatsData`, sampled via
+`GC.GetTotalMemory(false)` each render frame. Stats bar now shows
+"Mem: 245 MB (max 312 MB)" alongside load/save timing. Peak tracks the session maximum.
+
+## 2026-02-28 — Future features noted in development plan
+
+Two future milestones documented in the plan file:
+
+1. **Open Folder** — folder browsing with metadata database, text/md file searching,
+   multi-file zip support, and nested zip/folder handling.
+
+2. **Memory stats** — implemented this session (see above).

@@ -233,8 +233,8 @@ public class LargeDocumentTests {
             var original = "# Hello\n\nThis is a test.\n";
             File.WriteAllText(path, original, Encoding.UTF8);
 
-            var doc = FileLoader.Load(path);
-            var loaded = doc.Table.GetText();
+            var result = FileLoader.Load(path);
+            var loaded = result.Document.Table.GetText();
             Assert.Equal(original, loaded);
         } finally {
             if (File.Exists(path)) {

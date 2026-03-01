@@ -153,6 +153,18 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         /// <summary>Total time from open to fully loaded.</summary>
         public double LoadTimeMs { get; set; }
         public double SaveTimeMs { get; set; }
+        /// <summary>Current GC memory in MB.</summary>
+        public double MemoryMb { get; set; }
+        /// <summary>Peak GC memory seen this session in MB.</summary>
+        public double PeakMemoryMb { get; set; }
+
+        /// <summary>Samples current GC memory and updates peak.</summary>
+        public void SampleMemory() {
+            MemoryMb = GC.GetTotalMemory(false) / (1024.0 * 1024.0);
+            if (MemoryMb > PeakMemoryMb) {
+                PeakMemoryMb = MemoryMb;
+            }
+        }
 
         public void Reset() {
             Layout.Reset();
@@ -599,6 +611,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         _perfSw.Stop();
         PerfStats.Render.Record(_perfSw.Elapsed.TotalMilliseconds);
+        PerfStats.SampleMemory();
         StatsUpdated?.Invoke();
     }
 
