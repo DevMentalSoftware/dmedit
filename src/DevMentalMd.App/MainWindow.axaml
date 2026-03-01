@@ -6,7 +6,8 @@
         mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="650"
         x:Class="DevMentalMd.App.MainWindow"
         Title="DevMentalMD"
-        Width="900" Height="650">
+        Width="900" Height="650"
+		Icon="avares://dmedit/app_icon.ico">
     <DockPanel>
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File" x:Name="MenuFile">
