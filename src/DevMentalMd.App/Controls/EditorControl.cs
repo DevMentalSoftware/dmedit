@@ -231,6 +231,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     public EditorControl() {
         Focusable = true;
         ClipToBounds = true;
+        Cursor = new Cursor(StandardCursorType.Ibeam);
         _caretTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(530) };
         _caretTimer.Tick += OnCaretTick;
         _caretTimer.Start();
