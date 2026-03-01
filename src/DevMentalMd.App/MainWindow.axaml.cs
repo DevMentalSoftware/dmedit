@@ -48,7 +48,7 @@ public partial class MainWindow : Window {
             "- Move the caret with arrow keys (Ctrl+Left/Right for word movement)\n" +
             "- Select text with Shift+arrow or click-drag\n" +
             "- Ctrl+A to select all\n" +
-            "- Ctrl+Z / Ctrl+Y to undo and redo\n" +
+            "- Ctrl+Z / Ctrl+Shift+Z to undo and redo\n" +
             "- Home / End to jump to line start/end\n" +
             "- File → Open / Save to work with .md files\n" +
             "\n" +

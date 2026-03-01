@@ -3,13 +3,18 @@ namespace DevMentalMd.Core.Documents.History;
 /// <summary>
 /// Manages undo and redo stacks for a <see cref="PieceTable"/>.
 /// Edits pushed here are applied immediately to the table and can be undone/redone.
+/// Each entry pairs an edit with the <see cref="Selection"/> that existed before the
+/// edit was applied, so undo can restore the exact caret/selection state.
 /// </summary>
 public sealed class EditHistory {
-    private readonly Stack<IDocumentEdit> _undoStack = new();
-    private readonly Stack<IDocumentEdit> _redoStack = new();
+    private readonly record struct Entry(IDocumentEdit Edit, Selection SelectionBefore);
+
+    private readonly Stack<Entry> _undoStack = new();
+    private readonly Stack<Entry> _redoStack = new();
 
     // When non-null, we're collecting edits for a compound group
     private List<IDocumentEdit>? _compound;
+    private Selection? _compoundSelBefore;
 
     // -------------------------------------------------------------------------
     // Undo / Redo state
@@ -24,14 +29,16 @@ public sealed class EditHistory {
 
     /// <summary>
     /// Applies <paramref name="edit"/> to <paramref name="table"/> and records it for undo.
-    /// Clears the redo stack (any redo history is lost after a new edit).
+    /// <paramref name="selBefore"/> is the selection state before this edit, used to
+    /// restore the caret on undo. Clears the redo stack.
     /// </summary>
-    public void Push(IDocumentEdit edit, PieceTable table) {
+    public void Push(IDocumentEdit edit, PieceTable table, Selection selBefore) {
         edit.Apply(table);
         if (_compound != null) {
             _compound.Add(edit);
+            _compoundSelBefore ??= selBefore; // capture the first push's selection
         } else {
-            _undoStack.Push(edit);
+            _undoStack.Push(new Entry(edit, selBefore));
             _redoStack.Clear();
         }
     }
@@ -51,12 +58,14 @@ public sealed class EditHistory {
             return;
         }
         var edits = _compound;
+        var sel = _compoundSelBefore ?? Selection.Collapsed(0);
         _compound = null;
+        _compoundSelBefore = null;
         if (edits.Count == 0) {
             return;
         }
         var group = new CompoundEdit(edits);
-        _undoStack.Push(group);
+        _undoStack.Push(new Entry(group, sel));
         _redoStack.Clear();
     }
 
@@ -64,23 +73,37 @@ public sealed class EditHistory {
     // Undo / Redo operations
     // -------------------------------------------------------------------------
 
-    /// <summary>Reverts the most recent edit. No-op if nothing to undo.</summary>
-    public void Undo(PieceTable table) {
+    /// <summary>
+    /// Result of an undo or redo operation: the edit that was applied/reverted,
+    /// and the selection that existed before the original edit was applied.
+    /// </summary>
+    public readonly record struct UndoRedoResult(IDocumentEdit Edit, Selection SelectionBefore);
+
+    /// <summary>
+    /// Reverts the most recent edit. Returns the edit and pre-edit selection,
+    /// or <c>null</c> if nothing to undo.
+    /// </summary>
+    public UndoRedoResult? Undo(PieceTable table) {
         if (!CanUndo) {
-            return;
+            return null;
         }
-        var edit = _undoStack.Pop();
-        edit.Revert(table);
-        _redoStack.Push(edit);
+        var entry = _undoStack.Pop();
+        entry.Edit.Revert(table);
+        _redoStack.Push(entry);
+        return new UndoRedoResult(entry.Edit, entry.SelectionBefore);
     }
 
-    /// <summary>Re-applies the most recently undone edit. No-op if nothing to redo.</summary>
-    public void Redo(PieceTable table) {
+    /// <summary>
+    /// Re-applies the most recently undone edit. Returns the edit and pre-edit selection,
+    /// or <c>null</c> if nothing to redo.
+    /// </summary>
+    public UndoRedoResult? Redo(PieceTable table) {
         if (!CanRedo) {
-            return;
+            return null;
         }
-        var edit = _redoStack.Pop();
-        edit.Apply(table);
-        _undoStack.Push(edit);
+        var entry = _redoStack.Pop();
+        entry.Edit.Apply(table);
+        _undoStack.Push(entry);
+        return new UndoRedoResult(entry.Edit, entry.SelectionBefore);
     }
 }

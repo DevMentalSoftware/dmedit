@@ -302,8 +302,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             PerfStats.Reset();
             InvalidateLayout();
         } else if (e.Property == FontFamilyProperty
-                   || e.Property == FontSizeProperty
-                   || e.Property == ForegroundBrushProperty) {
+                     || e.Property == FontSizeProperty
+                     || e.Property == ForegroundBrushProperty) {
             _rowHeight = 0;
             _charWidth = 0;
             InvalidateLayout();
@@ -845,7 +845,11 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
             case Key.Z when ctrl:
                 _editSw.Restart();
-                doc.Undo();
+                if (shift) {
+                    doc.Redo();
+                } else {
+                    doc.Undo();
+                }
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
                 InvalidateLayout();
@@ -854,13 +858,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
 
             case Key.Y when ctrl:
-                _editSw.Restart();
-                doc.Redo();
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                InvalidateLayout();
-                ResetCaretBlink();
-                e.Handled = true;
+                // TODO Add LineDelete
                 break;
 
             case Key.A when ctrl:

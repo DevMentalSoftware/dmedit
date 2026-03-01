@@ -56,10 +56,15 @@ public sealed class Document {
             return;
         }
         var ofs = Selection.Start;
-        if (!Selection.IsEmpty) {
+        var replacing = !Selection.IsEmpty;
+        if (replacing) {
+            _history.BeginCompound();
             DeleteRange(ofs, Selection.Len);
         }
-        _history.Push(new InsertEdit(ofs, text), _table);
+        _history.Push(new InsertEdit(ofs, text), _table, Selection);
+        if (replacing) {
+            _history.EndCompound();
+        }
         Selection = Selection.Collapsed(ofs + text.Length);
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -91,7 +96,7 @@ public sealed class Document {
         }
         var delOfs = ofs - delLen;
         var deleted = _table.GetText(delOfs, delLen);
-        _history.Push(new DeleteEdit(delOfs, deleted), _table);
+        _history.Push(new DeleteEdit(delOfs, deleted), _table, Selection);
         Selection = Selection.Collapsed(delOfs);
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -112,7 +117,7 @@ public sealed class Document {
             delLen = 2;
         }
         var deleted = _table.GetText(ofs, delLen);
-        _history.Push(new DeleteEdit(ofs, deleted), _table);
+        _history.Push(new DeleteEdit(ofs, deleted), _table, Selection);
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -121,27 +126,35 @@ public sealed class Document {
     // -------------------------------------------------------------------------
 
     public void Undo() {
-        if (!CanUndo) {
+        var result = _history.Undo(_table);
+        if (result is null) {
             return;
         }
-        _history.Undo(_table);
-        // Clamp selection to new document length
-        var len = _table.Length;
-        var caret = Math.Min(Selection.Caret, len);
-        Selection = Selection.Collapsed(caret);
+        Selection = result.Value.SelectionBefore;
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
     public void Redo() {
-        if (!CanRedo) {
+        var result = _history.Redo(_table);
+        if (result is null) {
             return;
         }
-        _history.Redo(_table);
-        var len = _table.Length;
-        var caret = Math.Min(Selection.Caret, len);
-        Selection = Selection.Collapsed(caret);
+        Selection = Selection.Collapsed(CaretAfterRedo(result.Value.Edit));
         Changed?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>
+    /// Computes the caret position after applying <paramref name="edit"/>.
+    /// </summary>
+    private static long CaretAfterRedo(IDocumentEdit edit) => edit switch {
+        // Insert applied → caret at end of inserted text.
+        InsertEdit ins => ins.Ofs + ins.Text.Length,
+        // Delete applied → caret at deletion point.
+        DeleteEdit del => del.Ofs,
+        // Compound applies in forward order → last apply is the last edit.
+        CompoundEdit comp => CaretAfterRedo(comp.Edits[^1]),
+        _ => 0L
+    };
 
     // -------------------------------------------------------------------------
     // Compound edit grouping (exposed for the editor to batch keystrokes)
@@ -156,6 +169,6 @@ public sealed class Document {
 
     private void DeleteRange(long ofs, long len) {
         var deleted = _table.GetText(ofs, (int)len);
-        _history.Push(new DeleteEdit(ofs, deleted), _table);
+        _history.Push(new DeleteEdit(ofs, deleted), _table, Selection);
     }
 }

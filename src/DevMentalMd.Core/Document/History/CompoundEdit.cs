@@ -11,6 +11,9 @@ public sealed class CompoundEdit : IDocumentEdit {
         _edits = edits;
     }
 
+    /// <summary>The constituent edits, in forward (apply) order.</summary>
+    public IReadOnlyList<IDocumentEdit> Edits => _edits;
+
     public void Apply(PieceTable table) {
         foreach (var e in _edits) {
             e.Apply(table);
