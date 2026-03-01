@@ -704,35 +704,31 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             return;
         }
 
-        var startRects = _layoutEngine.GetCaretBounds(localStart, layout);
-        var endRects = _layoutEngine.GetCaretBounds(localEnd, layout);
+        foreach (var line in layout.Lines) {
+            var lineY = line.Y + _renderOffsetY;
+            if (lineY + line.Height < 0) {
+                continue;
+            }
+            if (lineY > Bounds.Height) {
+                break;
+            }
+            // Skip lines outside the selection
+            if (line.CharEnd <= localStart || line.CharStart >= localEnd) {
+                continue;
+            }
 
-        if (Math.Abs(startRects.Y - endRects.Y) < 1.0) {
-            var rect = new Rect(
-                startRects.X,
-                startRects.Y + _renderOffsetY,
-                endRects.X - startRects.X,
-                startRects.Height);
-            context.FillRectangle(SelectionBrush, rect);
-        } else {
-            foreach (var line in layout.Lines) {
-                var lineY = line.Y + _renderOffsetY;
-                if (lineY + line.Height < 0) {
-                    continue;
-                }
-                if (lineY > Bounds.Height) {
-                    break;
-                }
-                if (line.Y + line.Height <= startRects.Y) {
-                    continue;
-                }
-                if (line.Y >= endRects.Y + endRects.Height) {
-                    break;
-                }
-                var lineStart = line.CharStart >= localStart ? 0.0 : startRects.X;
-                var lineEnd = line.CharEnd <= localEnd ? Bounds.Width : endRects.X;
-                var rect = new Rect(lineStart, lineY, lineEnd - lineStart, line.Height);
-                context.FillRectangle(SelectionBrush, rect);
+            // Selected range in line-local coordinates
+            var rangeStart = Math.Max(0, localStart - line.CharStart);
+            var rangeEnd = Math.Min(line.CharLen, localEnd - line.CharStart);
+            var rangeLen = rangeEnd - rangeStart;
+            if (rangeLen <= 0) {
+                continue;
+            }
+
+            // HitTestTextRange returns per-visual-row rects sized to the actual text.
+            foreach (var rect in line.Layout.HitTestTextRange(rangeStart, rangeLen)) {
+                var selRect = new Rect(rect.X, lineY + rect.Y, rect.Width, rect.Height);
+                context.FillRectangle(SelectionBrush, selRect);
             }
         }
     }

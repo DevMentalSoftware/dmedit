@@ -55,10 +55,10 @@ public sealed class Document {
         if (text.Length == 0) {
             return;
         }
+        var ofs = Selection.Start;
         if (!Selection.IsEmpty) {
-            DeleteRange(Selection.Start, Selection.Len);
+            DeleteRange(ofs, Selection.Len);
         }
-        var ofs = Selection.Caret;
         _history.Push(new InsertEdit(ofs, text), _table);
         Selection = Selection.Collapsed(ofs + text.Length);
         Changed?.Invoke(this, EventArgs.Empty);
