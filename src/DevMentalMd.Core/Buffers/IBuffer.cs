@@ -42,4 +42,24 @@ public interface IBuffer : IDisposable {
     /// require a full scan).
     /// </summary>
     bool LengthIsKnown => true;
+
+    // -------------------------------------------------------------------------
+    // On-demand loading (for paged buffers)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Returns <c>true</c> if the character range [<paramref name="offset"/>,
+    /// <paramref name="offset"/>+<paramref name="len"/>) is immediately available
+    /// in memory. Returns <c>false</c> if accessing this range would require
+    /// loading from disk. Default: always <c>true</c>.
+    /// </summary>
+    bool IsLoaded(long offset, int len) => true;
+
+    /// <summary>
+    /// Requests that the character range [<paramref name="offset"/>,
+    /// <paramref name="offset"/>+<paramref name="len"/>) be loaded asynchronously.
+    /// Fires <c>ProgressChanged</c> when the requested pages are ready.
+    /// Default: no-op (data is always in memory).
+    /// </summary>
+    void EnsureLoaded(long offset, int len) { }
 }

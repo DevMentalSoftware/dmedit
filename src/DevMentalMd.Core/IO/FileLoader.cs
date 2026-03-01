@@ -28,18 +28,34 @@ public sealed record LoadResult(Document Document, string DisplayName, bool WasZ
 /// </para>
 /// <para>
 /// Non-zip files ≤ 10 MB are read entirely into memory via <c>File.ReadAllText</c> (UTF-8).
-/// Larger files use a <see cref="StreamingFileBuffer"/> that reads in 1 MB binary chunks
-/// on a background thread, decoding UTF-8 incrementally. The first chunk is available
-/// almost immediately so the UI stays responsive.
+/// Files between 10 MB and <c>pagedThreshold</c> use a <see cref="StreamingFileBuffer"/>
+/// (reads in 1 MB binary chunks on a background thread, ~2× file size in memory).
+/// Files larger than <c>pagedThreshold</c> use a <see cref="PagedFileBuffer"/> that keeps
+/// only a bounded number of decoded pages in memory (~16 MB), re-reading from disk on demand.
 /// </para>
 /// </remarks>
 public static class FileLoader {
     private const long SmallThreshold = 10L * 1024 * 1024; // 10 MB
 
     /// <summary>
+    /// Default paged-buffer threshold: 50 MB. Files above this size use
+    /// <see cref="PagedFileBuffer"/> (bounded ~16 MB memory) instead of
+    /// <see cref="StreamingFileBuffer"/> (~2× file size in memory).
+    /// </summary>
+    public const long DefaultPagedThreshold = 50L * 1024 * 1024;
+
+    /// <summary>
     /// Asynchronously loads the file at <paramref name="path"/> into a new <see cref="LoadResult"/>.
     /// </summary>
-    public static async Task<LoadResult> LoadAsync(string path, CancellationToken ct = default) {
+    /// <param name="path">Absolute file path.</param>
+    /// <param name="pagedThreshold">
+    /// Files larger than this (in bytes) use the paged buffer.
+    /// Pass <c>-1</c> to disable paged loading. Default: 50 MB.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    public static async Task<LoadResult> LoadAsync(
+        string path, long pagedThreshold = DefaultPagedThreshold, CancellationToken ct = default) {
+
         if (IsZipFile(path)) {
             return LoadZip(path, ct);
         }
@@ -51,7 +67,16 @@ public static class FileLoader {
             }, ct);
             return new LoadResult(doc, Path.GetFileName(path), WasZipped: false);
         }
-        // Large file: streaming background load.
+        // Very large file: paged buffer (bounded ~16 MB memory).
+        if (pagedThreshold > 0 && byteLen > pagedThreshold) {
+            var paged = new PagedFileBuffer(path, byteLen);
+            paged.StartLoading(ct);
+            return new LoadResult(
+                new Document(new PieceTable(paged)),
+                Path.GetFileName(path),
+                WasZipped: false);
+        }
+        // Large file: streaming background load (~2× file size in memory).
         var buf = new StreamingFileBuffer(path, byteLen);
         buf.StartLoading(ct);
         return new LoadResult(
@@ -63,7 +88,12 @@ public static class FileLoader {
     /// <summary>
     /// Synchronously loads the file at <paramref name="path"/> into a new <see cref="LoadResult"/>.
     /// </summary>
-    public static LoadResult Load(string path) {
+    /// <param name="path">Absolute file path.</param>
+    /// <param name="pagedThreshold">
+    /// Files larger than this (in bytes) use the paged buffer.
+    /// Pass <c>-1</c> to disable paged loading. Default: 50 MB.
+    /// </param>
+    public static LoadResult Load(string path, long pagedThreshold = DefaultPagedThreshold) {
         if (IsZipFile(path)) {
             return LoadZip(path, CancellationToken.None);
         }
@@ -72,7 +102,16 @@ public static class FileLoader {
             var text = File.ReadAllText(path, Encoding.UTF8);
             return new LoadResult(new Document(text), Path.GetFileName(path), WasZipped: false);
         }
-        // Large file: streaming background load.
+        // Very large file: paged buffer (bounded ~16 MB memory).
+        if (pagedThreshold > 0 && byteLen > pagedThreshold) {
+            var paged = new PagedFileBuffer(path, byteLen);
+            paged.StartLoading(CancellationToken.None);
+            return new LoadResult(
+                new Document(new PieceTable(paged)),
+                Path.GetFileName(path),
+                WasZipped: false);
+        }
+        // Large file: streaming background load (~2× file size in memory).
         var buf = new StreamingFileBuffer(path, byteLen);
         buf.StartLoading(CancellationToken.None);
         return new LoadResult(

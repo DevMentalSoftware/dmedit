@@ -908,3 +908,61 @@ Two future milestones documented in the plan file:
    multi-file zip support, and nested zip/folder handling.
 
 2. **Memory stats** — implemented this session (see above).
+
+## 2026-02-28 — Memory-efficient large file support (PagedFileBuffer)
+
+Three-phase project to achieve sublinear memory scaling for large files.
+
+### Phase 1 — Eliminate `_origBufCache` doubling
+
+`PieceTable.BufFor(BufferKind.Original)` previously materialized the entire `IBuffer`
+into a cached string on the first edit. For a 185 MB file that meant +370 MB on the
+first keystroke. Removed `_origBufCache`; `VisitPieces`, `CharAt`, and `BuildLineStarts`
+now access `_origBuf` directly. Trade-off: more transient allocations per read (small
+`char[]` each time) but no persistent doubling. Allocation budget tests raised accordingly.
+
+### Phase 2 — `PagedFileBuffer`
+
+New `IBuffer` implementation (`Buffers/PagedFileBuffer.cs`, ~637 lines) that keeps only
+a bounded LRU cache of decoded text pages in memory. The raw file stays on disk, locked
+with `FileShare.Read`.
+
+Architecture:
+- **Background scan**: reads file in 1 MB chunks, decodes via `Encoding.GetDecoder()`
+  (handles multi-byte boundaries), builds `PageInfo[]` (byte↔char offset mapping) and
+  a sampled line index (every 1024th line's char offset).
+- **LRU cache**: `LinkedList<int>` + `Dictionary<int, LinkedListNode<int>>` for O(1)
+  promote/evict. Default `MaxPagesInMemory = 8` ≈ 16 MB decoded cache.
+- **On-demand reload**: evicted pages re-read from disk via `FileStream.Seek` + decode
+  (~1 ms per page on SSD). `lock(_fs)` ensures seek+read atomicity.
+- **BOM detection**: UTF-8, UTF-16 LE, UTF-16 BE, or no-BOM (assumes UTF-8).
+- **`IBuffer` additions**: `IsLoaded(offset, len)` and `EnsureLoaded(offset, len)`
+  (default `true`/no-op in `IBuffer`) for placeholder rendering support.
+- **Thread safety**: `Interlocked.Read`/`Exchange` for `_lineCount` and `_totalChars`
+  (C# forbids `volatile long`); `lock(_lock)` for `_pageData`, LRU, and `_lineSamples`.
+
+Memory budget (928 MB file, ~5M lines, MaxPages=8):
+  PageInfo[] ≈ 30 KB, decoded cache ≈ 16 MB, line index ≈ 40 KB → **~16 MB total**.
+  User-tested: MaxPages=3 → 42 MB, MaxPages=8 → ~60 MB, MaxPages=128 → 500 MB.
+  No perceptible scrolling delay at any cache size on SSD.
+
+24 new tests in `PagedFileBufferTests.cs`.
+
+### Phase 3 — FileLoader integration + placeholder rendering
+
+Three-tier file routing in `FileLoader` (configurable via `AppSettings.PagedBufferThresholdBytes`):
+  ≤ 10 MB → `File.ReadAllText` (string)
+  10 MB–50 MB → `StreamingFileBuffer` (~2× memory)
+  > 50 MB → `PagedFileBuffer` (bounded ~16 MB)
+
+Zip streams always use `StreamingFileBuffer` (non-seekable, can't re-read pages).
+
+`EditorControl` checks `IsLoaded()` before fetching text in `LayoutWindowed`. When
+pages aren't loaded, `EnsureLoaded()` queues thread-pool loads and grey rounded-rectangle
+placeholders render in place of text. `ProgressChanged` fires per page load, triggering
+`InvalidateLayout()` which replaces placeholders with real text.
+
+`MainWindow.WireStreamingProgress` now handles `PagedFileBuffer` alongside
+`StreamingFileBuffer` for progress bar updates during the initial scan.
+
+Test count: **253** (232 Core + 21 Rendering).

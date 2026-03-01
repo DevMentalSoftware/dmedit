@@ -42,8 +42,14 @@ public sealed class AppSettings {
     public int RecentFileCount { get; set; } = 10;
 
     // -----------------------------------------------------------------
-    // (future settings go here)
+    // Large file support
     // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Files larger than this threshold (in bytes) use the paged buffer
+    /// instead of loading entirely into memory. Default: 50 MB.
+    /// </summary>
+    public long PagedBufferThresholdBytes { get; set; } = 50L * 1024 * 1024;
 
     // -----------------------------------------------------------------
     // Load / Save

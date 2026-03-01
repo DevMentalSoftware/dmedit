@@ -5,7 +5,15 @@
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AssemblyName>dmedit</AssemblyName>
+    <AssemblyTitle>DevMental Edit</AssemblyTitle>
+    <Company>DevMental Software LLC</Company>
+    <Description>This is a text editor that supports simple and large text files as well as WYSIWYG Markdown editing.</Description>
+    <ApplicationIcon>app_icon.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <Content Include="app_icon.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.12" />

@@ -169,7 +169,7 @@ public partial class MainWindow : Window {
         }
 
         var sw = Stopwatch.StartNew();
-        var result = await FileLoader.LoadAsync(path);
+        var result = await FileLoader.LoadAsync(path, _settings.PagedBufferThresholdBytes);
         _lastLoadResult = result;
         Editor.Document = result.Document;
         WireStreamingProgress(sw);
@@ -242,7 +242,7 @@ public partial class MainWindow : Window {
         }
 
         var sw = Stopwatch.StartNew();
-        var result = await FileLoader.LoadAsync(path);
+        var result = await FileLoader.LoadAsync(path, _settings.PagedBufferThresholdBytes);
         _lastLoadResult = result;
         Editor.Document = result.Document;
         WireStreamingProgress(sw);
@@ -343,6 +343,30 @@ public partial class MainWindow : Window {
             };
 
             streamBuf.LoadComplete += () => {
+                Dispatcher.UIThread.Post(() => {
+                    sw.Stop();
+                    Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+                    Editor.InvalidateLayout();
+                }, DispatcherPriority.Background);
+            };
+        } else if (Editor.Document?.Table.OrigBuffer is PagedFileBuffer pagedBuf) {
+            // Paged load — background scan builds page table + sampled line index.
+            var firstChunkCaptured = false;
+            Editor.PerfStats.FirstChunkTimeMs = 0;
+            Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+
+            pagedBuf.ProgressChanged += () => {
+                Dispatcher.UIThread.Post(() => {
+                    if (!firstChunkCaptured) {
+                        firstChunkCaptured = true;
+                        Editor.PerfStats.FirstChunkTimeMs = sw.Elapsed.TotalMilliseconds;
+                    }
+                    Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+                    Editor.InvalidateLayout();
+                }, DispatcherPriority.Background);
+            };
+
+            pagedBuf.LoadComplete += () => {
                 Dispatcher.UIThread.Post(() => {
                     sw.Stop();
                     Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;

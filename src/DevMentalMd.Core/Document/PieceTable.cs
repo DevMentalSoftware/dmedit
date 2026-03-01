@@ -15,7 +15,6 @@ public sealed class PieceTable {
 
     private readonly string _orig;
     private readonly IBuffer? _origBuf;  // non-null when constructed from IBuffer
-    private string? _origBufCache;       // lazy materialized copy of _origBuf (string path only)
 
     private readonly StringBuilder _addBuf = new();
     private readonly List<Piece> _pieces = new();
@@ -212,6 +211,10 @@ public sealed class PieceTable {
                 var chars = new char[bufLen];
                 _origBuf.CopyTo(p.Start, chars, bufLen);
                 sb.Append(chars);
+            } else if (p.Which == BufferKind.Original && _origBuf != null) {
+                var chars = new char[(int)p.Len];
+                _origBuf.CopyTo(p.Start, chars, (int)p.Len);
+                sb.Append(chars);
             } else {
                 sb.Append(BufFor(p.Which), (int)p.Start, (int)p.Len);
             }
@@ -378,18 +381,10 @@ public sealed class PieceTable {
             return _addBuf.ToString();
         }
         // String-ctor path: _origBuf is null, use _orig directly.
-        if (_origBuf == null) {
-            return _orig;
-        }
-        // IBuffer-ctor path (small files only): materialize once and cache.
-        if (_origBufCache != null) {
-            return _origBufCache;
-        }
-        var len = (int)_origBuf.Length;
-        var chars = new char[len];
-        _origBuf.CopyTo(0, chars, len);
-        _origBufCache = new string(chars);
-        return _origBufCache;
+        // When _origBuf is set, Original pieces are handled via _origBuf.CopyTo()
+        // in VisitPieces/CharAt/BuildLineStarts — BufFor should never be called
+        // for Original when _origBuf is set.
+        return _orig;
     }
 
     /// <summary>
@@ -433,6 +428,15 @@ public sealed class PieceTable {
                     visitor(chars);
                 }
                 remaining -= take;
+            } else if (p.Which == BufferKind.Original && _origBuf != null) {
+                // Read directly from the buffer — avoids materializing the entire
+                // buffer as a string (which would double memory for large files).
+                var avail = p.Len - pieceOfs;
+                var take = (int)Math.Min(avail, remaining);
+                var chars = new char[take];
+                _origBuf.CopyTo(p.Start + pieceOfs, chars, take);
+                visitor(chars);
+                remaining -= take;
             } else {
                 var avail = p.Len - pieceOfs;
                 var take = (int)Math.Min(avail, remaining);
@@ -451,6 +455,9 @@ public sealed class PieceTable {
         var p = _pieces[pieceIdx];
         if (p.Len == WholeBufSentinel) {
             return _origBuf![p.Start + ofsInPiece];
+        }
+        if (p.Which == BufferKind.Original && _origBuf != null) {
+            return _origBuf[p.Start + ofsInPiece];
         }
         return BufFor(p.Which)[(int)(p.Start + ofsInPiece)];
     }
@@ -477,6 +484,9 @@ public sealed class PieceTable {
         foreach (var p in _pieces) {
             if (p.Len == WholeBufSentinel) {
                 BuildLineStartsFromBuffer(starts, _origBuf!, p.Start, ref logicalOfs, ref prevWasCr);
+            } else if (p.Which == BufferKind.Original && _origBuf != null) {
+                BuildLineStartsFromBuffer(starts, _origBuf, p.Start,
+                    ref logicalOfs, ref prevWasCr, (int)p.Len);
             } else {
                 var buf = BufFor(p.Which).AsSpan((int)p.Start, (int)p.Len);
                 ScanForNewlines(buf, starts, ref logicalOfs, ref prevWasCr);
@@ -490,10 +500,14 @@ public sealed class PieceTable {
     }
 
     private static void BuildLineStartsFromBuffer(
-        List<long> starts, IBuffer buf, long bufStart, ref long logicalOfs, ref bool prevWasCr) {
+        List<long> starts, IBuffer buf, long bufStart,
+        ref long logicalOfs, ref bool prevWasCr, int maxLen = -1) {
         const int ChunkSize = 4096;
-        var bufLen = buf.Length - bufStart;
+        var bufLen = maxLen >= 0 ? maxLen : buf.Length - bufStart;
         var chunkSize = (int)Math.Min(ChunkSize, Math.Min(bufLen, int.MaxValue));
+        if (chunkSize == 0) {
+            return;
+        }
         var chunk = new char[chunkSize];
         var scanned = 0L;
         while (scanned < bufLen) {

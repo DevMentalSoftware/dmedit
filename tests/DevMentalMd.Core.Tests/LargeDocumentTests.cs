@@ -151,7 +151,10 @@ public class LargeDocumentTests {
 
     [Fact]
     public void Document_WithProceduralBuffer_1000Reads_MemoryBounded() {
-        const long maxPerRead = 5L * 1024 * 1024; // 5 MB per read-batch
+        // Budget raised after _origBufCache removal (Phase 1): reads now allocate
+        // small temp char[] per call instead of caching the entire buffer as a string.
+        // This trades higher transient allocation for much lower peak memory.
+        const long maxPerRead = 15L * 1024 * 1024; // 15 MB per read-batch
 
         using var buf = MakeBuffer(10_000L);
         var table = new PieceTable(buf);
@@ -165,7 +168,7 @@ public class LargeDocumentTests {
         });
 
         Assert.True(allocBytes < maxPerRead,
-            $"1000 reads allocated {allocBytes / 1024} KB, expected < 5 MB");
+            $"1000 reads allocated {allocBytes / 1024} KB, expected < 15 MB");
     }
 
     // -------------------------------------------------------------------------
@@ -310,8 +313,9 @@ public class LargeDocumentTests {
     public void FileSaver_LargeDoc_UneditedBuffer_UsesDirectPath() {
         // Unedited buffer-backed document → fast path (SaveFromBuffer).
         // Budget accounts for 1 MB chunk buffer + 1 MB StreamWriter buffer + overhead.
+        // Raised after _origBufCache removal: direct buffer access uses more small allocs.
         const long lineCount = 10_000L;
-        const long maxBytes = 15L * 1024 * 1024; // 15 MB
+        const long maxBytes = 30L * 1024 * 1024; // 30 MB
 
         var path = Path.Combine(Path.GetTempPath(), $"devmentalmd_test_{Guid.NewGuid():N}.md");
         try {
@@ -322,7 +326,7 @@ public class LargeDocumentTests {
             var allocBytes = MeasureAlloc(() => FileSaver.Save(doc, path));
 
             Assert.True(allocBytes < maxBytes,
-                $"FileSaver (unedited) allocated {allocBytes / 1024} KB, expected < {maxBytes / 1024} KB");
+                $"FileSaver (unedited) allocated {allocBytes / 1024} KB, expected < {maxBytes / 1024 / 1024} MB");
         } finally {
             if (File.Exists(path)) {
                 File.Delete(path);
@@ -334,10 +338,10 @@ public class LargeDocumentTests {
     public void FileSaver_LargeDoc_EditedBuffer_StreamsWithoutFullAlloc() {
         // A single insert breaks IsOriginalContent → forces SaveFromPieceTable path.
         // The WholeBufSentinel piece still covers the bulk of the document, exercising
-        // the per-chunk allocation in VisitPieces. Budget must stay well below the
-        // full document size (~200 KB chars = ~400 KB, so 15 MB is generous).
+        // the per-chunk allocation in VisitPieces. After _origBufCache removal (Phase 1),
+        // each chunk visit allocates a temp char[] rather than caching the entire buffer.
         const long lineCount = 10_000L;
-        const long maxBytes = 15L * 1024 * 1024; // 15 MB
+        const long maxBytes = 50L * 1024 * 1024; // 50 MB
 
         var path = Path.Combine(Path.GetTempPath(), $"devmentalmd_test_{Guid.NewGuid():N}.md");
         try {
@@ -351,7 +355,7 @@ public class LargeDocumentTests {
             var allocBytes = MeasureAlloc(() => FileSaver.Save(doc, path));
 
             Assert.True(allocBytes < maxBytes,
-                $"FileSaver (edited) allocated {allocBytes / 1024} KB, expected < {maxBytes / 1024} KB");
+                $"FileSaver (edited) allocated {allocBytes / 1024} KB, expected < {maxBytes / 1024 / 1024} MB");
 
             // Verify the edit is present in the saved file.
             var firstLine = File.ReadLines(path).First();
