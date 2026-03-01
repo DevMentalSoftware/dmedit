@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -138,6 +139,19 @@ public partial class MainWindow : Window {
     }
 
     // -------------------------------------------------------------------------
+    // File dialog helpers
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// <c>true</c> when the platform provides a real file picker (Windows, macOS,
+    /// or Linux with a working DBus portal). <c>false</c> when Avalonia fell back
+    /// to its stub <c>FallbackStorageProvider</c> — in that case we use zenity.
+    /// </summary>
+    private bool UseNativePicker =>
+        !RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+        || !StorageProvider.GetType().Name.Contains("Fallback", StringComparison.Ordinal);
+
+    // -------------------------------------------------------------------------
     // File menu handlers
     // -------------------------------------------------------------------------
 
@@ -151,19 +165,23 @@ public partial class MainWindow : Window {
     }
 
     private async void OnOpen(object? sender, RoutedEventArgs e) {
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions {
-            Title = "Open Markdown File",
-            AllowMultiple = false,
-            FileTypeFilter = [
-                new FilePickerFileType("All files") { Patterns = ["*.*"] },
-                new FilePickerFileType("Markdown") { Patterns = ["*.md", "*.markdown"] }
-            ]
-        });
-
-        if (files.Count == 0) {
-            return;
+        string? path;
+        if (UseNativePicker) {
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions {
+                Title = "Open File",
+                AllowMultiple = false,
+                FileTypeFilter = [
+                    new FilePickerFileType("All files") { Patterns = ["*.*"] },
+                    new FilePickerFileType("Markdown") { Patterns = ["*.md", "*.markdown"] }
+                ]
+            });
+            if (files.Count == 0) {
+                return;
+            }
+            path = files[0].TryGetLocalPath();
+        } else {
+            path = await LinuxFileDialog.OpenAsync("Open Markdown File");
         }
-        var path = files[0].TryGetLocalPath();
         if (path is null) {
             return;
         }
@@ -278,22 +296,26 @@ public partial class MainWindow : Window {
         } else if (_currentPath is not null) {
             suggestedName = Path.GetFileName(_currentPath);
         } else {
-            suggestedName = "untitled.md";
+            suggestedName = "untitled.txt";
         }
 
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions {
-            Title = "Save Markdown File",
-            SuggestedFileName = suggestedName,
-            FileTypeChoices = [
-                new FilePickerFileType("Markdown") { Patterns = ["*.md"] },
-                new FilePickerFileType("All files") { Patterns = ["*.*"] }
-            ]
-        });
-
-        if (file is null) {
-            return;
+        string? path;
+        if (UseNativePicker) {
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions {
+                Title = "Save File",
+                SuggestedFileName = suggestedName,
+                FileTypeChoices = [
+                    new FilePickerFileType("All files") { Patterns = ["*.*"] },
+                    new FilePickerFileType("Markdown") { Patterns = ["*.md"] }
+                ]
+            });
+            if (file is null) {
+                return;
+            }
+            path = file.TryGetLocalPath();
+        } else {
+            path = await LinuxFileDialog.SaveAsync("Save Markdown File", suggestedName);
         }
-        var path = file.TryGetLocalPath();
         if (path is null) {
             return;
         }

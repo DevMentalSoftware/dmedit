@@ -84,7 +84,7 @@ public static class DevSamples {
             10_000L,
             i => $"Line {i + 1:D5}: The quick brown fox jumps over the lazy dog."),
 
-        new("1,000,000 lines (simple)",
+        new("1,000,000 lines",
             1_000_000L,
             i => $"Line {i + 1:D7}: All work and no play makes Jack a dull boy."),
 
