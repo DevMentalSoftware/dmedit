@@ -1054,3 +1054,117 @@ edges (using `Math.Abs(diff) > 0.5`). This incorrectly rounded interior corners 
 line 1's bottom-left was rounded even though line 2 extended further left and fully covered
 it. Fixed by checking whether the adjacent rect *fails to cover* the corner (directional
 comparison instead of absolute difference).
+
+## 2026-03-02 — Feature backlog
+
+Collected feature ideas for future work, in no particular priority order. Organized by
+category for reference. Individual items will get their own dated journal entries when
+implementation begins.
+
+### Configuration
+
+- [ ] **DevMode via appsettings** — move DevMode toggle from environment variable
+  (`DEVMENTALMD_DEV`) to appsettings. Default to enabled for now.
+
+### Editing commands
+
+- [ ] **Line Delete** — delete the entire current line. Bind to `Ctrl+Y` by default.
+- [ ] **SelectWord** — select the word under the caret. Bind to `Ctrl+W` by default.
+- [ ] **ExpandWord** — appsetting that makes SelectWord expand incrementally following
+  common conventions (camelCase subwords, underscore separators, dash separators)
+  instead of selecting the whole word at once.
+- [ ] **Case commands** — Upper, Lower, Proper case transforms on the selection.
+- [ ] **Alt+Arrow line move** — `Alt+Up`/`Alt+Down` moves entire selected lines up or
+  down, reflowing the document around them. Partial line selections move the whole line.
+  Moves by logical lines, not visual rows — so Alt+Up might jump 3 rows if the line
+  above wraps to 3 rows.
+
+### Indentation
+
+- [ ] **Smart tab** — appsetting where Tab moves the caret to a predefined indent
+  (default 4 spaces) relative to the start of the previous line, not the current row.
+  When disabled, Tab indents further right each press. Example: if the previous line
+  starts at column 1 and the caret is at column 51, Tab jumps to column 5.
+
+### Display
+
+- [ ] **Line numbers** — appsetting to show line numbers in a non-editable gutter on the
+  left. Numbers are right-aligned, no leading zeros. Column width auto-expands to fit
+  the digit count for the file's line count. Multi-row wrapped lines show the number on
+  the top row only. Width changes may reflow wrapped text since horizontal space changes.
+- [ ] **Wrap options** — appsettings for: fixed-column wrap with a spinner (default 100),
+  optional thin grey vertical line at the wrap column, wrap-to-window toggle, and a
+  master enable/disable wrapping checkbox that preserves the other settings.
+
+### Status bar
+
+- [ ] **Full status bar** — fixed bar below the stats bar showing: file size, word count,
+  line count, row count (hidden when wrapping disabled), current line, current column,
+  file encoding, line ending style (clickable to fix), tab style (spaces or tab chars),
+  Insert/Overwrite mode, zoom combo.
+
+### Toolbar
+
+- [ ] **Optional toolbar** — uses font glyphs from various fonts by default, with optional
+  SVG icon support. Exposes a subset of frequently toggled settings as toolbar buttons.
+
+### Undo / Redo UI
+
+- [ ] **Undo/Redo toolbar buttons** — disabled when nothing to undo/redo. When multiple
+  actions exist, a down-arrow dropdown shows the N most recent actions. Clicking an item
+  undoes/redoes up to that point. A count is shown below the dropdown list.
+
+### Tabbed documents
+
+- [ ] **Tabbed document interface** — support multiple open documents with tabs.
+
+### Persistence
+
+- [ ] **Session persistence** — persist editor session to
+  `%LOCALAPPDATA%\DevMental\DMEdit\session.db` using VersantDB (requires a separate
+  project to build Versant from source). Persist enough to recreate full session state:
+  undo/redo history, tabs, caret positions, scroll positions, and all user-visible state.
+  Goal: survive process crash or machine reboot with at most a few hundred milliseconds
+  of lost changes. No performance impact — persistence runs slightly behind. Closing all
+  documents starts a new session. Single-session only for now.
+
+### Docking / panels
+
+- [ ] **Docking pane infrastructure** — support for separate dockable panes (Outline,
+  History, Git, etc.).
+- [ ] **Outline pane** — for block documents. Shows heading levels 1–N. Mini toolbar for
+  level toggles, quick filter, sync-with-editor. Clicking a heading scrolls to that
+  location (first line unless already visible). Requires block document model.
+- [ ] **History pane** — shows saved versions of the current file (tied to git
+  integration). Click an entry to view that version (read-only). Historic versions can be
+  opened as editable copies (forked from that point). Variable-height entries with wrapped
+  commit messages (option to truncate to one line with tooltip). Option to show diff with
+  current/next/previous version. Each entry may list changed files (hideable).
+
+### Git integration
+
+- [ ] **Blame column** — displayed left of line numbers. Shows brief author + date info
+  per line, color-coded by age. Clicking opens the History pane scrolled to that change.
+  Can collapse to just the color strip (details in tooltip). Uncommitted changes shown as
+  if committed at current time. Context menu to jump to previous version. Optional
+  narrow color strip in the scrollbar (widens it by a pixel or two) showing blame info
+  for the whole document; can optionally show only current edits.
+
+### Settings
+
+- [ ] **Settings page** — a dedicated document type with a long scrollable list of all
+  user settings. Search/filter to find settings. Always available as a right-aligned tab
+  with a gear icon. All appsettings should be represented here.
+- [ ] **Keyboard mapping settings** — assign keyboard shortcuts to any editor command.
+  Dropdown to select a base mapping from common editors. Commands divided into categories.
+  Non-default bindings (those differing from the selected base) shown at the top. Users
+  can save custom mappings that retain the base mapping reference.
+- [ ] **Combination keyboard shortcuts** — support both standard shortcuts (all keys held)
+  and two-step combo shortcuts (first shortcut opens a context, second completes the
+  action). Example: `Ctrl+R` opens a refactor menu, then a letter or Ctrl+letter combo
+  selects within it. `Ctrl+R, R` differs from holding `Ctrl` and pressing `R` twice.
+  Options: checkbox to simplify by mapping all combos to the same command; option to show
+  or hide the combo menus; active shortcut shown in status bar (far left, clickable to
+  show menu, optionally translucent).
+- [ ] **Export/import settings** — export setting changes to a file for sharing or import
+  (JSON or XML format TBD).
