@@ -30,10 +30,11 @@ dotnet build
 dotnet test
 ```
 
-All tests must pass before and after any change. Current baseline: **215 tests**
-(194 Core + 21 Rendering).
+All tests must pass before and after any change. Current baseline: **287 tests**
+(266 Core + 21 Rendering).
 
 ## Dev mode
 
-Debug builds enable DevMode automatically. In Release builds, set `DEVMENTALMD_DEV=1`.
+Debug builds enable DevMode automatically. In Release builds, set
+`DevModeEnabled: true` in `%APPDATA%/DevMentalMD/settings.json`.
 DevMode shows: Dev menu, procedural sample documents in Recent menu, performance stats bar.

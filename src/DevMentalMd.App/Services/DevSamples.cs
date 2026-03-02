@@ -21,7 +21,7 @@ public sealed record ProceduralSample(
 
 /// <summary>
 /// Developer-mode sample documents shown in the Recent Files menu when
-/// <see cref="DevMode.IsEnabled"/> is <see langword="true"/>.
+/// <see cref="AppSettings.DevMode"/> is <see langword="true"/>.
 /// </summary>
 public static class DevSamples {
     // Phrases of varying lengths used to build realistic, varied paragraphs.

@@ -340,12 +340,20 @@ public sealed class PagedFileBuffer : IBuffer {
         try {
             var ct = linkedCts.Token;
 
-            // Open the file with a write-lock (other processes can read but not write).
+            // Open _fs for on-demand page loads (LoadPageFromDisk uses seek + read).
+            // Use RandomAccess since on-demand reads jump to arbitrary page offsets.
             _fs = new FileStream(_path, FileMode.Open, FileAccess.Read,
+                FileShare.Read, PageSizeBytes, FileOptions.RandomAccess);
+
+            // Open a *separate* stream for the sequential scan. This avoids a race
+            // condition where LoadPageFromDisk seeks _fs to a previous page while
+            // the scan is reading forward — the seek corrupts the scan position and
+            // causes ScanWorker to re-read data, double-counting newlines.
+            using var scanFs = new FileStream(_path, FileMode.Open, FileAccess.Read,
                 FileShare.Read, PageSizeBytes, FileOptions.SequentialScan);
 
             // Detect BOM.
-            _encoding = DetectEncoding(_fs);
+            _encoding = DetectEncoding(scanFs);
             var decoder = _encoding.GetDecoder();
 
             var byteBuf = new byte[PageSizeBytes];
@@ -357,13 +365,13 @@ public sealed class PagedFileBuffer : IBuffer {
             while (true) {
                 ct.ThrowIfCancellationRequested();
 
-                var byteOffset = _fs.Position;
-                var bytesRead = _fs.Read(byteBuf, 0, PageSizeBytes);
+                var byteOffset = scanFs.Position;
+                var bytesRead = scanFs.Read(byteBuf, 0, PageSizeBytes);
                 if (bytesRead == 0) {
                     break;
                 }
 
-                var isLastChunk = _fs.Position >= _byteLen;
+                var isLastChunk = scanFs.Position >= _byteLen;
 
                 // Decode this chunk.
                 var charCount = decoder.GetChars(byteBuf, 0, bytesRead, charBuf, 0, isLastChunk);

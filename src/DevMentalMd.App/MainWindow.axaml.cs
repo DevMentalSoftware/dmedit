@@ -20,6 +20,7 @@ public partial class MainWindow : Window {
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
     private readonly AppSettings _settings = AppSettings.Load();
     private int _staticMenuItemCount;
+    private readonly DispatcherTimer _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
 
     public MainWindow() {
         InitializeComponent();
@@ -90,7 +91,7 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     private void WireDevMenu() {
-        MenuDev.IsVisible = DevMode.IsEnabled;
+        MenuDev.IsVisible = _settings.DevMode;
 
         // Initialize slider from settings
         SliderOuterScrollRate.Value = _settings.OuterThumbScrollRateMultiplier;
@@ -110,38 +111,83 @@ public partial class MainWindow : Window {
     }
 
     // -------------------------------------------------------------------------
-    // Stats bar wiring
+    // Stats / status bar
     // -------------------------------------------------------------------------
 
-    private int _statsThrottle;
 
     private void WireStatsBar() {
-        StatusBar.IsVisible = DevMode.IsEnabled;
-        Editor.StatsUpdated += () => {
-            // Throttle: update every 5th frame to avoid layout thrash
-            if (++_statsThrottle % 5 != 0) return;
-            // Defer to after the render pass — updating Text during Render()
-            // would invalidate a visual mid-pass and throw.
-            Dispatcher.UIThread.Post(() => {
-                var s = Editor.PerfStats;
-                var editStat = s.Edit.Count > 0 ? $"  |  Edit: {s.Edit.Format()}" : "";
-                StatsBar.Text =
-                    $"Layout: {s.Layout.Format()}  |  " +
-                    $"Render: {s.Render.Format()}{editStat}  |  " +
-                    $"{s.LogicalLines:N0} lines, {s.ViewportLines} in view ({s.ViewportRows} rows)  |  " +
-                    $"{s.ScrollPercent:F1}%";
-                string load;
-                if (s.FirstChunkTimeMs > 0) {
-                    load = $"{s.FirstChunkTimeMs:F1}ms + {s.LoadTimeMs:F1}ms";
-                } else {
-                    load = s.LoadTimeMs > 0 ? $"{s.LoadTimeMs:F1}ms" : "—";
-                }
-                var save = s.SaveTimeMs > 0 ? $"{s.SaveTimeMs:F1}ms" : "—";
-                StatsBarIO.Text =
-                    $"Load: {load}  |  Save: {save}  |  " +
-                    $"Mem: {s.MemoryMb:F0} MB (max {s.PeakMemoryMb:F0} MB)";
-            }, DispatcherPriority.Background);
+        StatsBar.IsVisible = _settings.DevMode;
+        StatsBarIO.IsVisible = _settings.DevMode;
+
+        // A single fire-once timer coalesces all status updates.  StatsUpdated
+        // fires on every render frame, but the timer ensures we only touch the
+        // TextBlocks at most twice per second.  If nothing changes the timer
+        // never fires again — zero overhead at idle.
+        _statusTimer.Tick += (_, _) => {
+            _statusTimer.Stop();
+            UpdateStatusBar();
         };
+
+        Editor.StatsUpdated += () => {
+            _statusTimer.Start();
+        };
+    }
+
+    private void UpdateStatusBar() {
+        // -- Permanent status bar (always visible) --
+        var doc = Editor.Document;
+        if (doc == null) {
+            if (StatusLeft.Text != "Ln 1, Col 1") StatusLeft.Text = "Ln 1, Col 1";
+            if (StatusRight.Text != "") StatusRight.Text = "";
+        } else {
+            var table = doc.Table;
+            var stillLoading = table.OrigBuffer is { LengthIsKnown: false };
+
+            // During loading, line-start lookups can fail (pages not in memory).
+            if (!stillLoading) {
+                var caret = doc.Selection.Caret;
+                var lineIdx = table.LineFromOfs(caret);
+                var lineStart = table.LineStartOfs(lineIdx);
+                var col = caret - lineStart + 1;
+                var line = lineIdx + 1;
+
+                var left = $"Ln {line:N0}, Col {col:N0}";
+                if (!doc.Selection.IsEmpty) {
+                    left += $"  ({doc.Selection.Len:N0} selected)";
+                }
+                if (StatusLeft.Text != left) StatusLeft.Text = left;
+            }
+
+            var lineCount = table.LineCount;
+            var lcText = lineCount >= 0 ? $"{lineCount:N0} lines" : "\u2014 lines";
+            var suffix = stillLoading ? "  |  loading\u2026" : "  |  UTF-8  |  LF  |  Spaces: 4";
+            var right = $"{lcText}{suffix}";
+            if (StatusRight.Text != right) StatusRight.Text = right;
+        }
+
+        if (_settings.DevMode) {
+
+            var s = Editor.PerfStats;
+            var editStat = s.Edit.Count > 0 ? $"  |  Edit: {s.Edit.Format()}" : "";
+            var statsText =
+                $"Layout: {s.Layout.Format()}  |  " +
+                $"Render: {s.Render.Format()}{editStat}  |  " +
+                $"{s.LogicalLines:N0} lines, {s.ViewportLines} in view ({s.ViewportRows} rows)  |  " +
+                $"{s.ScrollPercent:F1}%";
+            if (StatsBar.Text != statsText) StatsBar.Text = statsText;
+
+            string load;
+            if (s.FirstChunkTimeMs > 0) {
+                load = $"{s.FirstChunkTimeMs:F1}ms + {s.LoadTimeMs:F1}ms";
+            } else {
+                load = s.LoadTimeMs > 0 ? $"{s.LoadTimeMs:F1}ms" : "\u2014";
+            }
+            var save = s.SaveTimeMs > 0 ? $"{s.SaveTimeMs:F1}ms" : "\u2014";
+            var ioText =
+                $"Load: {load}  |  Save: {save}  |  " +
+                $"Mem: {s.MemoryMb:F0} MB (max {s.PeakMemoryMb:F0} MB)";
+            if (StatsBarIO.Text != ioText) StatsBarIO.Text = ioText;
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -243,7 +289,7 @@ public partial class MainWindow : Window {
             }
         }
 
-        if (DevMode.IsEnabled) {
+        if (_settings.DevMode) {
             MenuFile.Items.Add(new Separator());
             foreach (var sample in DevSamples.All) {
                 var captured = sample;

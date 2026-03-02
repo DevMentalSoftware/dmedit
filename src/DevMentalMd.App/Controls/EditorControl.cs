@@ -521,13 +521,26 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             endOfs = doc.Table.LineStartOfs(bottomLine);
         }
 
+        // During streaming/paged loads, LineStartOfs returns -1 when the
+        // required page isn't in memory yet. Layout empty text — the next
+        // ProgressChanged event will trigger re-layout once data is available.
+        if (startOfs < 0 || endOfs < 0) {
+            _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, maxWidth, 0);
+            _extent = new Size(maxWidth, totalVisualRows * rh);
+            _renderOffsetY = 0;
+            return;
+        }
+
         var len = (int)(endOfs - startOfs);
 
-        // If the underlying buffer has evicted pages for this range, render
-        // grey placeholder blocks while the pages load asynchronously.
+        // If the underlying buffer has evicted pages for this range, kick off
+        // async page loads and layout empty text.  ProgressChanged will trigger
+        // a re-layout once the data arrives.
         if (len > 0 && doc.Table.OrigBuffer is { } origBuf && !origBuf.IsLoaded(startOfs, len)) {
             origBuf.EnsureLoaded(startOfs, len);
-            RenderPlaceholderLayout(topLine, bottomLine, rh, maxWidth, totalVisualRows, avgLineHeight);
+            _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, maxWidth, 0);
+            _extent = new Size(maxWidth, totalVisualRows * rh);
+            _renderOffsetY = 0;
             return;
         }
 
@@ -596,45 +609,6 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     }
 
     // -------------------------------------------------------------------------
-    // Placeholder for unloaded pages
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// When the paged buffer hasn't loaded the pages for the current viewport,
-    /// sets up a minimal layout with extent + offset so the scroll position stays
-    /// consistent, and sets a flag for <see cref="Render"/> to draw grey blocks.
-    /// </summary>
-    private void RenderPlaceholderLayout(
-        long topLine, long bottomLine, double rh, double maxWidth,
-        long totalVisualRows, double avgLineHeight) {
-
-        // Dispose any stale layout — we won't produce real text lines.
-        _layout?.Dispose();
-        _layout = null;
-        _showPlaceholder = true;
-        _placeholderLineCount = (int)(bottomLine - topLine);
-        _placeholderRowHeight = rh;
-
-        _extent = new Size(maxWidth, totalVisualRows * rh);
-        _renderOffsetY = topLine * avgLineHeight - _scrollOffset.Y;
-        if (_renderOffsetY > 0) {
-            _renderOffsetY = 0;
-        }
-
-        // Cache state so incremental scroll continues to work.
-        _winTopLine = topLine;
-        _winScrollOffset = _scrollOffset.Y;
-        _winRenderOffsetY = _renderOffsetY;
-        _winFirstLineHeight = rh;
-    }
-
-    private bool _showPlaceholder;
-    private int _placeholderLineCount;
-    private double _placeholderRowHeight;
-
-    private static readonly IBrush PlaceholderBrush = new SolidColorBrush(Color.Parse("#E0E0E0"));
-
-    // -------------------------------------------------------------------------
     // Rendering
     // -------------------------------------------------------------------------
 
@@ -646,31 +620,6 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         // Background
         context.FillRectangle(Brushes.White, new Rect(Bounds.Size));
-
-        // Placeholder blocks for pages that aren't loaded yet.
-        if (_showPlaceholder) {
-            _showPlaceholder = false;
-            var rh = _placeholderRowHeight;
-            for (var i = 0; i < _placeholderLineCount; i++) {
-                var y = i * rh + _renderOffsetY;
-                if (y + rh < 0) {
-                    continue;
-                }
-                if (y > Bounds.Height) {
-                    break;
-                }
-                // Draw a grey rounded rectangle for each line slot.
-                var blockWidth = Math.Min(Bounds.Width * 0.6, 400);
-                context.FillRectangle(PlaceholderBrush,
-                    new Rect(4, y + 2, blockWidth, rh - 4),
-                    cornerRadius: 3);
-            }
-            _perfSw.Stop();
-            PerfStats.Render.Record(_perfSw.Elapsed.TotalMilliseconds);
-            PerfStats.SampleMemory();
-            StatsUpdated?.Invoke();
-            return;
-        }
 
         // Draw selection rectangles behind text
         if (doc != null && !doc.Selection.IsEmpty) {
@@ -902,12 +851,30 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
 
             case Key.Up:
-                MoveCaretVertical(doc, -1, shift);
+                if (e.KeyModifiers.HasFlag(KeyModifiers.Alt)) {
+                    _editSw.Restart();
+                    doc.MoveLineUp();
+                    _editSw.Stop();
+                    PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                    InvalidateLayout();
+                    ResetCaretBlink();
+                } else {
+                    MoveCaretVertical(doc, -1, shift);
+                }
                 e.Handled = true;
                 break;
 
             case Key.Down:
-                MoveCaretVertical(doc, +1, shift);
+                if (e.KeyModifiers.HasFlag(KeyModifiers.Alt)) {
+                    _editSw.Restart();
+                    doc.MoveLineDown();
+                    _editSw.Stop();
+                    PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                    InvalidateLayout();
+                    ResetCaretBlink();
+                } else {
+                    MoveCaretVertical(doc, +1, shift);
+                }
                 e.Handled = true;
                 break;
 
@@ -936,12 +903,55 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
 
             case Key.Y when ctrl:
-                // TODO Add LineDelete
+                _editSw.Restart();
+                doc.DeleteLine();
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                InvalidateLayout();
+                ResetCaretBlink();
+                e.Handled = true;
                 break;
 
             case Key.A when ctrl:
                 doc.Selection = new Selection(0L, doc.Table.Length);
                 InvalidateVisual();
+                e.Handled = true;
+                break;
+
+            case Key.W when ctrl:
+                doc.SelectWord();
+                InvalidateVisual();
+                ResetCaretBlink();
+                e.Handled = true;
+                break;
+
+            case Key.U when ctrl && shift:
+                _editSw.Restart();
+                doc.TransformCase(CaseTransform.Upper);
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                InvalidateLayout();
+                ResetCaretBlink();
+                e.Handled = true;
+                break;
+
+            case Key.L when ctrl && shift:
+                _editSw.Restart();
+                doc.TransformCase(CaseTransform.Lower);
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                InvalidateLayout();
+                ResetCaretBlink();
+                e.Handled = true;
+                break;
+
+            case Key.P when ctrl && shift:
+                _editSw.Restart();
+                doc.TransformCase(CaseTransform.Proper);
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                InvalidateLayout();
+                ResetCaretBlink();
                 e.Handled = true;
                 break;
 

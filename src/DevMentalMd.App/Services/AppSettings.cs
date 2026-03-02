@@ -21,6 +21,16 @@ public sealed class AppSettings {
     };
 
     // -----------------------------------------------------------------
+    // Developer mode
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Enables developer-mode features (perf stats, sample documents) in Release builds.
+    /// Always enabled in DEBUG builds regardless of this setting.
+    /// </summary>
+    public bool DevMode { get; set; } = true;
+
+    // -----------------------------------------------------------------
     // Scrollbar
     // -----------------------------------------------------------------
 

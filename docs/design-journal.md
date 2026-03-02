@@ -1063,18 +1063,18 @@ implementation begins.
 
 ### Configuration
 
-- [ ] **DevMode via appsettings** — move DevMode toggle from environment variable
+- [x] **DevMode via appsettings** — move DevMode toggle from environment variable
   (`DEVMENTALMD_DEV`) to appsettings. Default to enabled for now.
 
 ### Editing commands
 
-- [ ] **Line Delete** — delete the entire current line. Bind to `Ctrl+Y` by default.
-- [ ] **SelectWord** — select the word under the caret. Bind to `Ctrl+W` by default.
+- [x] **Line Delete** — delete the entire current line. Bind to `Ctrl+Y` by default.
+- [x] **SelectWord** — select the word under the caret. Bind to `Ctrl+W` by default.
 - [ ] **ExpandWord** — appsetting that makes SelectWord expand incrementally following
   common conventions (camelCase subwords, underscore separators, dash separators)
   instead of selecting the whole word at once.
-- [ ] **Case commands** — Upper, Lower, Proper case transforms on the selection.
-- [ ] **Alt+Arrow line move** — `Alt+Up`/`Alt+Down` moves entire selected lines up or
+- [x] **Case commands** — Upper, Lower, Proper case transforms on the selection.
+- [x] **Alt+Arrow line move** — `Alt+Up`/`Alt+Down` moves entire selected lines up or
   down, reflowing the document around them. Partial line selections move the whole line.
   Moves by logical lines, not visual rows — so Alt+Up might jump 3 rows if the line
   above wraps to 3 rows.
@@ -1098,10 +1098,11 @@ implementation begins.
 
 ### Status bar
 
-- [ ] **Full status bar** — fixed bar below the stats bar showing: file size, word count,
+- [x] **Full status bar** — fixed bar below the stats bar showing: file size, word count,
   line count, row count (hidden when wrapping disabled), current line, current column,
   file encoding, line ending style (clickable to fix), tab style (spaces or tab chars),
-  Insert/Overwrite mode, zoom combo.
+  Insert/Overwrite mode, zoom combo. *(Phase 1 done: Ln/Col, selection count, line count;
+  encoding/endings/indent hardcoded pending detection infrastructure.)*
 
 ### Toolbar
 
@@ -1168,3 +1169,72 @@ implementation begins.
   show menu, optionally translucent).
 - [ ] **Export/import settings** — export setting changes to a file for sharing or import
   (JSON or XML format TBD).
+
+## 2026-03-02 — Editing commands, DevMode appsetting, and status bar
+
+Six features implemented in one session. All editing commands live in `Document.cs` with
+full undo/redo support. 34 new tests in `DocumentTests.cs`.
+
+### DevMode via appsettings
+
+`DevMode.IsEnabled` is no longer a static readonly init. It is set by an explicit
+`DevMode.Init(AppSettings)` call in the `MainWindow` constructor, before any wiring
+methods run. `AppSettings.DevModeEnabled` (default `true`) controls the flag in Release
+builds. DEBUG builds always return `true`. The `DEVMENTALMD_DEV` env var was removed.
+
+### Line Delete (Ctrl+Y)
+
+`Document.DeleteLine()` finds the caret's line via `Table.LineFromOfs()`, deletes from
+line start to next line start (including newline). For the last line, eats the preceding
+newline to avoid a trailing blank. Single undo operation. Replaces the `// TODO` in
+`EditorControl.OnKeyDown`.
+
+### SelectWord (Ctrl+W)
+
+`Document.SelectWord()` classifies the character under the caret into word chars
+(letter/digit/underscore), whitespace, or punctuation, then scans left and right for
+the contiguous run. Reads a 1024-char window to avoid materializing large documents.
+Handles caret-at-end-of-document.
+
+### Case commands (Ctrl+Shift+U/L/P)
+
+`CaseTransform` enum (Upper, Lower, Proper) in `CaseTransform.cs`.
+`Document.TransformCase()` replaces selected text via compound edit (delete+insert).
+No-op if selection is empty or already in target case. `ToProperCase()` capitalizes
+after whitespace, dash, or underscore.
+
+### Alt+Arrow line move
+
+`Document.MoveLineUp()` / `MoveLineDown()` find the logical line range covered by
+the selection, swap with the adjacent line using a compound delete+insert. Handles
+the tricky edge case where the last document line has no trailing newline — the newline
+transfers between blocks to keep document structure valid. Selection follows the moved
+text. Multi-line selections move all covered lines.
+
+`GetSelectedLineRange()` excludes a line if selection ends at column 0 of that line
+(matches VS Code behavior).
+
+### Status bar (Phase 1)
+
+The status bar is now always visible (not gated on DevMode). Layout:
+- **Left**: `Ln {line}, Col {col}` + `({len} selected)` when selection active
+- **Center**: spacer
+- **Right**: line count, encoding, line endings, indent style (hardcoded for now)
+- **DevMode rows**: existing perf stats (unchanged, only visible in DevMode)
+
+Permanent bar updates every render frame (cheap: two PieceTable lookups). DevMode stats
+still throttled to every 5th frame.
+
+### Key bindings added
+
+| Binding | Command |
+|---------|---------|
+| Ctrl+Y | Delete line |
+| Ctrl+W | Select word |
+| Ctrl+Shift+U | Uppercase selection |
+| Ctrl+Shift+L | Lowercase selection |
+| Ctrl+Shift+P | Proper case selection |
+| Alt+Up | Move line(s) up |
+| Alt+Down | Move line(s) down |
+
+Test count: **287** (266 Core + 21 Rendering).

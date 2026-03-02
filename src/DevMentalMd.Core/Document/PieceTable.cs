@@ -248,7 +248,10 @@ public sealed class PieceTable {
     // Line access
     // -------------------------------------------------------------------------
 
-    /// <summary>Returns the logical character offset at which line <paramref name="lineIdx"/> begins.</summary>
+    /// <summary>
+    /// Returns the logical character offset at which line <paramref name="lineIdx"/> begins,
+    /// or <c>-1</c> if the line start is not yet available (buffer still loading).
+    /// </summary>
     public long LineStartOfs(long lineIdx) {
         ArgumentOutOfRangeException.ThrowIfNegative(lineIdx);
         // Fast path: delegate to the underlying buffer when the table is unedited
@@ -257,6 +260,12 @@ public sealed class PieceTable {
             var result = _origBuf.GetLineStart(lineIdx);
             if (result >= 0) {
                 return result;
+            }
+            // Buffer can't resolve this line (page not loaded). If the buffer is
+            // still loading, return -1 rather than falling through to the eager
+            // LineStarts cache (which would try to materialise the whole document).
+            if (!_origBuf.LengthIsKnown) {
+                return -1L;
             }
         }
         // Approximate path: edited but document is too large for eager indexing.
