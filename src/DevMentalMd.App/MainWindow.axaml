@@ -67,7 +67,7 @@
                                FontSize="11"
                                Foreground="#606060"
                                Padding="6,2,6,2"
-                               Text="Ln 1, Col 1" />
+                               Text="" />
                     <TextBlock x:Name="StatusRight"
                                HorizontalAlignment="Right"
                                FontFamily="Cascadia Code, Consolas, Courier New"

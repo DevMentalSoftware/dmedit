@@ -151,7 +151,6 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         public TimingStat Layout { get; } = new();
         public TimingStat Render { get; } = new();
         public TimingStat Edit { get; } = new();
-        public long LogicalLines { get; set; }
         public int ViewportLines { get; set; }
         public int ViewportRows { get; set; }
         public double ScrollPercent { get; set; }
@@ -187,7 +186,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     public PerfStatsData PerfStats { get; } = new();
 
     /// <summary>Fired after each render with updated stats.</summary>
-    public event Action? StatsUpdated;
+    public event Action? StatusUpdated;
 
     /// <summary>
     /// Documents with more logical lines than this use windowed layout —
@@ -390,7 +389,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         _perfSw.Stop();
         PerfStats.Layout.Record(_perfSw.Elapsed.TotalMilliseconds);
-        PerfStats.LogicalLines = lineCount;
+        
         PerfStats.ViewportLines = _layout?.Lines.Count ?? 0;
         PerfStats.ViewportRows = CountVisualRows(_layout);
         PerfStats.ScrollPercent = _extent.Height > _viewport.Height
@@ -647,7 +646,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         _perfSw.Stop();
         PerfStats.Render.Record(_perfSw.Elapsed.TotalMilliseconds);
         PerfStats.SampleMemory();
-        StatsUpdated?.Invoke();
+        StatusUpdated?.Invoke();
     }
 
     private const double SelCornerRadius = 3.0;
@@ -1198,6 +1197,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     protected override void OnLostFocus(RoutedEventArgs e) {
         base.OnLostFocus(e);
         _caretVisible = false;
+        _caretTimer.Stop();
         InvalidateVisual();
     }
 

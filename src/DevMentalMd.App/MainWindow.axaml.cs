@@ -20,7 +20,7 @@ public partial class MainWindow : Window {
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
     private readonly AppSettings _settings = AppSettings.Load();
     private int _staticMenuItemCount;
-    private readonly DispatcherTimer _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+    private readonly DispatcherTimer _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
 
     public MainWindow() {
         InitializeComponent();
@@ -123,26 +123,60 @@ public partial class MainWindow : Window {
         // fires on every render frame, but the timer ensures we only touch the
         // TextBlocks at most twice per second.  If nothing changes the timer
         // never fires again — zero overhead at idle.
-        _statusTimer.Tick += (_, _) => {
-            _statusTimer.Stop();
-            UpdateStatusBar();
+        _statsTimer.Tick += (_, _) => {
+            _statsTimer.Stop();
+            if (_settings.DevMode) {
+                UpdateStatsBars();
+            }
         };
 
-        Editor.StatsUpdated += () => {
-            _statusTimer.Start();
+        Editor.StatusUpdated += () => {
+            if (_settings.DevMode && !_statsTimer.IsEnabled) {
+                _statsTimer.Start();
+            }
+            // Post at Normal priority — executes right after the current render
+            // pass finishes, so the Ln/Ch update appears on the same frame
+            // without triggering layout invalidation mid-render.
+            Dispatcher.UIThread.Post(UpdateStatusBar);
         };
+    }
+
+    private void UpdateStatsBars() {
+        var s = Editor.PerfStats;
+        var editStat = s.Edit.Count > 0 ? $" | Edit: {s.Edit.Format()}" : "";
+        var statsText =
+            $"Layout: {s.Layout.Format()} | " +
+            $"Render: {s.Render.Format()}{editStat} | " +
+            $"{s.ViewportLines} lines ({s.ViewportRows} rows) | " +
+            $"{s.ScrollPercent:F1}%";
+        if (StatsBar.Text != statsText) StatsBar.Text = statsText;
+
+        string load;
+        if (s.FirstChunkTimeMs > 0) {
+            load = $"{s.FirstChunkTimeMs:F1}ms + {s.LoadTimeMs:F1}ms";
+        } else {
+            load = s.LoadTimeMs > 0 ? $"{s.LoadTimeMs:F1}ms" : "\u2014";
+        }
+        var save = s.SaveTimeMs > 0 ? $"{s.SaveTimeMs:F1}ms" : "\u2014";
+        var ioText =
+            $"Load: {load} | Save: {save} | " +
+            $"Mem: {s.MemoryMb:F0} MB (max {s.PeakMemoryMb:F0} MB)";
+        if (StatsBarIO.Text != ioText) StatsBarIO.Text = ioText;
     }
 
     private void UpdateStatusBar() {
         // -- Permanent status bar (always visible) --
         var doc = Editor.Document;
         if (doc == null) {
-            if (StatusLeft.Text != "Ln 1, Col 1") StatusLeft.Text = "Ln 1, Col 1";
-            if (StatusRight.Text != "") StatusRight.Text = "";
+            if (StatusRight.Text != "Ln 1 Ch 1") StatusRight.Text = "Ln 1 Ch 1";
+            if (StatusLeft.Text != "") StatusLeft.Text = "";
         } else {
             var table = doc.Table;
             var stillLoading = table.OrigBuffer is { LengthIsKnown: false };
 
+            var lineCount = table.LineCount;
+
+            var right = "";
             // During loading, line-start lookups can fail (pages not in memory).
             if (!stillLoading) {
                 var caret = doc.Selection.Caret;
@@ -151,42 +185,13 @@ public partial class MainWindow : Window {
                 var col = caret - lineStart + 1;
                 var line = lineIdx + 1;
 
-                var left = $"Ln {line:N0}, Col {col:N0}";
-                if (!doc.Selection.IsEmpty) {
-                    left += $"  ({doc.Selection.Len:N0} selected)";
-                }
-                if (StatusLeft.Text != left) StatusLeft.Text = left;
+                right = $"Ln {line:N0} Ch {col:N0}";
             }
 
-            var lineCount = table.LineCount;
             var lcText = lineCount >= 0 ? $"{lineCount:N0} lines" : "\u2014 lines";
-            var suffix = stillLoading ? "  |  loading\u2026" : "  |  UTF-8  |  LF  |  Spaces: 4";
-            var right = $"{lcText}{suffix}";
+            var suffix = stillLoading ? " | loading\u2026" : " | UTF-8 | LF | Spaces";
+            right += $" | {lcText}{suffix}";
             if (StatusRight.Text != right) StatusRight.Text = right;
-        }
-
-        if (_settings.DevMode) {
-
-            var s = Editor.PerfStats;
-            var editStat = s.Edit.Count > 0 ? $"  |  Edit: {s.Edit.Format()}" : "";
-            var statsText =
-                $"Layout: {s.Layout.Format()}  |  " +
-                $"Render: {s.Render.Format()}{editStat}  |  " +
-                $"{s.LogicalLines:N0} lines, {s.ViewportLines} in view ({s.ViewportRows} rows)  |  " +
-                $"{s.ScrollPercent:F1}%";
-            if (StatsBar.Text != statsText) StatsBar.Text = statsText;
-
-            string load;
-            if (s.FirstChunkTimeMs > 0) {
-                load = $"{s.FirstChunkTimeMs:F1}ms + {s.LoadTimeMs:F1}ms";
-            } else {
-                load = s.LoadTimeMs > 0 ? $"{s.LoadTimeMs:F1}ms" : "\u2014";
-            }
-            var save = s.SaveTimeMs > 0 ? $"{s.SaveTimeMs:F1}ms" : "\u2014";
-            var ioText =
-                $"Load: {load}  |  Save: {save}  |  " +
-                $"Mem: {s.MemoryMb:F0} MB (max {s.PeakMemoryMb:F0} MB)";
-            if (StatsBarIO.Text != ioText) StatsBarIO.Text = ioText;
         }
     }
 
