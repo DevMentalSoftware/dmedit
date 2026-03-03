@@ -48,23 +48,11 @@ public partial class MainWindow : Window {
             }
         };
 
-        var sampleText =
-            "# Welcome to DevMentalMD\n" +
-            "\n" +
-            "This is a plain-text editing surface — the first milestone.\n" +
-            "\n" +
-            "You can:\n" +
-            "- Type and delete text\n" +
-            "- Move the caret with arrow keys (Ctrl+Left/Right for word movement)\n" +
-            "- Select text with Shift+arrow or click-drag\n" +
-            "- Ctrl+A to select all\n" +
-            "- Ctrl+Z / Ctrl+Shift+Z to undo and redo\n" +
-            "- Home / End to jump to line start/end\n" +
-            "- File → Open / Save to work with .md files\n" +
-            "\n" +
-            "Markdown rendering and formatting come next.\n";
-
-        Editor.Document = new Document(sampleText);
+        if (_settings.DevMode) {
+            LoadManual();
+        } else {
+            Editor.Document = new Document();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -277,6 +265,18 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     private void OnNew(object? sender, RoutedEventArgs e) => CloseDocument();
+
+    private void LoadManual() {
+        var dir = AppDomain.CurrentDomain.BaseDirectory;
+        var path = Path.Combine(dir, "manual.md");
+        if (File.Exists(path)) {
+            var result = FileLoader.Load(path);
+            Editor.Document = result.Document;
+            Title = "DMEdit — manual.md";
+        } else {
+            Editor.Document = new Document();
+        }
+    }
 
     private void CloseDocument() {
         Editor.Document = new Document();
