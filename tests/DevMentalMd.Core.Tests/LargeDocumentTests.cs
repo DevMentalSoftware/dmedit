@@ -160,6 +160,12 @@ public class LargeDocumentTests {
         var table = new PieceTable(buf);
         var doc = new Document(table);
 
+        // Warmup: absorb JIT compilation + one-time runtime costs so they
+        // don't contaminate the measured allocation delta.
+        for (var i = 0; i < 10; i++) {
+            GC.KeepAlive(doc.Table.GetText(0, 100));
+        }
+
         var allocBytes = MeasureAlloc(() => {
             for (var i = 0; i < 1000; i++) {
                 var text = doc.Table.GetText(0, 100);
