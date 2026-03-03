@@ -38,7 +38,7 @@ public static class FileSaver {
         // Fast path: unedited buffer-backed document — read straight from the buffer.
         // This is thread-safe (IBuffer reads don't mutate state) and avoids the
         // per-chunk allocation in PieceTable.VisitPieces for WholeBufSentinel pieces.
-        if (table.IsOriginalContent && table.OrigBuffer is { LengthIsKnown: true } buf) {
+        if (table.IsOriginalContent && table.Buffer is { LengthIsKnown: true } buf) {
             SaveFromBuffer(buf, path, ct);
             return;
         }

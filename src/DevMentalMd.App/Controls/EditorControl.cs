@@ -294,22 +294,6 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// <summary>Height of a single visual row in pixels.</summary>
     public double RowHeightValue => GetRowHeight();
 
-    /// <summary>
-    /// Maximum character columns per visual row when wrapping is enabled.
-    /// Returns 0 when wrapping is off (column count is unbounded).
-    /// </summary>
-    public int MaxColumnsPerRow {
-        get {
-            if (!_wrapLines) return 0;
-            var cw = GetCharWidth();
-            if (cw <= 0) return 0;
-            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-            var textW = GetTextWidth(maxW);
-            if (!double.IsFinite(textW) || textW <= 0) return 0;
-            return Math.Max(1, (int)(textW / cw));
-        }
-    }
-
     // -------------------------------------------------------------------------
     // Construction
     // -------------------------------------------------------------------------
@@ -635,8 +619,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // If the underlying buffer has evicted pages for this range, kick off
         // async page loads and layout empty text.  ProgressChanged will trigger
         // a re-layout once the data arrives.
-        if (len > 0 && doc.Table.OrigBuffer is { } origBuf && !origBuf.IsLoaded(startOfs, len)) {
-            origBuf.EnsureLoaded(startOfs, len);
+        if (len > 0 && doc.Table.Buffer is { } buf && !buf.IsLoaded(startOfs, len)) {
+            buf.EnsureLoaded(startOfs, len);
             _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, maxWidth, 0);
             _extent = new Size(extentWidth, totalVisualRows * rh);
             _renderOffsetY = 0;

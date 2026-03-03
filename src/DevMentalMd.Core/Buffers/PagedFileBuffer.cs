@@ -23,12 +23,13 @@ namespace DevMentalMd.Core.Buffers;
 ///   PageInfo[]  ≈ 1 MB, decoded cache ≈ 16 MB, line index ≈ 3 MB → ~20 MB total.
 /// </para>
 /// </remarks>
-public sealed class PagedFileBuffer : IBuffer {
+public sealed class PagedFileBuffer : IProgressBuffer {
     // -----------------------------------------------------------------
     // Constants
     // -----------------------------------------------------------------
 
     private const int PageSizeBytes = 1_048_576; // 1 MB raw bytes per page
+    private const int MAX_LONGEST_LINE = 10_000; // If we have a line longer than this we won't bother to track further
 
     /// <summary>
     /// Default maximum number of decoded pages kept in memory.
@@ -72,7 +73,9 @@ public sealed class PagedFileBuffer : IBuffer {
 
     private long[] _lineSamples = null!;  // _lineSamples[i] = char offset of line i*Stride
     private long _lineCount;              // accessed via Interlocked
+    private volatile int _longestLine;
     private int _lineSampleCount;
+    private long _lastLineStart; 
 
     // -----------------------------------------------------------------
     // File access + scan state
@@ -85,7 +88,6 @@ public sealed class PagedFileBuffer : IBuffer {
     private long _totalChars;              // accessed via Interlocked
     private volatile bool _done;
     private volatile int _scanFrontier;   // highest page index scanned so far
-
     private readonly object _lock = new();
     private readonly CancellationTokenSource _cts = new();
 
@@ -138,6 +140,8 @@ public sealed class PagedFileBuffer : IBuffer {
     public bool LengthIsKnown => _done;
 
     public long LineCount => Interlocked.Read(ref _lineCount);
+
+    public int LongestLine => _longestLine;
 
     public long GetLineStart(long lineIdx) {
         var lc = Interlocked.Read(ref _lineCount); // snapshot
@@ -439,7 +443,7 @@ public sealed class PagedFileBuffer : IBuffer {
     private void ScanNewlines(char[] data, int charCount, long charBase,
         ref long currentLine, ref bool prevWasCr) {
 
-        for (var i = 0; i < charCount; i++) {
+        for (int i = 0; i < charCount; i++) {
             var ch = data[i];
             if (ch == '\n') {
                 if (prevWasCr) {
@@ -449,15 +453,32 @@ public sealed class PagedFileBuffer : IBuffer {
                 }
                 currentLine++;
                 Interlocked.Exchange(ref _lineCount, currentLine + 1); // +1 because line 0 always exists
-                RecordLineSample(currentLine, charBase + i + 1);
+                long charOffset = charBase + i + 1;
+                CheckLongestLine(charOffset);
+                RecordLineSample(currentLine, charOffset);
             } else if (ch == '\r') {
                 currentLine++;
                 Interlocked.Exchange(ref _lineCount, currentLine + 1);
+                long charOffset = charBase + i + 1;
+                CheckLongestLine(charOffset);
                 RecordLineSample(currentLine, charBase + i + 1);
                 prevWasCr = true;
             } else {
                 prevWasCr = false;
             }
+        }
+    }
+
+    private void CheckLongestLine(long charOffset) {
+        if (_longestLine >= MAX_LONGEST_LINE) {
+            return;
+        }
+        lock (_lock) {
+            int lx = (int) Math.Min(MAX_LONGEST_LINE, charOffset - _lastLineStart);
+            if (lx > _longestLine) {
+                _longestLine = lx;
+            }
+            _lastLineStart = charOffset;
         }
     }
 

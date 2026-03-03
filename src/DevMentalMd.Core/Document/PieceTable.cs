@@ -9,27 +9,23 @@ namespace DevMentalMd.Core.Documents;
 /// Not thread-safe; all access must be from a single thread.
 /// </summary>
 public sealed class PieceTable {
-    // -------------------------------------------------------------------------
-    // Fields
-    // -------------------------------------------------------------------------
 
-    private readonly string _orig;
-    private readonly IBuffer? _origBuf;  // non-null when constructed from IBuffer
+    private readonly IBuffer _buf;
 
     private readonly StringBuilder _addBuf = new();
     private readonly List<Piece> _pieces = new();
 
-    // Sorted list of logical character offsets at which each line begins.
-    // Index 0 is always 0 (start of document). Rebuilt lazily after mutations.
-    // Guarded by EagerIndexThreshold to avoid huge lists on very large documents.
-    // 10M chars ≈ 20 MB UTF-16; at ~100 chars/line that's ~100K line-start entries (800 KB).
+    // Lazily-built line-start cache for post-mutation correctness.
+    // When the piece table is unedited (IsOriginalContent), line operations
+    // delegate directly to the IBuffer.  After Insert/Delete, this cache is
+    // invalidated (set to null) and rebuilt on next access by scanning the
+    // modified text via VisitPieces.
     private List<long>? _lineStartCache;
+    private int _maxLineLen = -1;
 
-    private const long EagerIndexThreshold = 10_000_000L; // 10 M chars
-
-    // Sentinel: a piece with this Len spans the entire _origBuf from its Start offset
-    // without knowing the exact length upfront.  Only valid for Piece.Which == Original
-    // and only when _origBuf != null.  Insert/Delete will replace it with real pieces.
+    // Sentinel: a piece with this Len spans the entire _buf from its Start offset
+    // without knowing the exact length upfront.  Only valid for Piece.Which == Original.
+    // Insert/Delete will replace it with real pieces.
     private const long WholeBufSentinel = long.MaxValue;
 
     // -------------------------------------------------------------------------
@@ -37,11 +33,8 @@ public sealed class PieceTable {
     // -------------------------------------------------------------------------
 
     /// <summary>Constructs a piece-table from an in-memory string.</summary>
-    public PieceTable(string originalContent) {
-        _orig = originalContent;
-        if (originalContent.Length > 0) {
-            _pieces.Add(new Piece(BufferKind.Original, 0, originalContent.Length));
-        }
+    /// Used only for testing edge cases
+    public PieceTable(string originalContent) : this(new StringBuffer(originalContent)) {
     }
 
     /// <summary>
@@ -50,8 +43,7 @@ public sealed class PieceTable {
     /// for disposing it after the piece-table is no longer needed.
     /// </summary>
     public PieceTable(IBuffer buf) {
-        _orig = string.Empty;  // unused when _origBuf is set
-        _origBuf = buf;
+        _buf = buf;
         // Add the entire buffer as the initial piece.  When length is not yet known
         // we use WholeBufSentinel so that Length is not computed on construction.
         var len = buf.LengthIsKnown ? buf.Length : WholeBufSentinel;
@@ -68,21 +60,21 @@ public sealed class PieceTable {
     /// The underlying <see cref="IBuffer"/> when constructed from a buffer, or <c>null</c>
     /// when constructed from a string.
     /// </summary>
-    public IBuffer? OrigBuffer => _origBuf;
+    public IBuffer Buffer => _buf;
 
     /// <summary>
     /// <c>true</c> when the document content is the unedited original buffer
     /// (no inserts or deletes have been applied).
     /// </summary>
     public bool IsOriginalContent =>
-        _origBuf != null && _pieces.Count == 1 && _pieces[0].Which == BufferKind.Original;
+        _pieces.Count == 1 && _pieces[0].Which == BufferKind.Original;
 
     /// <summary>Total number of characters in the document.</summary>
     public long Length {
         get {
             var total = 0L;
             foreach (var p in _pieces) {
-                total += p.Len == WholeBufSentinel ? _origBuf!.Length - p.Start : p.Len;
+                total += p.Len == WholeBufSentinel ? _buf!.Length - p.Start : p.Len;
             }
             return total;
         }
@@ -94,20 +86,20 @@ public sealed class PieceTable {
     /// </summary>
     public long LineCount {
         get {
-            // Fast path: unedited buffer — exact.
-            if (_origBuf?.LineCount >= 0 && _pieces.Count == 1 &&
-                _pieces[0].Which == BufferKind.Original) {
-                return _origBuf.LineCount;
-            }
-            if (Length > EagerIndexThreshold) {
-                // Too large for eager indexing. If the buffer has a line count,
-                // use it as an approximation (off by ±edits, but prevents freeze).
-                if (_origBuf?.LineCount >= 0) {
-                    return _origBuf.LineCount;
-                }
-                return -1L;
-            }
+            if (IsOriginalContent && _buf.LineCount >= 0) return _buf.LineCount;
             return LineStarts.Count;
+        }
+    }
+
+    /// <summary>
+    /// Length of the longest logical line in the document (including its newline
+    /// terminator), or <c>-1</c> when not available.
+    /// </summary>
+    public long MaxLineLength {
+        get {
+            if (IsOriginalContent && _buf.LongestLine >= 0) return _buf.LongestLine;
+            _ = LineStarts; // force cache build which sets _maxLineLen
+            return _maxLineLen;
         }
     }
 
@@ -122,7 +114,7 @@ public sealed class PieceTable {
         }
         ArgumentOutOfRangeException.ThrowIfNegative(ofs);
         // Only check upper bound when Length is fully known.
-        if (_origBuf == null || _origBuf.LengthIsKnown) {
+        if (_buf == null || _buf.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs, Length);
         }
 
@@ -151,6 +143,7 @@ public sealed class PieceTable {
         }
 
         _lineStartCache = null;
+        _maxLineLen = -1;
     }
 
     /// <summary>Deletes <paramref name="len"/> characters starting at logical offset <paramref name="ofs"/>.</summary>
@@ -160,7 +153,7 @@ public sealed class PieceTable {
         }
         ArgumentOutOfRangeException.ThrowIfNegative(ofs);
         ArgumentOutOfRangeException.ThrowIfNegative(len);
-        if (_origBuf == null || _origBuf.LengthIsKnown) {
+        if (_buf == null || _buf.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs + len, Length);
         }
 
@@ -195,6 +188,7 @@ public sealed class PieceTable {
         }
 
         _lineStartCache = null;
+        _maxLineLen = -1;
     }
 
     // -------------------------------------------------------------------------
@@ -207,13 +201,13 @@ public sealed class PieceTable {
         var sb = new StringBuilder((int)Math.Min(len, int.MaxValue));
         foreach (var p in _pieces) {
             if (p.Len == WholeBufSentinel) {
-                var bufLen = (int)(_origBuf!.Length - p.Start);
+                var bufLen = (int)(_buf!.Length - p.Start);
                 var chars = new char[bufLen];
-                _origBuf.CopyTo(p.Start, chars, bufLen);
+                _buf.CopyTo(p.Start, chars, bufLen);
                 sb.Append(chars);
-            } else if (p.Which == BufferKind.Original && _origBuf != null) {
+            } else if (p.Which == BufferKind.Original) {
                 var chars = new char[(int)p.Len];
-                _origBuf.CopyTo(p.Start, chars, (int)p.Len);
+                _buf.CopyTo(p.Start, chars, (int)p.Len);
                 sb.Append(chars);
             } else {
                 sb.Append(BufFor(p.Which), (int)p.Start, (int)p.Len);
@@ -226,7 +220,7 @@ public sealed class PieceTable {
     public string GetText(long start, int len) {
         ArgumentOutOfRangeException.ThrowIfNegative(start);
         ArgumentOutOfRangeException.ThrowIfNegative(len);
-        if (_origBuf == null || _origBuf.LengthIsKnown) {
+        if (_buf == null || _buf.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(start + len, Length);
         }
 
@@ -254,51 +248,21 @@ public sealed class PieceTable {
     /// </summary>
     public long LineStartOfs(long lineIdx) {
         ArgumentOutOfRangeException.ThrowIfNegative(lineIdx);
-        // Fast path: delegate to the underlying buffer when the table is unedited
-        // (single original piece). Avoids building the eager line-start cache.
-        if (_origBuf != null && _pieces.Count == 1 && _pieces[0].Which == BufferKind.Original) {
-            var result = _origBuf.GetLineStart(lineIdx);
-            if (result >= 0) {
-                return result;
-            }
-            // Buffer can't resolve this line (page not loaded). If the buffer is
-            // still loading, return -1 rather than falling through to the eager
-            // LineStarts cache (which would try to materialise the whole document).
-            if (!_origBuf.LengthIsKnown) {
-                return -1L;
-            }
-        }
-        // Approximate path: edited but document is too large for eager indexing.
-        // Use the buffer's line starts (off by ±edit chars, but prevents freeze).
-        if (_origBuf != null && Length > EagerIndexThreshold) {
-            var result = _origBuf.GetLineStart(lineIdx);
-            if (result >= 0) {
-                return result;
-            }
-        }
-        var lc = LineCount;
-        if (lc >= 0) {
-            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(lineIdx, lc);
-        }
-        return LineStarts[(int)lineIdx];
+        if (IsOriginalContent) return _buf.GetLineStart(lineIdx);
+        var starts = LineStarts;
+        if (lineIdx >= starts.Count) return -1L;
+        return starts[(int)lineIdx];
     }
 
     /// <summary>Returns the zero-based line index that contains logical offset <paramref name="ofs"/>.</summary>
     public long LineFromOfs(long ofs) {
         ArgumentOutOfRangeException.ThrowIfNegative(ofs);
-        if (_origBuf == null || _origBuf.LengthIsKnown) {
+        if (_buf.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs, Length);
         }
 
-        // Fast path: unedited buffer with a line index.
-        if (_origBuf != null && _pieces.Count == 1 && _pieces[0].Which == BufferKind.Original
-            && _origBuf.LineCount >= 0) {
-            return BinarySearchBufferLines(_origBuf, ofs);
-        }
-
-        // Approximate path: edited large document — binary search the buffer's line index.
-        if (_origBuf != null && Length > EagerIndexThreshold && _origBuf.LineCount >= 0) {
-            return BinarySearchBufferLines(_origBuf, ofs);
+        if (IsOriginalContent && _buf.LineCount >= 0) {
+            return BinarySearchBufferLines(_buf, ofs);
         }
 
         var starts = LineStarts;
@@ -342,43 +306,25 @@ public sealed class PieceTable {
             ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(lineIdx, lc);
         }
 
-        // Approximate path for large documents: use buffer's line-start index.
-        if (_origBuf != null && Length > EagerIndexThreshold && _origBuf.LineCount >= 0) {
-            var lineStart = _origBuf.GetLineStart(lineIdx);
-            if (lineStart < 0) {
-                return string.Empty;
-            }
-            long lineEnd;
-            if (lineIdx + 1 < _origBuf.LineCount) {
-                lineEnd = _origBuf.GetLineStart(lineIdx + 1);
-                if (lineEnd < 0) {
-                    lineEnd = Length;
-                } else {
-                    lineEnd--; // back up before newline
-                    if (lineEnd > lineStart && CharAt(lineEnd - 1) == '\r') {
-                        lineEnd--;
-                    }
-                }
-            } else {
-                lineEnd = Length;
-            }
-            var len = (int)Math.Max(0, lineEnd - lineStart);
-            return len <= 0 ? string.Empty : GetText(lineStart, len);
-        }
+        var lineStart = LineStartOfs(lineIdx);
+        if (lineStart < 0) return string.Empty;
 
-        var starts = LineStarts;
-        var lineStart2 = starts[(int)lineIdx];
-        long lineEnd2;
-        if (lineIdx + 1 < starts.Count) {
-            lineEnd2 = starts[(int)(lineIdx + 1)] - 1;
-            if (lineEnd2 > lineStart2 && CharAt(lineEnd2 - 1) == '\r') {
-                lineEnd2--;
+        long lineEnd;
+        if (lineIdx + 1 < lc) {
+            lineEnd = LineStartOfs(lineIdx + 1);
+            if (lineEnd < 0) {
+                lineEnd = Length;
+            } else {
+                lineEnd--; // back up before newline
+                if (lineEnd > lineStart && CharAt(lineEnd - 1) == '\r') {
+                    lineEnd--;
+                }
             }
         } else {
-            lineEnd2 = Length;
+            lineEnd = Length;
         }
-        var len2 = (int)(lineEnd2 - lineStart2);
-        return len2 <= 0 ? string.Empty : GetText(lineStart2, len2);
+        var len = (int)Math.Max(0, lineEnd - lineStart);
+        return len <= 0 ? string.Empty : GetText(lineStart, len);
     }
 
     // -------------------------------------------------------------------------
@@ -386,14 +332,11 @@ public sealed class PieceTable {
     // -------------------------------------------------------------------------
 
     private string BufFor(BufferKind kind) {
-        if (kind == BufferKind.Add) {
-            return _addBuf.ToString();
-        }
-        // String-ctor path: _origBuf is null, use _orig directly.
-        // When _origBuf is set, Original pieces are handled via _origBuf.CopyTo()
+        // Original pieces are handled via _buf.CopyTo()
         // in VisitPieces/CharAt/BuildLineStarts — BufFor should never be called
-        // for Original when _origBuf is set.
-        return _orig;
+        // for Original.
+        ArgumentOutOfRangeException.ThrowIfNotEqual(kind, BufferKind.Add);
+        return _addBuf.ToString();
     }
 
     /// <summary>
@@ -429,21 +372,21 @@ public sealed class PieceTable {
             if (p.Len == WholeBufSentinel) {
                 // Unknown-length IBuffer piece: read directly without materialising the whole buffer.
                 // After a split, the piece covers [p.Start .. end-of-buffer), so clamp to actual available chars.
-                var bufAvail = _origBuf!.Length - (p.Start + pieceOfs);
+                var bufAvail = _buf!.Length - (p.Start + pieceOfs);
                 var take = (int)Math.Min(remaining, bufAvail);
                 if (take > 0) {
                     var chars = new char[take];
-                    _origBuf.CopyTo(p.Start + pieceOfs, chars, take);
+                    _buf.CopyTo(p.Start + pieceOfs, chars, take);
                     visitor(chars);
                 }
                 remaining -= take;
-            } else if (p.Which == BufferKind.Original && _origBuf != null) {
+            } else if (p.Which == BufferKind.Original) {
                 // Read directly from the buffer — avoids materializing the entire
                 // buffer as a string (which would double memory for large files).
                 var avail = p.Len - pieceOfs;
                 var take = (int)Math.Min(avail, remaining);
                 var chars = new char[take];
-                _origBuf.CopyTo(p.Start + pieceOfs, chars, take);
+                _buf.CopyTo(p.Start + pieceOfs, chars, take);
                 visitor(chars);
                 remaining -= take;
             } else {
@@ -456,30 +399,22 @@ public sealed class PieceTable {
         }
     }
 
-    private char CharAt(long ofs) {
-        var (pieceIdx, ofsInPiece) = FindPiece(ofs);
-        if (pieceIdx >= _pieces.Count) {
-            throw new ArgumentOutOfRangeException(nameof(ofs));
-        }
-        var p = _pieces[pieceIdx];
-        if (p.Len == WholeBufSentinel) {
-            return _origBuf![p.Start + ofsInPiece];
-        }
-        if (p.Which == BufferKind.Original && _origBuf != null) {
-            return _origBuf[p.Start + ofsInPiece];
-        }
-        return BufFor(p.Which)[(int)(p.Start + ofsInPiece)];
-    }
-
+    /// <summary>
+    /// Lazily-built line-start list for edited documents. When the piece table
+    /// is unedited, callers use the buffer directly. After mutations this is
+    /// rebuilt by scanning the modified text via <see cref="VisitPieces"/>.
+    /// </summary>
     private List<long> LineStarts {
         get {
-            if (_lineStartCache != null) {
-                return _lineStartCache;
-            }
-            if (Length > EagerIndexThreshold) {
-                throw new NotSupportedException(
-                    "Document is too large for eager line indexing. " +
-                    "Use an IBuffer that provides GetLineStart() instead.");
+            if (_lineStartCache != null) return _lineStartCache;
+            // For unedited content, build from the buffer's line index.
+            if (IsOriginalContent && _buf.LineCount >= 0) {
+                var lc = (int)_buf.LineCount;
+                var starts = new List<long>(lc);
+                for (var i = 0; i < lc; i++) starts.Add(_buf.GetLineStart(i));
+                _lineStartCache = starts;
+                _maxLineLen = _buf.LongestLine;
+                return starts;
             }
             _lineStartCache = BuildLineStarts();
             return _lineStartCache;
@@ -489,87 +424,58 @@ public sealed class PieceTable {
     private List<long> BuildLineStarts() {
         var starts = new List<long> { 0L };
         var logicalOfs = 0L;
-        var prevWasCr = false; // \r seen at end of last chunk — line start deferred
-        foreach (var p in _pieces) {
-            if (p.Len == WholeBufSentinel) {
-                BuildLineStartsFromBuffer(starts, _origBuf!, p.Start, ref logicalOfs, ref prevWasCr);
-            } else if (p.Which == BufferKind.Original && _origBuf != null) {
-                BuildLineStartsFromBuffer(starts, _origBuf, p.Start,
-                    ref logicalOfs, ref prevWasCr, (int)p.Len);
-            } else {
-                var buf = BufFor(p.Which).AsSpan((int)p.Start, (int)p.Len);
-                ScanForNewlines(buf, starts, ref logicalOfs, ref prevWasCr);
-            }
-        }
-        // A trailing bare \r at end of document starts a new empty line.
-        if (prevWasCr) {
-            starts.Add(logicalOfs);
-        }
-        return starts;
-    }
+        var prevWasCr = false;
 
-    private static void BuildLineStartsFromBuffer(
-        List<long> starts, IBuffer buf, long bufStart,
-        ref long logicalOfs, ref bool prevWasCr, int maxLen = -1) {
-        const int ChunkSize = 4096;
-        var bufLen = maxLen >= 0 ? maxLen : buf.Length - bufStart;
-        var chunkSize = (int)Math.Min(ChunkSize, Math.Min(bufLen, int.MaxValue));
-        if (chunkSize == 0) {
-            return;
-        }
-        var chunk = new char[chunkSize];
-        var scanned = 0L;
-        while (scanned < bufLen) {
-            var take = (int)Math.Min(chunk.Length, bufLen - scanned);
-            buf.CopyTo(bufStart + scanned, chunk, take);
-            ScanForNewlines(chunk.AsSpan(0, take), starts, ref logicalOfs, ref prevWasCr);
-            scanned += take;
-        }
-    }
-
-    /// <summary>
-    /// Scans a character span for newlines, appending line-start offsets to
-    /// <paramref name="starts"/>. <paramref name="prevWasCr"/> carries state across
-    /// chunk/piece boundaries to handle \r\n pairs that straddle two adjacent buffers.
-    /// </summary>
-    private static void ScanForNewlines(
-        ReadOnlySpan<char> buf, List<long> starts, ref long logicalOfs, ref bool prevWasCr) {
-
-        var startIdx = 0;
-
-        // Resolve the deferred \r from the end of the previous span.
-        if (prevWasCr && buf.Length > 0) {
-            prevWasCr = false;
-            if (buf[0] == '\n') {
-                // \r\n crossing span boundary: add line start AFTER the \n.
-                starts.Add(logicalOfs + 1);
-                startIdx = 1; // \n is fully consumed here
-            } else {
-                // Bare \r: line start is right at the start of this span.
-                starts.Add(logicalOfs);
-                // Don't advance startIdx — buf[0] must still be processed normally.
-            }
-        }
-
-        for (var i = startIdx; i < buf.Length; i++) {
-            var ch = buf[i];
-            if (ch == '\n') {
-                // Bare \n or second half of \r\n (already handled by \r branch).
-                starts.Add(logicalOfs + i + 1);
-            } else if (ch == '\r') {
-                if (i + 1 < buf.Length) {
-                    if (buf[i + 1] != '\n') {
-                        // Bare \r (not followed by \n in this span).
-                        starts.Add(logicalOfs + i + 1);
+        VisitPieces(0, Length, span => {
+            for (var i = 0; i < span.Length; i++) {
+                var ch = span[i];
+                if (prevWasCr) {
+                    prevWasCr = false;
+                    if (ch == '\n') {
+                        // \r\n pair crossing chunk boundary — adjust the
+                        // tentative line start to be after the \n.
+                        starts[^1] = logicalOfs + i + 1;
+                        continue;
                     }
-                    // else \r\n within span: skip \r, let \n add the line start.
-                } else {
-                    // \r at end of span — defer until next span.
+                    // Bare \r — line start already recorded. Fall through
+                    // to process current char normally.
+                }
+                if (ch == '\n') {
+                    starts.Add(logicalOfs + i + 1);
+                } else if (ch == '\r') {
+                    // Tentative line start — may be adjusted if next char is \n.
+                    starts.Add(logicalOfs + i + 1);
                     prevWasCr = true;
                 }
             }
-        }
+            logicalOfs += span.Length;
+        });
 
-        logicalOfs += buf.Length;
+        // Compute max line length
+        var maxLen = 0;
+        for (var i = 1; i < starts.Count; i++) {
+            var len = (int)(starts[i] - starts[i - 1]);
+            if (len > maxLen) maxLen = len;
+        }
+        var lastLen = (int)(logicalOfs - starts[^1]);
+        if (lastLen > maxLen) maxLen = lastLen;
+        _maxLineLen = maxLen;
+
+        return starts;
+    }
+
+    private char CharAt(long ofs) {
+        var (pieceIdx, ofsInPiece) = FindPiece(ofs);
+        if (pieceIdx >= _pieces.Count) {
+            throw new ArgumentOutOfRangeException(nameof(ofs));
+        }
+        var p = _pieces[pieceIdx];
+        if (p.Len == WholeBufSentinel) {
+            return _buf![p.Start + ofsInPiece];
+        }
+        if (p.Which == BufferKind.Original) {
+            return _buf[p.Start + ofsInPiece];
+        }
+        return BufFor(p.Which)[(int)(p.Start + ofsInPiece)];
     }
 }

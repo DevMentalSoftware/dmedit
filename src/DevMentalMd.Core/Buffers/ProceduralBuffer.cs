@@ -72,6 +72,8 @@ public sealed class ProceduralBuffer : IBuffer {
     /// <inheritdoc/>
     public long LineCount => _lineCount;
 
+    public int LongestLine => 10_000; // Not worth tracking for this dev mode feature
+
     /// <inheritdoc/>
     public bool LengthIsKnown => _length.HasValue;
 

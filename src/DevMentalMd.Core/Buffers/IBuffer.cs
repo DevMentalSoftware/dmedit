@@ -2,7 +2,6 @@ namespace DevMentalMd.Core.Buffers;
 
 /// <summary>
 /// Abstraction over a read-only character store of arbitrary size.
-/// Implementations include <see cref="StringBuffer"/> (in-memory string),
 /// <see cref="ProceduralBuffer"/> (generated content), and
 /// <see cref="StreamingFileBuffer"/> (incremental background file loading).
 /// </summary>
@@ -35,6 +34,8 @@ public interface IBuffer : IDisposable {
     /// Total number of logical lines, or <c>-1</c> if not known without a full scan.
     /// </summary>
     long LineCount => -1L;
+
+    int LongestLine => -1;
 
     /// <summary>
     /// When <c>false</c>, <see cref="PieceTable"/> skips the upper-bound guard

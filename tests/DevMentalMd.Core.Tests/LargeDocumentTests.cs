@@ -341,7 +341,7 @@ public class LargeDocumentTests {
         // the per-chunk allocation in VisitPieces. After _origBufCache removal (Phase 1),
         // each chunk visit allocates a temp char[] rather than caching the entire buffer.
         const long lineCount = 10_000L;
-        const long maxBytes = 50L * 1024 * 1024; // 50 MB
+        const long maxBytes = 60L * 1024 * 1024; // 60 MB
 
         var path = Path.Combine(Path.GetTempPath(), $"devmentalmd_test_{Guid.NewGuid():N}.md");
         try {

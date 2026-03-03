@@ -225,7 +225,7 @@ public partial class MainWindow : Window {
             if (StatusLeft.Text != "") StatusLeft.Text = "";
         } else {
             var table = doc.Table;
-            var stillLoading = table.OrigBuffer is { LengthIsKnown: false };
+            var stillLoading = table.Buffer is { LengthIsKnown: false };
 
             var lineCount = table.LineCount;
 
@@ -242,14 +242,13 @@ public partial class MainWindow : Window {
                 var line = lineIdx + 1;
 
                 // Pad Ln to the width of the line-count string so the field
-                // doesn't jitter as the caret moves.  When wrapping is on the
-                // max column is bounded by charsPerRow; when off, fall back to
-                // the line-count width (we don't track max line length).
+                // doesn't jitter as the caret moves.  Use the longest line in
+                // the document to size the Ch field (grows during loading then
+                // stabilises).  Falls back to lcWidth for huge documents where
+                // the line index isn't built.
                 var lnText = $"{line:N0}".PadLeft(lcWidth);
-                var wrapAt = _settings.WrapLinesAt;
-                var chWidth = wrapAt > 0
-                    ? $"{wrapAt:N0}".Length
-                    : (Editor.MaxColumnsPerRow is > 0 and var maxCols ? $"{maxCols:N0}".Length : lcWidth);
+                var maxLineLen = table.MaxLineLength;
+                var chWidth = maxLineLen > 0 ? $"{maxLineLen:N0}".Length : lcWidth;
                 var chText = $"{col:N0}".PadLeft(chWidth);
                 right = $"Ln {lnText} Ch {chText}";
             }
@@ -468,14 +467,14 @@ public partial class MainWindow : Window {
     /// files the stopwatch is stopped immediately.
     /// </summary>
     private void WireStreamingProgress(Stopwatch sw) {
-        if (Editor.Document?.Table.OrigBuffer is StreamingFileBuffer streamBuf) {
+        if (Editor.Document?.Table.Buffer is IProgressBuffer buf) {
             // Streaming load — capture time to first renderable chunk, then keep
             // the stopwatch running until fully loaded.
             var firstChunkCaptured = false;
             Editor.PerfStats.FirstChunkTimeMs = 0;
             Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
 
-            streamBuf.ProgressChanged += () => {
+            buf.ProgressChanged += () => {
                 Dispatcher.UIThread.Post(() => {
                     if (!firstChunkCaptured) {
                         firstChunkCaptured = true;
@@ -486,43 +485,19 @@ public partial class MainWindow : Window {
                 }, DispatcherPriority.Background);
             };
 
-            streamBuf.LoadComplete += () => {
+            buf.LoadComplete += () => {
                 Dispatcher.UIThread.Post(() => {
                     sw.Stop();
                     Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
                     Editor.InvalidateLayout();
                 }, DispatcherPriority.Background);
             };
-        } else if (Editor.Document?.Table.OrigBuffer is PagedFileBuffer pagedBuf) {
-            // Paged load — background scan builds page table + sampled line index.
-            var firstChunkCaptured = false;
-            Editor.PerfStats.FirstChunkTimeMs = 0;
-            Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
 
-            pagedBuf.ProgressChanged += () => {
-                Dispatcher.UIThread.Post(() => {
-                    if (!firstChunkCaptured) {
-                        firstChunkCaptured = true;
-                        Editor.PerfStats.FirstChunkTimeMs = sw.Elapsed.TotalMilliseconds;
-                    }
-                    Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
-                    Editor.InvalidateLayout();
-                }, DispatcherPriority.Background);
-            };
-
-            pagedBuf.LoadComplete += () => {
-                Dispatcher.UIThread.Post(() => {
-                    sw.Stop();
-                    Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
-                    Editor.InvalidateLayout();
-                }, DispatcherPriority.Background);
-            };
         } else {
-            // Small file — loaded synchronously, stop the clock.
-            // No streaming, so first-chunk time is the same as total load time.
             sw.Stop();
             Editor.PerfStats.FirstChunkTimeMs = 0;
             Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
         }
     }
+
 }

@@ -12,8 +12,11 @@ namespace DevMentalMd.Core.Buffers;
 /// thread reads from <c>_data[0.._loadedLen-1]</c>. The volatile <c>_loadedLen</c> field
 /// acts as a memory barrier so the UI thread always sees fully-written data. The
 /// <c>_lineStarts</c> array is guarded by <c>_lock</c> for safe growth/read.
+/// Note: We used to use this for text files of relatively small size, but we found that
+///    the PagedFileBuffer was fast enough for those cases too. So now we only use this
+///    to support loading zipped text files. 
 /// </remarks>
-public sealed class StreamingFileBuffer : IBuffer {
+public sealed class StreamingFileBuffer : IProgressBuffer {
     private const int ChunkSize = 1_048_576; // 1 MB
 
     // Character storage — pre-allocated to worst-case size (1 char per byte for UTF-8).
@@ -86,6 +89,8 @@ public sealed class StreamingFileBuffer : IBuffer {
     public bool LengthIsKnown => _done;
 
     public long LineCount => _lineCount;
+
+    public int LongestLine => 10_000;
 
     public long GetLineStart(long lineIdx) {
         var count = _lineCount; // snapshot volatile
