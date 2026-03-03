@@ -1088,7 +1088,7 @@ implementation begins.
 
 ### Display
 
-- [ ] **Line numbers** — appsetting to show line numbers in a non-editable gutter on the
+- [x] **Line numbers** — appsetting to show line numbers in a non-editable gutter on the
   left. Numbers are right-aligned, no leading zeros. Column width auto-expands to fit
   the digit count for the file's line count. Multi-row wrapped lines show the number on
   the top row only. Width changes may reflow wrapped text since horizontal space changes.
@@ -1236,5 +1236,44 @@ still throttled to every 5th frame.
 | Ctrl+Shift+P | Proper case selection |
 | Alt+Up | Move line(s) up |
 | Alt+Down | Move line(s) down |
+
+Test count: **287** (266 Core + 21 Rendering).
+
+## 2026-03-03 — Line number gutter
+
+Implemented the optional line number display from the backlog. Line numbers appear in a
+non-editable gutter on the left side of the editor.
+
+### Behaviour
+
+- **Right-aligned**, no leading zeros, 1-based numbering.
+- Gutter width auto-expands to fit the digit count of the document's total line count
+  (minimum 2 digits). When the digit count changes (e.g., 999 → 1000 lines during a
+  streaming load), the text area reflows automatically.
+- Wrapped lines show the number on the **first visual row only** — subsequent wrapped
+  rows within the same logical line have no number.
+- Gutter background is light gray (#F0F0F0), number text is muted (#A0A0A0).
+- Works correctly with windowed layout for large documents.
+
+### Settings
+
+- `ShowLineNumbers` in `AppSettings` (default: `true`). Persisted to
+  `%APPDATA%/DevMentalMD/settings.json`.
+- **View → Line Numbers** menu item toggles the setting with a checkbox indicator.
+
+### Implementation
+
+- `EditorControl.ShowLineNumbers` property — toggles gutter visibility and triggers
+  re-layout.
+- `UpdateGutterWidth()` computes gutter pixel width from line count digits × char width
+  plus left/right padding (4px + 12px).
+- `EnsureLayout()` and `MeasureOverride()` subtract `_gutterWidth` from `maxWidth` so
+  the text layout engine wraps to the correct available width.
+- `Render()` calls `DrawGutter()` which paints the gutter background and per-line
+  numbers using right-aligned `TextLayout` objects.
+- All coordinate translation (selection rects, caret, pointer hit-testing) offsets X by
+  `_gutterWidth`.
+- `ScrollCaretIntoView()` and `ScrollToTopLine()` chars-per-row estimation accounts for
+  gutter width.
 
 Test count: **287** (266 Core + 21 Rendering).

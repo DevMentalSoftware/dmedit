@@ -36,6 +36,7 @@ public partial class MainWindow : Window {
 
         RebuildRecentMenu();
         WireScrollBar();
+        WireViewMenu();
         WireDevMenu();
         WireStatsBar();
 
@@ -97,6 +98,23 @@ public partial class MainWindow : Window {
         ScrollBar.ViewportSize = Editor.ScrollViewportHeight;
         ScrollBar.ExtentSize = Editor.ScrollExtentHeight;
         ScrollBar.RowHeight = Editor.RowHeightValue;
+    }
+
+    // -------------------------------------------------------------------------
+    // View menu wiring
+    // -------------------------------------------------------------------------
+
+    private void WireViewMenu() {
+        Editor.ShowLineNumbers = _settings.ShowLineNumbers;
+        MenuLineNumbers.ToggleType = MenuItemToggleType.CheckBox;
+        MenuLineNumbers.IsChecked = _settings.ShowLineNumbers;
+        MenuLineNumbers.Click += (_, _) => {
+            var show = !_settings.ShowLineNumbers;
+            _settings.ShowLineNumbers = show;
+            _settings.Save();
+            Editor.ShowLineNumbers = show;
+            MenuLineNumbers.IsChecked = show;
+        };
     }
 
     // -------------------------------------------------------------------------

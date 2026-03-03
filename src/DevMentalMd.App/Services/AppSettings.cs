@@ -52,6 +52,15 @@ public sealed class AppSettings {
     public int RecentFileCount { get; set; } = 10;
 
     // -----------------------------------------------------------------
+    // Display
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Show line numbers in a gutter on the left side of the editor.
+    /// </summary>
+    public bool ShowLineNumbers { get; set; } = true;
+
+    // -----------------------------------------------------------------
     // Large file support
     // -----------------------------------------------------------------
 

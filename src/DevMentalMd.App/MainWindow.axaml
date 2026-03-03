@@ -20,6 +20,9 @@
                 <MenuItem Header="_Close" x:Name="MenuClose" InputGesture="Ctrl+F4" />
                 <MenuItem Header="Close A_ll" x:Name="MenuCloseAll" InputGesture="Ctrl+Shift+F4" />
             </MenuItem>
+            <MenuItem Header="_View" x:Name="MenuView">
+                <MenuItem Header="_Line Numbers" x:Name="MenuLineNumbers" />
+            </MenuItem>
             <MenuItem Header="_Dev" x:Name="MenuDev">
                 <MenuItem>
                     <MenuItem.Header>

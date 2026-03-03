@@ -104,6 +104,16 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// <summary>Optional reference to the scrollbar for middle-drag visual feedback.</summary>
     public DualZoneScrollBar? ScrollBar { get; set; }
 
+    /// <summary>Whether line numbers are displayed in a gutter on the left.</summary>
+    public bool ShowLineNumbers {
+        get => _showLineNumbers;
+        set {
+            if (_showLineNumbers == value) return;
+            _showLineNumbers = value;
+            InvalidateLayout();
+        }
+    }
+
     // Scroll state
     private Size _extent;
     private Size _viewport;
@@ -112,6 +122,15 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private double _charWidth;
     private double _renderOffsetY;
     private EventHandler? _scrollInvalidated;
+
+    // Line number gutter
+    private bool _showLineNumbers = true;
+    private double _gutterWidth;
+    private int _gutterDigitCnt;
+    private const double GutterPadLeft = 4;
+    private const double GutterPadRight = 12;
+    private static readonly IBrush GutterBg = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+    private static readonly IBrush GutterFg = new SolidColorBrush(Color.FromRgb(0xA0, 0xA0, 0xA0));
 
     // Incremental scroll tracking — used by LayoutWindowed to produce
     // pixel-perfect smooth scrolling even when topLine changes.
@@ -372,6 +391,22 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     }
 
     /// <summary>
+    /// Recomputes <see cref="_gutterWidth"/> and <see cref="_gutterDigitCnt"/>
+    /// based on the current document's line count and font metrics.
+    /// </summary>
+    private void UpdateGutterWidth() {
+        if (!_showLineNumbers) {
+            _gutterWidth = 0;
+            _gutterDigitCnt = 0;
+            return;
+        }
+        var lineCount = Document?.Table.LineCount ?? 1;
+        if (lineCount < 1) lineCount = 1;
+        _gutterDigitCnt = Math.Max(2, (int)Math.Floor(Math.Log10(lineCount)) + 1);
+        _gutterWidth = GutterPadLeft + _gutterDigitCnt * GetCharWidth() + GutterPadRight;
+    }
+
+    /// <summary>
     /// Builds or retrieves the current layout.
     /// For small documents (&lt; <see cref="WindowedLayoutThreshold"/> lines), the entire text is laid out.
     /// For large documents, only the visible window of text is fetched and laid out.
@@ -385,7 +420,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var doc = Document;
         var typeface = new Typeface(FontFamily);
         var rh = GetRowHeight();
-        var maxW = Bounds.Width > 0 ? Bounds.Width : 900;
+        UpdateGutterWidth();
+        var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
         var lineCount = doc?.Table.LineCount ?? 0;
 
         if (lineCount > WindowedLayoutThreshold) {
@@ -416,7 +452,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var doc = Document;
         var typeface = new Typeface(FontFamily);
         var rh = GetRowHeight();
-        var maxW = double.IsInfinity(availableSize.Width) ? 0 : availableSize.Width;
+        UpdateGutterWidth();
+        var maxW = double.IsInfinity(availableSize.Width)
+            ? 0
+            : Math.Max(100, availableSize.Width - _gutterWidth);
         _viewport = availableSize;
 
         var lineCount = doc?.Table.LineCount ?? 0;
@@ -609,6 +648,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // Background
         context.FillRectangle(Brushes.White, new Rect(Bounds.Size));
 
+        // Gutter (line numbers)
+        DrawGutter(context, layout);
+
         // Draw selection rectangles behind text
         if (doc != null && !doc.Selection.IsEmpty) {
             DrawSelection(context, layout, doc.Selection);
@@ -624,7 +666,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             if (y > Bounds.Height) {
                 break; // below viewport
             }
-            line.Layout.Draw(context, new Point(0, y));
+            line.Layout.Draw(context, new Point(_gutterWidth, y));
         }
 
         // Draw caret (hidden during any scroll-drag operation)
@@ -637,6 +679,37 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         PerfStats.Render.Record(_perfSw.Elapsed.TotalMilliseconds);
         PerfStats.SampleMemory();
         StatusUpdated?.Invoke();
+    }
+
+    private void DrawGutter(DrawingContext context, LayoutResult layout) {
+        if (_gutterWidth <= 0) return;
+
+        var rh = layout.RowHeight;
+        var table = Document?.Table;
+
+        // Gutter background
+        context.FillRectangle(GutterBg, new Rect(0, 0, _gutterWidth, Bounds.Height));
+
+        if (table == null || layout.Lines.Count == 0) return;
+
+        var typeface = new Typeface(FontFamily);
+        var numW = _gutterWidth - GutterPadRight;
+        var firstLineIdx = table.LineFromOfs(layout.ViewportBase + layout.Lines[0].CharStart);
+
+        for (var i = 0; i < layout.Lines.Count; i++) {
+            var line = layout.Lines[i];
+            var y = line.Row * rh + _renderOffsetY;
+            if (y + rh < 0) continue;
+            if (y > Bounds.Height) break;
+
+            var lineNum = firstLineIdx + i + 1;
+            var numText = lineNum.ToString();
+            using var tl = new TextLayout(
+                numText, typeface, FontSize, GutterFg,
+                textAlignment: TextAlignment.Right,
+                maxWidth: numW);
+            tl.Draw(context, new Point(0, y));
+        }
     }
 
     private const double SelCornerRadius = 3.0;
@@ -679,7 +752,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             }
 
             foreach (var rect in line.Layout.HitTestTextRange(rangeStart, rangeLen)) {
-                rects.Add(new Rect(rect.X, lineY + rect.Y, rect.Width, rect.Height));
+                rects.Add(new Rect(rect.X + _gutterWidth, lineY + rect.Y, rect.Width, rect.Height));
             }
         }
 
@@ -755,7 +828,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (y + rect.Height < 0 || y > Bounds.Height) {
             return;
         }
-        context.FillRectangle(CaretBrush, new Rect(rect.X, y, 1.5, rect.Height));
+        context.FillRectangle(CaretBrush, new Rect(rect.X + _gutterWidth, y, 1.5, rect.Height));
     }
 
     // -------------------------------------------------------------------------
@@ -1194,7 +1267,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (lineCount > WindowedLayoutThreshold) {
             // Windowed layout — estimate caret Y from its logical line index.
             var cw = GetCharWidth();
-            var maxW = Bounds.Width > 0 ? Bounds.Width : 900;
+            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
             var charsPerRow = Math.Max(1, (int)(maxW / cw));
             var totalChars = table.Length;
             var totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
@@ -1278,7 +1351,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         var rh = GetRowHeight();
         var cw = GetCharWidth();
-        var maxW = Bounds.Width > 0 ? Bounds.Width : 900;
+        var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
         var charsPerRow = Math.Max(1, (int)(maxW / cw));
         var totalChars = table.Length;
         var totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
@@ -1345,7 +1418,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
         var layout = EnsureLayout();
         var pt = e.GetPosition(this);
-        var layoutPt = new Point(pt.X, pt.Y - _renderOffsetY);
+        var layoutPt = new Point(pt.X - _gutterWidth, pt.Y - _renderOffsetY);
         var localOfs = _layoutEngine.HitTest(layoutPt, layout);
         var ofs = layout.ViewportBase + localOfs;
         var isLeft = props.IsLeftButtonPressed;
@@ -1381,7 +1454,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
         var layout = EnsureLayout();
         var pt = e.GetPosition(this);
-        var layoutPt = new Point(pt.X, pt.Y - _renderOffsetY);
+        var layoutPt = new Point(pt.X - _gutterWidth, pt.Y - _renderOffsetY);
         var localOfs = _layoutEngine.HitTest(layoutPt, layout);
         var ofs = layout.ViewportBase + localOfs;
         doc.Selection = doc.Selection.ExtendTo(ofs);
