@@ -27,21 +27,6 @@
                 <Separator />
                 <MenuItem Header="_Wrap Lines" x:Name="MenuWrapLines" />
             </MenuItem>
-            <MenuItem Header="_Dev" x:Name="MenuDev">
-                <MenuItem>
-                    <MenuItem.Header>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="Outer scroll rate:" VerticalAlignment="Center" />
-                            <Slider x:Name="SliderOuterScrollRate"
-                                    Width="140" Minimum="0.5" Maximum="10"
-                                    TickFrequency="0.5" IsSnapToTickEnabled="True"
-                                    VerticalAlignment="Center" />
-                            <TextBlock x:Name="LabelOuterScrollRate"
-                                       Width="30" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </MenuItem.Header>
-                </MenuItem>
-            </MenuItem>
         </Menu>
 
         <Border x:Name="StatusBar"

@@ -37,7 +37,6 @@ public partial class MainWindow : Window {
         RebuildRecentMenu();
         WireScrollBar();
         WireViewMenu();
-        WireDevMenu();
         WireStatsBar();
 
         // The editor is the only focusable control.  Grab focus on
@@ -156,30 +155,6 @@ public partial class MainWindow : Window {
     }
 
     // -------------------------------------------------------------------------
-    // Dev menu wiring
-    // -------------------------------------------------------------------------
-
-    private void WireDevMenu() {
-        MenuDev.IsVisible = _settings.DevMode;
-
-        // Initialize slider from settings
-        SliderOuterScrollRate.Value = _settings.OuterThumbScrollRateMultiplier;
-        ScrollBar.OuterScrollRateMultiplier = _settings.OuterThumbScrollRateMultiplier;
-        LabelOuterScrollRate.Text = _settings.OuterThumbScrollRateMultiplier.ToString("F1");
-
-        SliderOuterScrollRate.PropertyChanged += (_, e) => {
-            if (e.Property.Name != "Value") {
-                return;
-            }
-            var val = SliderOuterScrollRate.Value;
-            ScrollBar.OuterScrollRateMultiplier = val;
-            LabelOuterScrollRate.Text = val.ToString("F1");
-            _settings.OuterThumbScrollRateMultiplier = val;
-            _settings.ScheduleSave();
-        };
-    }
-
-    // -------------------------------------------------------------------------
     // Stats / status bar
     // -------------------------------------------------------------------------
 
@@ -271,8 +246,10 @@ public partial class MainWindow : Window {
                 // max column is bounded by charsPerRow; when off, fall back to
                 // the line-count width (we don't track max line length).
                 var lnText = $"{line:N0}".PadLeft(lcWidth);
-                var maxCols = Editor.MaxColumnsPerRow;
-                var chWidth = maxCols > 0 ? $"{maxCols:N0}".Length : lcWidth;
+                var wrapAt = _settings.WrapLinesAt;
+                var chWidth = wrapAt > 0
+                    ? $"{wrapAt:N0}".Length
+                    : (Editor.MaxColumnsPerRow is > 0 and var maxCols ? $"{maxCols:N0}".Length : lcWidth);
                 var chText = $"{col:N0}".PadLeft(chWidth);
                 right = $"Ln {lnText} Ch {chText}";
             }
