@@ -265,11 +265,14 @@ public partial class MainWindow : Window {
                 var col = caret - lineStart + 1;
                 var line = lineIdx + 1;
 
-                // Pad line to the width of the line-count string so the field
-                // doesn't jitter as the caret moves.  Column uses the same width
-                // (we don't track max line length yet).
+                // Pad Ln to the width of the line-count string so the field
+                // doesn't jitter as the caret moves.  When wrapping is on the
+                // max column is bounded by charsPerRow; when off, fall back to
+                // the line-count width (we don't track max line length).
                 var lnText = $"{line:N0}".PadLeft(lcWidth);
-                var chText = $"{col:N0}".PadLeft(lcWidth);
+                var maxCols = Editor.MaxColumnsPerRow;
+                var chWidth = maxCols > 0 ? $"{maxCols:N0}".Length : lcWidth;
+                var chText = $"{col:N0}".PadLeft(chWidth);
                 right = $"Ln {lnText} Ch {chText}";
             }
 

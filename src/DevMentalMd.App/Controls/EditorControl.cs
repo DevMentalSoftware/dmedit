@@ -275,6 +275,20 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// <summary>Height of a single visual row in pixels.</summary>
     public double RowHeightValue => GetRowHeight();
 
+    /// <summary>
+    /// Maximum character columns per visual row when wrapping is enabled.
+    /// Returns 0 when wrapping is off (column count is unbounded).
+    /// </summary>
+    public int MaxColumnsPerRow {
+        get {
+            if (!_wrapLines) return 0;
+            var cw = GetCharWidth();
+            if (cw <= 0) return 0;
+            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+            return Math.Max(1, (int)(maxW / cw));
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Construction
     // -------------------------------------------------------------------------
