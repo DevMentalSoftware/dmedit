@@ -176,6 +176,9 @@ public partial class MainWindow : Window {
 
             var lineCount = table.LineCount;
 
+            var lcText = lineCount >= 0 ? $"{lineCount:N0}" : "\u2014";
+            var lcWidth = lcText.Length;
+
             var right = "";
             // During loading, line-start lookups can fail (pages not in memory).
             if (!stillLoading) {
@@ -185,12 +188,16 @@ public partial class MainWindow : Window {
                 var col = caret - lineStart + 1;
                 var line = lineIdx + 1;
 
-                right = $"Ln {line:N0} Ch {col:N0}";
+                // Pad line to the width of the line-count string so the field
+                // doesn't jitter as the caret moves.  Column uses the same width
+                // (we don't track max line length yet).
+                var lnText = $"{line:N0}".PadLeft(lcWidth);
+                var chText = $"{col:N0}".PadLeft(lcWidth);
+                right = $"Ln {lnText} Ch {chText}";
             }
 
-            var lcText = lineCount >= 0 ? $"{lineCount:N0} lines" : "\u2014 lines";
             var suffix = stillLoading ? " | loading\u2026" : " | UTF-8 | LF | Spaces";
-            right += $" | {lcText}{suffix}";
+            right += $" | {lcText} lines{suffix}";
             if (StatusRight.Text != right) StatusRight.Text = right;
         }
     }
