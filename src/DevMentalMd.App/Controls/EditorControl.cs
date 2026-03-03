@@ -114,6 +114,20 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
     }
 
+    /// <summary>
+    /// Maximum columns before wrapping. Wrapping occurs at this limit or the
+    /// viewport edge, whichever is narrower. Only effective when
+    /// <see cref="WrapLines"/> is true. Values &lt; 1 are treated as unlimited.
+    /// </summary>
+    public int WrapLinesAt {
+        get => _wrapLinesAt;
+        set {
+            if (_wrapLinesAt == value) return;
+            _wrapLinesAt = value;
+            InvalidateLayout();
+        }
+    }
+
     /// <summary>Whether line numbers are displayed in a gutter on the left.</summary>
     public bool ShowLineNumbers {
         get => _showLineNumbers;
@@ -135,6 +149,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     // Word wrap
     private bool _wrapLines = true;
+    private int _wrapLinesAt = 100;
 
     // Line number gutter
     private bool _showLineNumbers = true;
@@ -144,6 +159,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private const double GutterPadRight = 12;
     private static readonly IBrush GutterBg = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
     private static readonly IBrush GutterFg = new SolidColorBrush(Color.FromRgb(0xA0, 0xA0, 0xA0));
+
+    // Column guide
+    private static readonly IPen GuideLinePen = new Pen(
+        new SolidColorBrush(Color.FromArgb(0x10, 0x00, 0x00, 0x00)), 1);
 
     // Incremental scroll tracking — used by LayoutWindowed to produce
     // pixel-perfect smooth scrolling even when topLine changes.
@@ -285,7 +304,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             var cw = GetCharWidth();
             if (cw <= 0) return 0;
             var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-            return Math.Max(1, (int)(maxW / cw));
+            var textW = GetTextWidth(maxW);
+            if (!double.IsFinite(textW) || textW <= 0) return 0;
+            return Math.Max(1, (int)(textW / cw));
         }
     }
 
@@ -434,6 +455,21 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     }
 
     /// <summary>
+    /// Computes the effective text-area width passed to the layout engine.
+    /// When wrapping is off returns <see cref="double.PositiveInfinity"/>.
+    /// When wrapping is on, returns the lesser of the viewport width and
+    /// the <see cref="WrapLinesAt"/> column limit (in pixels).
+    /// </summary>
+    private double GetTextWidth(double extentWidth) {
+        if (!_wrapLines) return double.PositiveInfinity;
+        if (_wrapLinesAt >= 1) {
+            var colLimit = _wrapLinesAt * GetCharWidth();
+            return Math.Min(extentWidth, colLimit);
+        }
+        return extentWidth;
+    }
+
+    /// <summary>
     /// Builds or retrieves the current layout.
     /// For small documents (&lt; <see cref="WindowedLayoutThreshold"/> lines), the entire text is laid out.
     /// For large documents, only the visible window of text is fetched and laid out.
@@ -450,7 +486,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         UpdateGutterWidth();
         var boundsW = Bounds.Width > 0 ? Bounds.Width : 900;
         var extentW = Math.Max(100, boundsW - _gutterWidth);
-        var textW = _wrapLines ? extentW : double.PositiveInfinity;
+        var textW = GetTextWidth(extentW);
         var lineCount = doc?.Table.LineCount ?? 0;
 
         if (lineCount > WindowedLayoutThreshold) {
@@ -485,7 +521,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var extentW = double.IsInfinity(availableSize.Width)
             ? 0
             : Math.Max(100, availableSize.Width - _gutterWidth);
-        var textW = _wrapLines ? extentW : double.PositiveInfinity;
+        var textW = GetTextWidth(extentW);
         _viewport = availableSize;
 
         var lineCount = doc?.Table.LineCount ?? 0;
@@ -686,6 +722,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         // Gutter (line numbers)
         DrawGutter(context, layout);
+
+        // Column guide line
+        if (_wrapLinesAt >= 1) {
+            var guideX = 2 + _gutterWidth + _wrapLinesAt * GetCharWidth();
+            if (guideX < Bounds.Width) {
+                context.DrawLine(GuideLinePen, new Point(guideX, 0), new Point(guideX, Bounds.Height));
+            }
+        }
 
         // Draw selection rectangles behind text
         if (doc != null && !doc.Selection.IsEmpty) {
@@ -1302,14 +1346,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         if (lineCount > WindowedLayoutThreshold) {
             // Windowed layout — estimate caret Y from its logical line index.
-            var cw = GetCharWidth();
             var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-            var textW = _wrapLines ? maxW : double.PositiveInfinity;
+            var textW = GetTextWidth(maxW);
             var totalChars = table.Length;
             long totalVisualRows;
             if (!double.IsFinite(textW) || textW <= 0) {
                 totalVisualRows = lineCount;
             } else {
+                var cw = GetCharWidth();
                 var charsPerRow = Math.Max(1, (int)(textW / cw));
                 totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
             }
@@ -1392,14 +1436,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (lineCount <= 0) return;
 
         var rh = GetRowHeight();
-        var cw = GetCharWidth();
         var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-        var textW = _wrapLines ? maxW : double.PositiveInfinity;
+        var textW = GetTextWidth(maxW);
         var totalChars = table.Length;
         long totalVisualRows;
         if (!double.IsFinite(textW) || textW <= 0) {
             totalVisualRows = lineCount;
         } else {
+            var cw = GetCharWidth();
             var charsPerRow = Math.Max(1, (int)(textW / cw));
             totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
         }

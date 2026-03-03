@@ -139,8 +139,9 @@ public partial class MainWindow : Window {
             UpdateStatusBarVisibility();
         };
 
-        // Wrap Lines
+        // Wrap Lines + column limit
         Editor.WrapLines = _settings.WrapLines;
+        Editor.WrapLinesAt = _settings.WrapLinesAt;
         MenuWrapLines.ToggleType = MenuItemToggleType.CheckBox;
         MenuWrapLines.IsChecked = _settings.WrapLines;
         MenuWrapLines.Click += (_, _) => {

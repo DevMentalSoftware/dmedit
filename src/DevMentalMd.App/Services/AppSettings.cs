@@ -82,6 +82,13 @@ public sealed class AppSettings {
     /// </summary>
     public bool WrapLines { get; set; } = true;
 
+    /// <summary>
+    /// Maximum number of columns before a line wraps. Wrapping occurs at the
+    /// viewport edge or this column limit, whichever is narrower. Only has
+    /// effect when <see cref="WrapLines"/> is true. Default: 100.
+    /// </summary>
+    public int WrapLinesAt { get; set; } = 100;
+
     // -----------------------------------------------------------------
     // Large file support
     // -----------------------------------------------------------------

@@ -1276,6 +1276,27 @@ When `WrapLines = false`, the layout engine receives `maxWidth = ∞` which acti
 `ScrollCaretIntoView`, and `ScrollToTopLine` all guard against the infinity case
 by setting `totalVisualRows = lineCount` (one row per logical line, no wrapping).
 
+### WrapLinesAt column limit
+
+`WrapLinesAt` setting (default 100) caps the wrapping width at `N × charWidth` pixels.
+Wrapping occurs at the viewport edge or the column limit, whichever is narrower.
+Values < 1 are treated as unlimited (viewport-only wrapping).
+
+All `textW` computation is centralised in `EditorControl.GetTextWidth(extentWidth)`
+which applies both the `_wrapLines` flag and the `_wrapLinesAt` column cap. This is
+called from `EnsureLayout`, `MeasureOverride`, `ScrollCaretIntoView`, and
+`ScrollToTopLine`. `MaxColumnsPerRow` also routes through `GetTextWidth` so the
+status bar "Ch" field pads correctly.
+
+The setting is wired from `AppSettings.WrapLinesAt` → `Editor.WrapLinesAt` in
+`WireViewMenu`. There is no menu UI yet (numeric settings will use the future
+settings page); for now it's editable in `settings.json`.
+
+A translucent gray vertical guide line (`GuideLinePen`, `#30000000`, 1px) is drawn
+at the column limit when `WrapLinesAt >= 1` and the column falls within the viewport.
+`WrapLinesAt <= 0` disables both wrapping-at-column and the guide line (viewport-only
+wrapping).
+
 Test count: **287** (266 Core + 21 Rendering).
 
 ## 2026-03-03 — Line number gutter
