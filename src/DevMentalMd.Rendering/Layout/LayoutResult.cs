@@ -9,8 +9,15 @@ public sealed class LayoutResult : IDisposable {
 
     public IReadOnlyList<LayoutLine> Lines { get; }
 
-    /// <summary>Total height of all lines stacked vertically.</summary>
+    /// <summary>Pixel height of a single visual row.  Multiply by <see cref="LayoutLine.Row"/>
+    /// or <see cref="LayoutLine.HeightInRows"/> to convert row units to pixels.</summary>
+    public double RowHeight { get; }
+
+    /// <summary>Total height of all lines stacked vertically, in pixels.</summary>
     public double TotalHeight { get; }
+
+    /// <summary>Total height of all lines in visual-row units.</summary>
+    public int TotalRows { get; }
 
     /// <summary>
     /// The document-level character offset at which this layout window begins.
@@ -20,12 +27,14 @@ public sealed class LayoutResult : IDisposable {
     /// </summary>
     public long ViewportBase { get; }
 
-    internal LayoutResult(IReadOnlyList<LayoutLine> lines, long viewportBase = 0L) {
+    internal LayoutResult(IReadOnlyList<LayoutLine> lines, double rowHeight, long viewportBase = 0L) {
         Lines = lines;
+        RowHeight = rowHeight;
         ViewportBase = viewportBase;
-        TotalHeight = lines.Count > 0
-            ? lines[^1].Y + lines[^1].Height
-            : 0.0;
+        TotalRows = lines.Count > 0
+            ? lines[^1].Row + lines[^1].HeightInRows
+            : 0;
+        TotalHeight = TotalRows * rowHeight;
     }
 
     public void Dispose() {

@@ -91,6 +91,16 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private bool _middleDrag;
     private double _middleDragStartY;
 
+    /// <summary>
+    /// Pixel X coordinate to aim for when pressing Up/Down.  Set on the first
+    /// vertical move and preserved across consecutive vertical moves so the
+    /// caret returns to the original column after traversing short lines.
+    /// Reset to <c>-1</c> by any non-vertical caret action (typing, left/right,
+    /// Home/End, click, etc.).
+    /// </summary>
+    private double _preferredCaretX = -1;
+
+
     /// <summary>Optional reference to the scrollbar for middle-drag visual feedback.</summary>
     public DualZoneScrollBar? ScrollBar { get; set; }
 
@@ -401,23 +411,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     private static int CountVisualRows(LayoutResult? layout) {
         if (layout == null) return 0;
-        var rh = 0.0;
-        var rows = 0;
-        foreach (var line in layout.Lines) {
-            // First line establishes the single-row height
-            if (rh <= 0 && line.Height > 0) rh = line.Layout.Height > 0 ? GetSingleRowHeight(line) : line.Height;
-            rows += rh > 0 ? Math.Max(1, (int)Math.Round(line.Height / rh)) : 1;
-        }
-        return rows;
-    }
-
-    private static double GetSingleRowHeight(LayoutLine line) {
-        // TextLayout.Height for a single unwrapped line is the row height.
-        // For a wrapped line, we need the height of one row.
-        // TextLayout stores line metrics — approximate by dividing total height
-        // by the number of visual lines it produces.
-        var textLines = line.Layout.TextLines;
-        return textLines.Count > 0 ? line.Height / textLines.Count : line.Height;
+        return layout.TotalRows;
     }
 
     protected override Size MeasureOverride(Size availableSize) {
@@ -568,7 +562,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             // subtract its actual height to keep content in place.
             _renderOffsetY = _winRenderOffsetY
                 - (_scrollOffset.Y - _winScrollOffset)
-                - _layout.Lines[0].Height;
+                - _layout.Lines[0].HeightInRows * rh;
         } else {
             // First layout or large jump — use formula estimate.
             _renderOffsetY = topLine * avgLineHeight - _scrollOffset.Y;
@@ -604,7 +598,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         _winTopLine = topLine;
         _winScrollOffset = _scrollOffset.Y;
         _winRenderOffsetY = _renderOffsetY;
-        _winFirstLineHeight = _layout.Lines.Count > 0 ? _layout.Lines[0].Height : rh;
+        _winFirstLineHeight = _layout.Lines.Count > 0 ? _layout.Lines[0].HeightInRows * rh : rh;
     }
 
     // -------------------------------------------------------------------------
@@ -626,9 +620,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
 
         // Draw each visible line's text
+        var rh = layout.RowHeight;
         foreach (var line in layout.Lines) {
-            var y = line.Y + _renderOffsetY;
-            if (y + line.Height < 0) {
+            var y = line.Row * rh + _renderOffsetY;
+            if (y + line.HeightInRows * rh < 0) {
                 continue; // above viewport
             }
             if (y > Bounds.Height) {
@@ -667,10 +662,11 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
 
         // Collect all selection rects so we know first/last for corner rounding.
+        var selRh = layout.RowHeight;
         var rects = new List<Rect>();
         foreach (var line in layout.Lines) {
-            var lineY = line.Y + _renderOffsetY;
-            if (lineY + line.Height < 0) {
+            var lineY = line.Row * selRh + _renderOffsetY;
+            if (lineY + line.HeightInRows * selRh < 0) {
                 continue;
             }
             if (lineY > Bounds.Height) {
@@ -799,11 +795,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null || string.IsNullOrEmpty(e.Text)) {
             return;
         }
+        _preferredCaretX = -1;
+
         _editSw.Restart();
         doc.Insert(e.Text);
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         e.Handled = true;
+        ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -815,6 +814,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             return;
         }
 
+        // Vertical movement keys preserve the preferred column; everything
+        // else resets it so the next Up/Down captures a fresh X position.
+        if (e.Key is not (Key.Up or Key.Down or Key.PageUp or Key.PageDown)) {
+            _preferredCaretX = -1;
+        }
+
         var ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
         var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
 
@@ -824,6 +829,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 doc.DeleteBackward();
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
@@ -834,6 +840,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 doc.DeleteForward();
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
@@ -855,6 +862,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                     doc.MoveLineUp();
                     _editSw.Stop();
                     PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                    ScrollCaretIntoView();
                     InvalidateLayout();
                     ResetCaretBlink();
                 } else {
@@ -869,6 +877,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                     doc.MoveLineDown();
                     _editSw.Stop();
                     PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                    ScrollCaretIntoView();
                     InvalidateLayout();
                     ResetCaretBlink();
                 } else {
@@ -896,6 +905,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 }
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
@@ -906,6 +916,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 doc.DeleteLine();
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
@@ -929,6 +940,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 doc.TransformCase(CaseTransform.Upper);
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
@@ -939,6 +951,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 doc.TransformCase(CaseTransform.Lower);
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
@@ -949,6 +962,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 doc.TransformCase(CaseTransform.Proper);
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
@@ -959,6 +973,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 doc.Insert("\n");
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
@@ -969,18 +984,19 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 doc.Insert("    ");
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 e.Handled = true;
                 break;
 
             case Key.PageUp:
-                ScrollByPage(-1);
+                MoveCaretByPage(doc, -1, shift);
                 e.Handled = true;
                 break;
 
             case Key.PageDown:
-                ScrollByPage(+1);
+                MoveCaretByPage(doc, +1, shift);
                 e.Handled = true;
                 break;
         }
@@ -1006,10 +1022,17 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         doc.Selection = extend
             ? doc.Selection.ExtendTo(newCaret)
             : Selection.Collapsed(newCaret);
+        ScrollCaretIntoView();
         InvalidateVisual();
         ResetCaretBlink();
     }
 
+    /// <summary>
+    /// Moves the caret up or down by one visual row.
+    /// When the caret is already at the top or bottom edge of the viewport,
+    /// the document scrolls by one row while the caret stays at the same
+    /// screen position — matching the page-up/down pattern but at row scale.
+    /// </summary>
     private void MoveCaretVertical(Document doc, int lineDelta, bool extend) {
         var layout = EnsureLayout();
         var localCaret = (int)(doc.Selection.Caret - layout.ViewportBase);
@@ -1020,13 +1043,49 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             return;
         }
 
+        var rh = GetRowHeight();
         var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout);
-        var targetY = caretRect.Y + caretRect.Height / 2 + lineDelta * caretRect.Height;
-        var localNewCaret = _layoutEngine.HitTest(new Point(caretRect.X, targetY), layout);
-        var newCaret = layout.ViewportBase + localNewCaret;
-        doc.Selection = extend
-            ? doc.Selection.ExtendTo(newCaret)
-            : Selection.Collapsed(newCaret);
+
+        // On the first vertical move, capture the caret's current X as the
+        // "preferred" column.  Subsequent vertical moves reuse this so the
+        // caret returns to the original column after traversing short lines.
+        if (_preferredCaretX < 0) {
+            _preferredCaretX = caretRect.X;
+        }
+
+        var caretScreenRow = (int)Math.Round((caretRect.Y + _renderOffsetY) / rh);
+        var viewportRows = Math.Max(1, (int)(_viewport.Height / rh));
+        var atTopEdge = lineDelta < 0 && caretScreenRow <= 0;
+        var atBottomEdge = lineDelta > 0 && caretScreenRow >= viewportRows - 1;
+
+        if (atTopEdge || atBottomEdge) {
+            // Scroll the viewport by one row; keep the caret at the same
+            // screen position so the content slides under it.
+            ScrollValue += lineDelta * rh;
+            _layout?.Dispose();
+            _layout = null;
+            var newLayout = EnsureLayout();
+
+            var targetY = caretScreenRow * rh + rh / 2 - _renderOffsetY;
+            targetY = Math.Clamp(targetY, 0, Math.Max(0, newLayout.TotalHeight - 1));
+
+            var hitX = _preferredCaretX >= 0 ? _preferredCaretX : 0;
+            var localNew = _layoutEngine.HitTest(new Point(hitX, targetY), newLayout);
+            var newCaret = newLayout.ViewportBase + localNew;
+            doc.Selection = extend
+                ? doc.Selection.ExtendTo(newCaret)
+                : Selection.Collapsed(newCaret);
+        } else {
+            // Normal movement within the viewport — move the caret one row.
+            var targetY = caretRect.Y + caretRect.Height / 2 + lineDelta * caretRect.Height;
+            var localNewCaret = _layoutEngine.HitTest(
+                new Point(_preferredCaretX >= 0 ? _preferredCaretX : 0, targetY), layout);
+            var newCaret = layout.ViewportBase + localNewCaret;
+            doc.Selection = extend
+                ? doc.Selection.ExtendTo(newCaret)
+                : Selection.Collapsed(newCaret);
+        }
+
         InvalidateVisual();
         ResetCaretBlink();
     }
@@ -1044,6 +1103,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         doc.Selection = extend
             ? doc.Selection.ExtendTo(newCaret)
             : Selection.Collapsed(newCaret);
+        ScrollCaretIntoView();
         InvalidateVisual();
         ResetCaretBlink();
     }
@@ -1099,12 +1159,155 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         return 0;
     }
 
+    /// <summary>
+    /// Adjusts <see cref="ScrollValue"/> so the caret's logical line is visible
+    /// within the viewport.  For windowed layout the caret position is estimated
+    /// from the logical line index and the average line height; for small (full)
+    /// layouts the exact pixel position from <see cref="TextLayoutEngine"/> is used.
+    /// </summary>
+    private void ScrollCaretIntoView() {
+        var doc = Document;
+        if (doc == null) return;
+
+        var table = doc.Table;
+        var caret = doc.Selection.Caret;
+        var lineCount = table.LineCount;
+        if (lineCount <= 0) return;
+
+        var rh = GetRowHeight();
+
+        if (lineCount > WindowedLayoutThreshold) {
+            // Windowed layout — estimate caret Y from its logical line index.
+            var cw = GetCharWidth();
+            var maxW = Bounds.Width > 0 ? Bounds.Width : 900;
+            var charsPerRow = Math.Max(1, (int)(maxW / cw));
+            var totalChars = table.Length;
+            var totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
+            var avgRowsPerLine = Math.Max(1.0, (double)totalVisualRows / lineCount);
+            var avgLineHeight = avgRowsPerLine * rh;
+
+            var caretLine = table.LineFromOfs(caret);
+            var caretY = caretLine * avgLineHeight;
+
+            if (caretY < _scrollOffset.Y) {
+                // Caret is above viewport — scroll so caret line is at the top.
+                ScrollValue = caretY;
+            } else if (caretY + rh > _scrollOffset.Y + _viewport.Height) {
+                // Caret is below viewport — scroll so caret line is at the bottom.
+                ScrollValue = caretY + rh - _viewport.Height;
+            }
+        } else {
+            // Full layout — use exact pixel position from the layout engine.
+            var layout = EnsureLayout();
+            var localCaret = (int)(caret - layout.ViewportBase);
+            var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout);
+            var caretTop = caretRect.Y;
+            var caretBot = caretRect.Y + caretRect.Height;
+
+            if (caretTop < _scrollOffset.Y) {
+                ScrollValue = caretTop;
+            } else if (caretBot > _scrollOffset.Y + _viewport.Height) {
+                ScrollValue = caretBot - _viewport.Height;
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Page scrolling (keyboard and scrollbar track-click)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Scrolls the viewport by one page so that the current bottom line becomes
+    /// the new top (page down) or vice versa.  Works in logical-line space so
+    /// wrapping is handled correctly.  Called by the scrollbar track-click and
+    /// used internally by <see cref="MoveCaretByPage"/>.
+    /// </summary>
+    public void ScrollPage(int direction) {
+        var doc = Document;
+        if (doc == null) return;
+        var table = doc.Table;
+        var lineCount = table.LineCount;
+        if (lineCount <= 0) return;
+
+        var layout = EnsureLayout();
+        var topLine = table.LineFromOfs(layout.ViewportBase);
+        var lastVisibleLine = FindLastVisibleLogicalLine(layout, table);
+        var pageLines = Math.Max(1L, lastVisibleLine - topLine);
+
+        long targetLine;
+        if (direction > 0) {
+            targetLine = Math.Min(lastVisibleLine, lineCount - 1);
+            // If we can't advance (viewport shows only one line due to wrapping),
+            // advance by at least one line.
+            if (targetLine <= topLine) {
+                targetLine = Math.Min(topLine + 1, lineCount - 1);
+            }
+        } else {
+            targetLine = Math.Max(0, topLine - pageLines);
+            if (targetLine >= topLine && topLine > 0) {
+                targetLine = topLine - 1;
+            }
+        }
+
+        ScrollToTopLine(targetLine, table);
+    }
+
+    /// <summary>
+    /// Sets <see cref="ScrollValue"/> so that the given logical line appears
+    /// at the top of the viewport.  Uses the same avgLineHeight formula that
+    /// <see cref="LayoutWindowed"/> uses, so the mapping is consistent.
+    /// </summary>
+    private void ScrollToTopLine(long targetLine, PieceTable table) {
+        var lineCount = table.LineCount;
+        if (lineCount <= 0) return;
+
+        var rh = GetRowHeight();
+        var cw = GetCharWidth();
+        var maxW = Bounds.Width > 0 ? Bounds.Width : 900;
+        var charsPerRow = Math.Max(1, (int)(maxW / cw));
+        var totalChars = table.Length;
+        var totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
+        var avgRowsPerLine = Math.Max(1.0, (double)totalVisualRows / lineCount);
+        var avgLineHeight = avgRowsPerLine * rh;
+
+        // Nudge by a sub-pixel amount so that the (long)(scrollOfs / avgLineHeight)
+        // truncation in LayoutWindowed always resolves to targetLine.  Without
+        // this, the floating-point round-trip can land at targetLine - ε, which
+        // (long) truncates down by 1, making _renderOffsetY jump by avgLineHeight
+        // and destabilising the screen-row computation in MoveCaretByPage.
+        ScrollValue = targetLine * avgLineHeight + 0.01;
+    }
+
+    /// <summary>
+    /// Returns the logical line index of the last fully visible line in the
+    /// current layout.  A visual row is "fully visible" when its entire height
+    /// fits within the viewport after applying <see cref="_renderOffsetY"/>.
+    /// </summary>
+    private long FindLastVisibleLogicalLine(LayoutResult layout, PieceTable table) {
+        var lines = layout.Lines;
+        if (lines.Count == 0) {
+            return table.LineFromOfs(layout.ViewportBase);
+        }
+
+        var lvRh = layout.RowHeight;
+        for (var i = lines.Count - 1; i >= 0; i--) {
+            var screenBottom = lines[i].Row * lvRh + _renderOffsetY + lines[i].HeightInRows * lvRh;
+            if (screenBottom <= _viewport.Height + 0.5) {
+                return table.LineFromOfs(layout.ViewportBase + lines[i].CharStart);
+            }
+        }
+
+        return table.LineFromOfs(layout.ViewportBase);
+    }
+
     // -------------------------------------------------------------------------
     // Mouse / pointer input
     // -------------------------------------------------------------------------
 
     protected override void OnPointerPressed(PointerPressedEventArgs e) {
         base.OnPointerPressed(e);
+        _preferredCaretX = -1;
+
         // Force caret visible (pause blinking) while any button is held.
         _caretVisible = true;
         _caretTimer.Stop();
@@ -1214,16 +1417,87 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     }
 
     /// <summary>
-    /// Scrolls by one page (viewport minus one line, rounded down to whole lines).
+    /// Moves the caret by one page while keeping it at the same screen row.
+    /// The viewport scrolls; the caret stays on its row.  Near document
+    /// boundaries the scroll is reduced so the caret's row always has content.
     /// </summary>
-    private void ScrollByPage(int direction) {
+    /// <remarks>
+    /// <c>layout.Lines</c> are <em>logical</em> lines — a wrapped line
+    /// occupies one entry but spans multiple visual rows.  The screen-row
+    /// math therefore works in screen-pixel space, not in line-index space.
+    /// <para/>
+    /// The caret's screen Y is captured before the scroll, quantised to
+    /// an integer visual row, and then restored after the scroll.
+    /// <see cref="_renderOffsetY"/> converts between layout and screen
+    /// coordinates on both sides, so the screen position is preserved
+    /// even when the render offset changes between layouts.
+    /// </remarks>
+    private void MoveCaretByPage(Document doc, int direction, bool extend) {
+        var table = doc.Table;
+        var lineCount = table.LineCount;
+        if (lineCount <= 0) return;
         var rh = GetRowHeight();
-        var pageSize = _viewport.Height - rh;
-        if (pageSize < rh) {
-            pageSize = rh;
+
+        var curLayout = EnsureLayout();
+        var caretRow = 0;
+
+        if (curLayout.Lines.Count > 0) {
+            var localCaret = (int)(doc.Selection.Caret - curLayout.ViewportBase);
+            var totalChars = curLayout.Lines[^1].CharEnd;
+            if (localCaret >= 0 && localCaret <= totalChars) {
+                var caretRect = _layoutEngine.GetCaretBounds(localCaret, curLayout);
+
+                // Screen row = layout Y converted to screen Y, quantised to
+                // a visual-row index.  The +0.01 nudge in ScrollToTopLine
+                // keeps _renderOffsetY stable at ≈ -0.01, preventing
+                // borderline rounding from drifting across page moves.
+                caretRow = Math.Max(0,
+                    (int)Math.Round((caretRect.Y + _renderOffsetY) / rh));
+
+                // Capture preferred X on first page move.
+                if (_preferredCaretX < 0) {
+                    _preferredCaretX = caretRect.X;
+                }
+            }
         }
-        pageSize = Math.Floor(pageSize / rh) * rh;
-        ScrollValue += direction * pageSize;
+
+        // Scroll the viewport by one page.
+        ScrollPage(direction);
+
+        // Relayout at the new scroll position.
+        _layout?.Dispose();
+        _layout = null;
+        var newLayout = EnsureLayout();
+
+        // Convert the screen row back to layout Y in the new layout.
+        var targetY = caretRow * rh + rh / 2 - _renderOffsetY;
+
+        // If the target is past the layout content, back up so the
+        // last document line lands at caretRow.
+        if (targetY >= newLayout.TotalHeight && newLayout.Lines.Count > 0) {
+            var lastLogicalLine = lineCount - 1;
+            var backupTopLine = Math.Max(0, lastLogicalLine - caretRow);
+            ScrollToTopLine(backupTopLine, table);
+            _layout?.Dispose();
+            _layout = null;
+            newLayout = EnsureLayout();
+            targetY = caretRow * rh + rh / 2 - _renderOffsetY;
+        }
+
+        // Place the caret at the same visual row.
+        if (newLayout.Lines.Count == 0) return;
+        targetY = Math.Min(targetY, newLayout.TotalHeight - 1);
+
+        long newCaret;
+        var hitX = _preferredCaretX >= 0 ? _preferredCaretX : 0;
+        var localNew = _layoutEngine.HitTest(new Point(hitX, targetY), newLayout);
+        newCaret = newLayout.ViewportBase + localNew;
+
+        doc.Selection = extend
+            ? doc.Selection.ExtendTo(newCaret)
+            : Selection.Collapsed(newCaret);
+        InvalidateVisual();
+        ResetCaretBlink();
     }
 
     private void OnDocumentChanged(object? sender, EventArgs e) {

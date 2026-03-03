@@ -125,6 +125,14 @@ public sealed class DualZoneScrollBar : Control {
     /// <summary>Fired when any pointer interaction ends (drag release, arrow-hold release, etc.).</summary>
     public event Action? InteractionEnded;
 
+    /// <summary>
+    /// Fired when the user clicks the track above or below the thumb.
+    /// The parameter is the direction: −1 for page up, +1 for page down.
+    /// The <see cref="EditorControl"/> handles the actual scrolling in
+    /// line-space so that wrapping is handled correctly.
+    /// </summary>
+    public event Action<int>? PageRequested;
+
     // -------------------------------------------------------------------------
     // Interaction state
     // -------------------------------------------------------------------------
@@ -497,13 +505,13 @@ public sealed class DualZoneScrollBar : Control {
                 break;
 
             case HitZone.TrackAbove:
-                ScrollByPage(-1);
-                StartRepeat(() => ScrollByPage(-1));
+                PageRequested?.Invoke(-1);
+                StartRepeat(() => PageRequested?.Invoke(-1));
                 break;
 
             case HitZone.TrackBelow:
-                ScrollByPage(+1);
-                StartRepeat(() => ScrollByPage(+1));
+                PageRequested?.Invoke(+1);
+                StartRepeat(() => PageRequested?.Invoke(+1));
                 break;
         }
 
@@ -655,17 +663,6 @@ public sealed class DualZoneScrollBar : Control {
             newValue = (Math.Ceiling(_value / _rowHeight) + rows) * _rowHeight;
         }
         RequestScroll(newValue);
-    }
-
-    private void ScrollByPage(int direction) {
-        // Page = viewport minus one row, rounded down to show full rows
-        var pageSize = _viewportSize - _rowHeight;
-        if (pageSize < _rowHeight) {
-            pageSize = _rowHeight;
-        }
-        // Round to whole lines
-        pageSize = Math.Floor(pageSize / _rowHeight) * _rowHeight;
-        RequestScroll(_value + direction * pageSize);
     }
 
     private void RequestScroll(double newValue) {

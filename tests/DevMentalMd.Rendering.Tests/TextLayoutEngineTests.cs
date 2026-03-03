@@ -39,15 +39,15 @@ public class TextLayoutEngineTests {
     }
 
     [AvaloniaFact]
-    public void SingleLine_YIsZero() {
+    public void SingleLine_RowIsZero() {
         using var r = DoLayout("hello");
-        Assert.Equal(0.0, r.Lines[0].Y);
+        Assert.Equal(0, r.Lines[0].Row);
     }
 
     [AvaloniaFact]
-    public void SingleLine_HeightIsPositive() {
+    public void SingleLine_HeightInRowsIsOne() {
         using var r = DoLayout("hello");
-        Assert.True(r.Lines[0].Height > 0);
+        Assert.Equal(1, r.Lines[0].HeightInRows);
     }
 
     // -------------------------------------------------------------------------
@@ -70,9 +70,9 @@ public class TextLayoutEngineTests {
     }
 
     [AvaloniaFact]
-    public void TwoLines_SecondLineYIsGreater() {
+    public void TwoLines_SecondLineRowIsGreater() {
         using var r = DoLayout("hello\nworld");
-        Assert.True(r.Lines[1].Y > r.Lines[0].Y);
+        Assert.True(r.Lines[1].Row > r.Lines[0].Row);
     }
 
     [AvaloniaFact]
@@ -90,9 +90,9 @@ public class TextLayoutEngineTests {
     }
 
     [AvaloniaFact]
-    public void EmptyString_LineHasPositiveHeight() {
+    public void EmptyString_LineHasPositiveHeightInRows() {
         using var r = DoLayout("");
-        Assert.True(r.Lines[0].Height > 0);
+        Assert.Equal(1, r.Lines[0].HeightInRows);
     }
 
     [AvaloniaFact]
@@ -106,10 +106,10 @@ public class TextLayoutEngineTests {
     }
 
     [AvaloniaFact]
-    public void TotalHeight_SumOfLineHeights() {
+    public void TotalHeight_SumOfLineHeightsInRows() {
         using var r = DoLayout("hello\nworld");
-        var expected = r.Lines.Sum(l => l.Height);
-        Assert.Equal(expected, r.TotalHeight, precision: 1);
+        var expectedRows = r.Lines.Sum(l => l.HeightInRows);
+        Assert.Equal(expectedRows * r.RowHeight, r.TotalHeight, precision: 1);
     }
 
     // -------------------------------------------------------------------------
@@ -122,9 +122,9 @@ public class TextLayoutEngineTests {
         // (one per logical line) but the line height increases.
         using var rNarrow = DoLayout("abcdefghijklmnop", maxWidth: 20.0);
         using var rWide = DoLayout("abcdefghijklmnop", maxWidth: WideViewport);
-        // Narrow layout has more internal visual lines → greater height
-        Assert.True(rNarrow.Lines[0].Height >= rWide.Lines[0].Height,
-            $"Expected narrow height {rNarrow.Lines[0].Height} >= wide height {rWide.Lines[0].Height}");
+        // Narrow layout has more internal visual rows → greater HeightInRows
+        Assert.True(rNarrow.Lines[0].HeightInRows >= rWide.Lines[0].HeightInRows,
+            $"Expected narrow rows {rNarrow.Lines[0].HeightInRows} >= wide rows {rWide.Lines[0].HeightInRows}");
     }
 
     // -------------------------------------------------------------------------
@@ -148,7 +148,7 @@ public class TextLayoutEngineTests {
     [AvaloniaFact]
     public void HitTest_SecondLine_ReturnsOffsetInSecondLine() {
         using var r = DoLayout("hello\nworld");
-        var ofs = Engine().HitTest(new Point(0, r.Lines[1].Y + 1), r);
+        var ofs = Engine().HitTest(new Point(0, r.Lines[1].Row * r.RowHeight + 1), r);
         Assert.True(ofs >= 6, $"Expected offset >= 6 but got {ofs}");
     }
 

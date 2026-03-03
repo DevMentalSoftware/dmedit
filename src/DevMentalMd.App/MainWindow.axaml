@@ -84,7 +84,8 @@
                                     Grid.Column="0"
                                     HorizontalAlignment="Stretch" />
             <controls:DualZoneScrollBar x:Name="ScrollBar"
-                                        Grid.Column="1" />
+                                        Grid.Column="1"
+                                        Focusable="False" />
         </Grid>
     </DockPanel>
 </Window>

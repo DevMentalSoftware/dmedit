@@ -39,6 +39,15 @@ public partial class MainWindow : Window {
         WireDevMenu();
         WireStatsBar();
 
+        // The editor is the only focusable control.  Grab focus on
+        // activation and reclaim it whenever anything else receives focus.
+        Activated += (_, _) => Editor.Focus();
+        GotFocus += (_, e) => {
+            if (e.Source != Editor) {
+                Editor.Focus();
+            }
+        };
+
         var sampleText =
             "# Welcome to DevMentalMD\n" +
             "\n" +
@@ -73,6 +82,10 @@ public partial class MainWindow : Window {
         ScrollBar.ScrollRequested += newValue => {
             Editor.ScrollValue = newValue;
         };
+
+        // Track-click page scrolling — handled by the editor in line-space
+        // so wrapping is accounted for correctly.
+        ScrollBar.PageRequested += direction => Editor.ScrollPage(direction);
 
         // Show caret immediately when any scrollbar interaction ends
         ScrollBar.InteractionEnded += () => Editor.ResetCaretBlink();

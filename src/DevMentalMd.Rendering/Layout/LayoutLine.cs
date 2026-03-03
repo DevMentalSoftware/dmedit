@@ -7,6 +7,12 @@ namespace DevMentalMd.Rendering.Layout;
 /// Word-wrap within the line is handled internally by <see cref="TextLayout"/>.
 /// Must be disposed when the layout is invalidated.
 /// </summary>
+/// <remarks>
+/// <see cref="Row"/> and <see cref="HeightInRows"/> are in abstract visual-row
+/// units.  Multiply by <see cref="LayoutResult.RowHeight"/> to get pixel values.
+/// This eliminates sub-pixel rounding bugs in vertical math and makes the
+/// layout invariant to font-size changes (only RowHeight changes).
+/// </remarks>
 public sealed class LayoutLine : IDisposable {
     private bool _disposed;
 
@@ -16,11 +22,11 @@ public sealed class LayoutLine : IDisposable {
     /// <summary>Number of characters in this line, excluding any trailing newline character.</summary>
     public int CharLen { get; }
 
-    /// <summary>Vertical position of the top of this line, in layout (document) coordinates.</summary>
-    public double Y { get; }
+    /// <summary>Visual row index of the top of this line (0-based, in row units from document top).</summary>
+    public int Row { get; }
 
-    /// <summary>Height of this line (may span multiple visual rows when word-wrap is active).</summary>
-    public double Height => Layout.Height;
+    /// <summary>Height of this line in visual rows (≥ 1; &gt; 1 when word-wrap is active).</summary>
+    public int HeightInRows { get; }
 
     /// <summary>Exclusive end offset: CharStart + CharLen.</summary>
     public int CharEnd => CharStart + CharLen;
@@ -31,10 +37,11 @@ public sealed class LayoutLine : IDisposable {
     /// </summary>
     public TextLayout Layout { get; }
 
-    internal LayoutLine(int charStart, int charLen, double y, TextLayout layout) {
+    internal LayoutLine(int charStart, int charLen, int row, int heightInRows, TextLayout layout) {
         CharStart = charStart;
         CharLen = charLen;
-        Y = y;
+        Row = row;
+        HeightInRows = heightInRows;
         Layout = layout;
     }
 
