@@ -114,7 +114,7 @@ public sealed class PieceTable {
         }
         ArgumentOutOfRangeException.ThrowIfNegative(ofs);
         // Only check upper bound when Length is fully known.
-        if (_buf == null || _buf.LengthIsKnown) {
+        if (_buf.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs, Length);
         }
 
@@ -153,7 +153,7 @@ public sealed class PieceTable {
         }
         ArgumentOutOfRangeException.ThrowIfNegative(ofs);
         ArgumentOutOfRangeException.ThrowIfNegative(len);
-        if (_buf == null || _buf.LengthIsKnown) {
+        if (_buf.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs + len, Length);
         }
 
@@ -220,7 +220,7 @@ public sealed class PieceTable {
     public string GetText(long start, int len) {
         ArgumentOutOfRangeException.ThrowIfNegative(start);
         ArgumentOutOfRangeException.ThrowIfNegative(len);
-        if (_buf == null || _buf.LengthIsKnown) {
+        if (_buf.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(start + len, Length);
         }
 
