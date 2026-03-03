@@ -1239,6 +1239,45 @@ still throttled to every 5th frame.
 
 Test count: **287** (266 Core + 21 Rendering).
 
+## 2026-03-03 — View menu settings and debounced persistence
+
+### Debounced settings save
+
+`AppSettings.ScheduleSave()` uses a `System.Threading.Timer` with a 500 ms one-shot
+that resets on each call. Rapid changes (e.g., dragging the scroll-rate slider) are
+coalesced into a single disk write. All callers now use `ScheduleSave()` instead of
+`Save()`.
+
+Fixed a bug where `JsonIgnoreCondition.WhenWritingDefault` silently dropped `false`
+values for bool properties whose C# default is `true` (e.g., `ShowLineNumbers = true`).
+Switching to `WhenWritingNull` ensures value-type properties are always serialized.
+
+### View menu
+
+Four toggle items with checkbox indicators, each backed by a persisted `AppSettings`
+property:
+
+| Menu item      | Setting            | Default | Effect                                    |
+|----------------|--------------------|---------|-------------------------------------------|
+| Line Numbers   | `ShowLineNumbers`  | `true`  | Gutter on/off                             |
+| Status Bar     | `ShowStatusBar`    | `true`  | Permanent Ln/Ch bar on/off                |
+| Statistics     | `ShowStatistics`   | `true`  | Dev perf stats bars on/off (DevMode only) |
+| Wrap Lines     | `WrapLines`        | `true`  | Word wrap on/off                          |
+
+`UpdateStatusBarVisibility()` centrally manages the `IsVisible` state of the
+`PermanentStatusBar`, `StatsBar`, `StatsBarIO`, and the outer `StatusBar` border.
+The entire border hides when both the permanent bar and stats bars are off.
+
+### No-wrap layout
+
+When `WrapLines = false`, the layout engine receives `maxWidth = ∞` which activates
+`TextWrapping.NoWrap`. `EditorControl` separates `textW` (may be infinity) from
+`extentW` (always finite, for scroll extent). The windowed-layout estimation,
+`ScrollCaretIntoView`, and `ScrollToTopLine` all guard against the infinity case
+by setting `totalVisualRows = lineCount` (one row per logical line, no wrapping).
+
+Test count: **287** (266 Core + 21 Rendering).
+
 ## 2026-03-03 — Line number gutter
 
 Implemented the optional line number display from the backlog. Line numbers appear in a

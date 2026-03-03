@@ -22,6 +22,10 @@
             </MenuItem>
             <MenuItem Header="_View" x:Name="MenuView">
                 <MenuItem Header="_Line Numbers" x:Name="MenuLineNumbers" />
+                <MenuItem Header="_Status Bar" x:Name="MenuStatusBar" />
+                <MenuItem Header="S_tatistics" x:Name="MenuStatistics" />
+                <Separator />
+                <MenuItem Header="_Wrap Lines" x:Name="MenuWrapLines" />
             </MenuItem>
             <MenuItem Header="_Dev" x:Name="MenuDev">
                 <MenuItem>

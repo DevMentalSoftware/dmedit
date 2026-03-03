@@ -105,16 +105,53 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     private void WireViewMenu() {
+        // Line Numbers
         Editor.ShowLineNumbers = _settings.ShowLineNumbers;
         MenuLineNumbers.ToggleType = MenuItemToggleType.CheckBox;
         MenuLineNumbers.IsChecked = _settings.ShowLineNumbers;
         MenuLineNumbers.Click += (_, _) => {
             var show = !_settings.ShowLineNumbers;
             _settings.ShowLineNumbers = show;
-            _settings.Save();
+            _settings.ScheduleSave();
             Editor.ShowLineNumbers = show;
             MenuLineNumbers.IsChecked = show;
         };
+
+        // Status Bar
+        MenuStatusBar.ToggleType = MenuItemToggleType.CheckBox;
+        MenuStatusBar.IsChecked = _settings.ShowStatusBar;
+        MenuStatusBar.Click += (_, _) => {
+            var show = !_settings.ShowStatusBar;
+            _settings.ShowStatusBar = show;
+            _settings.ScheduleSave();
+            MenuStatusBar.IsChecked = show;
+            UpdateStatusBarVisibility();
+        };
+
+        // Statistics
+        MenuStatistics.ToggleType = MenuItemToggleType.CheckBox;
+        MenuStatistics.IsChecked = _settings.ShowStatistics;
+        MenuStatistics.Click += (_, _) => {
+            var show = !_settings.ShowStatistics;
+            _settings.ShowStatistics = show;
+            _settings.ScheduleSave();
+            MenuStatistics.IsChecked = show;
+            UpdateStatusBarVisibility();
+        };
+
+        // Wrap Lines
+        Editor.WrapLines = _settings.WrapLines;
+        MenuWrapLines.ToggleType = MenuItemToggleType.CheckBox;
+        MenuWrapLines.IsChecked = _settings.WrapLines;
+        MenuWrapLines.Click += (_, _) => {
+            var wrap = !_settings.WrapLines;
+            _settings.WrapLines = wrap;
+            _settings.ScheduleSave();
+            Editor.WrapLines = wrap;
+            MenuWrapLines.IsChecked = wrap;
+        };
+
+        UpdateStatusBarVisibility();
     }
 
     // -------------------------------------------------------------------------
@@ -137,7 +174,7 @@ public partial class MainWindow : Window {
             ScrollBar.OuterScrollRateMultiplier = val;
             LabelOuterScrollRate.Text = val.ToString("F1");
             _settings.OuterThumbScrollRateMultiplier = val;
-            _settings.Save();
+            _settings.ScheduleSave();
         };
     }
 
@@ -145,10 +182,20 @@ public partial class MainWindow : Window {
     // Stats / status bar
     // -------------------------------------------------------------------------
 
+    /// <summary>
+    /// Shows or hides the status bar sections based on current settings.
+    /// The whole <c>StatusBar</c> border is hidden only when both the
+    /// permanent bar and the stats bars are turned off.
+    /// </summary>
+    private void UpdateStatusBarVisibility() {
+        PermanentStatusBar.IsVisible = _settings.ShowStatusBar;
+        var showStats = _settings.DevMode && _settings.ShowStatistics;
+        StatsBar.IsVisible = showStats;
+        StatsBarIO.IsVisible = showStats;
+        StatusBar.IsVisible = _settings.ShowStatusBar || showStats;
+    }
 
     private void WireStatsBar() {
-        StatsBar.IsVisible = _settings.DevMode;
-        StatsBarIO.IsVisible = _settings.DevMode;
 
         // A single fire-once timer coalesces all status updates.  StatsUpdated
         // fires on every render frame, but the timer ensures we only touch the
@@ -162,13 +209,12 @@ public partial class MainWindow : Window {
         };
 
         Editor.StatusUpdated += () => {
-            if (_settings.DevMode && !_statsTimer.IsEnabled) {
+            if (_settings.DevMode && _settings.ShowStatistics && !_statsTimer.IsEnabled) {
                 _statsTimer.Start();
             }
-            // Post at Normal priority — executes right after the current render
-            // pass finishes, so the Ln/Ch update appears on the same frame
-            // without triggering layout invalidation mid-render.
-            Dispatcher.UIThread.Post(UpdateStatusBar);
+            if (_settings.ShowStatusBar) {
+                Dispatcher.UIThread.Post(UpdateStatusBar);
+            }
         };
     }
 

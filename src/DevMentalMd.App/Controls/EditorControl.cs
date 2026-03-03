@@ -104,6 +104,16 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// <summary>Optional reference to the scrollbar for middle-drag visual feedback.</summary>
     public DualZoneScrollBar? ScrollBar { get; set; }
 
+    /// <summary>Whether long lines wrap at the viewport edge.</summary>
+    public bool WrapLines {
+        get => _wrapLines;
+        set {
+            if (_wrapLines == value) return;
+            _wrapLines = value;
+            InvalidateLayout();
+        }
+    }
+
     /// <summary>Whether line numbers are displayed in a gutter on the left.</summary>
     public bool ShowLineNumbers {
         get => _showLineNumbers;
@@ -122,6 +132,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private double _charWidth;
     private double _renderOffsetY;
     private EventHandler? _scrollInvalidated;
+
+    // Word wrap
+    private bool _wrapLines = true;
 
     // Line number gutter
     private bool _showLineNumbers = true;
@@ -421,15 +434,17 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var typeface = new Typeface(FontFamily);
         var rh = GetRowHeight();
         UpdateGutterWidth();
-        var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+        var boundsW = Bounds.Width > 0 ? Bounds.Width : 900;
+        var extentW = Math.Max(100, boundsW - _gutterWidth);
+        var textW = _wrapLines ? extentW : double.PositiveInfinity;
         var lineCount = doc?.Table.LineCount ?? 0;
 
         if (lineCount > WindowedLayoutThreshold) {
-            LayoutWindowed(doc!, lineCount, typeface, maxW);
+            LayoutWindowed(doc!, lineCount, typeface, textW, extentW);
         } else {
             var text = doc != null ? doc.Table.GetText() : string.Empty;
-            _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, maxW);
-            _extent = new Size(maxW, _layout.TotalHeight);
+            _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, textW);
+            _extent = new Size(extentW, _layout.TotalHeight);
             _renderOffsetY = -_scrollOffset.Y;
         }
 
@@ -453,19 +468,20 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var typeface = new Typeface(FontFamily);
         var rh = GetRowHeight();
         UpdateGutterWidth();
-        var maxW = double.IsInfinity(availableSize.Width)
+        var extentW = double.IsInfinity(availableSize.Width)
             ? 0
             : Math.Max(100, availableSize.Width - _gutterWidth);
+        var textW = _wrapLines ? extentW : double.PositiveInfinity;
         _viewport = availableSize;
 
         var lineCount = doc?.Table.LineCount ?? 0;
 
         if (lineCount > WindowedLayoutThreshold) {
-            LayoutWindowed(doc!, lineCount, typeface, maxW);
+            LayoutWindowed(doc!, lineCount, typeface, textW, extentW);
         } else {
             var text = doc != null ? doc.Table.GetText() : string.Empty;
-            _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, maxW);
-            _extent = new Size(maxW, _layout.TotalHeight);
+            _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, textW);
+            _extent = new Size(extentW, _layout.TotalHeight);
             _renderOffsetY = -_scrollOffset.Y;
         }
 
@@ -484,14 +500,20 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// visual-row units. For monospace fonts this is exact; for proportional fonts it's a
     /// close approximation.
     /// </remarks>
-    private void LayoutWindowed(Document doc, long lineCount, Typeface typeface, double maxWidth) {
+    private void LayoutWindowed(Document doc, long lineCount, Typeface typeface, double maxWidth, double extentWidth) {
         var rh = GetRowHeight();
         var cw = GetCharWidth();
-        var charsPerRow = Math.Max(1, (int)(maxWidth / cw));
 
-        // Estimate total visual rows from document character count
+        // Estimate total visual rows from document character count.
+        // When wrapping is off (maxWidth = infinity), each line = 1 row.
         var totalChars = doc.Table.Length;
-        var totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
+        long totalVisualRows;
+        if (!double.IsFinite(maxWidth) || maxWidth <= 0) {
+            totalVisualRows = lineCount;
+        } else {
+            var charsPerRow = Math.Max(1, (int)(maxWidth / cw));
+            totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
+        }
 
         // Average visual rows per logical line → average height per logical line
         var avgRowsPerLine = Math.Max(1.0, (double)totalVisualRows / lineCount);
@@ -553,7 +575,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // ProgressChanged event will trigger re-layout once data is available.
         if (startOfs < 0 || endOfs < 0) {
             _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, maxWidth, 0);
-            _extent = new Size(maxWidth, totalVisualRows * rh);
+            _extent = new Size(extentWidth, totalVisualRows * rh);
             _renderOffsetY = 0;
             return;
         }
@@ -566,7 +588,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (len > 0 && doc.Table.OrigBuffer is { } origBuf && !origBuf.IsLoaded(startOfs, len)) {
             origBuf.EnsureLoaded(startOfs, len);
             _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, maxWidth, 0);
-            _extent = new Size(maxWidth, totalVisualRows * rh);
+            _extent = new Size(extentWidth, totalVisualRows * rh);
             _renderOffsetY = 0;
             return;
         }
@@ -574,7 +596,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var text = len > 0 ? doc.Table.GetText(startOfs, len) : string.Empty;
 
         _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, maxWidth, startOfs);
-        _extent = new Size(maxWidth, totalVisualRows * rh);
+        _extent = new Size(extentWidth, totalVisualRows * rh);
 
         // Compute render offset.  For small topLine changes (arrow keys, wheel)
         // use an incremental offset based on the actual cached line height so
@@ -1268,9 +1290,15 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             // Windowed layout — estimate caret Y from its logical line index.
             var cw = GetCharWidth();
             var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-            var charsPerRow = Math.Max(1, (int)(maxW / cw));
+            var textW = _wrapLines ? maxW : double.PositiveInfinity;
             var totalChars = table.Length;
-            var totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
+            long totalVisualRows;
+            if (!double.IsFinite(textW) || textW <= 0) {
+                totalVisualRows = lineCount;
+            } else {
+                var charsPerRow = Math.Max(1, (int)(textW / cw));
+                totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
+            }
             var avgRowsPerLine = Math.Max(1.0, (double)totalVisualRows / lineCount);
             var avgLineHeight = avgRowsPerLine * rh;
 
@@ -1352,9 +1380,15 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var rh = GetRowHeight();
         var cw = GetCharWidth();
         var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-        var charsPerRow = Math.Max(1, (int)(maxW / cw));
+        var textW = _wrapLines ? maxW : double.PositiveInfinity;
         var totalChars = table.Length;
-        var totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
+        long totalVisualRows;
+        if (!double.IsFinite(textW) || textW <= 0) {
+            totalVisualRows = lineCount;
+        } else {
+            var charsPerRow = Math.Max(1, (int)(textW / cw));
+            totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
+        }
         var avgRowsPerLine = Math.Max(1.0, (double)totalVisualRows / lineCount);
         var avgLineHeight = avgRowsPerLine * rh;
 

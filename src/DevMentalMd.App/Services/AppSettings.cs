@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 
 namespace DevMentalMd.App.Services;
 
@@ -15,9 +16,13 @@ public sealed class AppSettings {
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevMentalMD", "settings.json");
 
+    // WhenWritingNull (not WhenWritingDefault) so that value-type properties
+    // at their CLR default (e.g. bool false) are always serialized.
+    // WhenWritingDefault would silently drop false / 0 / 0.0, and on reload
+    // the property initializer (e.g. true) would kick in — losing the change.
     private static readonly JsonSerializerOptions JsonOpts = new() {
         WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
     // -----------------------------------------------------------------
@@ -59,6 +64,23 @@ public sealed class AppSettings {
     /// Show line numbers in a gutter on the left side of the editor.
     /// </summary>
     public bool ShowLineNumbers { get; set; } = true;
+
+    /// <summary>
+    /// Show the permanent status bar (line/column, file info) at the bottom.
+    /// </summary>
+    public bool ShowStatusBar { get; set; } = true;
+
+    /// <summary>
+    /// Show developer performance statistics bars (layout/render timing, memory).
+    /// Only visible when <see cref="DevMode"/> is also enabled.
+    /// </summary>
+    public bool ShowStatistics { get; set; } = true;
+
+    /// <summary>
+    /// Wrap long lines at the viewport edge. When false, lines extend beyond
+    /// the visible area (horizontal scrolling planned for a future release).
+    /// </summary>
+    public bool WrapLines { get; set; } = true;
 
     // -----------------------------------------------------------------
     // Large file support
@@ -102,6 +124,24 @@ public sealed class AppSettings {
             File.WriteAllText(StorePath, JsonSerializer.Serialize(this, JsonOpts));
         } catch {
             // Best-effort — non-fatal.
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Debounced save
+    // -----------------------------------------------------------------
+
+    private Timer? _saveTimer;
+
+    /// <summary>
+    /// Schedules a debounced save — the file is written 500 ms after the last
+    /// call. Rapid successive changes are coalesced into a single write.
+    /// </summary>
+    public void ScheduleSave() {
+        if (_saveTimer != null) {
+            _saveTimer.Change(500, Timeout.Infinite);
+        } else {
+            _saveTimer = new Timer(_ => Save(), null, 500, Timeout.Infinite);
         }
     }
 }
