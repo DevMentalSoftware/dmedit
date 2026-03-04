@@ -55,6 +55,12 @@ public sealed class TabBarControl : Control {
     private const double TabFontSize = 12;
     private const double IconFontSize = 12;
 
+    // Icon glyphs (Segoe Fluent Icons)
+    private const string CloseGlyph = "\uE624";      // ChromeClose
+    private const string DirtyDotGlyph = "\uECCC";   // StatusCircleInner
+    private const string AddGlyph = "\uE710";         // Add
+    private const string ChevronDownGlyph = "\uE70D"; // ChevronDown
+
     // -------------------------------------------------------------------------
     // Theme
     // -------------------------------------------------------------------------
@@ -102,6 +108,12 @@ public sealed class TabBarControl : Control {
     private double _overflowButtonX;      // x position of the ▼ button
     private const double OverflowButtonWidth = 28;
 
+    // Drag-to-reorder state
+    private int _dragTabIndex = -1;
+    private Point _dragStartPoint;
+    private bool _isDragging;
+    private const double DragThreshold = 6; // pixels before drag starts
+
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
@@ -111,6 +123,9 @@ public sealed class TabBarControl : Control {
     public event Action? PlusClicked;
     public event Action? DragAreaPressed;
     public event Action? OverflowClicked;
+    public event Action<int>? CloseTabsToRightClicked;
+    public event Action<int>? CloseOtherTabsClicked;
+    public event Action<int, int>? TabReordered; // (fromIndex, toIndex)
 
     /// <summary>
     /// The last PointerPressedEventArgs, available for the DragAreaPressed
@@ -149,15 +164,14 @@ public sealed class TabBarControl : Control {
             if (_tabs[i] == _activeTab) { activeIdx = i; break; }
         }
 
-        // 1. Measure two widths per tab
+        // 1. Measure two widths per tab.  Always use the bold typeface so
+        //    that widths stay stable when the active tab changes.
         var naturalWidths = new double[_tabs.Count];
         var comfortWidths = new double[_tabs.Count];
         for (var i = 0; i < _tabs.Count; i++) {
             var text = GetTabLabel(i);
-            var isActive = _tabs[i] == _activeTab;
-            var typeface = isActive ? TabFontBold : TabFont;
             var ft = new FormattedText(text, System.Globalization.CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight, typeface, TabFontSize, Brushes.Black);
+                FlowDirection.LeftToRight, TabFontBold, TabFontSize, Brushes.Black);
             var w = ft.Width + TabPaddingLeft + CloseButtonSize + TabPaddingRight + 8;
             naturalWidths[i] = w;
             comfortWidths[i] = Math.Max(w, TabComfortWidth);
@@ -336,11 +350,7 @@ public sealed class TabBarControl : Control {
         }
     }
 
-    private string GetTabLabel(int index) {
-        var tab = _tabs[index];
-        var dirty = tab.IsDirty ? "\u2022 " : "";
-        return $"{dirty}{tab.DisplayName}";
-    }
+    private string GetTabLabel(int index) => _tabs[index].DisplayName;
 
     // -------------------------------------------------------------------------
     // Hit testing
@@ -493,13 +503,13 @@ public sealed class TabBarControl : Control {
         var x = _tabXPositions[index];
         var tabW = _tabWidths[index];
         var isHovered = _hoverTabIndex == index && _hoverZone is HitZone.Tab or HitZone.CloseButton;
-        var bottom = TabTopMargin + TabHeight;
+        var bottom = Bounds.Height;
 
         if (isHovered) {
             // Hovered inactive: same background as active tab, but with a
             // bottom border line so it doesn't appear to flow into the panel
             // below. Square bottom corners.
-            var hoverRect = new Rect(x, TabTopMargin, tabW, TabHeight);
+            var hoverRect = new Rect(x, TabTopMargin, tabW, bottom - TabTopMargin);
             // Top has rounded corners, bottom is square
             var hoverGeo = CreateTopRoundedRect(hoverRect, CornerRadius);
             ctx.DrawGeometry(_theme.TabActiveBackground, null, hoverGeo);
@@ -521,8 +531,8 @@ public sealed class TabBarControl : Control {
         var textY = TabTopMargin + (TabHeight - ft.Height) / 2;
         ctx.DrawText(ft, new Point(x + TabPaddingLeft, textY));
 
-        // Close button on hover
-        if (isHovered) {
+        // Close button: on hover, or dirty dot when tab has unsaved changes
+        if (isHovered || _tabs[index].IsDirty) {
             DrawCloseButton(ctx, index);
         }
     }
@@ -530,7 +540,7 @@ public sealed class TabBarControl : Control {
     private void DrawActiveTab(DrawingContext ctx, int index) {
         var x = _tabXPositions[index];
         var tabW = _tabWidths[index];
-        var bottom = TabTopMargin + TabHeight;
+        var bottom = Bounds.Height; // extend to control edge so tab touches menu bar
 
         // Draw the shaped tab path with concave bottom curves
         var geo = new StreamGeometry();
@@ -596,16 +606,20 @@ public sealed class TabBarControl : Control {
         var tabW = _tabWidths[index];
         var closeX = x + tabW - CloseButtonSize - TabPaddingRight;
         var closeY = TabTopMargin + (TabHeight - CloseButtonSize) / 2;
+        var isHoveringClose = _hoverZone == HitZone.CloseButton && _hoverTabIndex == index;
+        var isDirty = _tabs[index].IsDirty;
 
         // Hover highlight — square with small rounded corners
-        if (_hoverZone == HitZone.CloseButton && _hoverTabIndex == index) {
+        if (isHoveringClose) {
             var hoverRect = new Rect(closeX, closeY, CloseButtonSize, CloseButtonSize);
             var hoverGeo = CreateRoundedRect(hoverRect, 4);
             ctx.DrawGeometry(_theme.TabCloseHoverBg, null, hoverGeo);
         }
 
-        // Draw close icon (Segoe Fluent Icons: ChromeClose)
-        var closeFt = new FormattedText("\uE624",
+        // Show dirty dot when the tab has unsaved changes and the
+        // close button is not being hovered; otherwise show the X.
+        var glyph = isDirty && !isHoveringClose ? DirtyDotGlyph : CloseGlyph;
+        var closeFt = new FormattedText(glyph,
             System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight, IconFont, IconFontSize, _theme.TabCloseForeground);
         var cx = closeX + (CloseButtonSize - closeFt.Width) / 2;
@@ -623,8 +637,7 @@ public sealed class TabBarControl : Control {
             ctx.DrawGeometry(_theme.TabInactiveHoverBg, null, hoverGeo);
         }
 
-        // Draw add icon (Segoe Fluent Icons: Add)
-        var ft = new FormattedText("\uE710",
+        var ft = new FormattedText(AddGlyph,
             System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight, IconFont, IconFontSize, _theme.TabPlusForeground);
         var textX = x + (PlusButtonWidth - ft.Width) / 2;
@@ -642,8 +655,7 @@ public sealed class TabBarControl : Control {
             ctx.DrawGeometry(_theme.TabInactiveHoverBg, null, hoverGeo);
         }
 
-        // Draw overflow icon (Segoe Fluent Icons: ChevronDown)
-        var ft = new FormattedText("\uE70D",
+        var ft = new FormattedText(ChevronDownGlyph,
             System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight, IconFont, IconFontSize, _theme.TabPlusForeground);
         var textX = _overflowButtonX + (OverflowButtonWidth - ft.Width) / 2;
@@ -707,6 +719,40 @@ public sealed class TabBarControl : Control {
     protected override void OnPointerMoved(PointerEventArgs e) {
         base.OnPointerMoved(e);
         var pt = e.GetPosition(this);
+
+        // Tab drag-to-reorder
+        if (_dragTabIndex >= 0 && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) {
+            if (!_isDragging) {
+                var dx = Math.Abs(pt.X - _dragStartPoint.X);
+                if (dx >= DragThreshold) {
+                    _isDragging = true;
+                    _hoverZone = HitZone.None;
+                    _hoverTabIndex = -1;
+                    e.Pointer.Capture(this);
+                    ToolTip.SetIsOpen(this, false);
+                    ToolTip.SetTip(this, null);
+                }
+            }
+            if (_isDragging) {
+                // Find which visible tab slot the pointer is over
+                var target = FindDropTarget(pt.X);
+                if (target >= 0 && target != _dragTabIndex) {
+                    TabReordered?.Invoke(_dragTabIndex, target);
+                    _dragTabIndex = target; // track the tab's new index
+                }
+                Cursor = new Cursor(StandardCursorType.SizeWestEast);
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // Suppress hover effects while any mouse button is down (e.g.
+        // during pre-drag or active drag) so tabs don't highlight.
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+            || e.GetCurrentPoint(this).Properties.IsRightButtonPressed) {
+            return;
+        }
+
         var (zone, idx) = HitTest(pt);
         if (zone != _hoverZone || idx != _hoverTabIndex) {
             _hoverZone = zone;
@@ -714,27 +760,96 @@ public sealed class TabBarControl : Control {
             Cursor = zone == HitZone.DragArea
                 ? Cursor.Default
                 : new Cursor(StandardCursorType.Arrow);
+
+            // Show file path tooltip when hovering over a tab
+            if (zone is HitZone.Tab or HitZone.CloseButton
+                && idx >= 0 && idx < _tabs.Count
+                && _tabs[idx].FilePath != null) {
+                var tb = new TextBlock {
+                    Text = _tabs[idx].FilePath,
+                    TextWrapping = TextWrapping.NoWrap,
+                };
+                ToolTip.SetTip(this, tb);
+                ToolTip.SetIsOpen(this, true);
+            } else {
+                ToolTip.SetIsOpen(this, false);
+                ToolTip.SetTip(this, null);
+            }
+
             InvalidateVisual();
         }
     }
 
+    protected override void OnPointerReleased(PointerReleasedEventArgs e) {
+        base.OnPointerReleased(e);
+        if (_isDragging) {
+            _isDragging = false;
+            e.Pointer.Capture(null);
+            Cursor = new Cursor(StandardCursorType.Arrow);
+            InvalidateVisual();
+        }
+        _dragTabIndex = -1;
+    }
+
     protected override void OnPointerExited(PointerEventArgs e) {
         base.OnPointerExited(e);
+        if (_isDragging) return; // pointer is captured — keep dragging
         _hoverZone = HitZone.None;
         _hoverTabIndex = -1;
+        _dragTabIndex = -1;
         InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Finds the drop target for a drag-to-reorder operation. Only swaps
+    /// when the pointer crosses the center of an immediate visible neighbor,
+    /// which provides natural hysteresis and prevents 1px oscillation.
+    /// </summary>
+    private int FindDropTarget(double x) {
+        if (_dragTabIndex < 0 || _dragTabIndex >= _tabs.Count) return -1;
+
+        // Check if pointer crossed the center of the immediate left neighbor
+        for (var i = _dragTabIndex - 1; i >= 0; i--) {
+            if (!_isVisible[i]) continue;
+            var center = _tabXPositions[i] + _tabWidths[i] / 2;
+            if (x < center) return i;
+            break;
+        }
+
+        // Check if pointer crossed the center of the immediate right neighbor
+        for (var i = _dragTabIndex + 1; i < _tabs.Count; i++) {
+            if (!_isVisible[i]) continue;
+            var center = _tabXPositions[i] + _tabWidths[i] / 2;
+            if (x > center) return i;
+            break;
+        }
+
+        return _dragTabIndex;
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e) {
         base.OnPointerPressed(e);
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
-
-        LastPointerPressedArgs = e;
+        var props = e.GetCurrentPoint(this).Properties;
         var pt = e.GetPosition(this);
         var (zone, idx) = HitTest(pt);
 
+        // Right-click context menu on tabs
+        if (props.IsRightButtonPressed && zone is HitZone.Tab or HitZone.CloseButton
+            && idx >= 0 && idx < _tabs.Count) {
+            ShowTabContextMenu(idx, pt);
+            e.Handled = true;
+            return;
+        }
+
+        if (!props.IsLeftButtonPressed) return;
+
+        LastPointerPressedArgs = e;
+
         switch (zone) {
             case HitZone.Tab:
+                _dragTabIndex = idx;
+                _dragStartPoint = pt;
+                _isDragging = false;
                 TabClicked?.Invoke(idx);
                 e.Handled = true;
                 break;
@@ -755,5 +870,21 @@ public sealed class TabBarControl : Control {
                 e.Handled = true;
                 break;
         }
+    }
+
+    private void ShowTabContextMenu(int tabIndex, Point position) {
+        var menu = new ContextMenu();
+
+        var closeRight = new MenuItem { Header = "Close Tabs to the _Right" };
+        closeRight.Click += (_, _) => CloseTabsToRightClicked?.Invoke(tabIndex);
+        menu.Items.Add(closeRight);
+
+        var closeOthers = new MenuItem { Header = "Close _Other Tabs" };
+        closeOthers.Click += (_, _) => CloseOtherTabsClicked?.Invoke(tabIndex);
+        menu.Items.Add(closeOthers);
+
+        menu.PlacementTarget = this;
+        menu.Placement = PlacementMode.Pointer;
+        menu.Open(this);
     }
 }

@@ -36,6 +36,18 @@ public sealed class Document {
     public bool CanUndo => _history.CanUndo;
     public bool CanRedo => _history.CanRedo;
 
+    /// <summary>
+    /// True when the document's undo depth matches the last-saved position.
+    /// Used to detect when undo/redo returns the document to its saved state.
+    /// </summary>
+    public bool IsAtSavePoint => _history.IsAtSavePoint;
+
+    /// <summary>
+    /// Records the current undo depth as the "saved" position.
+    /// Call after successfully writing the document to disk.
+    /// </summary>
+    public void MarkSavePoint() => _history.MarkSavePoint();
+
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------

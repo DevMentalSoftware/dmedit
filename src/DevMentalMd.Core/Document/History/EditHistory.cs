@@ -23,6 +23,22 @@ public sealed class EditHistory {
     public bool CanUndo => _undoStack.Count > 0;
     public bool CanRedo => _redoStack.Count > 0;
 
+    // Save-point: the undo-stack depth at the last save.
+    // When the current depth equals this value, the document is clean.
+    private int _savePointDepth;
+
+    /// <summary>
+    /// Marks the current history position as "saved". After this call,
+    /// <see cref="IsAtSavePoint"/> returns true until the document is
+    /// further edited (or undone past the save point).
+    /// </summary>
+    public void MarkSavePoint() => _savePointDepth = _undoStack.Count;
+
+    /// <summary>
+    /// True when the current undo-stack depth matches the last saved position.
+    /// </summary>
+    public bool IsAtSavePoint => _undoStack.Count == _savePointDepth;
+
     // -------------------------------------------------------------------------
     // Pushing edits
     // -------------------------------------------------------------------------

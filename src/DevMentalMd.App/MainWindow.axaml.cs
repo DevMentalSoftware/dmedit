@@ -112,8 +112,9 @@ public partial class MainWindow : Window {
     }
 
     private void OnTabDocumentChanged(TabState tab) {
-        if (!tab.IsDirty) {
-            tab.IsDirty = true;
+        var shouldBeDirty = !tab.Document.IsAtSavePoint;
+        if (tab.IsDirty != shouldBeDirty) {
+            tab.IsDirty = shouldBeDirty;
             Dispatcher.UIThread.Post(UpdateTabBar);
         }
     }
@@ -135,6 +136,9 @@ public partial class MainWindow : Window {
             SwitchToTab(t);
         };
         TabBar.OverflowClicked += ShowOverflowMenu;
+        TabBar.CloseTabsToRightClicked += CloseTabsToRight;
+        TabBar.CloseOtherTabsClicked += CloseOtherTabs;
+        TabBar.TabReordered += OnTabReordered;
         TabBar.DragAreaPressed += () => {
             // BeginMoveDrag is called from within a PointerPressed handler,
             // so the pointer is already captured. This initiates OS-level
@@ -167,6 +171,42 @@ public partial class MainWindow : Window {
     }
 
     private void UpdateTabBar() => TabBar.Update(_tabs, _activeTab);
+
+    private void CloseTabsToRight(int tabIndex) {
+        if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
+        // Close all tabs with index > tabIndex
+        for (var i = _tabs.Count - 1; i > tabIndex; i--) {
+            _tabs.RemoveAt(i);
+        }
+        // If active tab was removed, switch to the rightmost remaining
+        if (_activeTab != null && !_tabs.Contains(_activeTab)) {
+            SwitchToTab(_tabs[^1]);
+        } else {
+            UpdateTabBar();
+        }
+    }
+
+    private void CloseOtherTabs(int tabIndex) {
+        if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
+        var keep = _tabs[tabIndex];
+        _tabs.Clear();
+        _tabs.Add(keep);
+        if (_activeTab == keep) {
+            UpdateTabBar();
+        } else {
+            SwitchToTab(keep);
+        }
+    }
+
+    private void OnTabReordered(int fromIndex, int toIndex) {
+        if (fromIndex < 0 || fromIndex >= _tabs.Count) return;
+        if (toIndex < 0 || toIndex >= _tabs.Count) return;
+        if (fromIndex == toIndex) return;
+        var tab = _tabs[fromIndex];
+        _tabs.RemoveAt(fromIndex);
+        _tabs.Insert(toIndex, tab);
+        UpdateTabBar();
+    }
 
     // -------------------------------------------------------------------------
     // Keyboard shortcuts (tab switching)
@@ -550,6 +590,7 @@ public partial class MainWindow : Window {
             return;
         }
         await SaveToAsync(_activeTab.FilePath);
+        _activeTab.Document.MarkSavePoint();
         _activeTab.IsDirty = false;
         UpdateTabBar();
     }
@@ -683,6 +724,7 @@ public partial class MainWindow : Window {
         }
 
         await SaveToAsync(path);
+        _activeTab.Document.MarkSavePoint();
         _activeTab.FilePath = path;
         _activeTab.DisplayName = Path.GetFileName(path);
         _activeTab.IsDirty = false;
