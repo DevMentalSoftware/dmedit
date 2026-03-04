@@ -34,7 +34,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             nameof(FontFamily), new FontFamily("Cascadia Code, Consolas, Courier New"));
 
     public static readonly StyledProperty<double> FontSizeProperty =
-        AvaloniaProperty.Register<EditorControl, double>(nameof(FontSize), 14.0);
+        AvaloniaProperty.Register<EditorControl, double>(nameof(FontSize), 14.663);
 
     public static readonly StyledProperty<IBrush> ForegroundBrushProperty =
         AvaloniaProperty.Register<EditorControl, IBrush>(nameof(ForegroundBrush), Brushes.Black);

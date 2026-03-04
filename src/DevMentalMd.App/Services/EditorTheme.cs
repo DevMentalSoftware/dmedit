@@ -8,7 +8,8 @@ namespace DevMentalMd.App.Services;
 /// </summary>
 public sealed class EditorTheme {
     // -- Editor surface --
-    public IBrush EditorBackground { get; init; } = Brushes.White;
+    public IBrush EditorBackground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xF9, 0xF9, 0xF9));
     public IBrush EditorForeground { get; init; } = Brushes.Black;
     public IBrush CaretBrush { get; init; } = Brushes.Black;
     public IBrush SelectionBrush { get; init; } =
@@ -16,7 +17,7 @@ public sealed class EditorTheme {
 
     // -- Gutter --
     public IBrush GutterBackground { get; init; } =
-        new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+        new SolidColorBrush(Color.FromRgb(0xF9, 0xF9, 0xF9));
     public IBrush GutterForeground { get; init; } =
         new SolidColorBrush(Color.FromRgb(0xA0, 0xA0, 0xA0));
 
@@ -26,29 +27,36 @@ public sealed class EditorTheme {
 
     // -- Tab bar --
     public IBrush TabBarBackground { get; init; } =
-        new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+        new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
     public IBrush TabBarBorder { get; init; } =
-        new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0));
-    public IBrush TabActiveBackground { get; init; } = Brushes.White;
+        new SolidColorBrush(Color.FromRgb(0xDA, 0xDA, 0xDA));
+    public IBrush TabActiveBackground { get; init; } = 
+        new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
     public IBrush TabInactiveBackground { get; init; } =
         new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
     public IBrush TabBorder { get; init; } =
-        new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0));
+        new SolidColorBrush(Color.FromRgb(0xDA, 0xDA, 0xDA));
     public IBrush TabForeground { get; init; } = Brushes.Black;
     public IBrush TabCloseForeground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
+    public IBrush TabInactiveHoverBg { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xD5, 0xCF, 0xD7));
+    public IBrush TabCloseHoverBg { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xDA, 0xDA, 0xDA));
+    public IBrush TabPlusForeground { get; init; } =
         new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
 
     // -- Status bar --
     public IBrush StatusBarBackground { get; init; } =
-        new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+        new SolidColorBrush(Color.FromRgb(0xF9, 0xF9, 0xF9));
     public IBrush StatusBarBorder { get; init; } =
-        new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0));
+        new SolidColorBrush(Color.FromRgb(0xDA, 0xDA, 0xDA));
     public IBrush StatusBarForeground { get; init; } =
         new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
 
     // -- Scrollbar --
     public IBrush ScrollTrack { get; init; } =
-        new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+        new SolidColorBrush(Color.FromRgb(0xF9, 0xF9, 0xF9));
     public IBrush ScrollArrowBg { get; init; } =
         new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
     public IBrush ScrollArrowBgHover { get; init; } =
@@ -72,7 +80,7 @@ public sealed class EditorTheme {
 
     // -- Menu --
     public IBrush MenuBackground { get; init; } =
-        new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+        new SolidColorBrush(Color.FromRgb(0xF9, 0xF9, 0xF9));
 
     // =================================================================
     // Predefined palettes
@@ -82,7 +90,7 @@ public sealed class EditorTheme {
 
     public static EditorTheme Dark { get; } = new() {
         // Editor surface
-        EditorBackground = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)),
+        EditorBackground = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x25)),
         EditorForeground = new SolidColorBrush(Color.FromRgb(0xD4, 0xD4, 0xD4)),
         CaretBrush = new SolidColorBrush(Color.FromRgb(0xD4, 0xD4, 0xD4)),
         SelectionBrush = new SolidColorBrush(Color.FromArgb(80, 51, 153, 255)),
@@ -96,13 +104,16 @@ public sealed class EditorTheme {
             new SolidColorBrush(Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)), 1),
 
         // Tab bar
-        TabBarBackground = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
+        TabBarBackground = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)),
         TabBarBorder = new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x3E)),
-        TabActiveBackground = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)),
+        TabActiveBackground = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
         TabInactiveBackground = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
         TabBorder = new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x3E)),
         TabForeground = new SolidColorBrush(Color.FromRgb(0xD4, 0xD4, 0xD4)),
         TabCloseForeground = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90)),
+        TabInactiveHoverBg = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x3A)),
+        TabCloseHoverBg = new SolidColorBrush(Color.FromRgb(0x4A, 0x4A, 0x4A)),
+        TabPlusForeground = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90)),
 
         // Status bar
         StatusBarBackground = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x25)),

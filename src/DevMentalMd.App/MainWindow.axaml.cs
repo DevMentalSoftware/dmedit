@@ -45,6 +45,7 @@ public partial class MainWindow : Window {
         WireScrollBar();
         WireViewMenu();
         WireThemeMenu();
+        WireTabBar();
         WireStatsBar();
 
         // The editor is the only focusable control.  Grab focus on
@@ -71,7 +72,7 @@ public partial class MainWindow : Window {
     private TabState AddTab(TabState tab) {
         _tabs.Add(tab);
         tab.Document.Changed += (_, _) => OnTabDocumentChanged(tab);
-        RebuildTabBar();
+        UpdateTabBar();
         return tab;
     }
 
@@ -84,8 +85,7 @@ public partial class MainWindow : Window {
         _activeTab = tab;
         Editor.Document = tab.Document;
         Editor.RestoreScrollState(tab);
-        UpdateTitleBar();
-        RebuildTabBar();
+        UpdateTabBar();
     }
 
     private void CloseTab(TabState tab) {
@@ -100,7 +100,7 @@ public partial class MainWindow : Window {
             var newIdx = Math.Min(closedIdx, _tabs.Count - 1);
             SwitchToTab(_tabs[newIdx]);
         } else {
-            RebuildTabBar();
+            UpdateTabBar();
         }
     }
 
@@ -114,69 +114,35 @@ public partial class MainWindow : Window {
     private void OnTabDocumentChanged(TabState tab) {
         if (!tab.IsDirty) {
             tab.IsDirty = true;
-            Dispatcher.UIThread.Post(RebuildTabBar);
+            Dispatcher.UIThread.Post(UpdateTabBar);
         }
     }
 
-    private void UpdateTitleBar() {
-        Title = _activeTab != null
-            ? $"DMEdit \u2014 {_activeTab.DisplayName}"
-            : "DMEdit";
-    }
 
     // -------------------------------------------------------------------------
-    // Tab bar rendering
+    // Tab bar wiring
     // -------------------------------------------------------------------------
 
-    private void RebuildTabBar() {
-        TabPanel.Children.Clear();
-        foreach (var tab in _tabs) {
-            var isActive = tab == _activeTab;
-            var dirtyMark = tab.IsDirty ? "\u2022 " : "";
-
-            var label = new TextBlock {
-                Text = $"{dirtyMark}{tab.DisplayName}",
-                Foreground = _theme.TabForeground,
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                Margin = new Thickness(6, 0, 4, 0),
-                FontSize = 12,
-            };
-
-            var closeBtn = new Button {
-                Content = "\u00D7",
-                Foreground = _theme.TabCloseForeground,
-                FontSize = 20,
-                Padding = new Thickness(6, 0),
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0, 0, 4, 0),
-                Cursor = new Cursor(StandardCursorType.Arrow),
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            };
-            var capturedTab = tab;
-            closeBtn.Click += (_, _) => CloseTab(capturedTab);
-
-            DockPanel.SetDock(closeBtn, Avalonia.Controls.Dock.Right);
-            var tabPanel = new DockPanel {
-                Children = { closeBtn, label },
-            };
-
-            var tabBorder = new Border {
-                Child = tabPanel,
-                MinWidth = 220,
-                Padding = new Thickness(2, 2),
-                Background = isActive
-                    ? _theme.TabActiveBackground
-                    : _theme.TabInactiveBackground,
-                BorderBrush = _theme.TabBorder,
-                BorderThickness = isActive
-                    ? new Thickness(1, 1, 1, 0)
-                    : new Thickness(0, 0, 1, 0),
-                Cursor = new Cursor(StandardCursorType.Arrow),
-            };
-            tabBorder.PointerPressed += (_, _) => SwitchToTab(capturedTab);
-            TabPanel.Children.Add(tabBorder);
-        }
+    private void WireTabBar() {
+        TabBar.TabClicked += idx => {
+            if (idx >= 0 && idx < _tabs.Count) SwitchToTab(_tabs[idx]);
+        };
+        TabBar.TabCloseClicked += idx => {
+            if (idx >= 0 && idx < _tabs.Count) CloseTab(_tabs[idx]);
+        };
+        TabBar.PlusClicked += () => {
+            var t = AddTab(TabState.CreateUntitled());
+            SwitchToTab(t);
+        };
+        TabBar.DragAreaPressed += () => {
+            // BeginMoveDrag is called from within a PointerPressed handler,
+            // so the pointer is already captured. This initiates OS-level
+            // window drag.
+            BeginMoveDrag(TabBar.LastPointerPressedArgs!);
+        };
     }
+
+    private void UpdateTabBar() => TabBar.Update(_tabs, _activeTab);
 
     // -------------------------------------------------------------------------
     // Keyboard shortcuts (tab switching)
@@ -283,9 +249,11 @@ public partial class MainWindow : Window {
         ScrollBar.ApplyTheme(theme);
 
         // Tab bar
-        TabBar.Background = theme.TabBarBackground;
-        TabBar.BorderBrush = theme.TabBarBorder;
-        RebuildTabBar();
+        TabBar.ApplyTheme(theme);
+
+        // Menu bar — match the active tab background so it blends
+        MenuBar.Background = theme.TabActiveBackground;
+        MenuBarBorder.BorderBrush = theme.TabBarBackground;
 
         // Status bar
         StatusBar.Background = theme.StatusBarBackground;
@@ -559,7 +527,7 @@ public partial class MainWindow : Window {
         }
         await SaveToAsync(_activeTab.FilePath);
         _activeTab.IsDirty = false;
-        RebuildTabBar();
+        UpdateTabBar();
     }
 
     private async void OnSaveAs(object? sender, RoutedEventArgs e) => await SaveAsAsync();
@@ -694,8 +662,7 @@ public partial class MainWindow : Window {
         _activeTab.FilePath = path;
         _activeTab.DisplayName = Path.GetFileName(path);
         _activeTab.IsDirty = false;
-        UpdateTitleBar();
-        RebuildTabBar();
+        UpdateTabBar();
     }
 
     private async Task SaveToAsync(string path) {

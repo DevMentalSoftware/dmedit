@@ -5,11 +5,21 @@
         xmlns:controls="clr-namespace:DevMentalMd.App.Controls"
         mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="650"
         x:Class="DevMentalMd.App.MainWindow"
-        Title="DevMentalMD"
+        Title=""
         Width="900" Height="650"
-		Icon="avares://dmedit/app_icon.ico">
+		Icon="avares://dmedit/app_icon.ico"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaTitleBarHeightHint="38">
     <DockPanel>
-        <Menu DockPanel.Dock="Top" x:Name="MenuBar">
+        <!-- Tab bar (custom-drawn, sits in title bar area) -->
+        <controls:TabBarControl x:Name="TabBar"
+                                DockPanel.Dock="Top"
+                                Height="38"
+                                IsHitTestVisible="True" />
+
+        <Border DockPanel.Dock="Top" x:Name="MenuBarBorder" BorderThickness="0,0,0,1">
+        <Menu x:Name="MenuBar" FontSize="12">
             <MenuItem Header="_File" x:Name="MenuFile">
                 <MenuItem Header="_New" x:Name="MenuNew" />
                 <MenuItem Header="_Open…" x:Name="MenuOpen" />
@@ -34,6 +44,7 @@
                 </MenuItem>
             </MenuItem>
         </Menu>
+        </Border>
 
         <Border x:Name="StatusBar"
                 DockPanel.Dock="Bottom"
@@ -69,17 +80,6 @@
                                Text="" />
                 </Grid>
             </StackPanel>
-        </Border>
-
-        <!-- Tab bar -->
-        <Border DockPanel.Dock="Top"
-                BorderThickness="0,0,0,1"
-                x:Name="TabBar">
-            <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Disabled">
-                <StackPanel x:Name="TabPanel"
-                            Orientation="Horizontal" />
-            </ScrollViewer>
         </Border>
 
         <Grid ColumnDefinitions="*,Auto">
