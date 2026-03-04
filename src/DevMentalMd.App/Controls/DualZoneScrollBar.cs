@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
+using DevMentalMd.App.Services;
 
 namespace DevMentalMd.App.Controls;
 
@@ -36,33 +37,15 @@ public sealed class DualZoneScrollBar : Control {
     private const double ReferenceDocLines = 100;     // for fixed-rate calc
 
     // -------------------------------------------------------------------------
-    // Colors
+    // Theme
     // -------------------------------------------------------------------------
 
-    private static readonly IBrush TrackBrush =
-        new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
-    private static readonly IBrush ArrowBgBrush =
-        new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
-    private static readonly IBrush ArrowBgHoverBrush =
-        new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0));
-    private static readonly IBrush ArrowBgPressBrush =
-        new SolidColorBrush(Color.FromRgb(0xB8, 0xB8, 0xB8));
-    private static readonly IBrush ArrowGlyphBrush =
-        new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
+    private EditorTheme _theme = EditorTheme.Light;
 
-    private static readonly IBrush InnerThumbNormal =
-        new SolidColorBrush(Color.FromRgb(0xC0, 0xC0, 0xC0));
-    private static readonly IBrush InnerThumbHover =
-        new SolidColorBrush(Color.FromRgb(0xA8, 0xA8, 0xA8));
-    private static readonly IBrush InnerThumbPress =
-        new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
-
-    private static readonly IBrush OuterThumbNormal =
-        new SolidColorBrush(Color.FromRgb(0xB0, 0xB8, 0xD0));
-    private static readonly IBrush OuterThumbHover =
-        new SolidColorBrush(Color.FromRgb(0x98, 0xA0, 0xB8));
-    private static readonly IBrush OuterThumbPress =
-        new SolidColorBrush(Color.FromRgb(0x78, 0x80, 0x9C));
+    public void ApplyTheme(EditorTheme theme) {
+        _theme = theme;
+        InvalidateVisual();
+    }
 
     // -------------------------------------------------------------------------
     // Scroll state (set by parent)
@@ -353,7 +336,7 @@ public sealed class DualZoneScrollBar : Control {
         }
 
         // Track background
-        ctx.FillRectangle(TrackBrush, new Rect(0, 0, w, h));
+        ctx.FillRectangle(_theme.ScrollTrack, new Rect(0, 0, w, h));
 
         // Arrow buttons
         DrawArrowButton(ctx, isUp: true, w);
@@ -372,17 +355,17 @@ public sealed class DualZoneScrollBar : Control {
             if (_isDragging && _pressedZone == HitZone.OuterTop) {
                 otTop += _outerDragVisualOffset;
             }
-            var brush = _pressedZone == HitZone.OuterTop ? OuterThumbPress
-                : _hoverZone == HitZone.OuterTop ? OuterThumbHover
-                : OuterThumbNormal;
+            var brush = _pressedZone == HitZone.OuterTop ? _theme.ScrollOuterThumbPress
+                : _hoverZone == HitZone.OuterTop ? _theme.ScrollOuterThumbHover
+                : _theme.ScrollOuterThumbNormal;
             ctx.FillRectangle(brush, new Rect(1, otTop, w - 2, geo.OuterTopHeight));
         }
 
         // Draw inner thumb
         {
-            var brush = _pressedZone == HitZone.InnerThumb ? InnerThumbPress
-                : _hoverZone == HitZone.InnerThumb ? InnerThumbHover
-                : InnerThumbNormal;
+            var brush = _pressedZone == HitZone.InnerThumb ? _theme.ScrollInnerThumbPress
+                : _hoverZone == HitZone.InnerThumb ? _theme.ScrollInnerThumbHover
+                : _theme.ScrollInnerThumbNormal;
             ctx.FillRectangle(brush, new Rect(1, geo.InnerTop, w - 2, geo.InnerHeight));
         }
 
@@ -394,9 +377,9 @@ public sealed class DualZoneScrollBar : Control {
             if (_isDragging && _pressedZone == HitZone.OuterBottom) {
                 obTop += _outerDragVisualOffset;
             }
-            var brush = _pressedZone == HitZone.OuterBottom ? OuterThumbPress
-                : _hoverZone == HitZone.OuterBottom ? OuterThumbHover
-                : OuterThumbNormal;
+            var brush = _pressedZone == HitZone.OuterBottom ? _theme.ScrollOuterThumbPress
+                : _hoverZone == HitZone.OuterBottom ? _theme.ScrollOuterThumbHover
+                : _theme.ScrollOuterThumbNormal;
             ctx.FillRectangle(brush, new Rect(1, obTop, w - 2, obHeight));
         }
     }
@@ -405,9 +388,9 @@ public sealed class DualZoneScrollBar : Control {
         var y = isUp ? 0 : Bounds.Height - ArrowHeight;
         var zone = isUp ? HitZone.ArrowUp : HitZone.ArrowDown;
 
-        var bg = _pressedZone == zone ? ArrowBgPressBrush
-            : _hoverZone == zone ? ArrowBgHoverBrush
-            : ArrowBgBrush;
+        var bg = _pressedZone == zone ? _theme.ScrollArrowBgPress
+            : _hoverZone == zone ? _theme.ScrollArrowBgHover
+            : _theme.ScrollArrowBg;
         ctx.FillRectangle(bg, new Rect(0, y, w, ArrowHeight));
 
         // Draw triangle glyph
@@ -427,7 +410,7 @@ public sealed class DualZoneScrollBar : Control {
             }
             sgc.EndFigure(true);
         }
-        ctx.DrawGeometry(ArrowGlyphBrush, null, geo);
+        ctx.DrawGeometry(_theme.ScrollArrowGlyph, null, geo);
     }
 
     // -------------------------------------------------------------------------

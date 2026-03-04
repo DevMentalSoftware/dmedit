@@ -9,6 +9,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Threading;
+using DevMentalMd.App.Services;
 using DevMentalMd.Core.Buffers;
 using DevMentalMd.Core.Documents;
 using DevMentalMd.Rendering.Layout;
@@ -138,6 +139,15 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
     }
 
+    /// <summary>Applies a new theme, pushing colors into styled properties and fields.</summary>
+    public void ApplyTheme(EditorTheme theme) {
+        _theme = theme;
+        ForegroundBrush = theme.EditorForeground;
+        SelectionBrush = theme.SelectionBrush;
+        CaretBrush = theme.CaretBrush;
+        InvalidateVisual();
+    }
+
     // Scroll state
     private Size _extent;
     private Size _viewport;
@@ -157,12 +167,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private int _gutterDigitCnt;
     private const double GutterPadLeft = 4;
     private const double GutterPadRight = 12;
-    private static readonly IBrush GutterBg = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
-    private static readonly IBrush GutterFg = new SolidColorBrush(Color.FromRgb(0xA0, 0xA0, 0xA0));
 
-    // Column guide
-    private static readonly IPen GuideLinePen = new Pen(
-        new SolidColorBrush(Color.FromArgb(0x10, 0x00, 0x00, 0x00)), 1);
+    // Theme — set by MainWindow when the effective theme changes.
+    private EditorTheme _theme = EditorTheme.Light;
 
     // Incremental scroll tracking — used by LayoutWindowed to produce
     // pixel-perfect smooth scrolling even when topLine changes.
@@ -702,7 +709,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var doc = Document;
 
         // Background
-        context.FillRectangle(Brushes.White, new Rect(Bounds.Size));
+        context.FillRectangle(_theme.EditorBackground, new Rect(Bounds.Size));
 
         // Gutter (line numbers)
         DrawGutter(context, layout);
@@ -711,7 +718,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (_wrapLinesAt >= 1) {
             var guideX = 2 + _gutterWidth + _wrapLinesAt * GetCharWidth();
             if (guideX < Bounds.Width) {
-                context.DrawLine(GuideLinePen, new Point(guideX, 0), new Point(guideX, Bounds.Height));
+                context.DrawLine(_theme.GuideLinePen, new Point(guideX, 0), new Point(guideX, Bounds.Height));
             }
         }
 
@@ -752,7 +759,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var table = Document?.Table;
 
         // Gutter background
-        context.FillRectangle(GutterBg, new Rect(0, 0, _gutterWidth, Bounds.Height));
+        context.FillRectangle(_theme.GutterBackground, new Rect(0, 0, _gutterWidth, Bounds.Height));
 
         if (table == null || layout.Lines.Count == 0) return;
 
@@ -769,7 +776,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             var lineNum = firstLineIdx + i + 1;
             var numText = lineNum.ToString();
             using var tl = new TextLayout(
-                numText, typeface, FontSize, GutterFg,
+                numText, typeface, FontSize, _theme.GutterForeground,
                 textAlignment: TextAlignment.Right,
                 maxWidth: numW);
             tl.Draw(context, new Point(0, y));
@@ -1111,7 +1118,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 e.Handled = true;
                 break;
 
-            case Key.Tab:
+            case Key.Tab when !ctrl:
                 _editSw.Restart();
                 doc.Insert("    ");
                 _editSw.Stop();
@@ -1650,5 +1657,39 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     private void OnDocumentChanged(object? sender, EventArgs e) {
         InvalidateLayout();
+    }
+
+    // -------------------------------------------------------------------------
+    // Tab scroll state save / restore
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Captures scroll and windowed-layout tracking state into
+    /// <paramref name="tab"/> so it can be restored when switching back.
+    /// </summary>
+    public void SaveScrollState(TabState tab) {
+        tab.ScrollOffsetY = _scrollOffset.Y;
+        tab.WinTopLine = _winTopLine;
+        tab.WinScrollOffset = _winScrollOffset;
+        tab.WinRenderOffsetY = _winRenderOffsetY;
+        tab.WinFirstLineHeight = _winFirstLineHeight;
+    }
+
+    /// <summary>
+    /// Restores previously saved scroll state after a document swap.
+    /// Must be called <b>after</b> setting <see cref="Document"/>,
+    /// which resets scroll to (0,0).
+    /// </summary>
+    public void RestoreScrollState(TabState tab) {
+        _scrollOffset = new Vector(0, tab.ScrollOffsetY);
+        _winTopLine = tab.WinTopLine;
+        _winScrollOffset = tab.WinScrollOffset;
+        _winRenderOffsetY = tab.WinRenderOffsetY;
+        _winFirstLineHeight = tab.WinFirstLineHeight;
+        _layout?.Dispose();
+        _layout = null;
+        InvalidateMeasure();
+        InvalidateVisual();
+        ScrollChanged?.Invoke(this, EventArgs.Empty);
     }
 }

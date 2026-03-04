@@ -1,11 +1,17 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using DevMentalMd.App.Services;
 using DevMentalMd.Core.Buffers;
@@ -15,12 +21,13 @@ using DevMentalMd.Core.IO;
 namespace DevMentalMd.App;
 
 public partial class MainWindow : Window {
-    private string? _currentPath;
-    private LoadResult? _lastLoadResult;
+    private readonly List<TabState> _tabs = [];
+    private TabState? _activeTab;
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
     private readonly AppSettings _settings = AppSettings.Load();
     private int _staticMenuItemCount;
-    private readonly DispatcherTimer _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+    private readonly DispatcherTimer _statsTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private EditorTheme _theme = EditorTheme.Light;
 
     public MainWindow() {
         InitializeComponent();
@@ -29,14 +36,15 @@ public partial class MainWindow : Window {
         MenuOpen.Click += OnOpen;
         MenuSave.Click += OnSave;
         MenuSaveAs.Click += OnSaveAs;
-        MenuClose.Click += (_, _) => CloseDocument();
-        MenuCloseAll.Click += (_, _) => CloseDocument();
+        MenuClose.Click += (_, _) => { if (_activeTab != null) CloseTab(_activeTab); };
+        MenuCloseAll.Click += (_, _) => CloseAllTabs();
 
         _staticMenuItemCount = MenuFile.Items.Count;
 
         RebuildRecentMenu();
         WireScrollBar();
         WireViewMenu();
+        WireThemeMenu();
         WireStatsBar();
 
         // The editor is the only focusable control.  Grab focus on
@@ -51,8 +59,241 @@ public partial class MainWindow : Window {
         if (_settings.DevMode) {
             LoadManual();
         } else {
-            Editor.Document = new Document();
+            var tab = AddTab(TabState.CreateUntitled());
+            SwitchToTab(tab);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Tab management
+    // -------------------------------------------------------------------------
+
+    private TabState AddTab(TabState tab) {
+        _tabs.Add(tab);
+        tab.Document.Changed += (_, _) => OnTabDocumentChanged(tab);
+        RebuildTabBar();
+        return tab;
+    }
+
+    private void SwitchToTab(TabState tab) {
+        if (_activeTab == tab) return;
+        // Save current tab's scroll state.
+        if (_activeTab != null) {
+            Editor.SaveScrollState(_activeTab);
+        }
+        _activeTab = tab;
+        Editor.Document = tab.Document;
+        Editor.RestoreScrollState(tab);
+        UpdateTitleBar();
+        RebuildTabBar();
+    }
+
+    private void CloseTab(TabState tab) {
+        var closedIdx = _tabs.IndexOf(tab);
+        _tabs.Remove(tab);
+        if (_tabs.Count == 0) {
+            var newTab = AddTab(TabState.CreateUntitled());
+            SwitchToTab(newTab);
+        } else if (_activeTab == tab) {
+            // Switch to the tab now at the closed index (= old right neighbor),
+            // or the last tab if the closed tab was rightmost.
+            var newIdx = Math.Min(closedIdx, _tabs.Count - 1);
+            SwitchToTab(_tabs[newIdx]);
+        } else {
+            RebuildTabBar();
+        }
+    }
+
+    private void CloseAllTabs() {
+        _tabs.Clear();
+        _activeTab = null;
+        var tab = AddTab(TabState.CreateUntitled());
+        SwitchToTab(tab);
+    }
+
+    private void OnTabDocumentChanged(TabState tab) {
+        if (!tab.IsDirty) {
+            tab.IsDirty = true;
+            Dispatcher.UIThread.Post(RebuildTabBar);
+        }
+    }
+
+    private void UpdateTitleBar() {
+        Title = _activeTab != null
+            ? $"DMEdit \u2014 {_activeTab.DisplayName}"
+            : "DMEdit";
+    }
+
+    // -------------------------------------------------------------------------
+    // Tab bar rendering
+    // -------------------------------------------------------------------------
+
+    private void RebuildTabBar() {
+        TabPanel.Children.Clear();
+        foreach (var tab in _tabs) {
+            var isActive = tab == _activeTab;
+            var dirtyMark = tab.IsDirty ? "\u2022 " : "";
+
+            var label = new TextBlock {
+                Text = $"{dirtyMark}{tab.DisplayName}",
+                Foreground = _theme.TabForeground,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 4, 0),
+                FontSize = 12,
+            };
+
+            var closeBtn = new Button {
+                Content = "\u00D7",
+                Foreground = _theme.TabCloseForeground,
+                FontSize = 20,
+                Padding = new Thickness(6, 0),
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0, 0, 4, 0),
+                Cursor = new Cursor(StandardCursorType.Arrow),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            };
+            var capturedTab = tab;
+            closeBtn.Click += (_, _) => CloseTab(capturedTab);
+
+            DockPanel.SetDock(closeBtn, Avalonia.Controls.Dock.Right);
+            var tabPanel = new DockPanel {
+                Children = { closeBtn, label },
+            };
+
+            var tabBorder = new Border {
+                Child = tabPanel,
+                MinWidth = 220,
+                Padding = new Thickness(2, 2),
+                Background = isActive
+                    ? _theme.TabActiveBackground
+                    : _theme.TabInactiveBackground,
+                BorderBrush = _theme.TabBorder,
+                BorderThickness = isActive
+                    ? new Thickness(1, 1, 1, 0)
+                    : new Thickness(0, 0, 1, 0),
+                Cursor = new Cursor(StandardCursorType.Arrow),
+            };
+            tabBorder.PointerPressed += (_, _) => SwitchToTab(capturedTab);
+            TabPanel.Children.Add(tabBorder);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Keyboard shortcuts (tab switching)
+    // -------------------------------------------------------------------------
+
+    protected override void OnKeyDown(KeyEventArgs e) {
+        base.OnKeyDown(e);
+        if (e.Key == Key.Tab && e.KeyModifiers.HasFlag(KeyModifiers.Control)) {
+            if (_tabs.Count <= 1) {
+                e.Handled = true;
+                return;
+            }
+            var idx = _activeTab != null ? _tabs.IndexOf(_activeTab) : 0;
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) {
+                idx = (idx - 1 + _tabs.Count) % _tabs.Count;
+            } else {
+                idx = (idx + 1) % _tabs.Count;
+            }
+            SwitchToTab(_tabs[idx]);
+            e.Handled = true;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Theme
+    // -------------------------------------------------------------------------
+
+    private void WireThemeMenu() {
+        MenuThemeSystem.ToggleType = MenuItemToggleType.CheckBox;
+        MenuThemeLight.ToggleType = MenuItemToggleType.CheckBox;
+        MenuThemeDark.ToggleType = MenuItemToggleType.CheckBox;
+
+        UpdateThemeMenuChecks();
+
+        MenuThemeSystem.Click += (_, _) => SetThemeMode(ThemeMode.System);
+        MenuThemeLight.Click += (_, _) => SetThemeMode(ThemeMode.Light);
+        MenuThemeDark.Click += (_, _) => SetThemeMode(ThemeMode.Dark);
+
+        // Listen for system theme changes so we update live when mode is System.
+        ActualThemeVariantChanged += (_, _) => {
+            if (_settings.ThemeMode == ThemeMode.System) {
+                ApplyTheme(ResolveTheme());
+            }
+        };
+
+        // Apply the initial theme.  Set RequestedThemeVariant first so
+        // ActualThemeVariant is correct before ResolveTheme reads it.
+        SyncRequestedThemeVariant();
+        ApplyTheme(ResolveTheme());
+    }
+
+    private void SetThemeMode(ThemeMode mode) {
+        _settings.ThemeMode = mode;
+        _settings.ScheduleSave();
+        UpdateThemeMenuChecks();
+        SyncRequestedThemeVariant();
+        ApplyTheme(ResolveTheme());
+    }
+
+    /// <summary>
+    /// Sets Avalonia's RequestedThemeVariant from the current setting so
+    /// Fluent-themed controls (menus, buttons) match, and so that
+    /// ActualThemeVariant is up-to-date before <see cref="ResolveTheme"/>
+    /// reads it.
+    /// </summary>
+    private void SyncRequestedThemeVariant() {
+        RequestedThemeVariant = _settings.ThemeMode switch {
+            ThemeMode.System => ThemeVariant.Default,
+            ThemeMode.Light => ThemeVariant.Light,
+            ThemeMode.Dark => ThemeVariant.Dark,
+            _ => ThemeVariant.Default,
+        };
+    }
+
+    private void UpdateThemeMenuChecks() {
+        MenuThemeSystem.IsChecked = _settings.ThemeMode == ThemeMode.System;
+        MenuThemeLight.IsChecked = _settings.ThemeMode == ThemeMode.Light;
+        MenuThemeDark.IsChecked = _settings.ThemeMode == ThemeMode.Dark;
+    }
+
+    /// <summary>
+    /// Resolves the current setting to a concrete Light or Dark theme,
+    /// consulting the OS preference when the mode is System.
+    /// </summary>
+    private EditorTheme ResolveTheme() {
+        var isDark = _settings.ThemeMode switch {
+            ThemeMode.Light => false,
+            ThemeMode.Dark => true,
+            _ => ActualThemeVariant == ThemeVariant.Dark,
+        };
+        return isDark ? EditorTheme.Dark : EditorTheme.Light;
+    }
+
+    /// <summary>
+    /// Pushes theme colors to all custom-drawn controls and XAML elements.
+    /// Call <see cref="SyncRequestedThemeVariant"/> before this so that
+    /// Fluent-themed controls also match.
+    /// </summary>
+    private void ApplyTheme(EditorTheme theme) {
+        _theme = theme;
+
+        // Custom-drawn controls
+        Editor.ApplyTheme(theme);
+        ScrollBar.ApplyTheme(theme);
+
+        // Tab bar
+        TabBar.Background = theme.TabBarBackground;
+        TabBar.BorderBrush = theme.TabBarBorder;
+        RebuildTabBar();
+
+        // Status bar
+        StatusBar.Background = theme.StatusBarBackground;
+        StatusBar.BorderBrush = theme.StatusBarBorder;
+        StatsBar.Foreground = theme.StatusBarForeground;
+        StatsBarIO.Foreground = theme.StatusBarForeground;
+        StatusLeft.Foreground = theme.StatusBarForeground;
+        StatusRight.Foreground = theme.StatusBarForeground;
     }
 
     // -------------------------------------------------------------------------
@@ -264,25 +505,25 @@ public partial class MainWindow : Window {
     // File menu handlers
     // -------------------------------------------------------------------------
 
-    private void OnNew(object? sender, RoutedEventArgs e) => CloseDocument();
+    private void OnNew(object? sender, RoutedEventArgs e) {
+        var tab = AddTab(TabState.CreateUntitled());
+        SwitchToTab(tab);
+    }
 
     private void LoadManual() {
         var dir = AppDomain.CurrentDomain.BaseDirectory;
         var path = Path.Combine(dir, "manual.md");
         if (File.Exists(path)) {
             var result = FileLoader.Load(path);
-            Editor.Document = result.Document;
-            Title = "DMEdit — manual.md";
+            var tab = new TabState(result.Document, path, "manual.md") {
+                LoadResult = result,
+            };
+            AddTab(tab);
+            SwitchToTab(tab);
         } else {
-            Editor.Document = new Document();
+            var tab = AddTab(TabState.CreateUntitled());
+            SwitchToTab(tab);
         }
-    }
-
-    private void CloseDocument() {
-        Editor.Document = new Document();
-        _currentPath = null;
-        _lastLoadResult = null;
-        Title = "DevMentalMD";
     }
 
     private async void OnOpen(object? sender, RoutedEventArgs e) {
@@ -307,26 +548,18 @@ public partial class MainWindow : Window {
             return;
         }
 
-        var sw = Stopwatch.StartNew();
-        var result = await FileLoader.LoadAsync(path, _settings.PagedBufferThresholdBytes);
-        _lastLoadResult = result;
-        Editor.Document = result.Document;
-        WireStreamingProgress(sw);
-
-        _currentPath = path;
-        Title = $"DevMentalMD — {result.DisplayName}";
-
-        _recentFiles.Push(path);
-        _recentFiles.Save();
-        RebuildRecentMenu();
+        await OpenFileInTabAsync(path);
     }
 
     private async void OnSave(object? sender, RoutedEventArgs e) {
-        if (_currentPath is null) {
+        if (_activeTab == null) return;
+        if (_activeTab.FilePath is null) {
             await SaveAsAsync();
             return;
         }
-        await SaveToAsync(_currentPath);
+        await SaveToAsync(_activeTab.FilePath);
+        _activeTab.IsDirty = false;
+        RebuildTabBar();
     }
 
     private async void OnSaveAs(object? sender, RoutedEventArgs e) => await SaveAsAsync();
@@ -352,7 +585,7 @@ public partial class MainWindow : Window {
                 ToolTip.SetTip(item, captured);
                 item.Click += async (_, _) => {
                     MenuFile.IsSubMenuOpen = false;
-                    await OpenRecentFileAsync(captured);
+                    await OpenFileInTabAsync(captured);
                 };
                 MenuFile.Items.Add(item);
             }
@@ -372,7 +605,12 @@ public partial class MainWindow : Window {
         }
     }
 
-    private async Task OpenRecentFileAsync(string path) {
+    /// <summary>
+    /// Opens a file in a new tab, or switches to an existing tab if the file
+    /// is already open. Used by File > Open, recent files, and any other path
+    /// that opens a file by path.
+    /// </summary>
+    private async Task OpenFileInTabAsync(string path) {
         if (!File.Exists(path)) {
             _recentFiles.Remove(path);
             _recentFiles.Save();
@@ -380,14 +618,23 @@ public partial class MainWindow : Window {
             return;
         }
 
+        // Check if the file is already open in another tab.
+        var existing = _tabs.FirstOrDefault(t =>
+            string.Equals(t.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        if (existing != null) {
+            SwitchToTab(existing);
+            return;
+        }
+
         var sw = Stopwatch.StartNew();
         var result = await FileLoader.LoadAsync(path, _settings.PagedBufferThresholdBytes);
-        _lastLoadResult = result;
-        Editor.Document = result.Document;
-        WireStreamingProgress(sw);
 
-        _currentPath = path;
-        Title = $"DevMentalMD — {result.DisplayName}";
+        var tab = new TabState(result.Document, path, result.DisplayName) {
+            LoadResult = result,
+        };
+        AddTab(tab);
+        SwitchToTab(tab);
+        WireStreamingProgress(sw, tab);
 
         _recentFiles.Push(path);
         _recentFiles.Save();
@@ -396,13 +643,13 @@ public partial class MainWindow : Window {
 
     private void OpenDevSample(ProceduralSample sample) {
         var sw = Stopwatch.StartNew();
-        Editor.Document = sample.CreateDocument();
+        var doc = sample.CreateDocument();
         sw.Stop();
-        Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
 
-        _currentPath = null;
-        _lastLoadResult = null;
-        Title = $"DevMentalMD — {sample.DisplayName}";
+        var tab = new TabState(doc, null, sample.DisplayName);
+        AddTab(tab);
+        SwitchToTab(tab);
+        Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
     }
 
     // -------------------------------------------------------------------------
@@ -410,12 +657,14 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     private async Task SaveAsAsync() {
+        if (_activeTab == null) return;
+
         // For zip files, suggest the inner entry name (e.g., "model.xml" not "model.zip").
         string suggestedName;
-        if (_lastLoadResult is { WasZipped: true, InnerEntryName: { } innerName }) {
+        if (_activeTab.LoadResult is { WasZipped: true, InnerEntryName: { } innerName }) {
             suggestedName = innerName;
-        } else if (_currentPath is not null) {
-            suggestedName = Path.GetFileName(_currentPath);
+        } else if (_activeTab.FilePath is not null) {
+            suggestedName = Path.GetFileName(_activeTab.FilePath);
         } else {
             suggestedName = "untitled.txt";
         }
@@ -442,8 +691,11 @@ public partial class MainWindow : Window {
         }
 
         await SaveToAsync(path);
-        _currentPath = path;
-        Title = $"DevMentalMD — {Path.GetFileName(path)}";
+        _activeTab.FilePath = path;
+        _activeTab.DisplayName = Path.GetFileName(path);
+        _activeTab.IsDirty = false;
+        UpdateTitleBar();
+        RebuildTabBar();
     }
 
     private async Task SaveToAsync(string path) {
@@ -461,13 +713,12 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// If the current document is backed by a <see cref="StreamingFileBuffer"/>,
-    /// subscribes to its progress events so the editor re-layouts incrementally
-    /// and the stats bar shows the running load time. For small (non-streaming)
-    /// files the stopwatch is stopped immediately.
+    /// If the document is backed by a streaming/paged buffer, subscribes to its
+    /// progress events so the editor re-layouts incrementally. Callbacks are
+    /// guarded so that background loads for inactive tabs don't affect the UI.
     /// </summary>
-    private void WireStreamingProgress(Stopwatch sw) {
-        if (Editor.Document?.Table.Buffer is IProgressBuffer buf) {
+    private void WireStreamingProgress(Stopwatch sw, TabState tab) {
+        if (tab.Document.Table.Buffer is IProgressBuffer buf) {
             // Streaming load — capture time to first renderable chunk, then keep
             // the stopwatch running until fully loaded.
             var firstChunkCaptured = false;
@@ -476,6 +727,7 @@ public partial class MainWindow : Window {
 
             buf.ProgressChanged += () => {
                 Dispatcher.UIThread.Post(() => {
+                    if (_activeTab != tab) return;
                     if (!firstChunkCaptured) {
                         firstChunkCaptured = true;
                         Editor.PerfStats.FirstChunkTimeMs = sw.Elapsed.TotalMilliseconds;
@@ -488,6 +740,7 @@ public partial class MainWindow : Window {
             buf.LoadComplete += () => {
                 Dispatcher.UIThread.Post(() => {
                     sw.Stop();
+                    if (_activeTab != tab) return;
                     Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
                     Editor.InvalidateLayout();
                 }, DispatcherPriority.Background);

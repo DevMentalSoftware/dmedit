@@ -1,0 +1,128 @@
+using Avalonia.Media;
+
+namespace DevMentalMd.App.Services;
+
+/// <summary>
+/// Centralizes all UI colors for the editor. Two static instances (Light and
+/// Dark) provide palettes that controls reference at render time.
+/// </summary>
+public sealed class EditorTheme {
+    // -- Editor surface --
+    public IBrush EditorBackground { get; init; } = Brushes.White;
+    public IBrush EditorForeground { get; init; } = Brushes.Black;
+    public IBrush CaretBrush { get; init; } = Brushes.Black;
+    public IBrush SelectionBrush { get; init; } =
+        new SolidColorBrush(Color.FromArgb(80, 0, 120, 215));
+
+    // -- Gutter --
+    public IBrush GutterBackground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+    public IBrush GutterForeground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xA0, 0xA0, 0xA0));
+
+    // -- Column guide --
+    public IPen GuideLinePen { get; init; } = new Pen(
+        new SolidColorBrush(Color.FromArgb(0x10, 0x00, 0x00, 0x00)), 1);
+
+    // -- Tab bar --
+    public IBrush TabBarBackground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+    public IBrush TabBarBorder { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0));
+    public IBrush TabActiveBackground { get; init; } = Brushes.White;
+    public IBrush TabInactiveBackground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
+    public IBrush TabBorder { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0));
+    public IBrush TabForeground { get; init; } = Brushes.Black;
+    public IBrush TabCloseForeground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
+
+    // -- Status bar --
+    public IBrush StatusBarBackground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+    public IBrush StatusBarBorder { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0));
+    public IBrush StatusBarForeground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
+
+    // -- Scrollbar --
+    public IBrush ScrollTrack { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+    public IBrush ScrollArrowBg { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
+    public IBrush ScrollArrowBgHover { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0));
+    public IBrush ScrollArrowBgPress { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xB8, 0xB8, 0xB8));
+    public IBrush ScrollArrowGlyph { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
+    public IBrush ScrollInnerThumbNormal { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xC0, 0xC0, 0xC0));
+    public IBrush ScrollInnerThumbHover { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xA8, 0xA8, 0xA8));
+    public IBrush ScrollInnerThumbPress { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
+    public IBrush ScrollOuterThumbNormal { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xB0, 0xB8, 0xD0));
+    public IBrush ScrollOuterThumbHover { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0x98, 0xA0, 0xB8));
+    public IBrush ScrollOuterThumbPress { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0x78, 0x80, 0x9C));
+
+    // -- Menu --
+    public IBrush MenuBackground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+
+    // =================================================================
+    // Predefined palettes
+    // =================================================================
+
+    public static EditorTheme Light { get; } = new();
+
+    public static EditorTheme Dark { get; } = new() {
+        // Editor surface
+        EditorBackground = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)),
+        EditorForeground = new SolidColorBrush(Color.FromRgb(0xD4, 0xD4, 0xD4)),
+        CaretBrush = new SolidColorBrush(Color.FromRgb(0xD4, 0xD4, 0xD4)),
+        SelectionBrush = new SolidColorBrush(Color.FromArgb(80, 51, 153, 255)),
+
+        // Gutter
+        GutterBackground = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x25)),
+        GutterForeground = new SolidColorBrush(Color.FromRgb(0x6E, 0x6E, 0x6E)),
+
+        // Column guide
+        GuideLinePen = new Pen(
+            new SolidColorBrush(Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)), 1),
+
+        // Tab bar
+        TabBarBackground = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
+        TabBarBorder = new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x3E)),
+        TabActiveBackground = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)),
+        TabInactiveBackground = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
+        TabBorder = new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x3E)),
+        TabForeground = new SolidColorBrush(Color.FromRgb(0xD4, 0xD4, 0xD4)),
+        TabCloseForeground = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90)),
+
+        // Status bar
+        StatusBarBackground = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x25)),
+        StatusBarBorder = new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x3E)),
+        StatusBarForeground = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90)),
+
+        // Scrollbar
+        ScrollTrack = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)),
+        ScrollArrowBg = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
+        ScrollArrowBgHover = new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x3E)),
+        ScrollArrowBgPress = new SolidColorBrush(Color.FromRgb(0x50, 0x50, 0x50)),
+        ScrollArrowGlyph = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90)),
+        ScrollInnerThumbNormal = new SolidColorBrush(Color.FromRgb(0x4A, 0x4A, 0x4A)),
+        ScrollInnerThumbHover = new SolidColorBrush(Color.FromRgb(0x5A, 0x5A, 0x5A)),
+        ScrollInnerThumbPress = new SolidColorBrush(Color.FromRgb(0x6A, 0x6A, 0x6A)),
+        ScrollOuterThumbNormal = new SolidColorBrush(Color.FromRgb(0x3C, 0x44, 0x5C)),
+        ScrollOuterThumbHover = new SolidColorBrush(Color.FromRgb(0x4C, 0x54, 0x6C)),
+        ScrollOuterThumbPress = new SolidColorBrush(Color.FromRgb(0x5C, 0x64, 0x7C)),
+
+        // Menu
+        MenuBackground = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
+    };
+}

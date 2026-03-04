@@ -70,6 +70,25 @@ This document describes every operation currently available.
 | Middle-drag scroll       | Middle mouse button + drag |
 
 
+## Tabs
+
+Multiple files can be open at the same time.  Each file gets its own tab
+above the editor.  Scroll position is preserved when switching between tabs.
+
+| Action                | Key / Method                  |
+|-----------------------|-------------------------------|
+| New tab               | File > New                    |
+| Open in new tab       | File > Open                   |
+| Close tab             | Ctrl+F4                       |
+| Close all tabs        | Ctrl+Shift+F4                 |
+| Next tab              | Ctrl+Tab                      |
+| Previous tab          | Ctrl+Shift+Tab                |
+| Switch to a tab       | Click its tab header          |
+
+A bullet appears in the tab header when a document has unsaved changes.
+Opening a file that is already open switches to the existing tab.
+
+
 ## File Menu
 
 | Action        | Menu                   |

@@ -6,6 +6,12 @@ using System.Threading;
 
 namespace DevMentalMd.App.Services;
 
+public enum ThemeMode {
+    System,
+    Light,
+    Dark,
+}
+
 /// <summary>
 /// Application settings persisted to <c>%APPDATA%/DevMentalMD/settings.json</c>.
 /// Add new properties as the app evolves — unknown keys in the JSON are silently
@@ -88,6 +94,15 @@ public sealed class AppSettings {
     /// effect when <see cref="WrapLines"/> is true. Default: 100.
     /// </summary>
     public int WrapLinesAt { get; set; } = 100;
+
+    // -----------------------------------------------------------------
+    // Theme
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Controls the color theme. System (default) follows the OS setting.
+    /// </summary>
+    public ThemeMode ThemeMode { get; set; } = ThemeMode.System;
 
     // -----------------------------------------------------------------
     // Large file support
