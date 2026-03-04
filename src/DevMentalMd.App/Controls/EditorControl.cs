@@ -13,6 +13,7 @@ using DevMentalMd.App.Services;
 using DevMentalMd.Core.Buffers;
 using DevMentalMd.Core.Documents;
 using DevMentalMd.Rendering.Layout;
+using DevMentalMd.Rendering;
 
 namespace DevMentalMd.App.Controls;
 
@@ -34,7 +35,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             nameof(FontFamily), new FontFamily("Cascadia Code, Consolas, Courier New"));
 
     public static readonly StyledProperty<double> FontSizeProperty =
-        AvaloniaProperty.Register<EditorControl, double>(nameof(FontSize), 14.663);
+        AvaloniaProperty.Register<EditorControl, double>(nameof(FontSize), 11.ToPixels());
 
     public static readonly StyledProperty<IBrush> ForegroundBrushProperty =
         AvaloniaProperty.Register<EditorControl, IBrush>(nameof(ForegroundBrush), Brushes.Black);

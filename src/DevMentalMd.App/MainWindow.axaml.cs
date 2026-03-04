@@ -134,12 +134,32 @@ public partial class MainWindow : Window {
             var t = AddTab(TabState.CreateUntitled());
             SwitchToTab(t);
         };
+        TabBar.OverflowClicked += ShowOverflowMenu;
         TabBar.DragAreaPressed += () => {
             // BeginMoveDrag is called from within a PointerPressed handler,
             // so the pointer is already captured. This initiates OS-level
             // window drag.
             BeginMoveDrag(TabBar.LastPointerPressedArgs!);
         };
+    }
+
+    private void ShowOverflowMenu() {
+        var overflowTabs = TabBar.GetOverflowTabs();
+        if (overflowTabs.Count == 0) return;
+
+        var menu = new ContextMenu();
+        foreach (var (index, label) in overflowTabs) {
+            var captured = index;
+            var item = new MenuItem { Header = label };
+            item.Click += (_, _) => {
+                if (captured >= 0 && captured < _tabs.Count) {
+                    SwitchToTab(_tabs[captured]);
+                }
+            };
+            menu.Items.Add(item);
+        }
+
+        menu.Open(TabBar);
     }
 
     private void UpdateTabBar() => TabBar.Update(_tabs, _activeTab);

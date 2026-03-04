@@ -18,6 +18,17 @@ namespace DevMentalMd.App.Controls;
 /// - App icon drawn at left margin
 /// </summary>
 public sealed class TabBarControl : Control {
+    public TabBarControl() {
+        // Recompute tab layout when the control is resized (e.g. first
+        // layout pass after the window appears, or window resize).
+        PropertyChanged += (_, e) => {
+            if (e.Property == BoundsProperty && _tabs.Count > 0) {
+                ComputeTabLayout();
+                InvalidateVisual();
+            }
+        };
+    }
+
     // -------------------------------------------------------------------------
     // Constants
     // -------------------------------------------------------------------------
@@ -26,11 +37,10 @@ public sealed class TabBarControl : Control {
     private const double TabTopMargin = 6;       // space above tab content
     private const double TabPaddingLeft = 10;    // left text padding
     private const double TabPaddingRight = 4;    // right padding after close btn
-    private const double TabMinWidth = 30;
     private const double TabMaxWidth = 280;
     private const double CloseButtonSize = 24;   // hit area for close "×"
-    private const double CornerRadius = 8;       // convex top corners
-    private const double ConcaveRadius = 8;      // concave bottom curves
+    private const double CornerRadius = 4;       // convex top corners
+    private const double ConcaveRadius = 6;      // concave bottom curves
     private const double PlusButtonWidth = 28;   // "+" button area
     private const double PlusButtonHeight = 24;  // "+" hover bg height
     private const double IconSize = 24;
@@ -82,9 +92,14 @@ public sealed class TabBarControl : Control {
     private double[] _tabXPositions = Array.Empty<double>();
     private double _contentStartX; // x after icon
 
-    private enum HitZone { None, Tab, CloseButton, PlusButton, DragArea }
+    private enum HitZone { None, Tab, CloseButton, PlusButton, OverflowButton, DragArea }
     private HitZone _hoverZone = HitZone.None;
     private int _hoverTabIndex = -1;
+
+    // Overflow state — set by ComputeTabLayout
+    private int _visibleTabCount;         // how many tabs fit in the bar
+    private double _overflowButtonX;      // x position of the ▼ button
+    private const double OverflowButtonWidth = 28;
 
     // -------------------------------------------------------------------------
     // Events
@@ -94,6 +109,7 @@ public sealed class TabBarControl : Control {
     public event Action<int>? TabCloseClicked;
     public event Action? PlusClicked;
     public event Action? DragAreaPressed;
+    public event Action? OverflowClicked;
 
     /// <summary>
     /// The last PointerPressedEventArgs, available for the DragAreaPressed
@@ -121,33 +137,76 @@ public sealed class TabBarControl : Control {
         _tabWidths = new double[_tabs.Count];
         _tabXPositions = new double[_tabs.Count];
 
-        // Compute text-based widths first
-        var totalTextWidth = 0.0;
+        if (_tabs.Count == 0) {
+            _visibleTabCount = 0;
+            return;
+        }
+
+        // 1. Measure natural width for each tab (text + close + padding)
+        var naturalWidths = new double[_tabs.Count];
         for (var i = 0; i < _tabs.Count; i++) {
             var text = GetTabLabel(i);
             var isActive = _tabs[i] == _activeTab;
             var typeface = isActive ? TabFontBold : TabFont;
             var ft = new FormattedText(text, System.Globalization.CultureInfo.CurrentCulture,
                 FlowDirection.LeftToRight, typeface, TabFontSize, Brushes.Black);
-            var textWidth = ft.Width + TabPaddingLeft + CloseButtonSize + TabPaddingRight + 8;
-            _tabWidths[i] = Math.Clamp(textWidth, TabMinWidth, TabMaxWidth);
-            totalTextWidth += _tabWidths[i];
+            var w = ft.Width + TabPaddingLeft + CloseButtonSize + TabPaddingRight + 8;
+            naturalWidths[i] = Math.Min(w, TabMaxWidth);
         }
 
-        // If there's room, expand tabs evenly up to max
-        var availableWidth = Bounds.Width - _contentStartX - PlusButtonWidth - 16 - CaptionButtonsReserved;
-        if (_tabs.Count > 0 && totalTextWidth < availableWidth) {
-            var extraPerTab = (availableWidth - totalTextWidth) / _tabs.Count;
+        // 2. Available space = window width − icon area − plus button − caption buttons
+        var availableWidth = Bounds.Width - _contentStartX - PlusButtonWidth - 16
+                             - CaptionButtonsReserved;
+        if (availableWidth < 1) availableWidth = 1;
+
+        // 3. Try fitting all tabs at natural widths
+        var totalNatural = 0.0;
+        var totalGaps = (_tabs.Count - 1) * TabGap;
+        for (var i = 0; i < _tabs.Count; i++) {
+            totalNatural += naturalWidths[i];
+        }
+
+        if (totalNatural + totalGaps <= availableWidth) {
+            // Everything fits at natural size — no shrinking needed
+            _visibleTabCount = _tabs.Count;
             for (var i = 0; i < _tabs.Count; i++) {
-                _tabWidths[i] = Math.Min(_tabWidths[i] + extraPerTab, TabMaxWidth);
+                _tabWidths[i] = naturalWidths[i];
+            }
+        } else {
+            // 4. Tabs don't fit — overflow rightmost tabs until the visible
+            //    set fits at natural widths (no shrinking, no truncation).
+            var visibleCount = _tabs.Count;
+            while (visibleCount > 1) {
+                visibleCount--;
+                var gaps = (visibleCount - 1) * TabGap;
+                var overflowReserve = OverflowButtonWidth + TabGap;
+                var spaceForTabs = availableWidth - gaps - overflowReserve;
+
+                var sumNatural = 0.0;
+                for (var i = 0; i < visibleCount; i++) {
+                    sumNatural += naturalWidths[i];
+                }
+
+                if (sumNatural <= spaceForTabs) {
+                    break;
+                }
+            }
+
+            _visibleTabCount = visibleCount;
+            for (var i = 0; i < visibleCount; i++) {
+                _tabWidths[i] = naturalWidths[i];
             }
         }
 
+        // 5. Compute x positions for visible tabs
         var x = _contentStartX;
-        for (var i = 0; i < _tabs.Count; i++) {
+        for (var i = 0; i < _visibleTabCount; i++) {
             _tabXPositions[i] = x;
             x += _tabWidths[i] + TabGap;
         }
+
+        // 6. Overflow button position (if needed)
+        _overflowButtonX = x + 4;
     }
 
     private string GetTabLabel(int index) {
@@ -170,8 +229,14 @@ public sealed class TabBarControl : Control {
             return (HitZone.PlusButton, -1);
         }
 
-        // Check tabs (reverse order so overlapping active tab wins)
-        for (var i = _tabs.Count - 1; i >= 0; i--) {
+        // Check overflow button (if visible)
+        if (HasOverflow && x >= _overflowButtonX
+            && x < _overflowButtonX + OverflowButtonWidth && y >= TabTopMargin) {
+            return (HitZone.OverflowButton, -1);
+        }
+
+        // Check visible tabs (reverse order so overlapping active tab wins)
+        for (var i = _visibleTabCount - 1; i >= 0; i--) {
             var tabX = _tabXPositions[i];
             var tabW = _tabWidths[i];
             if (x >= tabX && x < tabX + tabW && y >= TabTopMargin) {
@@ -193,11 +258,25 @@ public sealed class TabBarControl : Control {
         return (HitZone.DragArea, -1);
     }
 
-    private double GetPlusButtonX() {
-        if (_tabs.Count > 0 && _tabXPositions.Length > 0) {
-            return _tabXPositions[^1] + _tabWidths[^1] + TabGap + 4;
+    /// <summary>Whether any tabs are overflowed into the dropdown.</summary>
+    private bool HasOverflow => _visibleTabCount < _tabs.Count;
+
+    /// <summary>Returns the list of tab indices that are in the overflow menu.</summary>
+    public IReadOnlyList<(int index, string label)> GetOverflowTabs() {
+        var result = new List<(int, string)>();
+        for (var i = _visibleTabCount; i < _tabs.Count; i++) {
+            result.Add((i, GetTabLabel(i)));
         }
-        return _contentStartX;
+        return result;
+    }
+
+    private double GetPlusButtonX() {
+        if (_tabs.Count == 0) return _contentStartX;
+        if (HasOverflow) {
+            return _overflowButtonX + OverflowButtonWidth + TabGap + 4;
+        }
+        var last = _visibleTabCount - 1;
+        return _tabXPositions[last] + _tabWidths[last] + TabGap + 4;
     }
 
     // -------------------------------------------------------------------------
@@ -224,9 +303,9 @@ public sealed class TabBarControl : Control {
             return;
         }
 
-        // Draw inactive tabs first, then active tab on top
+        // Draw visible inactive tabs first, then active tab on top
         var activeIndex = -1;
-        for (var i = 0; i < _tabs.Count; i++) {
+        for (var i = 0; i < _visibleTabCount; i++) {
             if (_tabs[i] == _activeTab) {
                 activeIndex = i;
                 continue;
@@ -234,16 +313,12 @@ public sealed class TabBarControl : Control {
             DrawInactiveTab(ctx, i);
         }
 
-        // Draw separators on right edge of inactive tabs
-        // Skip: adjacent to active tab, hovered tab, or last tab before plus
-        for (var i = 0; i < _tabs.Count; i++) {
+        // Draw separators on right edge of visible inactive tabs
+        for (var i = 0; i < _visibleTabCount; i++) {
             if (_tabs[i] == _activeTab) continue;
-            // Don't draw separator if this tab is hovered
             if (_hoverTabIndex == i && _hoverZone is HitZone.Tab or HitZone.CloseButton) continue;
-            // Don't draw separator if next tab is active
-            if (i + 1 < _tabs.Count && _tabs[i + 1] == _activeTab) continue;
-            // Don't draw separator if next tab is hovered
-            if (i + 1 < _tabs.Count && _hoverTabIndex == i + 1
+            if (i + 1 < _visibleTabCount && _tabs[i + 1] == _activeTab) continue;
+            if (i + 1 < _visibleTabCount && _hoverTabIndex == i + 1
                 && _hoverZone is HitZone.Tab or HitZone.CloseButton) continue;
 
             var sepX = _tabXPositions[i] + _tabWidths[i] + TabGap / 2;
@@ -255,6 +330,11 @@ public sealed class TabBarControl : Control {
         // Draw active tab on top
         if (activeIndex >= 0) {
             DrawActiveTab(ctx, activeIndex);
+        }
+
+        // Draw overflow button if needed
+        if (HasOverflow) {
+            DrawOverflowButton(ctx);
         }
 
         // Draw "+" button
@@ -407,6 +487,26 @@ public sealed class TabBarControl : Control {
         ctx.DrawText(ft, new Point(textX, textY));
     }
 
+    private void DrawOverflowButton(DrawingContext ctx) {
+        var isHovered = _hoverZone == HitZone.OverflowButton;
+
+        var ft = new FormattedText("\u25BC",
+            System.Globalization.CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight, TabFont, TabFontSize, _theme.TabPlusForeground);
+        var textX = _overflowButtonX + (OverflowButtonWidth - ft.Width) / 2;
+        var textY = TabTopMargin + (TabHeight - ft.Height) / 2;
+
+        if (isHovered) {
+            var hoverY = textY - 2;
+            var hoverH = ft.Height + 4;
+            var hoverRect = new Rect(_overflowButtonX, hoverY, OverflowButtonWidth, hoverH);
+            var hoverGeo = CreateRoundedRect(hoverRect, 4);
+            ctx.DrawGeometry(_theme.TabInactiveHoverBg, null, hoverGeo);
+        }
+
+        ctx.DrawText(ft, new Point(textX, textY));
+    }
+
     /// <summary>
     /// Creates a rounded rectangle where only the top corners are rounded
     /// and the bottom corners are square.
@@ -500,6 +600,10 @@ public sealed class TabBarControl : Control {
                 break;
             case HitZone.PlusButton:
                 PlusClicked?.Invoke();
+                e.Handled = true;
+                break;
+            case HitZone.OverflowButton:
+                OverflowClicked?.Invoke();
                 e.Handled = true;
                 break;
             case HitZone.DragArea:
