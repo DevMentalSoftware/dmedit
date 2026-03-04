@@ -436,7 +436,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// </summary>
     private void UpdateGutterWidth() {
         if (!_showLineNumbers) {
-            _gutterWidth = 0;
+            _gutterWidth = GutterPadLeft;
             _gutterDigitCnt = 0;
             return;
         }
@@ -762,7 +762,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // Gutter background
         context.FillRectangle(_theme.GutterBackground, new Rect(0, 0, _gutterWidth, Bounds.Height));
 
-        if (table == null || layout.Lines.Count == 0) return;
+        if (!_showLineNumbers || table == null || layout.Lines.Count == 0) return;
 
         var typeface = new Typeface(FontFamily);
         var numW = _gutterWidth - GutterPadRight;

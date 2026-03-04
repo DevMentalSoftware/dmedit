@@ -37,9 +37,9 @@ public sealed class TabBarControl : Control {
     private const double TabTopMargin = 6;       // space above tab content
     private const double TabPaddingLeft = 10;    // left text padding
     private const double TabPaddingRight = 4;    // right padding after close btn
-    private const double TabMaxWidth = 280;
+    private const double TabComfortWidth = 120; // preferred min when space allows
     private const double CloseButtonSize = 24;   // hit area for close "×"
-    private const double CornerRadius = 4;       // convex top corners
+    private const double CornerRadius = 6;       // convex top corners
     private const double ConcaveRadius = 6;      // concave bottom curves
     private const double PlusButtonWidth = 28;   // "+" button area
     private const double PlusButtonHeight = 24;  // "+" hover bg height
@@ -51,9 +51,9 @@ public sealed class TabBarControl : Control {
     private static readonly Typeface TabFont = new("Segoe UI, Inter, sans-serif");
     private static readonly Typeface TabFontBold = new("Segoe UI, Inter, sans-serif",
         FontStyle.Normal, FontWeight.SemiBold);
+    private static readonly Typeface IconFont = new("Segoe Fluent Icons, Segoe UI Symbol");
     private const double TabFontSize = 12;
-    private const double CloseFontSize = 18;
-    private const double PlusFontSize = 18;
+    private const double IconFontSize = 12;
 
     // -------------------------------------------------------------------------
     // Theme
@@ -96,8 +96,9 @@ public sealed class TabBarControl : Control {
     private HitZone _hoverZone = HitZone.None;
     private int _hoverTabIndex = -1;
 
-    // Overflow state — set by ComputeTabLayout
-    private int _visibleTabCount;         // how many tabs fit in the bar
+    // Overflow state — set by ComputeTabLayout.
+    // Non-contiguous: any subset of tabs may be visible.
+    private bool[] _isVisible = Array.Empty<bool>();
     private double _overflowButtonX;      // x position of the ▼ button
     private const double OverflowButtonWidth = 28;
 
@@ -138,12 +139,19 @@ public sealed class TabBarControl : Control {
         _tabXPositions = new double[_tabs.Count];
 
         if (_tabs.Count == 0) {
-            _visibleTabCount = 0;
+            _isVisible = Array.Empty<bool>();
             return;
         }
 
-        // 1. Measure natural width for each tab (text + close + padding)
+        // Find active tab index
+        var activeIdx = 0;
+        for (var i = 0; i < _tabs.Count; i++) {
+            if (_tabs[i] == _activeTab) { activeIdx = i; break; }
+        }
+
+        // 1. Measure two widths per tab
         var naturalWidths = new double[_tabs.Count];
+        var comfortWidths = new double[_tabs.Count];
         for (var i = 0; i < _tabs.Count; i++) {
             var text = GetTabLabel(i);
             var isActive = _tabs[i] == _activeTab;
@@ -151,62 +159,181 @@ public sealed class TabBarControl : Control {
             var ft = new FormattedText(text, System.Globalization.CultureInfo.CurrentCulture,
                 FlowDirection.LeftToRight, typeface, TabFontSize, Brushes.Black);
             var w = ft.Width + TabPaddingLeft + CloseButtonSize + TabPaddingRight + 8;
-            naturalWidths[i] = Math.Min(w, TabMaxWidth);
+            naturalWidths[i] = w;
+            comfortWidths[i] = Math.Max(w, TabComfortWidth);
         }
 
-        // 2. Available space = window width − icon area − plus button − caption buttons
+        // 2. Available space
         var availableWidth = Bounds.Width - _contentStartX - PlusButtonWidth - 16
                              - CaptionButtonsReserved;
         if (availableWidth < 1) availableWidth = 1;
 
-        // 3. Try fitting all tabs at natural widths
+        // 3. Try fitting ALL tabs
+        var totalComfort = 0.0;
         var totalNatural = 0.0;
         var totalGaps = (_tabs.Count - 1) * TabGap;
         for (var i = 0; i < _tabs.Count; i++) {
+            totalComfort += comfortWidths[i];
             totalNatural += naturalWidths[i];
         }
 
-        if (totalNatural + totalGaps <= availableWidth) {
-            // Everything fits at natural size — no shrinking needed
-            _visibleTabCount = _tabs.Count;
+        if (totalComfort + totalGaps <= availableWidth) {
+            _isVisible = new bool[_tabs.Count];
             for (var i = 0; i < _tabs.Count; i++) {
-                _tabWidths[i] = naturalWidths[i];
+                _isVisible[i] = true;
+                _tabWidths[i] = comfortWidths[i];
             }
+        } else if (totalNatural + totalGaps <= availableWidth) {
+            _isVisible = new bool[_tabs.Count];
+            for (var i = 0; i < _tabs.Count; i++) _isVisible[i] = true;
+            SizeVisibleTabs(naturalWidths, comfortWidths, availableWidth);
         } else {
-            // 4. Tabs don't fit — overflow rightmost tabs until the visible
-            //    set fits at natural widths (no shrinking, no truncation).
-            var visibleCount = _tabs.Count;
-            while (visibleCount > 1) {
-                visibleCount--;
-                var gaps = (visibleCount - 1) * TabGap;
-                var overflowReserve = OverflowButtonWidth + TabGap;
-                var spaceForTabs = availableWidth - gaps - overflowReserve;
+            // 4. Overflow needed.
+            var availOverflow = availableWidth - OverflowButtonWidth - TabGap;
 
-                var sumNatural = 0.0;
-                for (var i = 0; i < visibleCount; i++) {
-                    sumNatural += naturalWidths[i];
+            // Was the active tab previously visible?
+            var prevVisible = _isVisible;
+            var activeWasVisible = activeIdx < prevVisible.Length && prevVisible[activeIdx];
+
+            // Build new visibility set
+            _isVisible = new bool[_tabs.Count];
+
+            if (activeWasVisible) {
+                // Stable mode — keep the same visible set.
+                // Copy previous visibility (clamped to new count).
+                for (var i = 0; i < _tabs.Count && i < prevVisible.Length; i++) {
+                    _isVisible[i] = prevVisible[i];
                 }
-
-                if (sumNatural <= spaceForTabs) {
-                    break;
+                // Ensure active is visible (always)
+                _isVisible[activeIdx] = true;
+            } else {
+                // New tab or overflow click — active becomes the rightmost
+                // visible tab.  Hide everything with index > activeIdx,
+                // keep everything that was visible with index < activeIdx.
+                for (var i = 0; i < _tabs.Count; i++) {
+                    if (i == activeIdx) {
+                        _isVisible[i] = true;
+                    } else if (i < activeIdx && i < prevVisible.Length && prevVisible[i]) {
+                        _isVisible[i] = true;
+                    }
                 }
             }
 
-            _visibleTabCount = visibleCount;
-            for (var i = 0; i < visibleCount; i++) {
-                _tabWidths[i] = naturalWidths[i];
+            // Trim: hide rightmost visible non-active tabs until it fits
+            while (VisibleNaturalSum(naturalWidths) > availOverflow) {
+                var victim = RightmostVisibleExcept(activeIdx);
+                if (victim < 0) break;
+                _isVisible[victim] = false;
+            }
+
+            // Expand: try adding hidden tabs closest to the active tab
+            // first, radiating outward (left before right at equal distance).
+            var el = activeIdx - 1;
+            var er = activeIdx + 1;
+            while (el >= 0 || er < _tabs.Count) {
+                if (el >= 0) {
+                    if (!_isVisible[el]) {
+                        var cost = naturalWidths[el] + TabGap;
+                        if (VisibleNaturalSum(naturalWidths) + cost <= availOverflow) {
+                            _isVisible[el] = true;
+                        }
+                    }
+                    el--;
+                }
+                if (er < _tabs.Count) {
+                    if (!_isVisible[er]) {
+                        var cost = naturalWidths[er] + TabGap;
+                        if (VisibleNaturalSum(naturalWidths) + cost <= availOverflow) {
+                            _isVisible[er] = true;
+                        }
+                    }
+                    er++;
+                }
+            }
+
+            // Size the visible tabs
+            SizeVisibleTabs(naturalWidths, comfortWidths, availOverflow);
+
+            // Last resort: if only the active tab is visible and too wide
+            var visCount = VisibleCount();
+            if (visCount == 1 && _tabWidths[activeIdx] > availOverflow) {
+                _tabWidths[activeIdx] = Math.Max(1, availOverflow);
             }
         }
 
-        // 5. Compute x positions for visible tabs
+        // 5. Compute x positions for visible tabs only
         var x = _contentStartX;
-        for (var i = 0; i < _visibleTabCount; i++) {
+        for (var i = 0; i < _tabs.Count; i++) {
+            if (!_isVisible[i]) continue;
             _tabXPositions[i] = x;
             x += _tabWidths[i] + TabGap;
         }
 
-        // 6. Overflow button position (if needed)
+        // 6. Overflow button position
         _overflowButtonX = x + 4;
+    }
+
+    /// <summary>Sum of natural widths + gaps for currently visible tabs.</summary>
+    private double VisibleNaturalSum(double[] naturalWidths) {
+        var sum = 0.0;
+        var count = 0;
+        for (var i = 0; i < _tabs.Count; i++) {
+            if (!_isVisible[i]) continue;
+            sum += naturalWidths[i];
+            count++;
+        }
+        return sum + Math.Max(0, count - 1) * TabGap;
+    }
+
+    /// <summary>Returns the highest-index visible tab that is not activeIdx, or -1.</summary>
+    private int RightmostVisibleExcept(int activeIdx) {
+        for (var i = _tabs.Count - 1; i >= 0; i--) {
+            if (_isVisible[i] && i != activeIdx) return i;
+        }
+        return -1;
+    }
+
+    /// <summary>How many tabs are currently visible.</summary>
+    private int VisibleCount() {
+        var c = 0;
+        for (var i = 0; i < _isVisible.Length; i++) {
+            if (_isVisible[i]) c++;
+        }
+        return c;
+    }
+
+    /// <summary>
+    /// Sizes visible tabs: comfort widths if they fit, otherwise shrink
+    /// proportionally toward natural widths.
+    /// </summary>
+    private void SizeVisibleTabs(double[] naturalWidths, double[] comfortWidths,
+                                 double availableSpace) {
+        var count = 0;
+        var sumComfort = 0.0;
+        var sumNatural = 0.0;
+        for (var i = 0; i < _tabs.Count; i++) {
+            if (!_isVisible[i]) continue;
+            sumComfort += comfortWidths[i];
+            sumNatural += naturalWidths[i];
+            count++;
+        }
+        var gaps = Math.Max(0, count - 1) * TabGap;
+        var spaceForTabs = availableSpace - gaps;
+
+        if (sumComfort <= spaceForTabs) {
+            for (var i = 0; i < _tabs.Count; i++) {
+                if (_isVisible[i]) _tabWidths[i] = comfortWidths[i];
+            }
+        } else {
+            var surplus = spaceForTabs - sumNatural;
+            var totalPadding = sumComfort - sumNatural;
+            for (var i = 0; i < _tabs.Count; i++) {
+                if (!_isVisible[i]) continue;
+                var padding = comfortWidths[i] - naturalWidths[i];
+                var share = totalPadding > 0 ? padding / totalPadding : 0;
+                _tabWidths[i] = naturalWidths[i] + Math.Max(0, surplus) * share;
+            }
+        }
     }
 
     private string GetTabLabel(int index) {
@@ -236,7 +363,8 @@ public sealed class TabBarControl : Control {
         }
 
         // Check visible tabs (reverse order so overlapping active tab wins)
-        for (var i = _visibleTabCount - 1; i >= 0; i--) {
+        for (var i = _tabs.Count - 1; i >= 0; i--) {
+            if (!_isVisible[i]) continue;
             var tabX = _tabXPositions[i];
             var tabW = _tabWidths[i];
             if (x >= tabX && x < tabX + tabW && y >= TabTopMargin) {
@@ -259,24 +387,33 @@ public sealed class TabBarControl : Control {
     }
 
     /// <summary>Whether any tabs are overflowed into the dropdown.</summary>
-    private bool HasOverflow => _visibleTabCount < _tabs.Count;
+    private bool HasOverflow => VisibleCount() < _tabs.Count;
+
+    /// <summary>Bounding rect of the overflow button, for menu placement.</summary>
+    public Rect OverflowButtonRect =>
+        new(_overflowButtonX, TabTopMargin, OverflowButtonWidth, TabHeight);
 
     /// <summary>Returns the list of tab indices that are in the overflow menu.</summary>
     public IReadOnlyList<(int index, string label)> GetOverflowTabs() {
         var result = new List<(int, string)>();
-        for (var i = _visibleTabCount; i < _tabs.Count; i++) {
-            result.Add((i, GetTabLabel(i)));
+        for (var i = 0; i < _tabs.Count; i++) {
+            if (!_isVisible[i]) result.Add((i, GetTabLabel(i)));
         }
         return result;
     }
 
     private double GetPlusButtonX() {
         if (_tabs.Count == 0) return _contentStartX;
-        if (HasOverflow) {
-            return _overflowButtonX + OverflowButtonWidth + TabGap + 4;
+        // Find rightmost visible tab
+        var last = -1;
+        for (var i = _tabs.Count - 1; i >= 0; i--) {
+            if (_isVisible[i]) { last = i; break; }
         }
-        var last = _visibleTabCount - 1;
-        return _tabXPositions[last] + _tabWidths[last] + TabGap + 4;
+        if (last < 0) return _contentStartX;
+        var afterLast = _tabXPositions[last] + _tabWidths[last] + TabGap + 4;
+        return HasOverflow
+            ? _overflowButtonX + OverflowButtonWidth + TabGap + 4
+            : afterLast;
     }
 
     // -------------------------------------------------------------------------
@@ -305,7 +442,8 @@ public sealed class TabBarControl : Control {
 
         // Draw visible inactive tabs first, then active tab on top
         var activeIndex = -1;
-        for (var i = 0; i < _visibleTabCount; i++) {
+        for (var i = 0; i < _tabs.Count; i++) {
+            if (!_isVisible[i]) continue;
             if (_tabs[i] == _activeTab) {
                 activeIndex = i;
                 continue;
@@ -313,12 +451,22 @@ public sealed class TabBarControl : Control {
             DrawInactiveTab(ctx, i);
         }
 
-        // Draw separators on right edge of visible inactive tabs
-        for (var i = 0; i < _visibleTabCount; i++) {
+        // Draw separators on right edge of visible inactive tabs.
+        // Find the "next visible" tab to suppress separators adjacent
+        // to the active or hovered tab.
+        for (var i = 0; i < _tabs.Count; i++) {
+            if (!_isVisible[i]) continue;
             if (_tabs[i] == _activeTab) continue;
             if (_hoverTabIndex == i && _hoverZone is HitZone.Tab or HitZone.CloseButton) continue;
-            if (i + 1 < _visibleTabCount && _tabs[i + 1] == _activeTab) continue;
-            if (i + 1 < _visibleTabCount && _hoverTabIndex == i + 1
+
+            // Find next visible tab after i
+            var next = -1;
+            for (var j = i + 1; j < _tabs.Count; j++) {
+                if (_isVisible[j]) { next = j; break; }
+            }
+            if (next < 0) continue; // last visible tab — no separator
+            if (_tabs[next] == _activeTab) continue;
+            if (_hoverTabIndex == next
                 && _hoverZone is HitZone.Tab or HitZone.CloseButton) continue;
 
             var sepX = _tabXPositions[i] + _tabWidths[i] + TabGap / 2;
@@ -456,10 +604,10 @@ public sealed class TabBarControl : Control {
             ctx.DrawGeometry(_theme.TabCloseHoverBg, null, hoverGeo);
         }
 
-        // Draw "×" character, sized to fill the button well
-        var closeFt = new FormattedText("\u00D7",
+        // Draw close icon (Segoe Fluent Icons: ChromeClose)
+        var closeFt = new FormattedText("\uE624",
             System.Globalization.CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight, TabFont, CloseFontSize, _theme.TabCloseForeground);
+            FlowDirection.LeftToRight, IconFont, IconFontSize, _theme.TabCloseForeground);
         var cx = closeX + (CloseButtonSize - closeFt.Width) / 2;
         var cy = closeY + (CloseButtonSize - closeFt.Height) / 2;
         ctx.DrawText(closeFt, new Point(cx, cy));
@@ -467,43 +615,39 @@ public sealed class TabBarControl : Control {
 
     private void DrawPlusButton(DrawingContext ctx, double x) {
         var isHovered = _hoverZone == HitZone.PlusButton;
-
-        // Measure the "+" text first so we can center the hover bg around it
-        var ft = new FormattedText("+",
-            System.Globalization.CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight, TabFont, PlusFontSize, _theme.TabPlusForeground);
-        var textX = x + (PlusButtonWidth - ft.Width) / 2;
-        var textY = TabTopMargin + (TabHeight - ft.Height) / 2;
+        var hoverY = TabTopMargin + (TabHeight - PlusButtonHeight) / 2;
 
         if (isHovered) {
-            // Center the hover rect around the actual "+" text position
-            var hoverY = textY - 2;
-            var hoverH = ft.Height + 4;
-            var hoverRect = new Rect(x, hoverY, PlusButtonWidth, hoverH);
+            var hoverRect = new Rect(x, hoverY, PlusButtonWidth, PlusButtonHeight);
             var hoverGeo = CreateRoundedRect(hoverRect, 4);
             ctx.DrawGeometry(_theme.TabInactiveHoverBg, null, hoverGeo);
         }
 
+        // Draw add icon (Segoe Fluent Icons: Add)
+        var ft = new FormattedText("\uE710",
+            System.Globalization.CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight, IconFont, IconFontSize, _theme.TabPlusForeground);
+        var textX = x + (PlusButtonWidth - ft.Width) / 2;
+        var textY = hoverY + (PlusButtonHeight - ft.Height) / 2;
         ctx.DrawText(ft, new Point(textX, textY));
     }
 
     private void DrawOverflowButton(DrawingContext ctx) {
         var isHovered = _hoverZone == HitZone.OverflowButton;
-
-        var ft = new FormattedText("\u25BC",
-            System.Globalization.CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight, TabFont, TabFontSize, _theme.TabPlusForeground);
-        var textX = _overflowButtonX + (OverflowButtonWidth - ft.Width) / 2;
-        var textY = TabTopMargin + (TabHeight - ft.Height) / 2;
+        var hoverY = TabTopMargin + (TabHeight - PlusButtonHeight) / 2;
 
         if (isHovered) {
-            var hoverY = textY - 2;
-            var hoverH = ft.Height + 4;
-            var hoverRect = new Rect(_overflowButtonX, hoverY, OverflowButtonWidth, hoverH);
+            var hoverRect = new Rect(_overflowButtonX, hoverY, OverflowButtonWidth, PlusButtonHeight);
             var hoverGeo = CreateRoundedRect(hoverRect, 4);
             ctx.DrawGeometry(_theme.TabInactiveHoverBg, null, hoverGeo);
         }
 
+        // Draw overflow icon (Segoe Fluent Icons: ChevronDown)
+        var ft = new FormattedText("\uE70D",
+            System.Globalization.CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight, IconFont, IconFontSize, _theme.TabPlusForeground);
+        var textX = _overflowButtonX + (OverflowButtonWidth - ft.Width) / 2;
+        var textY = hoverY + (PlusButtonHeight - ft.Height) / 2;
         ctx.DrawText(ft, new Point(textX, textY));
     }
 

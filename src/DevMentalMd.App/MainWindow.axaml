@@ -7,6 +7,7 @@
         x:Class="DevMentalMd.App.MainWindow"
         Title=""
         Width="900" Height="650"
+        MinWidth="280" MinHeight="130"
 		Icon="avares://dmedit/app_icon.ico"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaChromeHints="PreferSystemChrome"

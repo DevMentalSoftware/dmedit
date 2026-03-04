@@ -147,7 +147,11 @@ public partial class MainWindow : Window {
         var overflowTabs = TabBar.GetOverflowTabs();
         if (overflowTabs.Count == 0) return;
 
-        var menu = new ContextMenu();
+        var menu = new ContextMenu {
+            PlacementTarget = TabBar,
+            Placement = PlacementMode.Bottom,
+            PlacementRect = TabBar.OverflowButtonRect,
+        };
         foreach (var (index, label) in overflowTabs) {
             var captured = index;
             var item = new MenuItem { Header = label };

@@ -8,7 +8,7 @@ namespace DevMentalMd.App.Services;
 /// </summary>
 public sealed class EditorTheme {
     // -- Editor surface --
-    public IBrush EditorBackground { get; init; } =
+    public IBrush EditorBackground { get; init; } = 
         new SolidColorBrush(Color.FromRgb(0xF9, 0xF9, 0xF9));
     public IBrush EditorForeground { get; init; } = Brushes.Black;
     public IBrush CaretBrush { get; init; } = Brushes.Black;
@@ -110,10 +110,10 @@ public sealed class EditorTheme {
         TabInactiveBackground = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
         TabBorder = new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x3E)),
         TabForeground = new SolidColorBrush(Color.FromRgb(0xD4, 0xD4, 0xD4)),
-        TabCloseForeground = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90)),
+        TabCloseForeground = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)),
         TabInactiveHoverBg = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x3A)),
         TabCloseHoverBg = new SolidColorBrush(Color.FromRgb(0x4A, 0x4A, 0x4A)),
-        TabPlusForeground = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90)),
+        TabPlusForeground = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)),
 
         // Status bar
         StatusBarBackground = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x25)),
