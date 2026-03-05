@@ -22,10 +22,10 @@
         <Border DockPanel.Dock="Top" x:Name="MenuBarBorder" BorderThickness="0,0,0,1">
         <Menu x:Name="MenuBar" FontSize="12">
             <MenuItem Header="_File" x:Name="MenuFile">
-                <MenuItem Header="_New" x:Name="MenuNew" />
-                <MenuItem Header="_Open…" x:Name="MenuOpen" />
+                <MenuItem Header="_New" x:Name="MenuNew" InputGesture="Ctrl+N" />
+                <MenuItem Header="_Open…" x:Name="MenuOpen" InputGesture="Ctrl+O" />
                 <Separator />
-                <MenuItem Header="_Save" x:Name="MenuSave" />
+                <MenuItem Header="_Save" x:Name="MenuSave" InputGesture="Ctrl+S" />
                 <MenuItem Header="Save _As…" x:Name="MenuSaveAs" />
                 <Separator />
                 <MenuItem Header="_Close" x:Name="MenuClose" InputGesture="Ctrl+F4" />
