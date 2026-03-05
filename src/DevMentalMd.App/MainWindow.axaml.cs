@@ -654,7 +654,7 @@ public partial class MainWindow : Window {
             for (var i = 0; i < visibleCount; i++) {
                 var captured = recentPaths[i];
                 var item = new MenuItem { Header = Path.GetFileName(captured) };
-                ToolTip.SetTip(item, captured);
+                Controls.UiHelpers.SetPathToolTip(item, captured);
                 item.Click += async (_, _) => {
                     MenuFile.IsSubMenuOpen = false;
                     await OpenFileInTabAsync(captured);

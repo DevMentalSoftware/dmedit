@@ -14,7 +14,6 @@ using DevMentalMd.App.Services;
 using DevMentalMd.Core.Buffers;
 using DevMentalMd.Core.Documents;
 using DevMentalMd.Rendering.Layout;
-using DevMentalMd.Rendering;
 
 namespace DevMentalMd.App.Controls;
 

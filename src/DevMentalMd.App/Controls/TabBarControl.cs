@@ -765,11 +765,7 @@ public sealed class TabBarControl : Control {
             if (zone is HitZone.Tab or HitZone.CloseButton
                 && idx >= 0 && idx < _tabs.Count
                 && _tabs[idx].FilePath != null) {
-                var tb = new TextBlock {
-                    Text = _tabs[idx].FilePath,
-                    TextWrapping = TextWrapping.NoWrap,
-                };
-                ToolTip.SetTip(this, tb);
+                UiHelpers.SetPathToolTip(this, _tabs[idx].FilePath);
                 ToolTip.SetIsOpen(this, true);
             } else {
                 ToolTip.SetIsOpen(this, false);
