@@ -28,9 +28,11 @@ public partial class MainWindow : Window {
     private int _staticMenuItemCount;
     private readonly DispatcherTimer _statsTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private EditorTheme _theme = EditorTheme.Light;
+    private bool _windowStateReady;
 
     public MainWindow() {
         InitializeComponent();
+        RestoreWindowSize();
 
         MenuNew.Click += OnNew;
         MenuOpen.Click += OnOpen;
@@ -47,6 +49,7 @@ public partial class MainWindow : Window {
         WireThemeMenu();
         WireTabBar();
         WireStatsBar();
+        WireWindowState();
 
         // The editor is the only focusable control.  Grab focus on
         // activation and reclaim it whenever anything else receives focus.
@@ -784,6 +787,67 @@ public partial class MainWindow : Window {
             Editor.PerfStats.FirstChunkTimeMs = 0;
             Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Window state persistence
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Applies saved window size before layout. Called early in the
+    /// constructor so the first measure pass uses the restored dimensions.
+    /// </summary>
+    private void RestoreWindowSize() {
+        if (_settings.WindowWidth.HasValue && _settings.WindowHeight.HasValue) {
+            Width = _settings.WindowWidth.Value;
+            Height = _settings.WindowHeight.Value;
+        }
+    }
+
+    /// <summary>
+    /// Wires position, size, and state tracking. Position and maximized
+    /// state are applied in the <see cref="Window.Opened"/> handler so
+    /// the window is already on-screen.
+    /// </summary>
+    private void WireWindowState() {
+        Opened += (_, _) => {
+            if (_settings.WindowLeft.HasValue && _settings.WindowTop.HasValue) {
+                Position = new PixelPoint(
+                    _settings.WindowLeft.Value,
+                    _settings.WindowTop.Value);
+            }
+            if (_settings.WindowMaximized) {
+                WindowState = WindowState.Maximized;
+            }
+            _windowStateReady = true;
+        };
+
+        PositionChanged += (_, _) => TrackWindowState();
+        PropertyChanged += (_, e) => {
+            if (e.Property == ClientSizeProperty || e.Property == WindowStateProperty) {
+                TrackWindowState();
+            }
+        };
+    }
+
+    /// <summary>
+    /// Records the current window geometry. Only the unmaximized size and
+    /// position are saved; maximized/minimized bounds are ignored so the
+    /// normal position is preserved for later restore.
+    /// </summary>
+    private void TrackWindowState() {
+        if (!_windowStateReady) return;
+
+        _settings.WindowMaximized = WindowState == WindowState.Maximized;
+
+        if (WindowState == WindowState.Normal) {
+            _settings.WindowWidth = ClientSize.Width;
+            _settings.WindowHeight = ClientSize.Height;
+            _settings.WindowLeft = Position.X;
+            _settings.WindowTop = Position.Y;
+        }
+
+        _settings.ScheduleSave();
     }
 
 }

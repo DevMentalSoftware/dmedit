@@ -105,6 +105,25 @@ public sealed class AppSettings {
     public ThemeMode ThemeMode { get; set; } = ThemeMode.System;
 
     // -----------------------------------------------------------------
+    // Window state
+    // -----------------------------------------------------------------
+
+    /// <summary>Unmaximized window width (DIPs). Null = use XAML default.</summary>
+    public double? WindowWidth { get; set; }
+
+    /// <summary>Unmaximized window height (DIPs). Null = use XAML default.</summary>
+    public double? WindowHeight { get; set; }
+
+    /// <summary>Unmaximized window left position (screen pixels). Null = OS default.</summary>
+    public int? WindowLeft { get; set; }
+
+    /// <summary>Unmaximized window top position (screen pixels). Null = OS default.</summary>
+    public int? WindowTop { get; set; }
+
+    /// <summary>Whether the window was maximized when last closed.</summary>
+    public bool WindowMaximized { get; set; }
+
+    // -----------------------------------------------------------------
     // Large file support
     // -----------------------------------------------------------------
 
