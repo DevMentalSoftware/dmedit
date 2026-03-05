@@ -58,6 +58,9 @@ public partial class MainWindow : Window {
         WireStatsBar();
         WireWindowState();
 
+        // Clicking on empty menu bar space should fully dismiss any open menu.
+        MenuBarBorder.PointerPressed += (_, _) => MenuBar.Close();
+
         // The editor is the only focusable control.  Grab focus on
         // activation and reclaim it whenever anything else receives focus.
         Activated += (_, _) => Editor.Focus();
