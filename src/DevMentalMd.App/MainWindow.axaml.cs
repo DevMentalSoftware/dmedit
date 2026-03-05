@@ -63,7 +63,7 @@ public partial class MainWindow : Window {
         if (_settings.DevMode) {
             LoadManual();
         } else {
-            var tab = AddTab(TabState.CreateUntitled());
+            var tab = AddTab(TabState.CreateUntitled(_tabs));
             SwitchToTab(tab);
         }
     }
@@ -95,7 +95,7 @@ public partial class MainWindow : Window {
         var closedIdx = _tabs.IndexOf(tab);
         _tabs.Remove(tab);
         if (_tabs.Count == 0) {
-            var newTab = AddTab(TabState.CreateUntitled());
+            var newTab = AddTab(TabState.CreateUntitled(_tabs));
             SwitchToTab(newTab);
         } else if (_activeTab == tab) {
             // Switch to the tab now at the closed index (= old right neighbor),
@@ -110,7 +110,7 @@ public partial class MainWindow : Window {
     private void CloseAllTabs() {
         _tabs.Clear();
         _activeTab = null;
-        var tab = AddTab(TabState.CreateUntitled());
+        var tab = AddTab(TabState.CreateUntitled(_tabs));
         SwitchToTab(tab);
     }
 
@@ -135,7 +135,7 @@ public partial class MainWindow : Window {
             if (idx >= 0 && idx < _tabs.Count) CloseTab(_tabs[idx]);
         };
         TabBar.PlusClicked += () => {
-            var t = AddTab(TabState.CreateUntitled());
+            var t = AddTab(TabState.CreateUntitled(_tabs));
             SwitchToTab(t);
         };
         TabBar.OverflowClicked += ShowOverflowMenu;
@@ -217,7 +217,14 @@ public partial class MainWindow : Window {
 
     protected override void OnKeyDown(KeyEventArgs e) {
         base.OnKeyDown(e);
-        if (e.Key == Key.Tab && e.KeyModifiers.HasFlag(KeyModifiers.Control)) {
+        if (e.Key == Key.F4 && e.KeyModifiers.HasFlag(KeyModifiers.Control)) {
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) {
+                CloseAllTabs();
+            } else if (_activeTab != null) {
+                CloseTab(_activeTab);
+            }
+            e.Handled = true;
+        } else if (e.Key == Key.Tab && e.KeyModifiers.HasFlag(KeyModifiers.Control)) {
             if (_tabs.Count <= 1) {
                 e.Handled = true;
                 return;
@@ -541,7 +548,7 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     private void OnNew(object? sender, RoutedEventArgs e) {
-        var tab = AddTab(TabState.CreateUntitled());
+        var tab = AddTab(TabState.CreateUntitled(_tabs));
         SwitchToTab(tab);
     }
 
@@ -556,7 +563,7 @@ public partial class MainWindow : Window {
             AddTab(tab);
             SwitchToTab(tab);
         } else {
-            var tab = AddTab(TabState.CreateUntitled());
+            var tab = AddTab(TabState.CreateUntitled(_tabs));
             SwitchToTab(tab);
         }
     }

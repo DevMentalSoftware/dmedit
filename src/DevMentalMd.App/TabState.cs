@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using DevMentalMd.Core.Documents;
 using DevMentalMd.Core.IO;
 
@@ -8,8 +9,6 @@ namespace DevMentalMd.App;
 /// file path, scroll position, and dirty flag for one open tab.
 /// </summary>
 public sealed class TabState {
-    private static int _nextUntitledNumber = 1;
-
     public Document Document { get; }
     public string? FilePath { get; set; }
     public string DisplayName { get; set; }
@@ -30,9 +29,22 @@ public sealed class TabState {
         DisplayName = displayName;
     }
 
-    /// <summary>Creates a new tab for a blank untitled document.</summary>
-    public static TabState CreateUntitled() {
-        var num = _nextUntitledNumber++;
+    /// <summary>
+    /// Creates a new tab for a blank untitled document. Picks the lowest
+    /// available "Untitled" name that isn't already used by an open tab.
+    /// </summary>
+    public static TabState CreateUntitled(IReadOnlyList<TabState> existingTabs) {
+        var used = new HashSet<int>();
+        foreach (var tab in existingTabs) {
+            if (tab.DisplayName == "Untitled") {
+                used.Add(1);
+            } else if (tab.DisplayName.StartsWith("Untitled ")
+                       && int.TryParse(tab.DisplayName.Substring(9), out var n)) {
+                used.Add(n);
+            }
+        }
+        var num = 1;
+        while (used.Contains(num)) num++;
         var name = num == 1 ? "Untitled" : $"Untitled {num}";
         return new TabState(new Document(), null, name);
     }

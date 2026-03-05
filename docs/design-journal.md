@@ -1337,3 +1337,60 @@ non-editable gutter on the left side of the editor.
   gutter width.
 
 Test count: **287** (266 Core + 21 Rendering).
+
+## 2026-03-04 — Tab bar polish, dirty tracking, window state
+
+### Tab bar fixes
+- **Stable tab widths**: All tabs are measured with the bold typeface for layout so
+  switching the active tab no longer causes horizontal shifts.
+- **Drag-to-reorder**: Pointer capture (`e.Pointer.Capture`) keeps the drag alive when
+  the mouse leaves the tab bar vertically. Hysteresis via neighbor-center-crossing
+  (must cross the center of the adjacent tab) prevents 1px oscillation. Hover state
+  is cleared on drag start and suppressed while any mouse button is down.
+- **CloseOtherTabs**: Now always calls `UpdateTabBar()` even when the kept tab is
+  already the active tab (previously `SwitchToTab` short-circuited).
+- **DirtyDotGlyph** changed from `\uF136` to `\uECCC`.
+
+### Undo-to-clean dirty tracking
+- `EditHistory` gained `_savePointDepth`, `MarkSavePoint()`, and `IsAtSavePoint`.
+- `Document` exposes `MarkSavePoint()` / `IsAtSavePoint` (delegates to history).
+- `MainWindow.OnSave` / `SaveAsAsync` call `MarkSavePoint()` after writing.
+- `OnTabDocumentChanged` checks `Document.IsAtSavePoint` — if undo returns the
+  document to its saved state, `IsDirty` is cleared and the dirty dot disappears.
+
+### Window state persistence
+Three settings in `AppSettings`: unmaximized size (`WindowWidth`/`WindowHeight`),
+unmaximized position (`WindowLeft`/`WindowTop`), and `WindowMaximized`. Size is
+applied in the constructor before layout; position and maximized state are applied
+in the `Opened` handler. `TrackWindowState()` only records size/position when
+`WindowState == Normal` so maximized bounds never overwrite the normal geometry.
+
+### Deferred: Windows 11 Mica transparency
+
+Research completed — not yet implemented. Summary of approach:
+
+**Requirements**: `TransparencyLevelHint = [WindowTransparencyLevel.Mica]` and
+`Background = Brushes.Transparent` on the Window. `ExtendClientAreaToDecorationsHint`
+(already enabled) is required.
+
+**EditorTheme changes**: Tab bar, menu bar, and status bar backgrounds would need
+semi-transparent brush variants (e.g. `Color.FromArgb(0x80, 0x20, 0x20, 0x20)` for
+dark tab bar). The editor surface stays fully opaque for readability.
+
+**Graceful degradation**: Check `ActualTransparencyLevel` at runtime — if the
+platform doesn't support Mica (older Windows, Linux), fall back to opaque brushes.
+
+**Inactive window**: Mica continues rendering when unfocused (unlike native Win11).
+Handle `Activated`/`Deactivated` to swap between transparent and semi-opaque
+backgrounds.
+
+**Limitations**: No `MicaAlt` in Avalonia (only `Mica`). To approximate MicaAlt's
+darker tint in the title bar area, layer a semi-transparent dark brush in
+`TabBarControl.Render()`. `TransparencyBackgroundFallback` doesn't respond to
+dynamic resource changes — workaround is resetting `TransparencyLevelHint` in code
+during theme switches.
+
+**Scope**: Mainly `EditorTheme` brush variants + a branch in `ApplyTheme()` + the
+two Window properties. Could add a `UseMica` toggle in `AppSettings` and View menu.
+
+Test count: **287** (266 Core + 21 Rendering).
