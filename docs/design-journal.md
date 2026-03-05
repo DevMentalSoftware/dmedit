@@ -1394,3 +1394,63 @@ during theme switches.
 two Window properties. Could add a `UseMica` toggle in `AppSettings` and View menu.
 
 Test count: **287** (266 Core + 21 Rendering).
+
+---
+
+## 2026-03-05 — Edit Coalescing Undo
+
+Replaced the simple key-hold compound undo system (`_pressedKeys` / `_repeatCompoundKey` /
+KeyUp-based) with a full edit coalescing system inspired by VS Code's undo behaviour.
+
+### How it works
+
+- **Coalesce key**: each edit type gets a string key (`"char"`, `"backspace"`, `"delete"`,
+  `"tab"`, `"delete-line"`, `"move-line-up"`, `"move-line-down"`). Consecutive edits with
+  the same key are grouped into a single compound undo entry.
+- **Idle timer** (1 second): restarts on every edit. When it fires, the compound is committed.
+  This ensures pauses during typing create separate undo entries — the behaviour the user
+  explicitly preferred over Notepad++'s approach (which never splits on pauses).
+  Continuous typing (even across word/space boundaries) stays in a single compound.
+- **No word boundary detection**: initially implemented non-word → word flushing but removed
+  it — the user prefers purely timer-based coalescing where an entire sentence typed without
+  pausing is one undo entry.
+- **Enter always breaks**: Enter flushes any open compound and creates a standalone edit.
+  Natural stopping point for prose writing. Does not start the coalesce timer.
+- **Breaking events**: cursor movement (arrow keys, Home/End, PageUp/Down), mouse clicks,
+  undo/redo, clipboard operations (cut/copy/paste), select all/word, transform case,
+  focus loss, and save all flush the compound before proceeding.
+
+### Key methods
+
+- `FlushCompound()` (public) — commits the compound, stops the timer, resets state. Called
+  by `MainWindow.OnSave` / `SaveAsAsync` so save is always a clean break point.
+- `Coalesce(string key)` (private) — flushes if key changed, opens compound if needed,
+  restarts timer.
+
+### Coalescing operations
+
+| Operation | Behaviour |
+|---|---|
+| Typing (OnTextInput) | `Coalesce("char")` with word boundary flush |
+| Backspace | `Coalesce("backspace")` |
+| Delete | `Coalesce("delete")` |
+| Tab | `Coalesce("tab")` |
+| Enter | `FlushCompound()` then standalone insert |
+| Delete Line | `Coalesce("delete-line")` |
+| Move Line Up/Down | `Coalesce("move-line-up/down")` |
+| Undo / Redo | `FlushCompound()` before |
+| Cut / Copy / Paste | `FlushCompound()` before |
+| Select All / Word | `FlushCompound()` before |
+| Transform Case | `FlushCompound()` before (standalone) |
+| Arrow / Home / End / PageUp / PageDown | `FlushCompound()` before |
+| Mouse click | `FlushCompound()` before |
+| Focus loss | `FlushCompound()` |
+| Save | `FlushCompound()` via MainWindow |
+
+### Settings
+
+`CoalesceTimerSeconds` in `AppSettings` (default 1.0 s). Exposed as
+`EditorControl.CoalesceTimerSeconds` property, wired in `WireViewMenu()`. Minimum
+clamped to 0.1 s. Editable in `%APPDATA%/DevMentalMD/settings.json`.
+
+Test count: **287** (266 Core + 21 Rendering).

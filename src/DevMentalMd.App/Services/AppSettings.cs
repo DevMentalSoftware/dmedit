@@ -124,6 +124,17 @@ public sealed class AppSettings {
     public bool WindowMaximized { get; set; }
 
     // -----------------------------------------------------------------
+    // Undo coalescing
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Idle time (in milliseconds) before consecutive edits are committed as
+    /// a single undo entry. Continuous typing resets the timer on every
+    /// keystroke, so only actual pauses trigger a flush. Default: 1000.
+    /// </summary>
+    public int CoalesceTimerMs { get; set; } = 1000;
+
+    // -----------------------------------------------------------------
     // Large file support
     // -----------------------------------------------------------------
 

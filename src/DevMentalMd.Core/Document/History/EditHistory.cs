@@ -12,9 +12,11 @@ public sealed class EditHistory {
     private readonly Stack<Entry> _undoStack = new();
     private readonly Stack<Entry> _redoStack = new();
 
-    // When non-null, we're collecting edits for a compound group
+    // When non-null, we're collecting edits for a compound group.
+    // _compoundDepth supports nesting: inner Begin/End pairs are no-ops.
     private List<IDocumentEdit>? _compound;
     private Selection? _compoundSelBefore;
+    private int _compoundDepth;
 
     // -------------------------------------------------------------------------
     // Undo / Redo state
@@ -63,15 +65,26 @@ public sealed class EditHistory {
     // Compound grouping
     // -------------------------------------------------------------------------
 
-    /// <summary>Begins collecting subsequent <see cref="Push"/> calls into a single undo unit.</summary>
+    /// <summary>
+    /// Begins collecting subsequent <see cref="Push"/> calls into a single undo unit.
+    /// Calls may be nested; only the outermost <see cref="EndCompound"/> commits.
+    /// </summary>
     public void BeginCompound() {
+        _compoundDepth++;
         _compound ??= new List<IDocumentEdit>();
     }
 
-    /// <summary>Commits the current compound group as a single <see cref="CompoundEdit"/>.</summary>
+    /// <summary>
+    /// Ends the current compound level. Only the outermost call commits the
+    /// collected edits as a single <see cref="CompoundEdit"/>.
+    /// </summary>
     public void EndCompound() {
         if (_compound == null) {
             return;
+        }
+        _compoundDepth--;
+        if (_compoundDepth > 0) {
+            return; // still inside an outer compound
         }
         var edits = _compound;
         var sel = _compoundSelBefore ?? Selection.Collapsed(0);

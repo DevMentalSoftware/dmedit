@@ -450,6 +450,9 @@ public partial class MainWindow : Window {
             MenuWrapLines.IsChecked = wrap;
         };
 
+        // Undo coalesce idle timer (settings-only, no menu item)
+        Editor.CoalesceTimerMs = _settings.CoalesceTimerMs;
+
         UpdateStatusBarVisibility();
     }
 
@@ -620,6 +623,7 @@ public partial class MainWindow : Window {
 
     private async void OnSave(object? sender, RoutedEventArgs e) {
         if (_activeTab == null) return;
+        Editor.FlushCompound();
         if (_activeTab.FilePath is null) {
             await SaveAsAsync();
             return;
@@ -726,6 +730,7 @@ public partial class MainWindow : Window {
 
     private async Task SaveAsAsync() {
         if (_activeTab == null) return;
+        Editor.FlushCompound();
 
         // For zip files, suggest the inner entry name (e.g., "model.xml" not "model.zip").
         string suggestedName;

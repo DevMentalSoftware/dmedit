@@ -103,6 +103,22 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// </summary>
     private double _preferredCaretX = -1;
 
+    // Edit coalescing: groups consecutive similar edits into single undo
+    // entries.  Uses a string "coalesce key" to identify the edit type and
+    // an idle timer that flushes after a pause.  The timer restarts on every
+    // edit so continuous typing never fires it — only actual pauses.
+    private string? _coalesceKey;
+    private bool _compoundOpen;
+    private readonly DispatcherTimer _coalesceTimer;
+
+    /// <summary>
+    /// Idle time (ms) before consecutive edits are committed as a single undo
+    /// entry. Continuous typing resets the timer on every keystroke. Default: 1000.
+    /// </summary>
+    public int CoalesceTimerMs {
+        get => (int)_coalesceTimer.Interval.TotalMilliseconds;
+        set => _coalesceTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(100, value));
+    }
 
     /// <summary>Optional reference to the scrollbar for middle-drag visual feedback.</summary>
     public DualZoneScrollBar? ScrollBar { get; set; }
@@ -314,6 +330,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         _caretTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(530) };
         _caretTimer.Tick += OnCaretTick;
         _caretTimer.Start();
+        _coalesceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
+        _coalesceTimer.Tick += (_, _) => FlushCompound();
     }
 
     // -------------------------------------------------------------------------
@@ -927,6 +945,41 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     }
 
     // -------------------------------------------------------------------------
+    // Edit coalescing
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Commits the current compound edit (if any) and resets coalescing state.
+    /// Call before undo, redo, clipboard ops, cursor movement, focus loss, etc.
+    /// </summary>
+    public void FlushCompound() {
+        _coalesceTimer.Stop();
+        if (_compoundOpen) {
+            Document?.EndCompound();
+            _compoundOpen = false;
+        }
+        _coalesceKey = null;
+    }
+
+    /// <summary>
+    /// Ensures a compound edit is open for the given coalesce <paramref name="key"/>.
+    /// If the key differs from the current one, flushes the old compound first.
+    /// Restarts the idle timer so a pause commits the compound automatically.
+    /// </summary>
+    private void Coalesce(string key) {
+        if (_coalesceKey != key) {
+            FlushCompound();
+        }
+        if (!_compoundOpen) {
+            Document?.BeginCompound();
+            _compoundOpen = true;
+        }
+        _coalesceKey = key;
+        _coalesceTimer.Stop();
+        _coalesceTimer.Start();
+    }
+
+    // -------------------------------------------------------------------------
     // Public edit commands (invoked by menu and keyboard shortcuts)
     // -------------------------------------------------------------------------
 
@@ -935,6 +988,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null || doc.Selection.IsEmpty) {
             return;
         }
+        FlushCompound();
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard == null) {
             return;
@@ -947,6 +1001,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null || doc.Selection.IsEmpty) {
             return;
         }
+        FlushCompound();
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard == null) {
             return;
@@ -966,6 +1021,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null) {
             return;
         }
+        FlushCompound();
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard == null) {
             return;
@@ -993,6 +1049,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null) {
             return;
         }
+        Coalesce("delete");
         _editSw.Restart();
         if (!doc.Selection.IsEmpty) {
             doc.DeleteSelection();
@@ -1011,6 +1068,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null) {
             return;
         }
+        FlushCompound();
         _editSw.Restart();
         doc.Undo();
         _editSw.Stop();
@@ -1025,6 +1083,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null) {
             return;
         }
+        FlushCompound();
         _editSw.Restart();
         doc.Redo();
         _editSw.Stop();
@@ -1039,6 +1098,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null) {
             return;
         }
+        FlushCompound();
         doc.Selection = new Selection(0L, doc.Table.Length);
         InvalidateVisual();
     }
@@ -1048,6 +1108,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null) {
             return;
         }
+        FlushCompound();
         doc.SelectWord();
         InvalidateVisual();
         ResetCaretBlink();
@@ -1058,6 +1119,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null) {
             return;
         }
+        Coalesce("delete-line");
         _editSw.Restart();
         doc.DeleteLine();
         _editSw.Stop();
@@ -1072,6 +1134,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null) {
             return;
         }
+        Coalesce("move-line-up");
         _editSw.Restart();
         doc.MoveLineUp();
         _editSw.Stop();
@@ -1086,6 +1149,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null) {
             return;
         }
+        Coalesce("move-line-down");
         _editSw.Restart();
         doc.MoveLineDown();
         _editSw.Stop();
@@ -1100,6 +1164,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (doc == null) {
             return;
         }
+        FlushCompound();
         _editSw.Restart();
         doc.TransformCase(transform);
         _editSw.Stop();
@@ -1120,6 +1185,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             return;
         }
         _preferredCaretX = -1;
+        Coalesce("char");
 
         _editSw.Restart();
         doc.Insert(e.Text);
@@ -1149,6 +1215,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         switch (e.Key) {
             case Key.Back:
+                Coalesce("backspace");
                 _editSw.Restart();
                 doc.DeleteBackward();
                 _editSw.Stop();
@@ -1165,11 +1232,13 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
 
             case Key.Left:
+                FlushCompound();
                 MoveCaretHorizontal(doc, -1, ctrl, shift);
                 e.Handled = true;
                 break;
 
             case Key.Right:
+                FlushCompound();
                 MoveCaretHorizontal(doc, +1, ctrl, shift);
                 e.Handled = true;
                 break;
@@ -1178,6 +1247,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 if (e.KeyModifiers.HasFlag(KeyModifiers.Alt)) {
                     PerformMoveLineUp();
                 } else {
+                    FlushCompound();
                     MoveCaretVertical(doc, -1, shift);
                 }
                 e.Handled = true;
@@ -1187,12 +1257,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 if (e.KeyModifiers.HasFlag(KeyModifiers.Alt)) {
                     PerformMoveLineDown();
                 } else {
+                    FlushCompound();
                     MoveCaretVertical(doc, +1, shift);
                 }
                 e.Handled = true;
                 break;
 
             case Key.Home:
+                FlushCompound();
                 if (ctrl) {
                     var target = 0L;
                     doc.Selection = shift
@@ -1208,6 +1280,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
 
             case Key.End:
+                FlushCompound();
                 if (ctrl) {
                     var target = doc.Table.Length;
                     doc.Selection = shift
@@ -1277,6 +1350,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
 
             case Key.Return:
+                FlushCompound();
                 _editSw.Restart();
                 doc.Insert("\n");
                 _editSw.Stop();
@@ -1288,6 +1362,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
 
             case Key.Tab when !ctrl:
+                Coalesce("tab");
                 _editSw.Restart();
                 doc.Insert("    ");
                 _editSw.Stop();
@@ -1299,16 +1374,21 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
 
             case Key.PageUp:
+                FlushCompound();
                 MoveCaretByPage(doc, -1, shift);
                 e.Handled = true;
                 break;
 
             case Key.PageDown:
+                FlushCompound();
                 MoveCaretByPage(doc, +1, shift);
                 e.Handled = true;
                 break;
         }
     }
+
+    // OnKeyUp is no longer needed for compound management — coalescing is
+    // timer-based and key-change-based rather than key-up-based.
 
     // -------------------------------------------------------------------------
     // Caret movement helpers
@@ -1647,6 +1727,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     protected override void OnPointerPressed(PointerPressedEventArgs e) {
         base.OnPointerPressed(e);
         _preferredCaretX = -1;
+        FlushCompound();
 
         // Force caret visible (pause blinking) while any button is held.
         _caretVisible = true;
@@ -1741,6 +1822,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         base.OnLostFocus(e);
         _caretVisible = false;
         _caretTimer.Stop();
+        FlushCompound();
         InvalidateVisual();
     }
 
