@@ -31,6 +31,28 @@
                 <MenuItem Header="_Close" x:Name="MenuClose" InputGesture="Ctrl+F4" />
                 <MenuItem Header="Close A_ll" x:Name="MenuCloseAll" InputGesture="Ctrl+Shift+F4" />
             </MenuItem>
+            <MenuItem Header="_Edit" x:Name="MenuEdit">
+                <MenuItem Header="_Undo" x:Name="MenuUndo" InputGesture="Ctrl+Z" />
+                <MenuItem Header="_Redo" x:Name="MenuRedo" InputGesture="Ctrl+Shift+Z" />
+                <Separator />
+                <MenuItem Header="Cu_t" x:Name="MenuCut" InputGesture="Ctrl+X" />
+                <MenuItem Header="_Copy" x:Name="MenuCopy" InputGesture="Ctrl+C" />
+                <MenuItem Header="_Paste" x:Name="MenuPaste" InputGesture="Ctrl+V" />
+                <MenuItem Header="De_lete" x:Name="MenuDelete" InputGesture="Delete" />
+                <Separator />
+                <MenuItem Header="Select _All" x:Name="MenuSelectAll" InputGesture="Ctrl+A" />
+                <MenuItem Header="Select _Word" x:Name="MenuSelectWord" InputGesture="Ctrl+W" />
+                <Separator />
+                <MenuItem Header="Delete Li_ne" x:Name="MenuDeleteLine" InputGesture="Ctrl+Y" />
+                <MenuItem Header="Move Line _Up" x:Name="MenuMoveLineUp" InputGesture="Alt+Up" />
+                <MenuItem Header="Move Line Dow_n" x:Name="MenuMoveLineDown" InputGesture="Alt+Down" />
+                <Separator />
+                <MenuItem Header="Transform Case" x:Name="MenuTransformCase">
+                    <MenuItem Header="_Upper Case" x:Name="MenuCaseUpper" InputGesture="Ctrl+Shift+U" />
+                    <MenuItem Header="_Lower Case" x:Name="MenuCaseLower" InputGesture="Ctrl+Shift+L" />
+                    <MenuItem Header="_Proper Case" x:Name="MenuCaseProper" InputGesture="Ctrl+Shift+P" />
+                </MenuItem>
+            </MenuItem>
             <MenuItem Header="_View" x:Name="MenuView">
                 <MenuItem Header="_Line Numbers" x:Name="MenuLineNumbers" />
                 <MenuItem Header="_Status Bar" x:Name="MenuStatusBar" />

@@ -21,6 +21,12 @@ using DevMentalMd.Core.IO;
 namespace DevMentalMd.App;
 
 public partial class MainWindow : Window {
+    private static readonly FilePickerFileType[] FileTypeFilters = [
+        new("Text files") { Patterns = ["*.txt", "*.log", "*.md", "*.*"] },
+        new("Markdown") { Patterns = ["*.md", "*.markdown"] },
+        new("All files") { Patterns = ["*.*"] },
+    ];
+
     private readonly List<TabState> _tabs = [];
     private TabState? _activeTab;
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
@@ -45,6 +51,7 @@ public partial class MainWindow : Window {
 
         RebuildRecentMenu();
         WireScrollBar();
+        WireEditMenu();
         WireViewMenu();
         WireThemeMenu();
         WireTabBar();
@@ -238,6 +245,27 @@ public partial class MainWindow : Window {
             SwitchToTab(_tabs[idx]);
             e.Handled = true;
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Edit menu wiring
+    // -------------------------------------------------------------------------
+
+    private void WireEditMenu() {
+        MenuUndo.Click += (_, _) => Editor.PerformUndo();
+        MenuRedo.Click += (_, _) => Editor.PerformRedo();
+        MenuCut.Click += async (_, _) => await Editor.CutAsync();
+        MenuCopy.Click += async (_, _) => await Editor.CopyAsync();
+        MenuPaste.Click += async (_, _) => await Editor.PasteAsync();
+        MenuDelete.Click += (_, _) => Editor.EditDelete();
+        MenuSelectAll.Click += (_, _) => Editor.PerformSelectAll();
+        MenuSelectWord.Click += (_, _) => Editor.PerformSelectWord();
+        MenuDeleteLine.Click += (_, _) => Editor.PerformDeleteLine();
+        MenuMoveLineUp.Click += (_, _) => Editor.PerformMoveLineUp();
+        MenuMoveLineDown.Click += (_, _) => Editor.PerformMoveLineDown();
+        MenuCaseUpper.Click += (_, _) => Editor.PerformTransformCase(CaseTransform.Upper);
+        MenuCaseLower.Click += (_, _) => Editor.PerformTransformCase(CaseTransform.Lower);
+        MenuCaseProper.Click += (_, _) => Editor.PerformTransformCase(CaseTransform.Proper);
     }
 
     // -------------------------------------------------------------------------
@@ -574,10 +602,7 @@ public partial class MainWindow : Window {
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions {
                 Title = "Open File",
                 AllowMultiple = false,
-                FileTypeFilter = [
-                    new FilePickerFileType("All files") { Patterns = ["*.*"] },
-                    new FilePickerFileType("Markdown") { Patterns = ["*.md", "*.markdown"] }
-                ]
+                FileTypeFilter = FileTypeFilters,
             });
             if (files.Count == 0) {
                 return;
@@ -717,10 +742,7 @@ public partial class MainWindow : Window {
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions {
                 Title = "Save File",
                 SuggestedFileName = suggestedName,
-                FileTypeChoices = [
-                    new FilePickerFileType("All files") { Patterns = ["*.*"] },
-                    new FilePickerFileType("Markdown") { Patterns = ["*.md"] }
-                ]
+                FileTypeChoices = FileTypeFilters,
             });
             if (file is null) {
                 return;

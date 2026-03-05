@@ -37,6 +37,16 @@ public sealed class Document {
     public bool CanRedo => _history.CanRedo;
 
     /// <summary>
+    /// Returns the currently selected text, or an empty string if selection is empty.
+    /// </summary>
+    public string GetSelectedText() {
+        if (Selection.IsEmpty) {
+            return "";
+        }
+        return _table.GetText(Selection.Start, (int)Selection.Len);
+    }
+
+    /// <summary>
     /// True when the document's undo depth matches the last-saved position.
     /// Used to detect when undo/redo returns the document to its saved state.
     /// </summary>

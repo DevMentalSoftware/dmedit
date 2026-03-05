@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -926,6 +927,189 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     }
 
     // -------------------------------------------------------------------------
+    // Public edit commands (invoked by menu and keyboard shortcuts)
+    // -------------------------------------------------------------------------
+
+    public async Task CopyAsync() {
+        var doc = Document;
+        if (doc == null || doc.Selection.IsEmpty) {
+            return;
+        }
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null) {
+            return;
+        }
+        await clipboard.SetTextAsync(doc.GetSelectedText());
+    }
+
+    public async Task CutAsync() {
+        var doc = Document;
+        if (doc == null || doc.Selection.IsEmpty) {
+            return;
+        }
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null) {
+            return;
+        }
+        await clipboard.SetTextAsync(doc.GetSelectedText());
+        _editSw.Restart();
+        doc.DeleteSelection();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    public async Task PasteAsync() {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null) {
+            return;
+        }
+#pragma warning disable CS0618 // GetTextAsync is deprecated but TryGetTextAsync requires IAsyncDataTransfer
+        var text = await clipboard.GetTextAsync();
+#pragma warning restore CS0618
+        if (string.IsNullOrEmpty(text)) {
+            return;
+        }
+        // Normalize Windows line endings to LF
+        text = text.Replace("\r\n", "\n").Replace("\r", "\n");
+        _preferredCaretX = -1;
+        _editSw.Restart();
+        doc.Insert(text);
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    public void EditDelete() {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        _editSw.Restart();
+        if (!doc.Selection.IsEmpty) {
+            doc.DeleteSelection();
+        } else {
+            doc.DeleteForward();
+        }
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    public void PerformUndo() {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        _editSw.Restart();
+        doc.Undo();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    public void PerformRedo() {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        _editSw.Restart();
+        doc.Redo();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    public void PerformSelectAll() {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        doc.Selection = new Selection(0L, doc.Table.Length);
+        InvalidateVisual();
+    }
+
+    public void PerformSelectWord() {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        doc.SelectWord();
+        InvalidateVisual();
+        ResetCaretBlink();
+    }
+
+    public void PerformDeleteLine() {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        _editSw.Restart();
+        doc.DeleteLine();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    public void PerformMoveLineUp() {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        _editSw.Restart();
+        doc.MoveLineUp();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    public void PerformMoveLineDown() {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        _editSw.Restart();
+        doc.MoveLineDown();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    public void PerformTransformCase(CaseTransform transform) {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        _editSw.Restart();
+        doc.TransformCase(transform);
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    // -------------------------------------------------------------------------
     // Keyboard input
     // -------------------------------------------------------------------------
 
@@ -976,13 +1160,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
 
             case Key.Delete:
-                _editSw.Restart();
-                doc.DeleteForward();
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                ScrollCaretIntoView();
-                InvalidateLayout();
-                ResetCaretBlink();
+                EditDelete();
                 e.Handled = true;
                 break;
 
@@ -998,13 +1176,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
             case Key.Up:
                 if (e.KeyModifiers.HasFlag(KeyModifiers.Alt)) {
-                    _editSw.Restart();
-                    doc.MoveLineUp();
-                    _editSw.Stop();
-                    PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                    ScrollCaretIntoView();
-                    InvalidateLayout();
-                    ResetCaretBlink();
+                    PerformMoveLineUp();
                 } else {
                     MoveCaretVertical(doc, -1, shift);
                 }
@@ -1013,13 +1185,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
             case Key.Down:
                 if (e.KeyModifiers.HasFlag(KeyModifiers.Alt)) {
-                    _editSw.Restart();
-                    doc.MoveLineDown();
-                    _editSw.Stop();
-                    PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                    ScrollCaretIntoView();
-                    InvalidateLayout();
-                    ResetCaretBlink();
+                    PerformMoveLineDown();
                 } else {
                     MoveCaretVertical(doc, +1, shift);
                 }
@@ -1027,84 +1193,86 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
 
             case Key.Home:
-                MoveCaretToLineEdge(doc, toStart: true, shift);
+                if (ctrl) {
+                    var target = 0L;
+                    doc.Selection = shift
+                        ? doc.Selection.ExtendTo(target)
+                        : Selection.Collapsed(target);
+                    ScrollCaretIntoView();
+                    InvalidateVisual();
+                    ResetCaretBlink();
+                } else {
+                    MoveCaretToLineEdge(doc, toStart: true, shift);
+                }
                 e.Handled = true;
                 break;
 
             case Key.End:
-                MoveCaretToLineEdge(doc, toStart: false, shift);
+                if (ctrl) {
+                    var target = doc.Table.Length;
+                    doc.Selection = shift
+                        ? doc.Selection.ExtendTo(target)
+                        : Selection.Collapsed(target);
+                    ScrollCaretIntoView();
+                    InvalidateVisual();
+                    ResetCaretBlink();
+                } else {
+                    MoveCaretToLineEdge(doc, toStart: false, shift);
+                }
                 e.Handled = true;
                 break;
 
             case Key.Z when ctrl:
-                _editSw.Restart();
                 if (shift) {
-                    doc.Redo();
+                    PerformRedo();
                 } else {
-                    doc.Undo();
+                    PerformUndo();
                 }
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                ScrollCaretIntoView();
-                InvalidateLayout();
-                ResetCaretBlink();
                 e.Handled = true;
                 break;
 
             case Key.Y when ctrl:
-                _editSw.Restart();
-                doc.DeleteLine();
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                ScrollCaretIntoView();
-                InvalidateLayout();
-                ResetCaretBlink();
+                PerformDeleteLine();
                 e.Handled = true;
                 break;
 
             case Key.A when ctrl:
-                doc.Selection = new Selection(0L, doc.Table.Length);
-                InvalidateVisual();
+                PerformSelectAll();
                 e.Handled = true;
                 break;
 
             case Key.W when ctrl:
-                doc.SelectWord();
-                InvalidateVisual();
-                ResetCaretBlink();
+                PerformSelectWord();
+                e.Handled = true;
+                break;
+
+            case Key.C when ctrl && !shift:
+                _ = CopyAsync();
+                e.Handled = true;
+                break;
+
+            case Key.X when ctrl && !shift:
+                _ = CutAsync();
+                e.Handled = true;
+                break;
+
+            case Key.V when ctrl && !shift:
+                _ = PasteAsync();
                 e.Handled = true;
                 break;
 
             case Key.U when ctrl && shift:
-                _editSw.Restart();
-                doc.TransformCase(CaseTransform.Upper);
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                ScrollCaretIntoView();
-                InvalidateLayout();
-                ResetCaretBlink();
+                PerformTransformCase(CaseTransform.Upper);
                 e.Handled = true;
                 break;
 
             case Key.L when ctrl && shift:
-                _editSw.Restart();
-                doc.TransformCase(CaseTransform.Lower);
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                ScrollCaretIntoView();
-                InvalidateLayout();
-                ResetCaretBlink();
+                PerformTransformCase(CaseTransform.Lower);
                 e.Handled = true;
                 break;
 
             case Key.P when ctrl && shift:
-                _editSw.Restart();
-                doc.TransformCase(CaseTransform.Proper);
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                ScrollCaretIntoView();
-                InvalidateLayout();
-                ResetCaretBlink();
+                PerformTransformCase(CaseTransform.Proper);
                 e.Handled = true;
                 break;
 
