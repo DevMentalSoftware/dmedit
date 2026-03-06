@@ -620,7 +620,7 @@ public sealed class TabBarControl : Control {
 
         // Show dirty dot when the tab has unsaved changes and the
         // close button is not being hovered; otherwise show the X.
-        var glyph = isDirty && !isHoveringClose ? IconGlyphs.DirtyDot : IconGlyphs.ChromeClose;
+        var glyph = isDirty && !isHoveringClose ? IconGlyphs.Dirty : IconGlyphs.Close;
         DrawIconButton(ctx, closeX, closeY, CloseButtonSize, CloseButtonSize,
             isHoveringClose, _theme.TabCloseHoverBg, glyph, _theme.TabCloseForeground);
     }

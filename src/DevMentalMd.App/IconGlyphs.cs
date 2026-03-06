@@ -16,11 +16,11 @@ static class IconGlyphs {
     public static readonly Typeface Face = new(FontFamilyName);
 
     // Glyphs (Segoe Fluent Icons / MDL2 Assets codepoints)
-    public const string CheckMark = "\uE73E";
-    public const string ChevronRight = "\uE76C";
-    public const string ChevronDown = "\uE70D";
-    public const string Settings = "\uE713";
-    public const string Add = "\uE710";
-    public const string ChromeClose = "\uE624";
-    public const string DirtyDot = "\uECCC";
+    public const string CheckMark    = "\uE73E";  // ✓
+    public const string ChevronRight = "\uE76C";  // >
+    public const string ChevronDown  = "\uE70D";  // v
+    public const string Settings     = "\uE713";  // ⚙
+    public const string Add          = "\uE710";  // +
+    public const string Close  = "\uE624";  // ×
+    public const string Dirty     = "\uECCC";  // ●
 }
