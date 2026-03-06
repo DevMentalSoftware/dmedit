@@ -93,7 +93,7 @@ public sealed class TextLayoutEngine {
 
         Rect relRect;
         if (posInLine == 0) {
-            relRect = new Rect(0, 0, 0, line.HeightInRows * rh);
+            relRect = new Rect(0, 0, 0, rh);
         } else {
             relRect = line.Layout.HitTestTextPosition(posInLine);
         }
@@ -102,7 +102,7 @@ public sealed class TextLayoutEngine {
             relRect.X,
             line.Row * rh + relRect.Y,
             1,
-            relRect.Height > 0 ? relRect.Height : line.HeightInRows * rh);
+            relRect.Height > 0 ? relRect.Height : rh);
     }
 
     // -------------------------------------------------------------------------
