@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -48,6 +49,9 @@ public sealed class TabBarControl : Control {
     private const double TabGap = 2;             // gap between tabs
     private const double CaptionButtonsReserved = 140; // space for min/max/close
     private const double TabIconGap = 6;             // gap between tab icon and label
+
+    private static readonly bool ShowTabBarIcon =
+        !RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
 
     private static readonly Typeface TabFont = new("Segoe UI, Inter, sans-serif");
     private static readonly Typeface TabFontBold = new("Segoe UI, Inter, sans-serif",
@@ -145,7 +149,7 @@ public sealed class TabBarControl : Control {
     // -------------------------------------------------------------------------
 
     private void ComputeTabLayout() {
-        _contentStartX = IconLeftMargin + IconSize + 8;
+        _contentStartX = ShowTabBarIcon ? IconLeftMargin + IconSize + 8 : 8;
         _tabWidths = new double[_tabs.Count];
         _tabXPositions = new double[_tabs.Count];
 
@@ -437,11 +441,13 @@ public sealed class TabBarControl : Control {
         // Background
         ctx.FillRectangle(_theme.TabBarBackground, new Rect(0, 0, w, h));
 
-        // Draw app icon
-        EnsureIcon();
-        if (_appIcon != null) {
-            var iconY = (h - IconSize) / 2;
-            ctx.DrawImage(_appIcon, new Rect(IconLeftMargin, iconY, IconSize, IconSize));
+        // Draw app icon (skipped on Linux where the window manager shows its own)
+        if (ShowTabBarIcon) {
+            EnsureIcon();
+            if (_appIcon != null) {
+                var iconY = (h - IconSize) / 2;
+                ctx.DrawImage(_appIcon, new Rect(IconLeftMargin, iconY, IconSize, IconSize));
+            }
         }
 
         if (_tabs.Count == 0) {
