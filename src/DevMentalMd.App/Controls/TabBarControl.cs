@@ -50,13 +50,23 @@ public sealed class TabBarControl : Control {
     private const double CaptionButtonsReserved = 140; // space for min/max/close
     private const double TabIconGap = 6;             // gap between tab icon and label
 
-    private static readonly bool ShowTabBarIcon =
-        !RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+    private const bool ShowTabBarIcon = true;
+
+    // Draw our own min/max/close on all platforms so we control the
+    // hover appearance consistently (Avalonia's system chrome hover
+    // doesn't respect our theme colors).
+    private const bool ShowChromeButtons = true;
+
+    private const double ChromeButtonWidth = 46;   // standard Windows-style width
+    private const double ChromeButtonHeight = 30;   // flush to top of tab bar
+    private const double ChromeButtonFontSize = 14; // match Windows system chrome size
 
     private static readonly Typeface TabFont = new("Segoe UI, Inter, sans-serif");
     private static readonly Typeface TabFontBold = new("Segoe UI, Inter, sans-serif",
         FontStyle.Normal, FontWeight.SemiBold);
     private static readonly Typeface IconFont = IconGlyphs.Face;
+    private static readonly Typeface IconFontBold = new(IconGlyphs.FontFamilyName,
+        FontStyle.Normal, FontWeight.Bold);
     private const double TabFontSize = 12;
     private const double IconButtonFontSize = 12;
     private const double TabIconFontSize = 16;
@@ -98,7 +108,10 @@ public sealed class TabBarControl : Control {
     private double[] _tabXPositions = Array.Empty<double>();
     private double _contentStartX; // x after icon
 
-    private enum HitZone { None, Tab, CloseButton, PlusButton, OverflowButton, DragArea }
+    private enum HitZone {
+        None, Tab, CloseButton, PlusButton, OverflowButton, DragArea,
+        ChromeMinimize, ChromeMaximize, ChromeClose,
+    }
     private HitZone _hoverZone = HitZone.None;
     private int _hoverTabIndex = -1;
 
@@ -126,12 +139,46 @@ public sealed class TabBarControl : Control {
     public event Action<int>? CloseTabsToRightClicked;
     public event Action<int>? CloseOtherTabsClicked;
     public event Action<int, int>? TabReordered; // (fromIndex, toIndex)
+    public event Action? DragAreaDoubleClicked;
+
+    // Custom chrome (Linux only)
+    public event Action? MinimizeClicked;
+    public event Action? MaximizeClicked;
+    public event Action? ChromeCloseClicked;
 
     /// <summary>
     /// The last PointerPressedEventArgs, available for the DragAreaPressed
     /// handler to pass to <see cref="Window.BeginMoveDrag"/>.
     /// </summary>
     public PointerPressedEventArgs? LastPointerPressedArgs { get; private set; }
+
+    /// <summary>
+    /// Set by MainWindow when the window state changes so the tab bar
+    /// can swap between Maximize and Restore glyphs.
+    /// </summary>
+    public bool IsMaximized {
+        get => _isMaximized;
+        set {
+            if (_isMaximized == value) return;
+            _isMaximized = value;
+            InvalidateVisual();
+        }
+    }
+    private bool _isMaximized;
+
+    /// <summary>
+    /// Set by MainWindow on Activated/Deactivated so chrome button
+    /// foreground can dim when the window loses focus.
+    /// </summary>
+    public bool IsWindowActive {
+        get => _isWindowActive;
+        set {
+            if (_isWindowActive == value) return;
+            _isWindowActive = value;
+            InvalidateVisual();
+        }
+    }
+    private bool _isWindowActive = true;
 
     // -------------------------------------------------------------------------
     // Public API
@@ -395,8 +442,29 @@ public sealed class TabBarControl : Control {
             }
         }
 
+        // Check custom chrome buttons (Linux only)
+        if (ShowChromeButtons) {
+            var chromeZone = HitTestChromeButtons(x, y);
+            if (chromeZone != HitZone.None) return (chromeZone, -1);
+        }
+
         // Everything else is drag area (for moving the window)
         return (HitZone.DragArea, -1);
+    }
+
+    private HitZone HitTestChromeButtons(double x, double y) {
+        var w = Bounds.Width;
+        // Three buttons right-aligned, flush to top
+        var closeX = w - ChromeButtonWidth;
+        var maxX = closeX - ChromeButtonWidth;
+        var minX = maxX - ChromeButtonWidth;
+
+        if (y < ChromeButtonHeight) {
+            if (x >= closeX) return HitZone.ChromeClose;
+            if (x >= maxX) return HitZone.ChromeMaximize;
+            if (x >= minX) return HitZone.ChromeMinimize;
+        }
+        return HitZone.None;
     }
 
     /// <summary>Whether any tabs are overflowed into the dropdown.</summary>
@@ -441,7 +509,7 @@ public sealed class TabBarControl : Control {
         // Background
         ctx.FillRectangle(_theme.TabBarBackground, new Rect(0, 0, w, h));
 
-        // Draw app icon (skipped on Linux where the window manager shows its own)
+        // Draw app icon
         if (ShowTabBarIcon) {
             EnsureIcon();
             if (_appIcon != null) {
@@ -452,6 +520,7 @@ public sealed class TabBarControl : Control {
 
         if (_tabs.Count == 0) {
             DrawPlusButton(ctx, _contentStartX);
+            if (ShowChromeButtons) DrawChromeButtons(ctx);
             return;
         }
 
@@ -502,6 +571,11 @@ public sealed class TabBarControl : Control {
 
         // Draw "+" button
         DrawPlusButton(ctx, GetPlusButtonX());
+
+        // Draw custom chrome buttons (Linux only)
+        if (ShowChromeButtons) {
+            DrawChromeButtons(ctx);
+        }
     }
 
     private void DrawInactiveTab(DrawingContext ctx, int index) {
@@ -671,6 +745,46 @@ public sealed class TabBarControl : Control {
         DrawIconButton(ctx, _overflowButtonX, y, OverflowButtonWidth, PlusButtonHeight,
             _hoverZone == HitZone.OverflowButton, _theme.TabInactiveHoverBg,
             IconGlyphs.ChevronDown, _theme.TabPlusForeground);
+    }
+
+    private void DrawChromeButtons(DrawingContext ctx) {
+        var w = Bounds.Width;
+
+        // Three buttons right-aligned, flush to top, no rounded corners.
+        var closeX = w - ChromeButtonWidth;
+        var maxX = closeX - ChromeButtonWidth;
+        var minX = maxX - ChromeButtonWidth;
+
+        var isActive = _isWindowActive || _hoverZone is HitZone.ChromeMinimize
+            or HitZone.ChromeMaximize or HitZone.ChromeClose;
+        var fg = isActive ? _theme.ChromeButtonForegroundActive : _theme.ChromeButtonForeground;
+
+        DrawChromeButton(ctx, minX, HitZone.ChromeMinimize,
+            _theme.ChromeButtonHoverBg, IconGlyphs.Minimize, fg);
+
+        var maxGlyph = _isMaximized ? IconGlyphs.Restore : IconGlyphs.Maximize;
+        DrawChromeButton(ctx, maxX, HitZone.ChromeMaximize,
+            _theme.ChromeButtonHoverBg, maxGlyph, fg);
+
+        var isCloseHovered = _hoverZone == HitZone.ChromeClose;
+        var closeFg = isCloseHovered ? _theme.ChromeCloseButtonForeground : fg;
+        DrawChromeButton(ctx, closeX, HitZone.ChromeClose,
+            _theme.ChromeCloseButtonHoverBg, IconGlyphs.Close, closeFg);
+    }
+
+    private void DrawChromeButton(DrawingContext ctx, double x, HitZone zone,
+        IBrush hoverBg, string glyph, IBrush foreground) {
+        var isHovered = _hoverZone == zone;
+        if (isHovered) {
+            ctx.FillRectangle(hoverBg, new Rect(x, 0, ChromeButtonWidth, ChromeButtonHeight));
+        }
+        var face = (isHovered || _isWindowActive) ? IconFontBold : IconFont;
+        var ft = new FormattedText(glyph,
+            System.Globalization.CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight, face, ChromeButtonFontSize, foreground);
+        ctx.DrawText(ft, new Point(
+            x + (ChromeButtonWidth - ft.Width) / 2,
+            (ChromeButtonHeight - ft.Height) / 2));
     }
 
     /// <summary>
@@ -872,7 +986,23 @@ public sealed class TabBarControl : Control {
                 e.Handled = true;
                 break;
             case HitZone.DragArea:
-                DragAreaPressed?.Invoke();
+                if (e.ClickCount == 2) {
+                    DragAreaDoubleClicked?.Invoke();
+                } else {
+                    DragAreaPressed?.Invoke();
+                }
+                e.Handled = true;
+                break;
+            case HitZone.ChromeMinimize:
+                MinimizeClicked?.Invoke();
+                e.Handled = true;
+                break;
+            case HitZone.ChromeMaximize:
+                MaximizeClicked?.Invoke();
+                e.Handled = true;
+                break;
+            case HitZone.ChromeClose:
+                ChromeCloseClicked?.Invoke();
                 e.Handled = true;
                 break;
         }

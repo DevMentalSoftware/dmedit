@@ -11,8 +11,9 @@
         MinWidth="280" MinHeight="130"
 		Icon="avares://dmedit/app_icon.ico"
         ExtendClientAreaToDecorationsHint="True"
-        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaChromeHints="NoChrome"
         ExtendClientAreaTitleBarHeightHint="38">
+	<Border x:Name="WindowBorder" ClipToBounds="True">
 	<DockPanel>
 		<!-- Tab bar (custom-drawn, sits in title bar area) -->
 		<controls:TabBarControl x:Name="TabBar"
@@ -33,6 +34,8 @@
 						<Separator />
 						<MenuItem Header="_Close" x:Name="MenuClose" InputGesture="Ctrl+F4" />
 						<MenuItem Header="Close A_ll" x:Name="MenuCloseAll" InputGesture="Ctrl+Shift+F4" />
+						<Separator />
+						<MenuItem Header="E_xit" x:Name="MenuExit" InputGesture="Alt+F4" />
 					</MenuItem>
 					<MenuItem Header="_Edit" x:Name="MenuEdit">
 						<MenuItem Header="_Undo" x:Name="MenuUndo" InputGesture="Ctrl+Z" />
@@ -115,17 +118,19 @@
 			</StackPanel>
 		</Border>
 
-		<!-- Settings panel (replaces menu, editor, status bars when active) -->
-		<settings:SettingsControl x:Name="SettingsPanel"
-		                          IsVisible="False" />
-
-		<Grid ColumnDefinitions="*,Auto" x:Name="EditorGrid">
-			<controls:EditorControl x:Name="Editor"
-                                    Grid.Column="0"
-                                    HorizontalAlignment="Stretch" />
-			<controls:DualZoneScrollBar x:Name="ScrollBar"
-                                        Grid.Column="1"
-                                        Focusable="False" />
+		<!-- Settings and editor share the same fill area; only one is visible. -->
+		<Grid>
+			<settings:SettingsControl x:Name="SettingsPanel"
+			                          IsVisible="False" />
+			<Grid ColumnDefinitions="*,Auto" x:Name="EditorGrid">
+				<controls:EditorControl x:Name="Editor"
+				                        Grid.Column="0"
+				                        HorizontalAlignment="Stretch" />
+				<controls:DualZoneScrollBar x:Name="ScrollBar"
+				                            Grid.Column="1"
+				                            Focusable="False" />
+			</Grid>
 		</Grid>
 	</DockPanel>
+	</Border>
 </Window>

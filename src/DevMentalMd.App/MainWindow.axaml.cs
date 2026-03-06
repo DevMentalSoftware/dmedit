@@ -45,6 +45,18 @@ public partial class MainWindow : Window {
 
     public MainWindow() {
         InitializeComponent();
+
+        // On Linux the WM ignores ExtendClientAreaToDecorationsHint and draws
+        // its own title bar. Remove it so we can draw custom chrome buttons
+        // in our tab bar, matching the Windows experience. Transparency lets
+        // the rounded corner clip show through.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
+            SystemDecorations = SystemDecorations.BorderOnly;
+            TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
+            Background = Brushes.Transparent;
+            WindowBorder.CornerRadius = new CornerRadius(8);
+        }
+
         RestoreWindowSize();
 
         MenuNew.Click += OnNew;
@@ -53,6 +65,7 @@ public partial class MainWindow : Window {
         MenuSaveAs.Click += OnSaveAs;
         MenuClose.Click += (_, _) => { if (_activeTab != null) CloseTab(_activeTab); };
         MenuCloseAll.Click += (_, _) => CloseAllTabs();
+        MenuExit.Click += (_, _) => Close();
 
         _staticMenuItemCount = MenuFile.Items.Count;
 
@@ -79,10 +92,12 @@ public partial class MainWindow : Window {
         // Grab focus on activation and reclaim it whenever anything else
         // receives focus — but only when the editor tab is active.
         Activated += (_, _) => {
+            TabBar.IsWindowActive = true;
             if (_activeTab is not { IsSettings: true }) {
                 Editor.Focus();
             }
         };
+        Deactivated += (_, _) => TabBar.IsWindowActive = false;
         GotFocus += (_, e) => {
             if (_activeTab is not { IsSettings: true }
                 && e.Source != Editor
@@ -122,13 +137,12 @@ public partial class MainWindow : Window {
         var isSettings = tab.IsSettings;
         EditorGrid.IsVisible = !isSettings;
         MenuBarBorder.IsVisible = !isSettings;
-        StatusBar.IsVisible = !isSettings;
         SettingsPanel.IsVisible = isSettings;
+        UpdateStatusBarVisibility();
 
         if (!isSettings) {
             Editor.Document = tab.Document;
             Editor.RestoreScrollState(tab);
-            UpdateStatusBarVisibility();
         }
         UpdateTabBar();
     }
@@ -193,6 +207,20 @@ public partial class MainWindow : Window {
             // window drag.
             BeginMoveDrag(TabBar.LastPointerPressedArgs!);
         };
+        TabBar.DragAreaDoubleClicked += () => {
+            WindowState = WindowState == WindowState.Maximized
+                ? WindowState.Normal
+                : WindowState.Maximized;
+        };
+
+        // Custom chrome buttons (Linux only — Windows uses PreferSystemChrome).
+        TabBar.MinimizeClicked += () => WindowState = WindowState.Minimized;
+        TabBar.MaximizeClicked += () => {
+            WindowState = WindowState == WindowState.Maximized
+                ? WindowState.Normal
+                : WindowState.Maximized;
+        };
+        TabBar.ChromeCloseClicked += () => Close();
     }
 
     private void ShowOverflowMenu() {
@@ -516,10 +544,14 @@ public partial class MainWindow : Window {
 
     /// <summary>
     /// Shows or hides the status bar sections based on current settings.
-    /// The whole <c>StatusBar</c> border is hidden only when both the
-    /// permanent bar and the stats bars are turned off.
+    /// The whole <c>StatusBar</c> border is hidden when the settings panel
+    /// is active, or when both the permanent bar and the stats bars are off.
     /// </summary>
     private void UpdateStatusBarVisibility() {
+        if (_activeTab is { IsSettings: true }) {
+            StatusBar.IsVisible = false;
+            return;
+        }
         PermanentStatusBar.IsVisible = _settings.ShowStatusBar;
         var showStats = _settings.DevMode && _settings.ShowStatistics;
         StatsBar.IsVisible = showStats;
@@ -973,6 +1005,14 @@ public partial class MainWindow : Window {
         PropertyChanged += (_, e) => {
             if (e.Property == ClientSizeProperty || e.Property == WindowStateProperty) {
                 TrackWindowState();
+            }
+            if (e.Property == WindowStateProperty) {
+                var maximized = WindowState == WindowState.Maximized;
+                TabBar.IsMaximized = maximized;
+                // Square corners when maximized, rounded when normal (Linux).
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
+                    WindowBorder.CornerRadius = new CornerRadius(maximized ? 0 : 8);
+                }
             }
         };
     }

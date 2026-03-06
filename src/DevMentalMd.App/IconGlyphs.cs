@@ -24,4 +24,9 @@ static class IconGlyphs {
     public const string Add          = "\uF109";  // +  ic_fluent_add_20_regular
     public const string Close        = "\uF369";  // ×  ic_fluent_dismiss_20_regular
     public const string Dirty        = "\uF660";  // ●  ic_fluent_record_16_regular
+
+    // Window chrome glyphs (Linux custom title bar)
+    public const string Minimize     = "\uEBD0";  // ─  ic_fluent_subtract_20_regular
+    public const string Maximize     = "\uE7EB";  // □  ic_fluent_maximize_20_regular
+    public const string Restore      = "\uEB96";  // ⧉  ic_fluent_square_multiple_20_regular
 }
