@@ -2,15 +2,22 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DevMentalMd.App.Settings.SettingsControl">
     <DockPanel>
-        <!-- Search bar -->
-        <Border DockPanel.Dock="Top" Padding="8" BorderThickness="0,0,0,1"
-                x:Name="SearchBarBorder">
-            <TextBox x:Name="SearchBox"
-                     Watermark="Search settings..."
-                     FontSize="13" />
-        </Border>
+        <!-- Top bar: search (sidebar width) + toolbar placeholder (remaining) -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="220,*">
+            <Border Grid.Column="0" Padding="8" BorderThickness="0,0,1,1"
+                    x:Name="SearchBarBorder">
+                <TextBox x:Name="SearchBox"
+                         Watermark="Search settings..."
+                         FontSize="13" />
+            </Border>
 
-        <Grid ColumnDefinitions="180,Auto,*">
+            <!-- Toolbar placeholder (future) -->
+            <Border Grid.Column="1" Padding="8" BorderThickness="0,0,0,1"
+                    x:Name="ToolbarBorder">
+            </Border>
+        </Grid>
+
+        <Grid ColumnDefinitions="220,Auto,*">
             <!-- Category sidebar -->
             <Border Grid.Column="0" BorderThickness="0,0,1,0"
                     x:Name="SidebarBorder">

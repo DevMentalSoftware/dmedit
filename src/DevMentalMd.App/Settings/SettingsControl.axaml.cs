@@ -119,6 +119,8 @@ public partial class SettingsControl : UserControl {
         Background = theme.EditorBackground;
         SearchBarBorder.BorderBrush = theme.StatusBarBorder;
         SearchBarBorder.Background = theme.EditorBackground;
+        ToolbarBorder.BorderBrush = theme.StatusBarBorder;
+        ToolbarBorder.Background = theme.EditorBackground;
         SidebarBorder.BorderBrush = theme.StatusBarBorder;
         SidebarBorder.Background = theme.EditorBackground;
 

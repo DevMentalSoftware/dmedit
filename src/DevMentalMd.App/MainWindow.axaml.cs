@@ -9,10 +9,12 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using DevMentalMd.App.Services;
 using DevMentalMd.App.Settings;
 using DevMentalMd.Core.Buffers;
@@ -37,6 +39,9 @@ public partial class MainWindow : Window {
     private EditorTheme _theme = EditorTheme.Light;
     private bool _windowStateReady;
     private TabState? _settingsTab;
+    private TextBlock? _lineNumGlyph;
+    private TextBlock? _statusBarGlyph;
+    private TextBlock? _wrapLinesGlyph;
 
     public MainWindow() {
         InitializeComponent();
@@ -55,7 +60,7 @@ public partial class MainWindow : Window {
         WireScrollBar();
         WireEditMenu();
         WireViewMenu();
-        WireThemeMenu();
+        WireThemeSettings();
         WireTabBar();
         WireStatsBar();
         WireWindowState();
@@ -115,13 +120,15 @@ public partial class MainWindow : Window {
         _activeTab = tab;
 
         var isSettings = tab.IsSettings;
-        Editor.IsVisible = !isSettings;
-        ScrollBar.IsVisible = !isSettings;
+        EditorGrid.IsVisible = !isSettings;
+        MenuBarBorder.IsVisible = !isSettings;
+        StatusBar.IsVisible = !isSettings;
         SettingsPanel.IsVisible = isSettings;
 
         if (!isSettings) {
             Editor.Document = tab.Document;
             Editor.RestoreScrollState(tab);
+            UpdateStatusBarVisibility();
         }
         UpdateTabBar();
     }
@@ -297,22 +304,40 @@ public partial class MainWindow : Window {
         MenuCaseUpper.Click += (_, _) => Editor.PerformTransformCase(CaseTransform.Upper);
         MenuCaseLower.Click += (_, _) => Editor.PerformTransformCase(CaseTransform.Lower);
         MenuCaseProper.Click += (_, _) => Editor.PerformTransformCase(CaseTransform.Proper);
+        ReplaceSubmenuArrow(MenuTransformCase);
+    }
+
+    /// <summary>
+    /// Replaces the default submenu chevron (PART_ChevronPath) with a Segoe
+    /// Fluent Icons glyph so it matches our custom check-mark style.
+    /// </summary>
+    private static void ReplaceSubmenuArrow(MenuItem item) {
+        item.TemplateApplied += (_, e) => {
+            if (e.NameScope.Find("PART_ChevronPath") is not Control chevron) return;
+
+            chevron.IsVisible = false;
+            if (chevron.Parent is Panel parent) {
+                var glyph = new TextBlock {
+                    Text = "\uE76C",
+                    FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+                    FontSize = 12,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                };
+                // Place in the same Grid column as the original chevron.
+                if (chevron is Avalonia.Controls.Shapes.Path p) {
+                    Grid.SetColumn(glyph, Grid.GetColumn(p));
+                }
+                parent.Children.Add(glyph);
+            }
+        };
     }
 
     // -------------------------------------------------------------------------
     // Theme
     // -------------------------------------------------------------------------
 
-    private void WireThemeMenu() {
-        MenuThemeSystem.ToggleType = MenuItemToggleType.CheckBox;
-        MenuThemeLight.ToggleType = MenuItemToggleType.CheckBox;
-        MenuThemeDark.ToggleType = MenuItemToggleType.CheckBox;
-
-        UpdateThemeMenuChecks();
-
-        MenuThemeSystem.Click += (_, _) => SetThemeMode(ThemeMode.System);
-        MenuThemeLight.Click += (_, _) => SetThemeMode(ThemeMode.Light);
-        MenuThemeDark.Click += (_, _) => SetThemeMode(ThemeMode.Dark);
+    private void WireThemeSettings() {
 
         // Listen for system theme changes so we update live when mode is System.
         ActualThemeVariantChanged += (_, _) => {
@@ -330,7 +355,6 @@ public partial class MainWindow : Window {
     private void SetThemeMode(ThemeMode mode) {
         _settings.ThemeMode = mode;
         _settings.ScheduleSave();
-        UpdateThemeMenuChecks();
         SyncRequestedThemeVariant();
         ApplyTheme(ResolveTheme());
     }
@@ -348,12 +372,6 @@ public partial class MainWindow : Window {
             ThemeMode.Dark => ThemeVariant.Dark,
             _ => ThemeVariant.Default,
         };
-    }
-
-    private void UpdateThemeMenuChecks() {
-        MenuThemeSystem.IsChecked = _settings.ThemeMode == ThemeMode.System;
-        MenuThemeLight.IsChecked = _settings.ThemeMode == ThemeMode.Light;
-        MenuThemeDark.IsChecked = _settings.ThemeMode == ThemeMode.Dark;
     }
 
     /// <summary>
@@ -438,52 +456,48 @@ public partial class MainWindow : Window {
     // View menu wiring
     // -------------------------------------------------------------------------
 
+    private static TextBlock CreateMenuCheckGlyph(bool isChecked) => new() {
+        Text = "\uE73E",
+        FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+        FontSize = 14,
+        Opacity = isChecked ? 1.0 : 0.0,
+    };
+
     private void WireViewMenu() {
         // Line Numbers
         Editor.ShowLineNumbers = _settings.ShowLineNumbers;
-        MenuLineNumbers.ToggleType = MenuItemToggleType.CheckBox;
-        MenuLineNumbers.IsChecked = _settings.ShowLineNumbers;
+        _lineNumGlyph = CreateMenuCheckGlyph(_settings.ShowLineNumbers);
+        MenuLineNumbers.Icon = _lineNumGlyph;
         MenuLineNumbers.Click += (_, _) => {
             var show = !_settings.ShowLineNumbers;
             _settings.ShowLineNumbers = show;
             _settings.ScheduleSave();
             Editor.ShowLineNumbers = show;
-            MenuLineNumbers.IsChecked = show;
+            _lineNumGlyph.Opacity = show ? 1.0 : 0.0;
         };
 
         // Status Bar
-        MenuStatusBar.ToggleType = MenuItemToggleType.CheckBox;
-        MenuStatusBar.IsChecked = _settings.ShowStatusBar;
+        _statusBarGlyph = CreateMenuCheckGlyph(_settings.ShowStatusBar);
+        MenuStatusBar.Icon = _statusBarGlyph;
         MenuStatusBar.Click += (_, _) => {
             var show = !_settings.ShowStatusBar;
             _settings.ShowStatusBar = show;
             _settings.ScheduleSave();
-            MenuStatusBar.IsChecked = show;
-            UpdateStatusBarVisibility();
-        };
-
-        // Statistics
-        MenuStatistics.ToggleType = MenuItemToggleType.CheckBox;
-        MenuStatistics.IsChecked = _settings.ShowStatistics;
-        MenuStatistics.Click += (_, _) => {
-            var show = !_settings.ShowStatistics;
-            _settings.ShowStatistics = show;
-            _settings.ScheduleSave();
-            MenuStatistics.IsChecked = show;
+            _statusBarGlyph.Opacity = show ? 1.0 : 0.0;
             UpdateStatusBarVisibility();
         };
 
         // Wrap Lines + column limit
         Editor.WrapLines = _settings.WrapLines;
         Editor.WrapLinesAt = _settings.WrapLinesAt;
-        MenuWrapLines.ToggleType = MenuItemToggleType.CheckBox;
-        MenuWrapLines.IsChecked = _settings.WrapLines;
+        _wrapLinesGlyph = CreateMenuCheckGlyph(_settings.WrapLines);
+        MenuWrapLines.Icon = _wrapLinesGlyph;
         MenuWrapLines.Click += (_, _) => {
             var wrap = !_settings.WrapLines;
             _settings.WrapLines = wrap;
             _settings.ScheduleSave();
             Editor.WrapLines = wrap;
-            MenuWrapLines.IsChecked = wrap;
+            _wrapLinesGlyph.Opacity = wrap ? 1.0 : 0.0;
         };
 
         // Undo coalesce idle timer (settings-only, no menu item)
@@ -874,25 +888,23 @@ public partial class MainWindow : Window {
             switch (key) {
                 case "ShowLineNumbers":
                     Editor.ShowLineNumbers = _settings.ShowLineNumbers;
-                    MenuLineNumbers.IsChecked = _settings.ShowLineNumbers;
+                    _lineNumGlyph!.Opacity = _settings.ShowLineNumbers ? 1.0 : 0.0;
                     break;
                 case "ShowStatusBar":
-                    MenuStatusBar.IsChecked = _settings.ShowStatusBar;
+                    _statusBarGlyph!.Opacity = _settings.ShowStatusBar ? 1.0 : 0.0;
                     UpdateStatusBarVisibility();
                     break;
                 case "ShowStatistics":
-                    MenuStatistics.IsChecked = _settings.ShowStatistics;
                     UpdateStatusBarVisibility();
                     break;
                 case "WrapLines":
                     Editor.WrapLines = _settings.WrapLines;
-                    MenuWrapLines.IsChecked = _settings.WrapLines;
+                    _wrapLinesGlyph!.Opacity = _settings.WrapLines ? 1.0 : 0.0;
                     break;
                 case "WrapLinesAt":
                     Editor.WrapLinesAt = _settings.WrapLinesAt;
                     break;
                 case "ThemeMode":
-                    UpdateThemeMenuChecks();
                     SyncRequestedThemeVariant();
                     ApplyTheme(ResolveTheme());
                     break;

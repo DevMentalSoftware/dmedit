@@ -1545,3 +1545,74 @@ toggles. All changes call `AppSettings.ScheduleSave()` for debounced persistence
   `OpenSettings`, save guards, focus guards, theme application
 
 Test count: **287** (266 Core + 21 Rendering).
+
+---
+
+## TODO — Missing editor commands (vs VS Code)
+
+Commands we currently have: basic navigation (arrows, Home/End, Ctrl+Home/End, Page Up/Down),
+word navigation (Ctrl+Left/Right), all Shift+ selection variants, type/delete/backspace,
+undo/redo, cut/copy/paste, Select All, Select Word, Delete Line, Move Line Up/Down,
+case transforms, file ops (New/Open/Save/SaveAs/Close/CloseAll), tab switching, view toggles
+(line numbers, status bar, word wrap, theme), settings panel, mouse (click/double/triple,
+shift-click extend, middle-drag scroll).
+
+**Format:** change `+` to `-` to mark as "skip for now".
+
+### Find & Replace
+
+- [+] Find (Ctrl+F)
+- [+] Incremental Search (Ctrl+I)
+- [+] Replace (Ctrl+H)
+- [+] Find Next / Previous (F3 / Shift+F3)
+- [+] Find Word or Selection (Ctrl+F3)
+- [-] Find in Selection
+
+### Navigation
+
+- [+] Go to Line (and column if ':') (Ctrl+G)
+- [-] Go to Matching Bracket (Ctrl+Shift+\)
+- [+] Scroll Line Up/Down without moving caret (Ctrl+Up / Ctrl+Down)
+
+### Editing
+
+- [+] Insert Line Below (Ctrl+Enter)
+- [+] Insert Line Above (Ctrl+Shift+Enter)
+- [-] Copy Line Up 
+- [-] Copy Line Down 
+- [+] Delete Word Left (Ctrl+Backspace)
+- [+] Delete Word Right (Ctrl+Delete)
+- [+] Set Indentation for Line/Selection (Tab) (Indents/Deindents based on context if known or does nothing)
+- [+] Indent Line/Selection (Ctrl+])
+- [-] Outdent Line/Selection (Shift+Tab with selection, Ctrl+[)
+- [-] Toggle Line Comment (Ctrl+/)
+- [-] Toggle Block Comment (Ctrl+Shift+/)
+- [+] Duplicate Line/Selection (Ctrl+D)
+- [-] Join Lines
+- [-] Transpose Characters
+- [-] Sort Lines Ascending / Descending
+- [+] Trim Trailing Whitespace (Rather than an editing command, we'll make a setting for whether to do this automatically)
+
+### Multi-cursor & Advanced Selection
+
+- [-] Add Selection to Next Find Match 
+- [+] Select All Occurrences of Find Match
+- [+] Add Cursor Above / Below (Shift+Alt+Up / Down) This command and the next are combined. 
+- [+] Column / Box Selection (Shift+Alt+Drag or Shift+Alt+Up / Down)
+- [-] Expand Selection 
+- [-] Shrink Selection 
+- 
+### View
+
+- [+] Zoom In / Out / Reset (Ctrl+= / Ctrl+- / Ctrl+0)
+- [-] Toggle Minimap
+- [-] Code Folding / Unfolding
+
+### File
+
+- [+] Save All (Ctrl+Shift+S) (I added this to the menu already but didn't implement)
+- [+] Revert File
+
+### Other
+
+- [-] Command Palette (Ctrl+Shift+P)

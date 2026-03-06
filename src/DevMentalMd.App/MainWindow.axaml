@@ -28,7 +28,8 @@
 						<MenuItem Header="_Open…" x:Name="MenuOpen" InputGesture="Ctrl+O" />
 						<Separator />
 						<MenuItem Header="_Save" x:Name="MenuSave" InputGesture="Ctrl+S" />
-						<MenuItem Header="Save _As…" x:Name="MenuSaveAs" />
+						<MenuItem Header="Save _As…" x:Name="MenuSaveAs" InputGesture="Ctrl+Alt+S"/>
+						<MenuItem Header="Save A_ll" x:Name="MenuSaveAll" InputGesture="Ctrl+Shift+S"/>
 						<Separator />
 						<MenuItem Header="_Close" x:Name="MenuClose" InputGesture="Ctrl+F4" />
 						<MenuItem Header="Close A_ll" x:Name="MenuCloseAll" InputGesture="Ctrl+Shift+F4" />
@@ -40,6 +41,7 @@
 						<MenuItem Header="Cu_t" x:Name="MenuCut" InputGesture="Ctrl+X" />
 						<MenuItem Header="_Copy" x:Name="MenuCopy" InputGesture="Ctrl+C" />
 						<MenuItem Header="_Paste" x:Name="MenuPaste" InputGesture="Ctrl+V" />
+						<MenuItem Header="Paste _More" x:Name="MenuPasteMore" InputGesture="Ctrl+Shift+V" />
 						<MenuItem Header="De_lete" x:Name="MenuDelete" InputGesture="Delete" />
 						<Separator />
 						<MenuItem Header="Select _All" x:Name="MenuSelectAll" InputGesture="Ctrl+A" />
@@ -58,15 +60,8 @@
 					<MenuItem Header="_View" x:Name="MenuView">
 						<MenuItem Header="_Line Numbers" x:Name="MenuLineNumbers" />
 						<MenuItem Header="_Status Bar" x:Name="MenuStatusBar" />
-						<MenuItem Header="S_tatistics" x:Name="MenuStatistics" />
 						<Separator />
 						<MenuItem Header="_Wrap Lines" x:Name="MenuWrapLines" />
-						<Separator />
-						<MenuItem Header="_Theme" x:Name="MenuTheme">
-							<MenuItem Header="S_ystem" x:Name="MenuThemeSystem" />
-							<MenuItem Header="_Light" x:Name="MenuThemeLight" />
-							<MenuItem Header="_Dark" x:Name="MenuThemeDark" />
-						</MenuItem>
 					</MenuItem>
 				</Menu>
 				<Border x:Name="GearButton" Grid.Column="1"
@@ -122,17 +117,17 @@
 			</StackPanel>
 		</Border>
 
-		<Grid ColumnDefinitions="*,Auto">
+		<!-- Settings panel (replaces menu, editor, status bars when active) -->
+		<settings:SettingsControl x:Name="SettingsPanel"
+		                          IsVisible="False" />
+
+		<Grid ColumnDefinitions="*,Auto" x:Name="EditorGrid">
 			<controls:EditorControl x:Name="Editor"
                                     Grid.Column="0"
                                     HorizontalAlignment="Stretch" />
 			<controls:DualZoneScrollBar x:Name="ScrollBar"
                                         Grid.Column="1"
                                         Focusable="False" />
-			<settings:SettingsControl x:Name="SettingsPanel"
-                                      Grid.Column="0"
-                                      Grid.ColumnSpan="2"
-                                      IsVisible="False" />
 		</Grid>
 	</DockPanel>
 </Window>

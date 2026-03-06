@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using DevMentalMd.App.Services;
@@ -60,12 +61,20 @@ public static class SettingRowFactory {
         return border;
     }
 
-    private static CheckBox CreateBoolRow(
+    private static Control CreateBoolRow(
         SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
         Action<string> onChanged, Border border) {
-        var cb = new CheckBox {
-            IsChecked = (bool)prop.GetValue(settings)!,
-            Margin = new Thickness(0),
+        var isChecked = (bool)prop.GetValue(settings)!;
+
+        var glyph = new TextBlock {
+            Text = "\uE73E",
+            FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+            FontSize = 14,
+            Width = 20,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Opacity = isChecked ? 1.0 : 0.0,
+            Margin = new Thickness(0, 1, 0, 0),
         };
 
         var contentStack = new StackPanel { Spacing = 1 };
@@ -81,15 +90,31 @@ public static class SettingRowFactory {
                 TextWrapping = TextWrapping.Wrap,
             });
         }
-        cb.Content = contentStack;
 
-        cb.IsCheckedChanged += (_, _) => {
-            prop.SetValue(settings, cb.IsChecked == true);
+        var row = new StackPanel {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+        };
+        row.Children.Add(glyph);
+        row.Children.Add(contentStack);
+
+        var hitArea = new Border {
+            Child = row,
+            Background = Brushes.Transparent,
+            Cursor = new Cursor(StandardCursorType.Hand),
+        };
+
+        hitArea.PointerPressed += (_, e) => {
+            var newVal = !(bool)prop.GetValue(settings)!;
+            glyph.Opacity = newVal ? 1.0 : 0.0;
+            prop.SetValue(settings, newVal);
             settings.ScheduleSave();
             UpdateModifiedIndicator(border, desc, prop, settings);
             onChanged(desc.Key);
+            e.Handled = true;
         };
-        return cb;
+
+        return hitArea;
     }
 
     private static Panel CreateIntRow(
