@@ -4,23 +4,24 @@ namespace DevMentalMd.App;
 
 /// <summary>
 /// Centralizes icon-font glyph constants and the shared font family
-/// so every usage site references one place. When we bundle a
-/// cross-platform font (e.g. Fluent UI System Icons) the font
-/// family string only needs to change here.
+/// so every usage site references one place. Uses the MIT-licensed
+/// Fluent UI System Icons font bundled as an Avalonia resource for
+/// cross-platform support (Windows + Linux).
+/// https://github.com/microsoft/fluentui-system-icons
 /// </summary>
 static class IconGlyphs {
-    // Font family — will be updated to an embedded avares:// resource
-    // when we bundle a cross-platform icon font for Linux.
-    public const string FontFamilyName = "Segoe Fluent Icons, Segoe MDL2 Assets";
+    // Embedded cross-platform font (MIT licensed).
+    public const string FontFamilyName =
+        "avares://dmedit/Resources/FluentSystemIcons-Regular.ttf#FluentSystemIcons-Regular";
     public static readonly FontFamily Family = new(FontFamilyName);
     public static readonly Typeface Face = new(FontFamilyName);
 
-    // Glyphs (Segoe Fluent Icons / MDL2 Assets codepoints)
-    public const string CheckMark    = "\uE73E";  // ✓
-    public const string ChevronRight = "\uE76C";  // >
-    public const string ChevronDown  = "\uE70D";  // v
-    public const string Settings     = "\uE713";  // ⚙
-    public const string Add          = "\uE710";  // +
-    public const string Close  = "\uE624";  // ×
-    public const string Dirty     = "\uECCC";  // ●
+    // Glyphs (Fluent UI System Icons — Regular, 20px variants)
+    public const string CheckMark    = "\uF293";  // ✓  ic_fluent_checkmark_12_regular
+    public const string ChevronRight = "\uF2B0";  // >  ic_fluent_chevron_right_20_regular
+    public const string ChevronDown  = "\uF2A3";  // v  ic_fluent_chevron_down_20_regular
+    public const string Settings     = "\uF6A9";  // ⚙  ic_fluent_settings_20_regular
+    public const string Add          = "\uF109";  // +  ic_fluent_add_20_regular
+    public const string Close        = "\uF369";  // ×  ic_fluent_dismiss_20_regular
+    public const string Dirty        = "\uF660";  // ●  ic_fluent_record_16_regular
 }

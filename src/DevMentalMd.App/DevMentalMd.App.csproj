@@ -13,6 +13,8 @@
   </PropertyGroup>
   <ItemGroup>
     <AvaloniaResource Include="app_icon.ico" />
+    <AvaloniaResource Include="..\..\resources\FluentSystemIcons-Regular.ttf"
+                      Link="Resources\FluentSystemIcons-Regular.ttf" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="manual.md" CopyToOutputDirectory="PreserveNewest" />

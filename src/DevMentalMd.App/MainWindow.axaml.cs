@@ -323,6 +323,7 @@ public partial class MainWindow : Window {
                     FontSize = 12,
                     VerticalAlignment = VerticalAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 2, 0, 0),
                 };
                 // Place in the same Grid column as the original chevron.
                 if (chevron is Avalonia.Controls.Shapes.Path p) {
@@ -463,6 +464,7 @@ public partial class MainWindow : Window {
         FontFamily = IconGlyphs.Family,
         FontSize = 14,
         Opacity = isChecked ? 1.0 : 0.0,
+        Margin = new Thickness(0, 2, 0, 0),
     };
 
     private void WireViewMenu() {
