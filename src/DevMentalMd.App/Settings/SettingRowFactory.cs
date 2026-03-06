@@ -67,8 +67,8 @@ public static class SettingRowFactory {
         var isChecked = (bool)prop.GetValue(settings)!;
 
         var glyph = new TextBlock {
-            Text = "\uE73E",
-            FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+            Text = IconGlyphs.CheckMark,
+            FontFamily = IconGlyphs.Family,
             FontSize = 14,
             Width = 20,
             VerticalAlignment = VerticalAlignment.Center,

@@ -51,15 +51,9 @@ public sealed class TabBarControl : Control {
     private static readonly Typeface TabFont = new("Segoe UI, Inter, sans-serif");
     private static readonly Typeface TabFontBold = new("Segoe UI, Inter, sans-serif",
         FontStyle.Normal, FontWeight.SemiBold);
-    private static readonly Typeface IconFont = new("Segoe Fluent Icons, Segoe UI Symbol");
+    private static readonly Typeface IconFont = IconGlyphs.Face;
     private const double TabFontSize = 12;
     private const double IconFontSize = 12;
-
-    // Icon glyphs (Segoe Fluent Icons)
-    private const string CloseGlyph = "\uE624";      // ChromeClose
-    private const string DirtyDotGlyph = "\uECCC";   // StatusCircleInner
-    private const string AddGlyph = "\uE710";         // Add
-    private const string ChevronDownGlyph = "\uE70D"; // ChevronDown
 
     // -------------------------------------------------------------------------
     // Theme
@@ -626,7 +620,7 @@ public sealed class TabBarControl : Control {
 
         // Show dirty dot when the tab has unsaved changes and the
         // close button is not being hovered; otherwise show the X.
-        var glyph = isDirty && !isHoveringClose ? DirtyDotGlyph : CloseGlyph;
+        var glyph = isDirty && !isHoveringClose ? IconGlyphs.DirtyDot : IconGlyphs.ChromeClose;
         DrawIconButton(ctx, closeX, closeY, CloseButtonSize, CloseButtonSize,
             isHoveringClose, _theme.TabCloseHoverBg, glyph, _theme.TabCloseForeground);
     }
@@ -635,14 +629,14 @@ public sealed class TabBarControl : Control {
         var y = TabTopMargin + (TabHeight - PlusButtonHeight) / 2;
         DrawIconButton(ctx, x, y, PlusButtonWidth, PlusButtonHeight,
             _hoverZone == HitZone.PlusButton, _theme.TabInactiveHoverBg,
-            AddGlyph, _theme.TabPlusForeground);
+            IconGlyphs.Add, _theme.TabPlusForeground);
     }
 
     private void DrawOverflowButton(DrawingContext ctx) {
         var y = TabTopMargin + (TabHeight - PlusButtonHeight) / 2;
         DrawIconButton(ctx, _overflowButtonX, y, OverflowButtonWidth, PlusButtonHeight,
             _hoverZone == HitZone.OverflowButton, _theme.TabInactiveHoverBg,
-            ChevronDownGlyph, _theme.TabPlusForeground);
+            IconGlyphs.ChevronDown, _theme.TabPlusForeground);
     }
 
     /// <summary>

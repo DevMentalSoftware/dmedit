@@ -318,8 +318,8 @@ public partial class MainWindow : Window {
             chevron.IsVisible = false;
             if (chevron.Parent is Panel parent) {
                 var glyph = new TextBlock {
-                    Text = "\uE76C",
-                    FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+                    Text = IconGlyphs.ChevronRight,
+                    FontFamily = IconGlyphs.Family,
                     FontSize = 12,
                     VerticalAlignment = VerticalAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -408,6 +408,8 @@ public partial class MainWindow : Window {
         MenuBarBorder.Background = theme.TabActiveBackground;
         MenuBarBorder.BorderBrush = theme.TabBarBackground;
         MenuBar.Background = Brushes.Transparent;
+        GearGlyph.Text = IconGlyphs.Settings;
+        GearGlyph.FontFamily = IconGlyphs.Family;
         GearGlyph.Foreground = theme.TabPlusForeground;
         GearButton.Background = Brushes.Transparent;
 
@@ -457,8 +459,8 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     private static TextBlock CreateMenuCheckGlyph(bool isChecked) => new() {
-        Text = "\uE73E",
-        FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+        Text = IconGlyphs.CheckMark,
+        FontFamily = IconGlyphs.Family,
         FontSize = 14,
         Opacity = isChecked ? 1.0 : 0.0,
     };
