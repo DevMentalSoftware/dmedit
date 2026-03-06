@@ -735,7 +735,7 @@ public partial class MainWindow : Window {
         }
 
         var sw = Stopwatch.StartNew();
-        var result = await FileLoader.LoadAsync(path, _settings.PagedBufferThresholdBytes);
+        var result = await FileLoader.LoadAsync(path);
 
         var tab = new TabState(result.Document, path, result.DisplayName) {
             LoadResult = result,

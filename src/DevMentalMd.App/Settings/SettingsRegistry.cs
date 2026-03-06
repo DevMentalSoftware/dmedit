@@ -54,10 +54,6 @@ public static class SettingsRegistry {
             "Number of recent files shown in the File menu.",
             "Advanced", SettingKind.Int, 10, Min: 0, Max: 50),
 
-        new("PagedBufferThresholdBytes", "Paged Buffer Threshold (bytes)",
-            "Files larger than this use the paged buffer instead of loading entirely into memory.",
-            "Advanced", SettingKind.Long, 50L * 1024 * 1024, Min: 1L * 1024 * 1024, Max: 500L * 1024 * 1024),
-
         new("DevMode", "Developer Mode",
             "Enable developer-mode features (performance stats, sample documents).",
             "Advanced", SettingKind.Bool, false),

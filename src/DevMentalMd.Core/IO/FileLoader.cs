@@ -53,8 +53,7 @@ public static class FileLoader {
     /// Pass <c>-1</c> to disable paged loading. Default: 50 MB.
     /// </param>
     /// <param name="ct">Cancellation token.</param>
-    public static async Task<LoadResult> LoadAsync(
-        string path, long pagedThreshold = DefaultPagedThreshold, CancellationToken ct = default) {
+    public static async Task<LoadResult> LoadAsync(string path, CancellationToken ct = default) {
 
         if (IsZipFile(path)) {
             return LoadZip(path, ct);
@@ -67,20 +66,10 @@ public static class FileLoader {
             }, ct);
             return new LoadResult(doc, Path.GetFileName(path), WasZipped: false);
         }
-        // Very large file: paged buffer (bounded ~16 MB memory).
-        if (pagedThreshold > 0 && byteLen > pagedThreshold) {
-            var paged = new PagedFileBuffer(path, byteLen);
-            paged.StartLoading(ct);
-            return new LoadResult(
-                new Document(new PieceTable(paged)),
-                Path.GetFileName(path),
-                WasZipped: false);
-        }
-        // Large file: streaming background load (~2× file size in memory).
-        var buf = new StreamingFileBuffer(path, byteLen);
-        buf.StartLoading(ct);
+        var paged = new PagedFileBuffer(path, byteLen);
+        paged.StartLoading(ct);
         return new LoadResult(
-            new Document(new PieceTable(buf)),
+            new Document(new PieceTable(paged)),
             Path.GetFileName(path),
             WasZipped: false);
     }
