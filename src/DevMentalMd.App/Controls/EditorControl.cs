@@ -1583,6 +1583,13 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         var rh = GetRowHeight();
 
+        // At the document end, scroll to the exact bottom so the result
+        // matches dragging the scroll thumb to the bottom.
+        if (caret >= table.Length) {
+            ScrollValue = ScrollMaximum;
+            return;
+        }
+
         if (lineCount > WindowedLayoutThreshold) {
             // Windowed layout — estimate caret Y from its logical line index.
             var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
