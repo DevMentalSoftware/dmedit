@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DevMentalMd.App.Settings.SettingsControl">
+    <DockPanel>
+        <!-- Search bar -->
+        <Border DockPanel.Dock="Top" Padding="8" BorderThickness="0,0,0,1"
+                x:Name="SearchBarBorder">
+            <TextBox x:Name="SearchBox"
+                     Watermark="Search settings..."
+                     FontSize="13" />
+        </Border>
+
+        <Grid ColumnDefinitions="180,Auto,*">
+            <!-- Category sidebar -->
+            <Border Grid.Column="0" BorderThickness="0,0,1,0"
+                    x:Name="SidebarBorder">
+                <ListBox x:Name="CategoryList"
+                         Padding="4"
+                         FontSize="13"
+                         SelectionMode="Single" />
+            </Border>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1" Width="1" />
+
+            <!-- Settings content -->
+            <ScrollViewer Grid.Column="2"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="SettingsContent"
+                            Spacing="0"
+                            Margin="0,0,0,20" />
+            </ScrollViewer>
+        </Grid>
+    </DockPanel>
+</UserControl>

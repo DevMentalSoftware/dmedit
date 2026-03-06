@@ -601,6 +601,21 @@ public sealed class TabBarControl : Control {
         DrawCloseButton(ctx, index);
     }
 
+    private void DrawIconButton(
+        DrawingContext ctx, double x, double y, double w, double h,
+        bool isHovered, IBrush hoverBg, string glyph, IBrush foreground) {
+        if (isHovered) {
+            var hoverGeo = CreateRoundedRect(new Rect(x, y, w, h), 4);
+            ctx.DrawGeometry(hoverBg, null, hoverGeo);
+        }
+        var ft = new FormattedText(glyph,
+            System.Globalization.CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight, IconFont, IconFontSize, foreground);
+        ctx.DrawText(ft, new Point(
+            x + (w - ft.Width) / 2,
+            y + (h - ft.Height) / 2));
+    }
+
     private void DrawCloseButton(DrawingContext ctx, int index) {
         var x = _tabXPositions[index];
         var tabW = _tabWidths[index];
@@ -609,58 +624,25 @@ public sealed class TabBarControl : Control {
         var isHoveringClose = _hoverZone == HitZone.CloseButton && _hoverTabIndex == index;
         var isDirty = _tabs[index].IsDirty;
 
-        // Hover highlight — square with small rounded corners
-        if (isHoveringClose) {
-            var hoverRect = new Rect(closeX, closeY, CloseButtonSize, CloseButtonSize);
-            var hoverGeo = CreateRoundedRect(hoverRect, 4);
-            ctx.DrawGeometry(_theme.TabCloseHoverBg, null, hoverGeo);
-        }
-
         // Show dirty dot when the tab has unsaved changes and the
         // close button is not being hovered; otherwise show the X.
         var glyph = isDirty && !isHoveringClose ? DirtyDotGlyph : CloseGlyph;
-        var closeFt = new FormattedText(glyph,
-            System.Globalization.CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight, IconFont, IconFontSize, _theme.TabCloseForeground);
-        var cx = closeX + (CloseButtonSize - closeFt.Width) / 2;
-        var cy = closeY + (CloseButtonSize - closeFt.Height) / 2;
-        ctx.DrawText(closeFt, new Point(cx, cy));
+        DrawIconButton(ctx, closeX, closeY, CloseButtonSize, CloseButtonSize,
+            isHoveringClose, _theme.TabCloseHoverBg, glyph, _theme.TabCloseForeground);
     }
 
     private void DrawPlusButton(DrawingContext ctx, double x) {
-        var isHovered = _hoverZone == HitZone.PlusButton;
-        var hoverY = TabTopMargin + (TabHeight - PlusButtonHeight) / 2;
-
-        if (isHovered) {
-            var hoverRect = new Rect(x, hoverY, PlusButtonWidth, PlusButtonHeight);
-            var hoverGeo = CreateRoundedRect(hoverRect, 4);
-            ctx.DrawGeometry(_theme.TabInactiveHoverBg, null, hoverGeo);
-        }
-
-        var ft = new FormattedText(AddGlyph,
-            System.Globalization.CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight, IconFont, IconFontSize, _theme.TabPlusForeground);
-        var textX = x + (PlusButtonWidth - ft.Width) / 2;
-        var textY = hoverY + (PlusButtonHeight - ft.Height) / 2;
-        ctx.DrawText(ft, new Point(textX, textY));
+        var y = TabTopMargin + (TabHeight - PlusButtonHeight) / 2;
+        DrawIconButton(ctx, x, y, PlusButtonWidth, PlusButtonHeight,
+            _hoverZone == HitZone.PlusButton, _theme.TabInactiveHoverBg,
+            AddGlyph, _theme.TabPlusForeground);
     }
 
     private void DrawOverflowButton(DrawingContext ctx) {
-        var isHovered = _hoverZone == HitZone.OverflowButton;
-        var hoverY = TabTopMargin + (TabHeight - PlusButtonHeight) / 2;
-
-        if (isHovered) {
-            var hoverRect = new Rect(_overflowButtonX, hoverY, OverflowButtonWidth, PlusButtonHeight);
-            var hoverGeo = CreateRoundedRect(hoverRect, 4);
-            ctx.DrawGeometry(_theme.TabInactiveHoverBg, null, hoverGeo);
-        }
-
-        var ft = new FormattedText(ChevronDownGlyph,
-            System.Globalization.CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight, IconFont, IconFontSize, _theme.TabPlusForeground);
-        var textX = _overflowButtonX + (OverflowButtonWidth - ft.Width) / 2;
-        var textY = hoverY + (PlusButtonHeight - ft.Height) / 2;
-        ctx.DrawText(ft, new Point(textX, textY));
+        var y = TabTopMargin + (TabHeight - PlusButtonHeight) / 2;
+        DrawIconButton(ctx, _overflowButtonX, y, OverflowButtonWidth, PlusButtonHeight,
+            _hoverZone == HitZone.OverflowButton, _theme.TabInactiveHoverBg,
+            ChevronDownGlyph, _theme.TabPlusForeground);
     }
 
     /// <summary>

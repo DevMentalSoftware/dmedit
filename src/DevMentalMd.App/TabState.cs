@@ -14,6 +14,7 @@ public sealed class TabState {
     public string DisplayName { get; set; }
     public LoadResult? LoadResult { get; set; }
     public bool IsDirty { get; set; }
+    public bool IsSettings { get; init; }
 
     // Scroll / windowed-layout state, saved when leaving the tab so
     // returning does not produce a visual jump.
@@ -48,4 +49,10 @@ public sealed class TabState {
         var name = num == 1 ? "Untitled" : $"Untitled {num}";
         return new TabState(new Document(), null, name);
     }
+
+    /// <summary>
+    /// Creates the singleton Settings tab.
+    /// </summary>
+    public static TabState CreateSettings() =>
+        new(new Document(), null, "Settings") { IsSettings = true };
 }

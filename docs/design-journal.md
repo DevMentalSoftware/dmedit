@@ -1153,7 +1153,7 @@ implementation begins.
 
 ### Settings
 
-- [ ] **Settings page** — a dedicated document type with a long scrollable list of all
+- [x] **Settings page** — a dedicated document type with a long scrollable list of all
   user settings. Search/filter to find settings. Always available as a right-aligned tab
   with a gear icon. All appsettings should be represented here.
 - [ ] **Keyboard mapping settings** — assign keyboard shortcuts to any editor command.
@@ -1452,5 +1452,96 @@ KeyUp-based) with a full edit coalescing system inspired by VS Code's undo behav
 `CoalesceTimerSeconds` in `AppSettings` (default 1.0 s). Exposed as
 `EditorControl.CoalesceTimerSeconds` property, wired in `WireViewMenu()`. Minimum
 clamped to 0.1 s. Editable in `%APPDATA%/DevMentalMD/settings.json`.
+
+Test count: **287** (266 Core + 21 Rendering).
+
+## 2026-03-05 — Settings Document (tab-based settings UI)
+
+Implemented the Settings page from the backlog — a dedicated tab with a custom Avalonia
+`UserControl` that presents all `AppSettings` properties as a searchable, categorized UI.
+Visual reference: VS 2026's Options tab.
+
+### Architecture
+
+A `SettingsControl` (Avalonia `UserControl`) replaces the `EditorControl` + `ScrollBar`
+area when the Settings tab is active. The control uses native Avalonia form controls
+(CheckBox, NumericUpDown, ComboBox) rather than custom DrawingContext rendering.
+
+**Content switching**: `SwitchToTab` toggles `IsVisible` on `Editor`/`ScrollBar` vs
+`SettingsPanel`. No Document is shown when settings is active; the tab holds a dummy
+empty Document to satisfy the non-nullable `TabState.Document` property.
+
+### Layout
+
+```
+┌─ Search bar ───────────────────────────────────────┐
+├──────────────┬─────────────────────────────────────┤
+│ Category     │  Section headers + setting rows     │
+│ sidebar      │  (scrollable)                       │
+│ (ListBox)    │                                     │
+└──────────────┴─────────────────────────────────────┘
+```
+
+- **Search box** at top filters settings by DisplayName and Description (case-insensitive).
+- **Category sidebar** (ListBox): "All Settings" shows everything; selecting a category
+  shows only that category's settings.
+- **Modified indicator**: blue left-border (3px) on rows where the current value differs
+  from the default.
+
+### Setting categories
+
+| Category   | Settings                                                        |
+|------------|-----------------------------------------------------------------|
+| Display    | ShowLineNumbers, ShowStatusBar, ShowStatistics, WrapLines, WrapLinesAt |
+| Theme      | ThemeMode                                                       |
+| Editor     | CoalesceTimerMs                                                 |
+| Scrollbar  | OuterThumbScrollRateMultiplier                                  |
+| Advanced   | RecentFileCount, PagedBufferThresholdBytes, DevMode             |
+
+### Setting metadata
+
+`SettingDescriptor` record: Key, DisplayName, Description, Category, Kind (Bool/Int/Long/
+Double/Enum), DefaultValue, Min, Max, EnumType. `SettingsRegistry` holds the static list
+of all descriptors — single source of truth for setting metadata.
+
+### Control types per SettingKind
+
+| Kind   | Control                  |
+|--------|--------------------------|
+| Bool   | CheckBox (with desc)     |
+| Int    | NumericUpDown            |
+| Long   | NumericUpDown (1MB step) |
+| Double | NumericUpDown (0.1 step) |
+| Enum   | ComboBox                 |
+
+### Live sync
+
+`SettingsControl.SettingChanged` fires with the property name. `MainWindow.WireSettingsPanel`
+handles this event with a switch that pushes changes to `Editor`, `ScrollBar`, menu
+checkmarks, theme, and status bar visibility — reusing the same logic as the View menu
+toggles. All changes call `AppSettings.ScheduleSave()` for debounced persistence.
+
+### Tab behavior
+
+- **Gear button** (⚙ `\uE713`) on the far-right of the menu bar opens the Settings tab.
+- Settings tab is closable. Reopening creates a fresh tab if the previous was closed.
+- `TabState.IsSettings` flag distinguishes it from document tabs.
+- `OnSave` is guarded to skip settings tabs.
+- Focus handling allows native control focus when settings is active (doesn't force-focus
+  the EditorControl).
+
+### Files created
+
+- `Settings/SettingDescriptor.cs` — metadata record + `SettingKind` enum
+- `Settings/SettingsRegistry.cs` — static list of all descriptors
+- `Settings/SettingRowFactory.cs` — builds Avalonia controls per descriptor
+- `Settings/SettingsControl.axaml` + `.cs` — the main UserControl
+
+### Files modified
+
+- `TabState.cs` — added `IsSettings` property and `CreateSettings()` factory
+- `MainWindow.axaml` — added `SettingsControl`, gear button in menu bar (Grid wrapper)
+- `MainWindow.axaml.cs` — `SwitchToTab` visibility toggle, `WireSettingsPanel`,
+  `OpenSettings`, save guards, focus guards, theme application
 
 Test count: **287** (266 Core + 21 Rendering).

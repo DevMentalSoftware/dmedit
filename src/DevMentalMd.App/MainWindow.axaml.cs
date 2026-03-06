@@ -14,6 +14,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using DevMentalMd.App.Services;
+using DevMentalMd.App.Settings;
 using DevMentalMd.Core.Buffers;
 using DevMentalMd.Core.Documents;
 using DevMentalMd.Core.IO;
@@ -35,6 +36,7 @@ public partial class MainWindow : Window {
     private readonly DispatcherTimer _statsTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private EditorTheme _theme = EditorTheme.Light;
     private bool _windowStateReady;
+    private TabState? _settingsTab;
 
     public MainWindow() {
         InitializeComponent();
@@ -57,15 +59,30 @@ public partial class MainWindow : Window {
         WireTabBar();
         WireStatsBar();
         WireWindowState();
+        WireSettingsPanel();
 
-        // Clicking on empty menu bar space should fully dismiss any open menu.
-        MenuBarBorder.PointerPressed += (_, _) => MenuBar.Close();
+        // Clicking on empty menu bar space should fully dismiss any open menu,
+        // but must not intercept clicks on actual MenuItems in the bar.
+        MenuBarBorder.PointerPressed += (_, e) => {
+            for (var src = e.Source as Control; src != null && src != MenuBarBorder; src = src.Parent as Control) {
+                if (src is MenuItem) return;
+            }
+            MenuBar.Close();
+        };
 
-        // The editor is the only focusable control.  Grab focus on
-        // activation and reclaim it whenever anything else receives focus.
-        Activated += (_, _) => Editor.Focus();
+        // The editor is the only focusable control (when not on settings).
+        // Grab focus on activation and reclaim it whenever anything else
+        // receives focus — but only when the editor tab is active.
+        Activated += (_, _) => {
+            if (_activeTab is not { IsSettings: true }) {
+                Editor.Focus();
+            }
+        };
         GotFocus += (_, e) => {
-            if (e.Source != Editor) {
+            if (_activeTab is not { IsSettings: true }
+                && e.Source != Editor
+                && e.Source is not MenuItem
+                && e.Source is not Menu) {
                 Editor.Focus();
             }
         };
@@ -92,16 +109,27 @@ public partial class MainWindow : Window {
     private void SwitchToTab(TabState tab) {
         if (_activeTab == tab) return;
         // Save current tab's scroll state.
-        if (_activeTab != null) {
+        if (_activeTab != null && !_activeTab.IsSettings) {
             Editor.SaveScrollState(_activeTab);
         }
         _activeTab = tab;
-        Editor.Document = tab.Document;
-        Editor.RestoreScrollState(tab);
+
+        var isSettings = tab.IsSettings;
+        Editor.IsVisible = !isSettings;
+        ScrollBar.IsVisible = !isSettings;
+        SettingsPanel.IsVisible = isSettings;
+
+        if (!isSettings) {
+            Editor.Document = tab.Document;
+            Editor.RestoreScrollState(tab);
+        }
         UpdateTabBar();
     }
 
     private void CloseTab(TabState tab) {
+        if (tab.IsSettings) {
+            _settingsTab = null;
+        }
         var closedIdx = _tabs.IndexOf(tab);
         _tabs.Remove(tab);
         if (_tabs.Count == 0) {
@@ -352,13 +380,18 @@ public partial class MainWindow : Window {
         // Custom-drawn controls
         Editor.ApplyTheme(theme);
         ScrollBar.ApplyTheme(theme);
+        SettingsPanel.ApplyTheme(theme);
 
         // Tab bar
         TabBar.ApplyTheme(theme);
 
-        // Menu bar — match the active tab background so it blends
-        MenuBar.Background = theme.TabActiveBackground;
+        // Menu / toolbar bar — background on the outer border so the
+        // entire bar (menus, toolbar buttons, gear icon) is uniform.
+        MenuBarBorder.Background = theme.TabActiveBackground;
         MenuBarBorder.BorderBrush = theme.TabBarBackground;
+        MenuBar.Background = Brushes.Transparent;
+        GearGlyph.Foreground = theme.TabPlusForeground;
+        GearButton.Background = Brushes.Transparent;
 
         // Status bar
         StatusBar.Background = theme.StatusBarBackground;
@@ -625,7 +658,7 @@ public partial class MainWindow : Window {
     }
 
     private async void OnSave(object? sender, RoutedEventArgs e) {
-        if (_activeTab == null) return;
+        if (_activeTab == null || _activeTab.IsSettings) return;
         Editor.FlushCompound();
         if (_activeTab.FilePath is null) {
             await SaveAsAsync();
@@ -824,6 +857,67 @@ public partial class MainWindow : Window {
             Editor.PerfStats.FirstChunkTimeMs = 0;
             Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Settings panel
+    // -------------------------------------------------------------------------
+
+    private void WireSettingsPanel() {
+        SettingsPanel.Initialize(_settings);
+        GearButton.PointerPressed += (_, _) => OpenSettings();
+        GearButton.PointerEntered += (_, _) => GearButton.Background = _theme.TabInactiveHoverBg;
+        GearButton.PointerExited += (_, _) => GearButton.Background = Brushes.Transparent;
+
+        SettingsPanel.SettingChanged += key => {
+            // Push setting changes to the editor and menu state.
+            switch (key) {
+                case "ShowLineNumbers":
+                    Editor.ShowLineNumbers = _settings.ShowLineNumbers;
+                    MenuLineNumbers.IsChecked = _settings.ShowLineNumbers;
+                    break;
+                case "ShowStatusBar":
+                    MenuStatusBar.IsChecked = _settings.ShowStatusBar;
+                    UpdateStatusBarVisibility();
+                    break;
+                case "ShowStatistics":
+                    MenuStatistics.IsChecked = _settings.ShowStatistics;
+                    UpdateStatusBarVisibility();
+                    break;
+                case "WrapLines":
+                    Editor.WrapLines = _settings.WrapLines;
+                    MenuWrapLines.IsChecked = _settings.WrapLines;
+                    break;
+                case "WrapLinesAt":
+                    Editor.WrapLinesAt = _settings.WrapLinesAt;
+                    break;
+                case "ThemeMode":
+                    UpdateThemeMenuChecks();
+                    SyncRequestedThemeVariant();
+                    ApplyTheme(ResolveTheme());
+                    break;
+                case "CoalesceTimerMs":
+                    Editor.CoalesceTimerMs = _settings.CoalesceTimerMs;
+                    break;
+                case "OuterThumbScrollRateMultiplier":
+                    ScrollBar.OuterScrollRateMultiplier = _settings.OuterThumbScrollRateMultiplier;
+                    break;
+                case "DevMode":
+                    UpdateStatusBarVisibility();
+                    RebuildRecentMenu();
+                    break;
+            }
+        };
+    }
+
+    private void OpenSettings() {
+        if (_settingsTab != null && _tabs.Contains(_settingsTab)) {
+            SwitchToTab(_settingsTab);
+            return;
+        }
+        _settingsTab = TabState.CreateSettings();
+        AddTab(_settingsTab);
+        SwitchToTab(_settingsTab);
     }
 
     // -------------------------------------------------------------------------

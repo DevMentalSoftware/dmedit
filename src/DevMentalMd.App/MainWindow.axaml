@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:controls="clr-namespace:DevMentalMd.App.Controls"
+        xmlns:settings="clr-namespace:DevMentalMd.App.Settings"
         mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="650"
         x:Class="DevMentalMd.App.MainWindow"
         Title=""
@@ -12,67 +13,83 @@
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaChromeHints="PreferSystemChrome"
         ExtendClientAreaTitleBarHeightHint="38">
-    <DockPanel>
-        <!-- Tab bar (custom-drawn, sits in title bar area) -->
-        <controls:TabBarControl x:Name="TabBar"
+	<DockPanel>
+		<!-- Tab bar (custom-drawn, sits in title bar area) -->
+		<controls:TabBarControl x:Name="TabBar"
                                 DockPanel.Dock="Top"
                                 Height="38"
                                 IsHitTestVisible="True" />
 
-        <Border DockPanel.Dock="Top" x:Name="MenuBarBorder" BorderThickness="0,0,0,1">
-        <Menu x:Name="MenuBar" FontSize="12">
-            <MenuItem Header="_File" x:Name="MenuFile">
-                <MenuItem Header="_New" x:Name="MenuNew" InputGesture="Ctrl+N" />
-                <MenuItem Header="_Open…" x:Name="MenuOpen" InputGesture="Ctrl+O" />
-                <Separator />
-                <MenuItem Header="_Save" x:Name="MenuSave" InputGesture="Ctrl+S" />
-                <MenuItem Header="Save _As…" x:Name="MenuSaveAs" />
-                <Separator />
-                <MenuItem Header="_Close" x:Name="MenuClose" InputGesture="Ctrl+F4" />
-                <MenuItem Header="Close A_ll" x:Name="MenuCloseAll" InputGesture="Ctrl+Shift+F4" />
-            </MenuItem>
-            <MenuItem Header="_Edit" x:Name="MenuEdit">
-                <MenuItem Header="_Undo" x:Name="MenuUndo" InputGesture="Ctrl+Z" />
-                <MenuItem Header="_Redo" x:Name="MenuRedo" InputGesture="Ctrl+Shift+Z" />
-                <Separator />
-                <MenuItem Header="Cu_t" x:Name="MenuCut" InputGesture="Ctrl+X" />
-                <MenuItem Header="_Copy" x:Name="MenuCopy" InputGesture="Ctrl+C" />
-                <MenuItem Header="_Paste" x:Name="MenuPaste" InputGesture="Ctrl+V" />
-                <MenuItem Header="De_lete" x:Name="MenuDelete" InputGesture="Delete" />
-                <Separator />
-                <MenuItem Header="Select _All" x:Name="MenuSelectAll" InputGesture="Ctrl+A" />
-                <MenuItem Header="Select _Word" x:Name="MenuSelectWord" InputGesture="Ctrl+W" />
-                <Separator />
-                <MenuItem Header="Delete Li_ne" x:Name="MenuDeleteLine" InputGesture="Ctrl+Y" />
-                <MenuItem Header="Move Line _Up" x:Name="MenuMoveLineUp" InputGesture="Alt+Up" />
-                <MenuItem Header="Move Line Dow_n" x:Name="MenuMoveLineDown" InputGesture="Alt+Down" />
-                <Separator />
-                <MenuItem Header="Transform Case" x:Name="MenuTransformCase">
-                    <MenuItem Header="_Upper Case" x:Name="MenuCaseUpper" InputGesture="Ctrl+Shift+U" />
-                    <MenuItem Header="_Lower Case" x:Name="MenuCaseLower" InputGesture="Ctrl+Shift+L" />
-                    <MenuItem Header="_Proper Case" x:Name="MenuCaseProper" InputGesture="Ctrl+Shift+P" />
-                </MenuItem>
-            </MenuItem>
-            <MenuItem Header="_View" x:Name="MenuView">
-                <MenuItem Header="_Line Numbers" x:Name="MenuLineNumbers" />
-                <MenuItem Header="_Status Bar" x:Name="MenuStatusBar" />
-                <MenuItem Header="S_tatistics" x:Name="MenuStatistics" />
-                <Separator />
-                <MenuItem Header="_Wrap Lines" x:Name="MenuWrapLines" />
-                <Separator />
-                <MenuItem Header="_Theme" x:Name="MenuTheme">
-                    <MenuItem Header="S_ystem" x:Name="MenuThemeSystem" />
-                    <MenuItem Header="_Light" x:Name="MenuThemeLight" />
-                    <MenuItem Header="_Dark" x:Name="MenuThemeDark" />
-                </MenuItem>
-            </MenuItem>
-        </Menu>
-        </Border>
+		<Border DockPanel.Dock="Top" x:Name="MenuBarBorder" BorderThickness="0,0,0,1">
+			<Grid ColumnDefinitions="*,Auto">
+				<Menu x:Name="MenuBar" Grid.Column="0" FontSize="12">
+					<MenuItem Header="_File" x:Name="MenuFile">
+						<MenuItem Header="_New" x:Name="MenuNew" InputGesture="Ctrl+N" />
+						<MenuItem Header="_Open…" x:Name="MenuOpen" InputGesture="Ctrl+O" />
+						<Separator />
+						<MenuItem Header="_Save" x:Name="MenuSave" InputGesture="Ctrl+S" />
+						<MenuItem Header="Save _As…" x:Name="MenuSaveAs" />
+						<Separator />
+						<MenuItem Header="_Close" x:Name="MenuClose" InputGesture="Ctrl+F4" />
+						<MenuItem Header="Close A_ll" x:Name="MenuCloseAll" InputGesture="Ctrl+Shift+F4" />
+					</MenuItem>
+					<MenuItem Header="_Edit" x:Name="MenuEdit">
+						<MenuItem Header="_Undo" x:Name="MenuUndo" InputGesture="Ctrl+Z" />
+						<MenuItem Header="_Redo" x:Name="MenuRedo" InputGesture="Ctrl+Shift+Z" />
+						<Separator />
+						<MenuItem Header="Cu_t" x:Name="MenuCut" InputGesture="Ctrl+X" />
+						<MenuItem Header="_Copy" x:Name="MenuCopy" InputGesture="Ctrl+C" />
+						<MenuItem Header="_Paste" x:Name="MenuPaste" InputGesture="Ctrl+V" />
+						<MenuItem Header="De_lete" x:Name="MenuDelete" InputGesture="Delete" />
+						<Separator />
+						<MenuItem Header="Select _All" x:Name="MenuSelectAll" InputGesture="Ctrl+A" />
+						<MenuItem Header="Select _Word" x:Name="MenuSelectWord" InputGesture="Ctrl+W" />
+						<Separator />
+						<MenuItem Header="Delete Li_ne" x:Name="MenuDeleteLine" InputGesture="Ctrl+Y" />
+						<MenuItem Header="Move Line _Up" x:Name="MenuMoveLineUp" InputGesture="Alt+Up" />
+						<MenuItem Header="Move Line Dow_n" x:Name="MenuMoveLineDown" InputGesture="Alt+Down" />
+						<Separator />
+						<MenuItem Header="Transform Case" x:Name="MenuTransformCase">
+							<MenuItem Header="_Upper Case" x:Name="MenuCaseUpper" InputGesture="Ctrl+Shift+U" />
+							<MenuItem Header="_Lower Case" x:Name="MenuCaseLower" InputGesture="Ctrl+Shift+L" />
+							<MenuItem Header="_Proper Case" x:Name="MenuCaseProper" InputGesture="Ctrl+Shift+P" />
+						</MenuItem>
+					</MenuItem>
+					<MenuItem Header="_View" x:Name="MenuView">
+						<MenuItem Header="_Line Numbers" x:Name="MenuLineNumbers" />
+						<MenuItem Header="_Status Bar" x:Name="MenuStatusBar" />
+						<MenuItem Header="S_tatistics" x:Name="MenuStatistics" />
+						<Separator />
+						<MenuItem Header="_Wrap Lines" x:Name="MenuWrapLines" />
+						<Separator />
+						<MenuItem Header="_Theme" x:Name="MenuTheme">
+							<MenuItem Header="S_ystem" x:Name="MenuThemeSystem" />
+							<MenuItem Header="_Light" x:Name="MenuThemeLight" />
+							<MenuItem Header="_Dark" x:Name="MenuThemeDark" />
+						</MenuItem>
+					</MenuItem>
+				</Menu>
+				<Border x:Name="GearButton" Grid.Column="1"
+						Background="Transparent"
+						CornerRadius="4"
+						Width="24" Height="24"
+						VerticalAlignment="Center"
+						Margin="2,0,6,0"
+						ToolTip.Tip="Settings">
+					<TextBlock x:Name="GearGlyph"
+							   Text="&#xE713;"
+							   FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+							   FontSize="14"
+							   HorizontalAlignment="Center"
+							   VerticalAlignment="Center" />
+				</Border>
+			</Grid>
+		</Border>
 
-        <Border x:Name="StatusBar"
+		<Border x:Name="StatusBar"
                 DockPanel.Dock="Bottom"
                 BorderThickness="0,1,0,0">
-            <StackPanel>
+			<StackPanel>
 				<!-- Dev stats bar (DevMode only) -->
 				<TextBlock x:Name="StatsBar"
                            FontFamily="Cascadia Code, Consolas, Courier New"
@@ -88,30 +105,34 @@
 				     Uses a single star column with Left/Right alignment so that text
 				     changes never resize the grid — preventing layout invalidation
 				     from cascading up through the DockPanel to the EditorControl. -->
-                <Grid x:Name="PermanentStatusBar">
-                    <TextBlock x:Name="StatusLeft"
+				<Grid x:Name="PermanentStatusBar">
+					<TextBlock x:Name="StatusLeft"
                                HorizontalAlignment="Left"
                                FontFamily="Cascadia Code, Consolas, Courier New"
                                FontSize="11"
                                Padding="6,6,6,6"
                                Text="" />
-                    <TextBlock x:Name="StatusRight"
+					<TextBlock x:Name="StatusRight"
                                HorizontalAlignment="Right"
                                FontFamily="Cascadia Code, Consolas, Courier New"
                                FontSize="11"
                                Padding="6,6,6,6"
                                Text="" />
-                </Grid>
-            </StackPanel>
-        </Border>
+				</Grid>
+			</StackPanel>
+		</Border>
 
-        <Grid ColumnDefinitions="*,Auto">
-            <controls:EditorControl x:Name="Editor"
+		<Grid ColumnDefinitions="*,Auto">
+			<controls:EditorControl x:Name="Editor"
                                     Grid.Column="0"
                                     HorizontalAlignment="Stretch" />
-            <controls:DualZoneScrollBar x:Name="ScrollBar"
+			<controls:DualZoneScrollBar x:Name="ScrollBar"
                                         Grid.Column="1"
                                         Focusable="False" />
-        </Grid>
-    </DockPanel>
+			<settings:SettingsControl x:Name="SettingsPanel"
+                                      Grid.Column="0"
+                                      Grid.ColumnSpan="2"
+                                      IsVisible="False" />
+		</Grid>
+	</DockPanel>
 </Window>
