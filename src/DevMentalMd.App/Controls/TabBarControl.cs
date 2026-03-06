@@ -47,13 +47,15 @@ public sealed class TabBarControl : Control {
     private const double IconLeftMargin = 6;
     private const double TabGap = 2;             // gap between tabs
     private const double CaptionButtonsReserved = 140; // space for min/max/close
+    private const double TabIconGap = 6;             // gap between tab icon and label
 
     private static readonly Typeface TabFont = new("Segoe UI, Inter, sans-serif");
     private static readonly Typeface TabFontBold = new("Segoe UI, Inter, sans-serif",
         FontStyle.Normal, FontWeight.SemiBold);
     private static readonly Typeface IconFont = IconGlyphs.Face;
     private const double TabFontSize = 12;
-    private const double IconFontSize = 12;
+    private const double IconButtonFontSize = 12;
+    private const double TabIconFontSize = 16;
 
     // -------------------------------------------------------------------------
     // Theme
@@ -167,6 +169,9 @@ public sealed class TabBarControl : Control {
             var ft = new FormattedText(text, System.Globalization.CultureInfo.CurrentCulture,
                 FlowDirection.LeftToRight, TabFontBold, TabFontSize, Brushes.Black);
             var w = ft.Width + TabPaddingLeft + CloseButtonSize + TabPaddingRight + 8;
+            if (_tabs[i].IsSettings) {
+                w += IconButtonFontSize + TabIconGap; // gear icon before label
+            }
             naturalWidths[i] = w;
             comfortWidths[i] = Math.Max(w, TabComfortWidth);
         }
@@ -513,9 +518,14 @@ public sealed class TabBarControl : Control {
             ctx.DrawLine(borderPen, new Point(x, bottom), new Point(x + tabW, bottom));
         }
 
-        // Label
+        // Tab icon (settings gear) + label
+        var labelX = x + TabPaddingLeft;
+        if (_tabs[index].IsSettings) {
+            labelX += DrawTabIcon(ctx, IconGlyphs.Settings, x + TabPaddingLeft,
+                _theme.TabForeground);
+        }
         var label = GetTabLabel(index);
-        var maxTextW = tabW - TabPaddingLeft - CloseButtonSize - TabPaddingRight - 4;
+        var maxTextW = tabW - (labelX - x) - CloseButtonSize - TabPaddingRight - 4;
         var ft = new FormattedText(label, System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight, TabFont, TabFontSize, _theme.TabForeground) {
             MaxTextWidth = Math.Max(1, maxTextW),
@@ -523,7 +533,7 @@ public sealed class TabBarControl : Control {
             MaxLineCount = 1,
         };
         var textY = TabTopMargin + (TabHeight - ft.Height) / 2;
-        ctx.DrawText(ft, new Point(x + TabPaddingLeft, textY));
+        ctx.DrawText(ft, new Point(labelX, textY));
 
         // Close button: on hover, or dirty dot when tab has unsaved changes
         if (isHovered || _tabs[index].IsDirty) {
@@ -579,9 +589,14 @@ public sealed class TabBarControl : Control {
         }
         ctx.DrawGeometry(_theme.TabActiveBackground, null, geo);
 
-        // Label (bold for active tab)
+        // Tab icon (settings gear) + label (bold for active tab)
+        var labelX = x + TabPaddingLeft;
+        if (_tabs[index].IsSettings) {
+            labelX += DrawTabIcon(ctx, IconGlyphs.Settings, x + TabPaddingLeft,
+                _theme.TabForeground);
+        }
         var label = GetTabLabel(index);
-        var maxTextW = tabW - TabPaddingLeft - CloseButtonSize - TabPaddingRight - 4;
+        var maxTextW = tabW - (labelX - x) - CloseButtonSize - TabPaddingRight - 4;
         var ft = new FormattedText(label, System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight, TabFontBold, TabFontSize, _theme.TabForeground) {
             MaxTextWidth = Math.Max(1, maxTextW),
@@ -589,10 +604,23 @@ public sealed class TabBarControl : Control {
             MaxLineCount = 1,
         };
         var textY = TabTopMargin + (TabHeight - ft.Height) / 2;
-        ctx.DrawText(ft, new Point(x + TabPaddingLeft, textY));
+        ctx.DrawText(ft, new Point(labelX, textY));
 
         // Close button (always visible on active tab)
         DrawCloseButton(ctx, index);
+    }
+
+    /// <summary>
+    /// Draws a small icon glyph in the tab label area and returns the
+    /// total horizontal advance (icon width + gap) for label positioning.
+    /// </summary>
+    private double DrawTabIcon(DrawingContext ctx, string glyph, double x, IBrush fg) {
+        var ft = new FormattedText(glyph,
+            System.Globalization.CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight, IconFont, TabIconFontSize, fg);
+        var iconY = TabTopMargin + (TabHeight - ft.Height) / 2;
+        ctx.DrawText(ft, new Point(x, iconY));
+        return ft.Width + TabIconGap;
     }
 
     private void DrawIconButton(
@@ -604,7 +632,7 @@ public sealed class TabBarControl : Control {
         }
         var ft = new FormattedText(glyph,
             System.Globalization.CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight, IconFont, IconFontSize, foreground);
+            FlowDirection.LeftToRight, IconFont, IconButtonFontSize, foreground);
         ctx.DrawText(ft, new Point(
             x + (w - ft.Width) / 2,
             y + (h - ft.Height) / 2));
