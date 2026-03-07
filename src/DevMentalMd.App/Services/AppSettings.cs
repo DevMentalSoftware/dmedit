@@ -150,10 +150,17 @@ public sealed class AppSettings {
     // -----------------------------------------------------------------
 
     /// <summary>
+    /// Active key mapping profile identifier (e.g. "VSCode", "Emacs").
+    /// Null means "Default". Stored as null for backward compatibility
+    /// so existing settings files that lack this property use the Default profile.
+    /// </summary>
+    public string? ActiveProfile { get; set; }
+
+    /// <summary>
     /// User overrides for primary keyboard shortcuts. Maps command ID (e.g.
     /// <c>"Edit.Undo"</c>) to gesture string (e.g. <c>"Ctrl+Y"</c>).
     /// Empty string means the command is explicitly unbound.
-    /// Null means no overrides — all defaults from CommandRegistry apply.
+    /// Null means no overrides — all defaults from the active profile apply.
     /// </summary>
     public Dictionary<string, string>? KeyBindingOverrides { get; set; }
 

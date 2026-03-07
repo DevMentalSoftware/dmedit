@@ -10,13 +10,15 @@ namespace DevMentalMd.App.Commands;
 /// Manages the mapping between keyboard gestures and command IDs.
 /// Each command can have a primary gesture and an optional secondary gesture.
 /// Either slot can hold a <see cref="ChordGesture"/> representing either a
-/// single keystroke or a two-keystroke chord. Loads default bindings from
-/// <see cref="CommandRegistry"/>, overlays user overrides from
+/// single keystroke or a two-keystroke chord. Loads base bindings from the
+/// active profile JSON, overlays user overrides from
 /// <see cref="AppSettings"/>, and provides O(1) gesture-to-command resolution
 /// for dispatch.
 /// </summary>
 public class KeyBindingService {
     private readonly AppSettings _settings;
+    private ProfileData _activeProfile;
+    private string _activeProfileId;
 
     // Single-key lookups (non-chord gestures only).
     private Dictionary<KeyGesture, string> _gestureToCommand = new(KeyGestureComparer.Instance);
@@ -29,11 +31,42 @@ public class KeyBindingService {
 
     public KeyBindingService(AppSettings settings) {
         _settings = settings;
+        _activeProfileId = settings.ActiveProfile ?? "Default";
+        _activeProfile = ProfileLoader.Load(_activeProfileId);
+        Rebuild();
+    }
+
+    // =================================================================
+    // Profile management
+    // =================================================================
+
+    /// <summary>
+    /// The identifier of the currently active profile (e.g. "Default", "VSCode").
+    /// </summary>
+    public string ActiveProfileId => _activeProfileId;
+
+    /// <summary>
+    /// Switches to a different profile. Rebuilds lookup tables and persists
+    /// the choice. Does NOT clear user overrides — the caller decides.
+    /// </summary>
+    public void SetProfile(string profileId) {
+        _activeProfileId = profileId;
+        _activeProfile = ProfileLoader.Load(profileId);
+        _settings.ActiveProfile = profileId == "Default" ? null : profileId;
+        _settings.ScheduleSave();
         Rebuild();
     }
 
     /// <summary>
-    /// Rebuilds the internal lookup tables from registry defaults and user
+    /// Returns the profile's default gesture for a command (slot 1 or 2),
+    /// without considering user overrides. Used by the UI to show "modified"
+    /// indicators when the effective binding differs from the profile default.
+    /// </summary>
+    public ChordGesture? GetProfileDefault(string commandId, int slot) =>
+        GetProfileGesture(commandId, slot);
+
+    /// <summary>
+    /// Rebuilds the internal lookup tables from the active profile and user
     /// overrides. Called on construction and after any binding change.
     /// </summary>
     public void Rebuild() {
@@ -46,16 +79,18 @@ public class KeyBindingService {
         var overrides1 = _settings.KeyBindingOverrides;
         var overrides2 = _settings.KeyBinding2Overrides;
 
-        // Pass 1: apply defaults for commands that have no user override.
+        // Pass 1: apply profile defaults for commands that have no user override.
         foreach (var cmd in CommandRegistry.All) {
             if (overrides1 == null || !overrides1.ContainsKey(cmd.Id)) {
-                cmdToGesture[cmd.Id] = cmd.Gesture;
-                RegisterGesture(cmd.Gesture, cmd.Id, gestureToCmd, chordToCmd, chordPrefixes);
+                var gesture = GetProfileGesture(cmd.Id, slot: 1);
+                cmdToGesture[cmd.Id] = gesture;
+                RegisterGesture(gesture, cmd.Id, gestureToCmd, chordToCmd, chordPrefixes);
             }
 
             if (overrides2 == null || !overrides2.ContainsKey(cmd.Id)) {
-                cmdToGesture2[cmd.Id] = cmd.Gesture2;
-                RegisterGesture(cmd.Gesture2, cmd.Id, gestureToCmd, chordToCmd, chordPrefixes);
+                var gesture = GetProfileGesture(cmd.Id, slot: 2);
+                cmdToGesture2[cmd.Id] = gesture;
+                RegisterGesture(gesture, cmd.Id, gestureToCmd, chordToCmd, chordPrefixes);
             }
         }
 
@@ -84,6 +119,18 @@ public class KeyBindingService {
         _commandToGesture2 = cmdToGesture2;
         _chordPrefixes = chordPrefixes;
         _chordToCommand = chordToCmd;
+    }
+
+    /// <summary>
+    /// Gets the gesture for a command from the active profile.
+    /// Returns null if the profile does not define a binding.
+    /// </summary>
+    private ChordGesture? GetProfileGesture(string commandId, int slot) {
+        var dict = slot == 1 ? _activeProfile.Bindings : _activeProfile.Bindings2;
+        if (dict != null && dict.TryGetValue(commandId, out var str) && !string.IsNullOrEmpty(str)) {
+            return ChordGesture.Parse(str);
+        }
+        return null;
     }
 
     /// <summary>
@@ -199,7 +246,7 @@ public class KeyBindingService {
 
     /// <summary>
     /// Removes all user overrides for the given command, restoring the
-    /// primary and secondary bindings from <see cref="CommandRegistry"/>.
+    /// primary and secondary bindings from the active profile.
     /// </summary>
     public void ResetBinding(string commandId) {
         var dirty = false;
@@ -224,7 +271,8 @@ public class KeyBindingService {
     }
 
     /// <summary>
-    /// Removes all user overrides, restoring every binding to its default.
+    /// Removes all user overrides, restoring every binding to the
+    /// active profile defaults.
     /// </summary>
     public void ResetAll() {
         _settings.KeyBindingOverrides = null;

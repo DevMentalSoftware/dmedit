@@ -1,0 +1,65 @@
+{
+  "name": "Default",
+  "bindings": {
+    "File.New": "Ctrl+N",
+    "File.Open": "Ctrl+O",
+    "File.Save": "Ctrl+S",
+    "File.SaveAs": "Ctrl+Alt+S",
+    "File.SaveAll": "Ctrl+Shift+S",
+    "File.Close": "Ctrl+F4",
+    "File.CloseAll": "Ctrl+Shift+F4",
+    "File.Exit": "Alt+F4",
+
+    "Edit.Undo": "Ctrl+Z",
+    "Edit.Redo": "Ctrl+Shift+Z",
+    "Edit.Cut": "Ctrl+X",
+    "Edit.Copy": "Ctrl+C",
+    "Edit.Paste": "Ctrl+V",
+    "Edit.Delete": "Delete",
+    "Edit.Backspace": "Back",
+    "Edit.SelectAll": "Ctrl+A",
+    "Edit.SelectWord": "Ctrl+W",
+    "Edit.DeleteLine": "Ctrl+Y",
+    "Edit.MoveLineUp": "Alt+Up",
+    "Edit.MoveLineDown": "Alt+Down",
+    "Edit.UpperCase": "Ctrl+Shift+U",
+    "Edit.LowerCase": "Ctrl+Shift+L",
+    "Edit.ProperCase": "Ctrl+Shift+P",
+    "Edit.Newline": "Return",
+    "Edit.Tab": "Tab",
+
+    "View.WrapLines": "Ctrl+E, Ctrl+W",
+
+    "Window.NextTab": "Ctrl+Tab",
+    "Window.PrevTab": "Ctrl+Shift+Tab",
+
+    "Nav.MoveLeft": "Left",
+    "Nav.MoveRight": "Right",
+    "Nav.MoveUp": "Up",
+    "Nav.MoveDown": "Down",
+    "Nav.MoveWordLeft": "Ctrl+Left",
+    "Nav.MoveWordRight": "Ctrl+Right",
+    "Nav.MoveHome": "Home",
+    "Nav.MoveEnd": "End",
+    "Nav.MoveDocStart": "Ctrl+Home",
+    "Nav.MoveDocEnd": "Ctrl+End",
+    "Nav.PageUp": "PageUp",
+    "Nav.PageDown": "PageDown",
+
+    "Nav.SelectLeft": "Shift+Left",
+    "Nav.SelectRight": "Shift+Right",
+    "Nav.SelectUp": "Shift+Up",
+    "Nav.SelectDown": "Shift+Down",
+    "Nav.SelectWordLeft": "Ctrl+Shift+Left",
+    "Nav.SelectWordRight": "Ctrl+Shift+Right",
+    "Nav.SelectHome": "Shift+Home",
+    "Nav.SelectEnd": "Shift+End",
+    "Nav.SelectDocStart": "Ctrl+Shift+Home",
+    "Nav.SelectDocEnd": "Ctrl+Shift+End",
+    "Nav.SelectPageUp": "Shift+PageUp",
+    "Nav.SelectPageDown": "Shift+PageDown"
+  },
+  "bindings2": {
+    "File.Exit": "Ctrl+Q"
+  }
+}

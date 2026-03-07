@@ -26,6 +26,7 @@ public class KeyboardSettingsSection : UserControl {
     private readonly AppSettings _settings;
 
     // -- Toolbar --
+    private readonly ComboBox _profileCombo;
     private readonly List<Button> _categoryButtons = [];
     private readonly TextBox _nameFilter;
     private readonly Button _nameFilterClearBtn;
@@ -36,6 +37,9 @@ public class KeyboardSettingsSection : UserControl {
     // -- Command list --
     private readonly StackPanel _commandList;
     private readonly ScrollViewer _commandScroll;
+
+    // -- Error banner --
+    private readonly TextBlock _errorBanner;
 
     // -- Bottom controls --
     private readonly TextBlock _shortcutLabel;
@@ -63,6 +67,8 @@ public class KeyboardSettingsSection : UserControl {
     private readonly List<(Border border, string commandId)> _commandRows = [];
     // Tracks category headers for filtering.
     private readonly List<(TextBlock header, string category, List<Border> rows)> _categoryGroups = [];
+    // Tracks command IDs with duplicate gesture conflicts.
+    private HashSet<string> _duplicateCommandIds = [];
 
     /// <summary>
     /// Fired when any binding is changed (assigned, removed, or reset).
@@ -74,12 +80,36 @@ public class KeyboardSettingsSection : UserControl {
         _settings = settings;
 
         // =====================================================================
-        // Toolbar: category buttons + keystroke filter
+        // Toolbar: profile selector + category buttons + keystroke filter
         // =====================================================================
         var toolbar = new WrapPanel {
             Orientation = Orientation.Horizontal,
             Margin = new Thickness(0, 0, 0, 6),
         };
+
+        // Profile selector
+        _profileCombo = new ComboBox {
+            FontSize = 12,
+            Padding = new Thickness(8, 3),
+            Margin = new Thickness(0, 0, 8, 4),
+            MinWidth = 130,
+        };
+        foreach (var id in ProfileLoader.ProfileIds) {
+            _profileCombo.Items.Add(new ComboBoxItem {
+                Content = ProfileLoader.GetDisplayName(id),
+                Tag = id,
+            });
+        }
+        // Select current profile.
+        var activeId = _keyBindings.ActiveProfileId;
+        for (var i = 0; i < ProfileLoader.ProfileIds.Count; i++) {
+            if (ProfileLoader.ProfileIds[i] == activeId) {
+                _profileCombo.SelectedIndex = i;
+                break;
+            }
+        }
+        _profileCombo.SelectionChanged += OnProfileSelectionChanged;
+        toolbar.Children.Add(_profileCombo);
 
         // Category quick-filter buttons
         var categories = new List<String>(CommandRegistry.Categories.Count + 1);
@@ -206,6 +236,17 @@ public class KeyboardSettingsSection : UserControl {
             Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         // =====================================================================
+        // Error banner (duplicate gesture warnings)
+        // =====================================================================
+        _errorBanner = new TextBlock {
+            FontSize = 12,
+            Foreground = _theme.SettingsWarnForeground,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 0),
+            IsVisible = false,
+        };
+
+        // =====================================================================
         // Shortcut display
         // =====================================================================
         _shortcutLabel = new TextBlock {
@@ -310,6 +351,7 @@ public class KeyboardSettingsSection : UserControl {
         var root = new DockPanel { Margin = new Thickness(12, 8, 12, 8) };
         DockPanel.SetDock(toolbar, Dock.Top);
         DockPanel.SetDock(_scrollHint, Dock.Top);
+        DockPanel.SetDock(_errorBanner, Dock.Bottom);
         DockPanel.SetDock(_shortcutLabel, Dock.Bottom);
         DockPanel.SetDock(bottomRow, Dock.Bottom);
         // Order matters: dock top/bottom chrome first, then _commandScroll
@@ -318,6 +360,7 @@ public class KeyboardSettingsSection : UserControl {
         root.Children.Add(_scrollHint);
         root.Children.Add(bottomRow);
         root.Children.Add(_shortcutLabel);
+        root.Children.Add(_errorBanner);
         root.Children.Add(_commandScroll);
 
         Content = root;
@@ -453,6 +496,7 @@ public class KeyboardSettingsSection : UserControl {
         _commandList.Children.Clear();
         _commandRows.Clear();
         _categoryGroups.Clear();
+        DetectDuplicateGestures();
 
         foreach (var category in CommandRegistry.Categories) {
             var commands = CommandRegistry.All
@@ -488,28 +532,36 @@ public class KeyboardSettingsSection : UserControl {
         var gestureText = _keyBindings.GetGestureText(cmd.Id) ?? "";
         var gesture2Text = _keyBindings.GetGesture2Text(cmd.Id) ?? "";
 
+        var g1Modified = IsBindingModified(cmd.Id, 1);
+        var g2Modified = IsBindingModified(cmd.Id, 2);
+        var isDuplicate = _duplicateCommandIds.Contains(cmd.Id);
+
         var nameText = new TextBlock {
             Text = cmd.DisplayName,
             FontSize = 13,
             VerticalAlignment = VerticalAlignment.Center,
-            Tag = "name", // for theming identification
+            Tag = isDuplicate ? "error" : "name",
         };
 
         var gestureLabel = new TextBlock {
             Text = gestureText,
             FontSize = 12,
-            Foreground = _theme.SettingsDimForeground,
+            Foreground = isDuplicate ? _theme.SettingsWarnForeground
+                : g1Modified ? _theme.SettingsAccent
+                : _theme.SettingsDimForeground,
             VerticalAlignment = VerticalAlignment.Center,
-            Tag = "dim",
+            Tag = isDuplicate ? "error" : g1Modified ? "modified" : "dim",
         };
 
         var gesture2Label = new TextBlock {
             Text = gesture2Text,
             FontSize = 12,
-            Foreground = _theme.SettingsDimForeground,
+            Foreground = isDuplicate ? _theme.SettingsWarnForeground
+                : g2Modified ? _theme.SettingsAccent
+                : _theme.SettingsDimForeground,
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            Tag = "dim",
+            Tag = isDuplicate ? "error" : g2Modified ? "modified" : "dim",
         };
 
         // 3-column grid: Name (flex) | Gesture (fixed) | Gesture2 (flex)
@@ -763,6 +815,95 @@ public class KeyboardSettingsSection : UserControl {
     }
 
     // =====================================================================
+    // Profile selection
+    // =====================================================================
+
+    private void OnProfileSelectionChanged(object? sender, SelectionChangedEventArgs e) {
+        if (_profileCombo.SelectedItem is not ComboBoxItem item
+            || item.Tag is not string profileId) {
+            return;
+        }
+        if (profileId == _keyBindings.ActiveProfileId) {
+            return;
+        }
+        // Clear all user overrides — they were relative to the old profile.
+        _keyBindings.ResetAll();
+        _keyBindings.SetProfile(profileId);
+        RefreshAfterChange();
+    }
+
+    // =====================================================================
+    // Modified / duplicate detection
+    // =====================================================================
+
+    /// <summary>
+    /// Returns true if the user has a custom override for the given command
+    /// in the given slot (differing from or absent in the active profile).
+    /// </summary>
+    private bool IsBindingModified(string commandId, int slot) {
+        var overrides = slot == 1
+            ? _settings.KeyBindingOverrides
+            : _settings.KeyBinding2Overrides;
+        return overrides != null && overrides.ContainsKey(commandId);
+    }
+
+    /// <summary>
+    /// Scans all effective bindings for duplicate single-key gestures and
+    /// duplicate chords. Populates <see cref="_duplicateCommandIds"/> and
+    /// updates the error banner.
+    /// </summary>
+    private void DetectDuplicateGestures() {
+        _duplicateCommandIds = [];
+        var singleKeySeen = new Dictionary<KeyGesture, string>(KeyGestureComparer.Instance);
+        var chordSeen = new Dictionary<(int, int, int, int), string>();
+        var errors = new List<string>();
+
+        foreach (var cmd in CommandRegistry.All) {
+            CheckGestureForDuplicate(cmd.Id, _keyBindings.GetGesture(cmd.Id),
+                singleKeySeen, chordSeen, errors);
+            CheckGestureForDuplicate(cmd.Id, _keyBindings.GetGesture2(cmd.Id),
+                singleKeySeen, chordSeen, errors);
+        }
+
+        _errorBanner.IsVisible = errors.Count > 0;
+        _errorBanner.Text = errors.Count > 0
+            ? string.Join("  |  ", errors)
+            : "";
+    }
+
+    private void CheckGestureForDuplicate(string cmdId, ChordGesture? gesture,
+        Dictionary<KeyGesture, string> singleKeySeen,
+        Dictionary<(int, int, int, int), string> chordSeen,
+        List<string> errors) {
+        if (gesture == null) return;
+
+        if (gesture.IsChord) {
+            var key = (
+                (int)gesture.First.Key, (int)gesture.First.KeyModifiers,
+                (int)gesture.Second!.Key, (int)gesture.Second.KeyModifiers);
+            if (chordSeen.TryGetValue(key, out var existing)) {
+                _duplicateCommandIds.Add(cmdId);
+                _duplicateCommandIds.Add(existing);
+                var desc1 = KeyBindingService.GetDescriptor(existing)?.DisplayName ?? existing;
+                var desc2 = KeyBindingService.GetDescriptor(cmdId)?.DisplayName ?? cmdId;
+                errors.Add($"{gesture}: {desc1} / {desc2}");
+            } else {
+                chordSeen[key] = cmdId;
+            }
+        } else {
+            if (singleKeySeen.TryGetValue(gesture.First, out var existing)) {
+                _duplicateCommandIds.Add(cmdId);
+                _duplicateCommandIds.Add(existing);
+                var desc1 = KeyBindingService.GetDescriptor(existing)?.DisplayName ?? existing;
+                var desc2 = KeyBindingService.GetDescriptor(cmdId)?.DisplayName ?? cmdId;
+                errors.Add($"{gesture}: {desc1} / {desc2}");
+            } else {
+                singleKeySeen[gesture.First] = cmdId;
+            }
+        }
+    }
+
+    // =====================================================================
     // Sizing
     // =====================================================================
 
@@ -793,14 +934,17 @@ public class KeyboardSettingsSection : UserControl {
             header.Foreground = theme.EditorForeground;
         }
 
-        // Command rows: name → foreground, dim → dim.
+        // Command rows: name/modified/error/dim.
         foreach (var (border, cmdId) in _commandRows) {
             if (border.Child is Grid grid) {
                 foreach (var child in grid.Children) {
                     if (child is TextBlock tb) {
-                        tb.Foreground = tb.Tag is "dim"
-                            ? theme.SettingsDimForeground
-                            : theme.EditorForeground;
+                        tb.Foreground = tb.Tag switch {
+                            "dim" => theme.SettingsDimForeground,
+                            "modified" => theme.SettingsAccent,
+                            "error" => theme.SettingsWarnForeground,
+                            _ => theme.EditorForeground,
+                        };
                     }
                 }
             }
@@ -810,6 +954,9 @@ public class KeyboardSettingsSection : UserControl {
                 ? theme.SettingsRowSelection
                 : Brushes.Transparent;
         }
+
+        // Error banner
+        _errorBanner.Foreground = theme.SettingsWarnForeground;
 
         // Scroll hint
         _scrollHint.Foreground = theme.SettingsDimForeground;

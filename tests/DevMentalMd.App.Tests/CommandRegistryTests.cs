@@ -3,6 +3,7 @@ using System.Linq;
 using System.Reflection;
 using Avalonia.Input;
 using DevMentalMd.App.Commands;
+using DevMentalMd.App.Services;
 
 namespace DevMentalMd.App.Tests;
 
@@ -15,16 +16,20 @@ public class CommandRegistryTests {
 
     [Fact]
     public void AllDefaultGesturesAreUnique() {
-        // Collect single-key gestures from both Gesture and Gesture2 columns.
-        // Chords are excluded — they don't occupy the single-key space.
+        // Collect single-key gestures from both slots via KeyBindingService
+        // (which loads from the Default profile). Chords are excluded — they
+        // don't occupy the single-key space.
+        var svc = new KeyBindingService(new AppSettings());
         var entries = new List<(string Id, KeyGesture Gesture)>();
 
         foreach (var cmd in CommandRegistry.All) {
-            if (cmd.Gesture is { IsChord: false }) {
-                entries.Add((cmd.Id + " (Gesture)", cmd.Gesture.First));
+            var g1 = svc.GetGesture(cmd.Id);
+            if (g1 is { IsChord: false }) {
+                entries.Add((cmd.Id + " (Gesture)", g1.First));
             }
-            if (cmd.Gesture2 is { IsChord: false }) {
-                entries.Add((cmd.Id + " (Gesture2)", cmd.Gesture2.First));
+            var g2 = svc.GetGesture2(cmd.Id);
+            if (g2 is { IsChord: false }) {
+                entries.Add((cmd.Id + " (Gesture2)", g2.First));
             }
         }
 
@@ -44,13 +49,14 @@ public class CommandRegistryTests {
 
     [Fact]
     public void AllDefaultChordsAreUnique() {
-        // Collect chord gestures from both gesture slots.
+        // Collect chord gestures from both slots via KeyBindingService.
+        var svc = new KeyBindingService(new AppSettings());
         var seen = new HashSet<(int, int, int, int)>();
         var duplicates = new List<string>();
 
         foreach (var cmd in CommandRegistry.All) {
-            CheckChord(cmd.Id, cmd.Gesture, seen, duplicates);
-            CheckChord(cmd.Id, cmd.Gesture2, seen, duplicates);
+            CheckChord(cmd.Id, svc.GetGesture(cmd.Id), seen, duplicates);
+            CheckChord(cmd.Id, svc.GetGesture2(cmd.Id), seen, duplicates);
         }
 
         Assert.True(duplicates.Count == 0,
