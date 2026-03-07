@@ -92,6 +92,20 @@ public sealed class EditorTheme {
     public IBrush MenuBackground { get; init; } =
         new SolidColorBrush(Color.FromRgb(0xF9, 0xF9, 0xF9));
 
+    // -- Settings UI --
+    public IBrush SettingsDimForeground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90));
+    public IBrush SettingsWarnForeground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xCC, 0x66, 0x00));
+    public IBrush SettingsInputBorder { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
+    public IBrush SettingsAccent { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0x00, 0x78, 0xD7));
+    public IBrush SettingsRowSelection { get; init; } =
+        new SolidColorBrush(Color.FromArgb(0x30, 0x00, 0x78, 0xD7));
+    public IBrush SettingsButtonActive { get; init; } =
+        new SolidColorBrush(Color.FromArgb(0x40, 0x00, 0x78, 0xD7));
+
     // =================================================================
     // Predefined palettes
     // =================================================================
@@ -149,5 +163,13 @@ public sealed class EditorTheme {
 
         // Menu
         MenuBackground = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
+
+        // Settings UI
+        SettingsDimForeground = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80)),
+        SettingsWarnForeground = new SolidColorBrush(Color.FromRgb(0xFF, 0x99, 0x33)),
+        SettingsInputBorder = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+        SettingsAccent = new SolidColorBrush(Color.FromRgb(0x33, 0x99, 0xFF)),
+        SettingsRowSelection = new SolidColorBrush(Color.FromArgb(0x30, 0x33, 0x99, 0xFF)),
+        SettingsButtonActive = new SolidColorBrush(Color.FromArgb(0x40, 0x33, 0x99, 0xFF)),
     };
 }

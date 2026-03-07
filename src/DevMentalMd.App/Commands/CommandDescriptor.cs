@@ -10,4 +10,5 @@ public sealed record CommandDescriptor(
     string Id,
     string DisplayName,
     string Category,
-    KeyGesture? DefaultGesture = null);
+    KeyGesture? DefaultGesture = null,
+    string? Description = null);

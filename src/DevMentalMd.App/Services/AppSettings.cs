@@ -136,6 +136,16 @@ public sealed class AppSettings {
     public int CoalesceTimerMs { get; set; } = 1000;
 
     // -----------------------------------------------------------------
+    // Settings UI state
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Remembers which category was selected in the Settings sidebar
+    /// (e.g. "All Settings", "Keyboard"). Null = "All Settings" (default).
+    /// </summary>
+    public string? LastSettingsPage { get; set; }
+
+    // -----------------------------------------------------------------
     // Keyboard shortcuts
     // -----------------------------------------------------------------
 

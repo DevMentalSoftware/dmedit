@@ -77,11 +77,11 @@ public partial class MainWindow : Window {
         WireScrollBar();
         WireEditMenu();
         WireViewMenu();
+        WireSettingsPanel();
         WireThemeSettings();
         WireTabBar();
         WireStatsBar();
         WireWindowState();
-        WireSettingsPanel();
         SyncMenuGestures();
 
         // Clicking on empty menu bar space should fully dismiss any open menu,

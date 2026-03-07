@@ -50,11 +50,20 @@ public partial class SettingsControl : UserControl {
         foreach (var cat in SettingsRegistry.Categories) {
             CategoryList.Items.Add(cat);
         }
-        CategoryList.SelectedIndex = 0;
+
+        // Restore last-used category, or default to "All Settings".
+        var restored = _settings?.LastSettingsPage;
+        var restoredIndex = restored != null ? CategoryList.Items.IndexOf(restored) : -1;
+        CategoryList.SelectedIndex = restoredIndex >= 0 ? restoredIndex : 0;
+        _selectedCategory = CategoryList.SelectedItem as string ?? "All Settings";
 
         CategoryList.SelectionChanged += (_, _) => {
             if (CategoryList.SelectedItem is string cat) {
                 _selectedCategory = cat;
+                if (_settings != null) {
+                    _settings.LastSettingsPage = cat == "All Settings" ? null : cat;
+                    _settings.ScheduleSave();
+                }
                 ApplyFilter();
             }
         };
@@ -114,7 +123,13 @@ public partial class SettingsControl : UserControl {
     }
 
     private void WireSearch() {
-        SearchBox.TextChanged += (_, _) => ApplyFilter();
+        SearchBox.TextChanged += (_, _) => {
+            SearchClearBtn.IsVisible = !string.IsNullOrEmpty(SearchBox.Text);
+            ApplyFilter();
+        };
+        SearchClearBtn.Click += (_, _) => {
+            SearchBox.Text = "";
+        };
     }
 
     private void ApplyFilter() {
@@ -168,10 +183,58 @@ public partial class SettingsControl : UserControl {
         SidebarBorder.BorderBrush = theme.StatusBarBorder;
         SidebarBorder.Background = theme.EditorBackground;
 
+        SearchBox.Foreground = theme.EditorForeground;
+        SearchClearBtn.Foreground = theme.EditorForeground;
+
         foreach (var header in _allHeaders) {
             header.Foreground = theme.EditorForeground;
         }
 
+        // Update factory theme so value-change callbacks use the right colors.
+        SettingRowFactory.CurrentTheme = theme;
+
+        // Re-theme standard setting rows: descriptions, labels, modified indicators.
+        foreach (var row in _allRows) {
+            ThemeSettingRow(row, theme);
+        }
+
         _keyboardSection?.ApplyTheme(theme);
+    }
+
+    /// <summary>
+    /// Walks a single setting row border and applies theme colors to
+    /// description TextBlocks (tag "dim") and the modified-state accent.
+    /// </summary>
+    private static void ThemeSettingRow(Border row, EditorTheme theme) {
+        // Modified indicator: non-transparent border means "modified".
+        if (row.BorderBrush is SolidColorBrush scb && scb.Color.A > 0) {
+            row.BorderBrush = theme.SettingsAccent;
+        }
+
+        // Walk the visual tree for tagged TextBlocks.
+        ThemeChildren(row, theme);
+    }
+
+    private static void ThemeChildren(Control parent, EditorTheme theme) {
+        IEnumerable<Control>? children = parent switch {
+            Panel p => p.Children.OfType<Control>(),
+            ContentControl cc when cc.Content is Control c => [c],
+            Decorator d when d.Child is Control dc => [dc],
+            _ => null,
+        };
+
+        if (children is null) return;
+
+        foreach (var child in children) {
+            if (child is TextBlock tb) {
+                if (tb.Tag is "dim") {
+                    tb.Foreground = theme.SettingsDimForeground;
+                } else if (tb.Tag is not string) {
+                    // Display name labels (no tag) get foreground.
+                    tb.Foreground = theme.EditorForeground;
+                }
+            }
+            ThemeChildren(child, theme);
+        }
     }
 }

@@ -15,8 +15,11 @@ namespace DevMentalMd.App.Settings;
 /// binding to an <see cref="AppSettings"/> instance.
 /// </summary>
 public static class SettingRowFactory {
-    private static readonly IBrush ModifiedIndicator =
-        new SolidColorBrush(Color.FromRgb(0x00, 0x78, 0xD7));
+    /// <summary>
+    /// Current theme used for row colors. Set by <see cref="SettingsControl"/>
+    /// whenever the theme changes.
+    /// </summary>
+    internal static EditorTheme CurrentTheme { get; set; } = EditorTheme.Light;
 
     /// <summary>
     /// Builds a row control for the given descriptor. Returns a Border
@@ -50,9 +53,10 @@ public static class SettingRowFactory {
             stack.Children.Add(new TextBlock {
                 Text = desc.Description,
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90)),
+                Foreground = CurrentTheme.SettingsDimForeground,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 2, 0, 0),
+                Tag = "dim",
             });
         }
 
@@ -86,8 +90,9 @@ public static class SettingRowFactory {
             contentStack.Children.Add(new TextBlock {
                 Text = desc.Description,
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90)),
+                Foreground = CurrentTheme.SettingsDimForeground,
                 TextWrapping = TextWrapping.Wrap,
+                Tag = "dim",
             });
         }
 
@@ -260,6 +265,6 @@ public static class SettingRowFactory {
         Border border, SettingDescriptor desc, PropertyInfo prop, AppSettings settings) {
         var current = prop.GetValue(settings);
         var isDefault = Equals(current, desc.DefaultValue);
-        border.BorderBrush = isDefault ? Brushes.Transparent : ModifiedIndicator;
+        border.BorderBrush = isDefault ? Brushes.Transparent : CurrentTheme.SettingsAccent;
     }
 }
