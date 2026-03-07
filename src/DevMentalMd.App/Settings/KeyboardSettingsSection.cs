@@ -192,7 +192,6 @@ public class KeyboardSettingsSection : UserControl {
             Watermark = "Press shortcut keys\u2026",
             FontSize = 13,
             IsReadOnly = true,
-            MaxWidth = 260,
             MinWidth = 180,
             HorizontalAlignment = HorizontalAlignment.Left,
         };
@@ -202,14 +201,27 @@ public class KeyboardSettingsSection : UserControl {
         _captureClearBtn = new Button {
             Content = "\u2715",
             FontSize = 11,
-            Padding = new Thickness(4, 0),
+            Padding = new Thickness(4, 2),
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(2, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 0, 6, 0),
             IsVisible = false,
+            Cursor = new Cursor(StandardCursorType.Arrow),
         };
         _captureClearBtn.Click += (_, _) => ClearCapturedGesture();
+
+        // Wrap capture box + clear button in a Grid so the ✕ sits inside the box.
+        var captureWrapper = new Grid {
+            ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"),
+            MaxWidth = 260,
+        };
+        Grid.SetColumn(_captureBox, 0);
+        Grid.SetColumnSpan(_captureBox, 2); // TextBox spans full width
+        Grid.SetColumn(_captureClearBtn, 1); // Button overlays on the right
+        captureWrapper.Children.Add(_captureBox);
+        captureWrapper.Children.Add(_captureClearBtn);
 
         _conflictLabel = new TextBlock {
             FontSize = 11,
@@ -233,8 +245,7 @@ public class KeyboardSettingsSection : UserControl {
         };
         bottomRow.Children.Add(_primarySlotBtn);
         bottomRow.Children.Add(_secondarySlotBtn);
-        bottomRow.Children.Add(_captureBox);
-        bottomRow.Children.Add(_captureClearBtn);
+        bottomRow.Children.Add(captureWrapper);
         bottomRow.Children.Add(_conflictLabel);
         bottomRow.Children.Add(_assignBtn);
         bottomRow.Children.Add(_removeBtn);
