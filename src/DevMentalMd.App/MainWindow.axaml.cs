@@ -45,9 +45,17 @@ public partial class MainWindow : Window {
     private TextBlock? _statusBarGlyph;
     private TextBlock? _wrapLinesGlyph;
 
+    // Chord state: two-keystroke shortcut in progress.
+    private KeyGesture? _chordFirst;
+    private readonly DispatcherTimer _chordTimer;
+
     public MainWindow() {
         InitializeComponent();
         _keyBindings = new KeyBindingService(_settings);
+        _chordTimer = new DispatcherTimer {
+            Interval = TimeSpan.FromMilliseconds(_settings.ChordTimeoutMs),
+        };
+        _chordTimer.Tick += (_, _) => CancelChord();
 
         // On Linux the WM ignores ExtendClientAreaToDecorationsHint and draws
         // its own title bar. Remove it so we can draw custom chrome buttons
@@ -102,7 +110,10 @@ public partial class MainWindow : Window {
                 Editor.Focus();
             }
         };
-        Deactivated += (_, _) => TabBar.IsWindowActive = false;
+        Deactivated += (_, _) => {
+            TabBar.IsWindowActive = false;
+            CancelChord();
+        };
         GotFocus += (_, e) => {
             if (_activeTab is not { IsSettings: true }
                 && e.Source != Editor
@@ -133,6 +144,7 @@ public partial class MainWindow : Window {
 
     private void SwitchToTab(TabState tab) {
         if (_activeTab == tab) return;
+        CancelChord();
         // Save current tab's scroll state.
         if (_activeTab != null && !_activeTab.IsSettings) {
             Editor.SaveScrollState(_activeTab);
@@ -296,6 +308,44 @@ public partial class MainWindow : Window {
     protected override void OnKeyDown(KeyEventArgs e) {
         base.OnKeyDown(e);
 
+        // Ignore bare modifier keys.
+        if (e.Key is Key.LeftShift or Key.RightShift
+            or Key.LeftCtrl or Key.RightCtrl
+            or Key.LeftAlt or Key.RightAlt
+            or Key.LWin or Key.RWin) {
+            return;
+        }
+
+        // Chord: waiting for the second key of a two-keystroke chord?
+        if (_chordFirst != null) {
+            _chordTimer.Stop();
+            var chordCmd = _keyBindings.ResolveChord(_chordFirst, e.Key, e.KeyModifiers);
+            _chordFirst = null;
+            StatusLeft.Text = "";
+            if (chordCmd != null) {
+                if (ExecuteWindowCommand(chordCmd)) {
+                    e.Handled = true;
+                } else if (_activeTab is not { IsSettings: true }
+                           && Editor.ExecuteCommand(chordCmd)) {
+                    e.Handled = true;
+                }
+                return;
+            }
+            // Second key didn't complete a chord — fall through to process
+            // it as a normal single-key gesture below.
+        }
+
+        // Check if this key is the first key of a chord.
+        if (_keyBindings.IsChordPrefix(e.Key, e.KeyModifiers)) {
+            _chordFirst = new KeyGesture(e.Key, e.KeyModifiers);
+            StatusLeft.Text = $"{_chordFirst} was pressed. Waiting for second key of chord\u2026";
+            _chordTimer.Stop();
+            _chordTimer.Start();
+            e.Handled = true;
+            return;
+        }
+
+        // Normal single-key resolution.
         var commandId = _keyBindings.Resolve(e.Key, e.KeyModifiers);
         if (commandId == null) return;
 
@@ -305,6 +355,12 @@ public partial class MainWindow : Window {
                    && Editor.ExecuteCommand(commandId)) {
             e.Handled = true;
         }
+    }
+
+    private void CancelChord() {
+        _chordTimer.Stop();
+        _chordFirst = null;
+        StatusLeft.Text = "";
     }
 
     private bool ExecuteWindowCommand(string commandId) {
@@ -433,10 +489,15 @@ public partial class MainWindow : Window {
         SetMenuGesture(MenuCaseUpper, CommandIds.EditUpperCase);
         SetMenuGesture(MenuCaseLower, CommandIds.EditLowerCase);
         SetMenuGesture(MenuCaseProper, CommandIds.EditProperCase);
+        SetMenuGesture(MenuLineNumbers, CommandIds.ViewLineNumbers);
+        SetMenuGesture(MenuStatusBar, CommandIds.ViewStatusBar);
+        SetMenuGesture(MenuWrapLines, CommandIds.ViewWrapLines);
     }
 
     private void SetMenuGesture(MenuItem item, string commandId) {
-        item.InputGesture = _keyBindings.GetGesture(commandId);
+        var g = _keyBindings.GetGesture(commandId);
+        // Avalonia menus can't display chords; show null for chord bindings.
+        item.InputGesture = g is { IsChord: false } ? g.First : null;
     }
 
     // -------------------------------------------------------------------------
@@ -718,7 +779,7 @@ public partial class MainWindow : Window {
         var doc = Editor.Document;
         if (doc == null) {
             if (StatusRight.Text != "Ln 1 Ch 1") StatusRight.Text = "Ln 1 Ch 1";
-            if (StatusLeft.Text != "") StatusLeft.Text = "";
+            if (_chordFirst == null && StatusLeft.Text != "") StatusLeft.Text = "";
         } else {
             var table = doc.Table;
             var stillLoading = table.Buffer is { LengthIsKnown: false };

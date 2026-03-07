@@ -8,6 +8,8 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 
+using Avalonia.Threading;
+
 using DevMentalMd.App.Commands;
 using DevMentalMd.App.Services;
 
@@ -25,6 +27,8 @@ public class KeyboardSettingsSection : UserControl {
 
     // -- Toolbar --
     private readonly List<Button> _categoryButtons = [];
+    private readonly TextBox _nameFilter;
+    private readonly Button _nameFilterClearBtn;
     private readonly Border _keyFilterPanel;
     private readonly TextBlock _keyFilterText;
     private readonly Button _keyFilterClearBtn;
@@ -49,10 +53,10 @@ public class KeyboardSettingsSection : UserControl {
 
     // -- State --
     private string? _selectedCommandId;
-    private KeyGesture? _capturedGesture;
-    private string? _activeCategory;        // null = All
-    private KeyGesture? _keyFilter;         // keystroke filter
-    private int _editingSlot = 1;           // 1 = primary, 2 = secondary
+    private ChordGesture? _captured;         // single key or chord
+    private string? _activeCategory;         // null = All
+    private KeyGesture? _keyFilter;          // keystroke filter
+    private int _editingSlot = 1;            // 1 = primary, 2 = secondary
     private EditorTheme _theme = EditorTheme.Light;
 
     // Tracks all command row borders for selection highlighting.
@@ -93,6 +97,48 @@ public class KeyboardSettingsSection : UserControl {
             _categoryButtons.Add(btn);
             toolbar.Children.Add(btn);
         }
+
+        // Name filter (text search for command display names)
+        _nameFilter = new TextBox {
+            Watermark = "Search commands\u2026",
+            FontSize = 13,
+            MinWidth = 140,
+            Margin = new Thickness(4, 0, 0, 4),
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        _nameFilterClearBtn = new Button {
+            Content = "\u2715",
+            FontSize = 11,
+            Padding = new Thickness(4, 2),
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 0, 6, 0),
+            IsVisible = false,
+            Cursor = new Cursor(StandardCursorType.Arrow),
+        };
+        _nameFilterClearBtn.Click += (_, _) => {
+            _nameFilter.Text = "";
+            // ApplyFilter fires via PropertyChanged
+        };
+        _nameFilter.PropertyChanged += (_, e) => {
+            if (e.Property == TextBox.TextProperty) {
+                _nameFilterClearBtn.IsVisible = !string.IsNullOrEmpty(_nameFilter.Text);
+                ApplyFilter();
+            }
+        };
+
+        var nameFilterWrapper = new Grid {
+            ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"),
+            MaxWidth = 200,
+        };
+        Grid.SetColumn(_nameFilter, 0);
+        Grid.SetColumnSpan(_nameFilter, 2);
+        Grid.SetColumn(_nameFilterClearBtn, 1);
+        nameFilterWrapper.Children.Add(_nameFilter);
+        nameFilterWrapper.Children.Add(_nameFilterClearBtn);
+        toolbar.Children.Add(nameFilterWrapper);
 
         // Keystroke filter panel (focusable border, not a TextBox)
         _keyFilterText = new TextBlock {
@@ -180,7 +226,7 @@ public class KeyboardSettingsSection : UserControl {
             Content = "Secondary",
             FontSize = 12,
             Padding = new Thickness(8, 3),
-            Margin = new Thickness(0, 0, 8, 0),
+            Margin = new Thickness(0, 0, 4, 0),
         };
         _primarySlotBtn.Click += (_, _) => SetEditingSlot(1);
         _secondarySlotBtn.Click += (_, _) => SetEditingSlot(2);
@@ -370,15 +416,15 @@ public class KeyboardSettingsSection : UserControl {
         var outerNeedsScroll = outer != null && outer.Extent.Height > outer.Viewport.Height;
         var scrollInner = e.KeyModifiers.HasFlag(KeyModifiers.Control) || !outerNeedsScroll;
 
+        // Update hint synchronously during scroll (layout is already current).
         _scrollHint.IsVisible = outerNeedsScroll;
 
+        var delta = e.Delta.Y * 50;
         if (scrollInner) {
-            var delta = e.Delta.Y * 50;
             _commandScroll.Offset = new Vector(
                 _commandScroll.Offset.X,
                 _commandScroll.Offset.Y - delta);
         } else {
-            var delta = e.Delta.Y * 50;
             outer!.Offset = new Vector(
                 outer.Offset.X,
                 outer.Offset.Y - delta);
@@ -490,7 +536,7 @@ public class KeyboardSettingsSection : UserControl {
 
     private void SelectCommand(string commandId) {
         _selectedCommandId = commandId;
-        _capturedGesture = null;
+        _captured = null;
         _captureBox.Text = "";
         _conflictLabel.Text = "";
         _captureClearBtn.IsVisible = false;
@@ -522,7 +568,7 @@ public class KeyboardSettingsSection : UserControl {
     // =====================================================================
 
     private void ClearCapturedGesture() {
-        _capturedGesture = null;
+        _captured = null;
         _captureBox.Text = "";
         _conflictLabel.Text = "";
         _captureClearBtn.IsVisible = false;
@@ -539,19 +585,31 @@ public class KeyboardSettingsSection : UserControl {
             return;
         }
 
-        _capturedGesture = new KeyGesture(e.Key, e.KeyModifiers);
-        _captureBox.Text = _capturedGesture.ToString();
+        var gesture = new KeyGesture(e.Key, e.KeyModifiers);
+
+        // Auto-detect chord: if a single gesture was already captured, the
+        // second key press completes a chord. If a chord was captured, the
+        // next key starts over as a new single gesture.
+        if (_captured is { IsChord: true }) {
+            // Chord was captured — start over with new single gesture.
+            _captured = new ChordGesture(gesture);
+        } else if (_captured != null) {
+            // Single gesture was captured — second key completes chord.
+            _captured = new ChordGesture(_captured.First, gesture);
+        } else {
+            // Nothing captured — first key press.
+            _captured = new ChordGesture(gesture);
+        }
+
+        _captureBox.Text = _captured.ToString();
         _captureClearBtn.IsVisible = true;
 
-        // Check for conflicts
+        // Check for conflicts.
         if (_selectedCommandId != null) {
-            var conflict = _keyBindings.FindConflict(_capturedGesture, _selectedCommandId);
-            if (conflict != null) {
-                var desc = KeyBindingService.GetDescriptor(conflict);
-                _conflictLabel.Text = $"Conflict: {desc?.DisplayName ?? conflict}";
-            } else {
-                _conflictLabel.Text = "";
-            }
+            var conflict = _keyBindings.FindConflict(_captured, _selectedCommandId);
+            _conflictLabel.Text = conflict != null
+                ? $"Conflict: {KeyBindingService.GetDescriptor(conflict)?.DisplayName ?? conflict}"
+                : "";
         }
 
         UpdateButtonStates();
@@ -563,25 +621,21 @@ public class KeyboardSettingsSection : UserControl {
     // =====================================================================
 
     private void OnAssign(object? sender, Avalonia.Interactivity.RoutedEventArgs e) {
-        if (_selectedCommandId == null || _capturedGesture == null) {
-            return;
-        }
-        if (_editingSlot == 1) {
-            _keyBindings.SetBinding(_selectedCommandId, _capturedGesture);
+        if (_selectedCommandId == null || _captured == null) return;
+        if (_editingSlot == 2) {
+            _keyBindings.SetBinding2(_selectedCommandId, _captured);
         } else {
-            _keyBindings.SetBinding2(_selectedCommandId, _capturedGesture);
+            _keyBindings.SetBinding(_selectedCommandId, _captured);
         }
         RefreshAfterChange();
     }
 
     private void OnRemove(object? sender, Avalonia.Interactivity.RoutedEventArgs e) {
-        if (_selectedCommandId == null) {
-            return;
-        }
-        if (_editingSlot == 1) {
-            _keyBindings.SetBinding(_selectedCommandId, null);
-        } else {
+        if (_selectedCommandId == null) return;
+        if (_editingSlot == 2) {
             _keyBindings.SetBinding2(_selectedCommandId, null);
+        } else {
+            _keyBindings.SetBinding(_selectedCommandId, null);
         }
         RefreshAfterChange();
     }
@@ -604,7 +658,7 @@ public class KeyboardSettingsSection : UserControl {
             SelectCommand(selected);
         }
 
-        _capturedGesture = null;
+        _captured = null;
         _captureBox.Text = "";
         _conflictLabel.Text = "";
         _captureClearBtn.IsVisible = false;
@@ -614,7 +668,7 @@ public class KeyboardSettingsSection : UserControl {
     }
 
     private void UpdateButtonStates() {
-        _assignBtn.IsEnabled = _selectedCommandId != null && _capturedGesture != null;
+        _assignBtn.IsEnabled = _selectedCommandId != null && _captured != null;
 
         if (_selectedCommandId != null) {
             var activeGesture = _editingSlot == 1
@@ -633,6 +687,9 @@ public class KeyboardSettingsSection : UserControl {
     // =====================================================================
 
     private void ApplyFilter() {
+        var nameSearch = _nameFilter.Text?.Trim();
+        var hasNameFilter = !string.IsNullOrEmpty(nameSearch);
+
         foreach (var (header, category, rows) in _categoryGroups) {
             var categoryMatch = _activeCategory == null || _activeCategory == category;
             var anyVisible = false;
@@ -641,20 +698,19 @@ public class KeyboardSettingsSection : UserControl {
                 if (row.Tag is string commandId) {
                     var visible = categoryMatch;
 
+                    // Name filter: match display name (case-insensitive substring).
+                    if (visible && hasNameFilter) {
+                        var desc = KeyBindingService.GetDescriptor(commandId);
+                        visible = desc != null
+                            && desc.DisplayName.Contains(nameSearch!,
+                                StringComparison.OrdinalIgnoreCase);
+                    }
+
                     // Keystroke filter: match by key (modifiers must be subset).
-                    // Check both primary and secondary gestures.
+                    // Checks both gesture slots; chords match on either key.
                     if (visible && _keyFilter != null) {
-                        var g1 = _keyBindings.GetGesture(commandId);
-                        var g2 = _keyBindings.GetGesture2(commandId);
-                        var match1 = g1 != null
-                            && g1.Key == _keyFilter.Key
-                            && (g1.KeyModifiers & _keyFilter.KeyModifiers)
-                                == _keyFilter.KeyModifiers;
-                        var match2 = g2 != null
-                            && g2.Key == _keyFilter.Key
-                            && (g2.KeyModifiers & _keyFilter.KeyModifiers)
-                                == _keyFilter.KeyModifiers;
-                        visible = match1 || match2;
+                        visible = MatchesKeyFilter(_keyBindings.GetGesture(commandId))
+                            || MatchesKeyFilter(_keyBindings.GetGesture2(commandId));
                     }
 
                     row.IsVisible = visible;
@@ -664,8 +720,41 @@ public class KeyboardSettingsSection : UserControl {
                 }
             }
 
-            header.IsVisible = categoryMatch && (anyVisible || _keyFilter == null);
+            header.IsVisible = categoryMatch
+                && (anyVisible || (_keyFilter == null && !hasNameFilter));
         }
+
+        UpdateScrollHintVisibility();
+    }
+
+    private bool MatchesKeyFilter(ChordGesture? gesture) {
+        if (gesture == null || _keyFilter == null) return false;
+        if (gesture.IsChord) {
+            return MatchesSingleKey(gesture.First)
+                || MatchesSingleKey(gesture.Second!);
+        }
+        return MatchesSingleKey(gesture.First);
+    }
+
+    private bool MatchesSingleKey(KeyGesture g) =>
+        _keyFilter != null
+        && g.Key == _keyFilter.Key
+        && (g.KeyModifiers & _keyFilter.KeyModifiers) == _keyFilter.KeyModifiers;
+
+    // =====================================================================
+    // Scroll hint visibility
+    // =====================================================================
+
+    /// <summary>
+    /// Recalculates whether the "Ctrl+Scroll" hint should be visible.
+    /// Deferred to run after layout so extent/viewport sizes are current.
+    /// </summary>
+    private void UpdateScrollHintVisibility() {
+        Dispatcher.UIThread.Post(() => {
+            var outer = FindOuterScrollViewer(_commandScroll);
+            _scrollHint.IsVisible = outer != null
+                && outer.Extent.Height > outer.Viewport.Height;
+        });
     }
 
     // =====================================================================
@@ -707,6 +796,10 @@ public class KeyboardSettingsSection : UserControl {
         // Labels
         _shortcutLabel.Foreground = theme.EditorForeground;
         _conflictLabel.Foreground = theme.SettingsWarnForeground;
+
+        // Name filter + its clear button
+        _nameFilter.Foreground = theme.EditorForeground;
+        _nameFilterClearBtn.Foreground = theme.EditorForeground;
 
         // Capture box + its clear button
         _captureBox.Foreground = theme.EditorForeground;

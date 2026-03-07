@@ -70,7 +70,10 @@ public static class CommandRegistry {
         // -- View --
         new(CommandIds.ViewLineNumbers, "Line Numbers"),
         new(CommandIds.ViewStatusBar, "Status Bar"),
-        new(CommandIds.ViewWrapLines, "Wrap Lines"),
+        new(CommandIds.ViewWrapLines, "Wrap Lines",
+            new ChordGesture(
+                new KeyGesture(Key.E, KeyModifiers.Control),
+                new KeyGesture(Key.W, KeyModifiers.Control))),
 
         // -- Window --
         new(CommandIds.WindowNextTab, "Next Tab",

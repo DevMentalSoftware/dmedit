@@ -11,8 +11,8 @@ namespace DevMentalMd.App.Commands;
 public sealed record CommandDescriptor(
     string Id,
     string DisplayName,
-    KeyGesture? Gesture = null,
-    KeyGesture? Gesture2 = null) {
+    ChordGesture? Gesture = null,
+    ChordGesture? Gesture2 = null) {
     /// <summary>
     /// The category prefix extracted from <see cref="Id"/>
     /// (everything before the first dot).

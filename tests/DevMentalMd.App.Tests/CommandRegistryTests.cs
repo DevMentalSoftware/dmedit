@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Avalonia.Input;
 using DevMentalMd.App.Commands;
 
 namespace DevMentalMd.App.Tests;
@@ -13,20 +15,21 @@ public class CommandRegistryTests {
 
     [Fact]
     public void AllDefaultGesturesAreUnique() {
-        // Collect gestures from both Gesture and Gesture2 columns.
-        var entries = new List<(string Id, Avalonia.Input.KeyGesture Gesture)>();
+        // Collect single-key gestures from both Gesture and Gesture2 columns.
+        // Chords are excluded — they don't occupy the single-key space.
+        var entries = new List<(string Id, KeyGesture Gesture)>();
 
         foreach (var cmd in CommandRegistry.All) {
-            if (cmd.Gesture != null) {
-                entries.Add((cmd.Id + " (Gesture)", cmd.Gesture));
+            if (cmd.Gesture is { IsChord: false }) {
+                entries.Add((cmd.Id + " (Gesture)", cmd.Gesture.First));
             }
-            if (cmd.Gesture2 != null) {
-                entries.Add((cmd.Id + " (Gesture2)", cmd.Gesture2));
+            if (cmd.Gesture2 is { IsChord: false }) {
+                entries.Add((cmd.Id + " (Gesture2)", cmd.Gesture2.First));
             }
         }
 
         var comparer = KeyGestureComparer.Instance;
-        var seen = new HashSet<Avalonia.Input.KeyGesture>(comparer);
+        var seen = new HashSet<KeyGesture>(comparer);
         var duplicates = new List<string>();
 
         foreach (var (id, gesture) in entries) {
@@ -37,6 +40,32 @@ public class CommandRegistryTests {
 
         Assert.True(duplicates.Count == 0,
             $"Duplicate default gestures: {string.Join(", ", duplicates)}");
+    }
+
+    [Fact]
+    public void AllDefaultChordsAreUnique() {
+        // Collect chord gestures from both gesture slots.
+        var seen = new HashSet<(int, int, int, int)>();
+        var duplicates = new List<string>();
+
+        foreach (var cmd in CommandRegistry.All) {
+            CheckChord(cmd.Id, cmd.Gesture, seen, duplicates);
+            CheckChord(cmd.Id, cmd.Gesture2, seen, duplicates);
+        }
+
+        Assert.True(duplicates.Count == 0,
+            $"Duplicate default chords: {string.Join(", ", duplicates)}");
+    }
+
+    private static void CheckChord(string cmdId, ChordGesture? gesture,
+        HashSet<(int, int, int, int)> seen, List<string> duplicates) {
+        if (gesture is not { IsChord: true }) return;
+        var key = (
+            (int)gesture.First.Key, (int)gesture.First.KeyModifiers,
+            (int)gesture.Second!.Key, (int)gesture.Second.KeyModifiers);
+        if (!seen.Add(key)) {
+            duplicates.Add($"{cmdId} ({gesture})");
+        }
     }
 
     [Fact]
@@ -64,12 +93,10 @@ public class CommandRegistryTests {
 
         var registryIds = CommandRegistry.All.Select(c => c.Id).ToHashSet();
 
-        // Every const in CommandIds should be in the registry.
         var missing = fields.Except(registryIds).ToList();
         Assert.True(missing.Count == 0,
             $"CommandIds constants not in registry: {string.Join(", ", missing)}");
 
-        // Every registry entry should have a CommandIds constant.
         var extra = registryIds.Except(fields).ToList();
         Assert.True(extra.Count == 0,
             $"Registry entries without CommandIds constant: {string.Join(", ", extra)}");
@@ -77,8 +104,6 @@ public class CommandRegistryTests {
 
     [Fact]
     public void AllCommandIdsContainDot() {
-        // Category is derived from Id prefix before the first dot.
-        // Ensure every Id has at least one dot so Category doesn't throw.
         foreach (var cmd in CommandRegistry.All) {
             Assert.Contains('.', cmd.Id);
         }

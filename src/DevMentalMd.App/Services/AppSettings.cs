@@ -163,6 +163,12 @@ public sealed class AppSettings {
     /// </summary>
     public Dictionary<string, string>? KeyBinding2Overrides { get; set; }
 
+    /// <summary>
+    /// Timeout in milliseconds before a pending chord prefix is cancelled.
+    /// Default: 3000 (3 seconds).
+    /// </summary>
+    public int ChordTimeoutMs { get; set; } = 3000;
+
     // -----------------------------------------------------------------
     // Load / Save
     // -----------------------------------------------------------------

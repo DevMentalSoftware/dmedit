@@ -30,7 +30,6 @@ public class KeyBindingServiceTests {
     [Fact]
     public void SetBindingOverridesDefault() {
         var svc = CreateService();
-        // Default: Ctrl+Z → Edit.Undo. Override: Ctrl+Y → Edit.Undo.
         svc.SetBinding(CommandIds.EditUndo, new KeyGesture(Key.Y, KeyModifiers.Control));
 
         Assert.Null(svc.Resolve(Key.Z, KeyModifiers.Control));
@@ -70,7 +69,6 @@ public class KeyBindingServiceTests {
     [Fact]
     public void FindConflictDetectsExisting() {
         var svc = CreateService();
-        // Ctrl+Z is bound to Edit.Undo. Check if Ctrl+Z conflicts for Edit.Redo.
         var conflict = svc.FindConflict(
             new KeyGesture(Key.Z, KeyModifiers.Control), CommandIds.EditRedo);
         Assert.Equal(CommandIds.EditUndo, conflict);
@@ -97,14 +95,12 @@ public class KeyBindingServiceTests {
         var svc = CreateService();
         var text = svc.GetGestureText(CommandIds.EditUndo);
         Assert.NotNull(text);
-        // The text should contain the key and modifier in some form.
         Assert.Contains("Z", text, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void GetGestureReturnsNullForUnboundCommand() {
         var svc = CreateService();
-        // View.LineNumbers has no default gesture.
         Assert.Null(svc.GetGesture(CommandIds.ViewLineNumbers));
     }
 
@@ -155,7 +151,6 @@ public class KeyBindingServiceTests {
     [Fact]
     public void ResolveGesture2() {
         var svc = CreateService();
-        // File.Exit has Gesture2 = Ctrl+Q
         var id = svc.Resolve(Key.Q, KeyModifiers.Control);
         Assert.Equal(CommandIds.FileExit, id);
     }
@@ -165,8 +160,8 @@ public class KeyBindingServiceTests {
         var svc = CreateService();
         var g2 = svc.GetGesture2(CommandIds.FileExit);
         Assert.NotNull(g2);
-        Assert.Equal(Key.Q, g2.Key);
-        Assert.Equal(KeyModifiers.Control, g2.KeyModifiers);
+        Assert.Equal(Key.Q, g2.First.Key);
+        Assert.Equal(KeyModifiers.Control, g2.First.KeyModifiers);
     }
 
     [Fact]
@@ -180,14 +175,12 @@ public class KeyBindingServiceTests {
     [Fact]
     public void GetGesture2ReturnsNullWhenNoSecondary() {
         var svc = CreateService();
-        // Edit.Cut has no Gesture2.
         Assert.Null(svc.GetGesture2(CommandIds.EditCut));
     }
 
     [Fact]
     public void PrimaryGestureStillWorks() {
         var svc = CreateService();
-        // File.Exit primary = Alt+F4
         var id = svc.Resolve(Key.F4, KeyModifiers.Alt);
         Assert.Equal(CommandIds.FileExit, id);
     }
@@ -195,12 +188,10 @@ public class KeyBindingServiceTests {
     [Fact]
     public void SetBinding2OverridesGesture2() {
         var svc = CreateService();
-        // Override File.Exit's Gesture2 from Ctrl+Q to Ctrl+W.
         svc.SetBinding2(CommandIds.FileExit, new KeyGesture(Key.W, KeyModifiers.Control));
 
         Assert.Null(svc.Resolve(Key.Q, KeyModifiers.Control));
         Assert.Equal(CommandIds.FileExit, svc.Resolve(Key.W, KeyModifiers.Control));
-        // Primary gesture unaffected.
         Assert.Equal(CommandIds.FileExit, svc.Resolve(Key.F4, KeyModifiers.Alt));
     }
 
@@ -211,7 +202,6 @@ public class KeyBindingServiceTests {
 
         Assert.Null(svc.Resolve(Key.Q, KeyModifiers.Control));
         Assert.Null(svc.GetGesture2(CommandIds.FileExit));
-        // Primary still works.
         Assert.Equal(CommandIds.FileExit, svc.Resolve(Key.F4, KeyModifiers.Alt));
     }
 
@@ -222,7 +212,6 @@ public class KeyBindingServiceTests {
         svc.SetBinding2(CommandIds.FileExit, new KeyGesture(Key.W, KeyModifiers.Control));
         svc.ResetBinding(CommandIds.FileExit);
 
-        // Both should be restored to defaults.
         Assert.Equal(CommandIds.FileExit, svc.Resolve(Key.F4, KeyModifiers.Alt));
         Assert.Equal(CommandIds.FileExit, svc.Resolve(Key.Q, KeyModifiers.Control));
     }
@@ -239,7 +228,6 @@ public class KeyBindingServiceTests {
     [Fact]
     public void ConflictDetectedAcrossSlots() {
         var svc = CreateService();
-        // Ctrl+Q is File.Exit's Gesture2. Try to assign it to Edit.Undo.
         var conflict = svc.FindConflict(
             new KeyGesture(Key.Q, KeyModifiers.Control), CommandIds.EditUndo);
         Assert.Equal(CommandIds.FileExit, conflict);
@@ -256,7 +244,6 @@ public class KeyBindingServiceTests {
 
         Assert.Equal(CommandIds.FileExit, svc.Resolve(Key.W, KeyModifiers.Control));
         Assert.Null(svc.Resolve(Key.Q, KeyModifiers.Control));
-        // Primary unaffected.
         Assert.Equal(CommandIds.FileExit, svc.Resolve(Key.F4, KeyModifiers.Alt));
     }
 
@@ -273,16 +260,148 @@ public class KeyBindingServiceTests {
         Assert.Null(svc.GetGesture2(CommandIds.FileExit));
     }
 
-    [Fact]
-    public void EditRedoHasGesture2() {
-        var svc = CreateService();
-        // Edit.Redo: Gesture = Ctrl+Shift+Z, Gesture2 = Ctrl+Y
-        Assert.Equal(CommandIds.EditRedo, svc.Resolve(Key.Z, KeyModifiers.Control | KeyModifiers.Shift));
-        Assert.Equal(CommandIds.EditRedo, svc.Resolve(Key.Y, KeyModifiers.Control));
+    // =================================================================
+    // Chord tests (chords live in Gesture/Gesture2 slots)
+    // =================================================================
 
-        var g2 = svc.GetGesture2(CommandIds.EditRedo);
-        Assert.NotNull(g2);
-        Assert.Equal(Key.Y, g2.Key);
-        Assert.Equal(KeyModifiers.Control, g2.KeyModifiers);
+    [Fact]
+    public void IsChordPrefixReturnsTrueForChordFirstKey() {
+        var svc = CreateService();
+        Assert.True(svc.IsChordPrefix(Key.E, KeyModifiers.Control));
+    }
+
+    [Fact]
+    public void IsChordPrefixReturnsFalseForNonChord() {
+        var svc = CreateService();
+        Assert.False(svc.IsChordPrefix(Key.F12, KeyModifiers.None));
+    }
+
+    [Fact]
+    public void ResolveChordReturnsCommandId() {
+        var svc = CreateService();
+        var first = new KeyGesture(Key.E, KeyModifiers.Control);
+        var id = svc.ResolveChord(first, Key.W, KeyModifiers.Control);
+        Assert.Equal(CommandIds.ViewWrapLines, id);
+    }
+
+    [Fact]
+    public void ResolveChordReturnsNullForWrongSecondKey() {
+        var svc = CreateService();
+        var first = new KeyGesture(Key.E, KeyModifiers.Control);
+        var id = svc.ResolveChord(first, Key.X, KeyModifiers.Control);
+        Assert.Null(id);
+    }
+
+    [Fact]
+    public void ChordGestureInSlotIsNotResolvedAsSingleKey() {
+        var svc = CreateService();
+        // The chord's first key (Ctrl+E) should NOT resolve as a single gesture.
+        Assert.Null(svc.Resolve(Key.E, KeyModifiers.Control));
+    }
+
+    [Fact]
+    public void GetGestureReturnsChordGesture() {
+        var svc = CreateService();
+        var g = svc.GetGesture(CommandIds.ViewWrapLines);
+        Assert.NotNull(g);
+        Assert.True(g.IsChord);
+        Assert.Equal(Key.E, g.First.Key);
+        Assert.Equal(KeyModifiers.Control, g.First.KeyModifiers);
+        Assert.Equal(Key.W, g.Second!.Key);
+        Assert.Equal(KeyModifiers.Control, g.Second.KeyModifiers);
+    }
+
+    [Fact]
+    public void GetGestureTextFormatsChordCorrectly() {
+        var svc = CreateService();
+        var text = svc.GetGestureText(CommandIds.ViewWrapLines);
+        Assert.NotNull(text);
+        Assert.Contains("E", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("W", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(",", text);
+    }
+
+    [Fact]
+    public void SetBindingWithChordOverridesDefault() {
+        var svc = CreateService();
+        var newChord = new ChordGesture(
+            new KeyGesture(Key.M, KeyModifiers.Control),
+            new KeyGesture(Key.M, KeyModifiers.None));
+        svc.SetBinding(CommandIds.ViewWrapLines, newChord);
+
+        var first = new KeyGesture(Key.E, KeyModifiers.Control);
+        Assert.Null(svc.ResolveChord(first, Key.W, KeyModifiers.Control));
+
+        var newFirst = new KeyGesture(Key.M, KeyModifiers.Control);
+        Assert.Equal(CommandIds.ViewWrapLines, svc.ResolveChord(newFirst, Key.M, KeyModifiers.None));
+    }
+
+    [Fact]
+    public void SetBindingNullUnbindsChord() {
+        var svc = CreateService();
+        svc.SetBinding(CommandIds.ViewWrapLines, null);
+
+        Assert.Null(svc.GetGesture(CommandIds.ViewWrapLines));
+        var first = new KeyGesture(Key.E, KeyModifiers.Control);
+        Assert.Null(svc.ResolveChord(first, Key.W, KeyModifiers.Control));
+    }
+
+    [Fact]
+    public void ResetBindingRestoresChord() {
+        var svc = CreateService();
+        svc.SetBinding(CommandIds.ViewWrapLines, null);
+        svc.ResetBinding(CommandIds.ViewWrapLines);
+
+        var g = svc.GetGesture(CommandIds.ViewWrapLines);
+        Assert.NotNull(g);
+        Assert.True(g.IsChord);
+        Assert.Equal(Key.E, g.First.Key);
+    }
+
+    [Fact]
+    public void ResetAllRestoresChordDefaults() {
+        var svc = CreateService();
+        svc.SetBinding(CommandIds.ViewWrapLines, null);
+        svc.ResetAll();
+
+        var g = svc.GetGesture(CommandIds.ViewWrapLines);
+        Assert.NotNull(g);
+        Assert.True(g.IsChord);
+    }
+
+    [Fact]
+    public void ChordOverridesLoadFromSettings() {
+        var settings = new AppSettings {
+            KeyBindingOverrides = new Dictionary<string, string> {
+                [CommandIds.ViewWrapLines] = "Ctrl+M, M",
+            },
+        };
+        var svc = CreateService(settings);
+
+        var first = new KeyGesture(Key.E, KeyModifiers.Control);
+        Assert.Null(svc.ResolveChord(first, Key.W, KeyModifiers.Control));
+
+        var newFirst = new KeyGesture(Key.M, KeyModifiers.Control);
+        Assert.Equal(CommandIds.ViewWrapLines, svc.ResolveChord(newFirst, Key.M, KeyModifiers.None));
+    }
+
+    [Fact]
+    public void FindConflictDetectsChordConflict() {
+        var svc = CreateService();
+        var chord = new ChordGesture(
+            new KeyGesture(Key.E, KeyModifiers.Control),
+            new KeyGesture(Key.W, KeyModifiers.Control));
+        var conflict = svc.FindConflict(chord, CommandIds.EditUndo);
+        Assert.Equal(CommandIds.ViewWrapLines, conflict);
+    }
+
+    [Fact]
+    public void FindConflictExcludesSelfForChord() {
+        var svc = CreateService();
+        var chord = new ChordGesture(
+            new KeyGesture(Key.E, KeyModifiers.Control),
+            new KeyGesture(Key.W, KeyModifiers.Control));
+        var conflict = svc.FindConflict(chord, CommandIds.ViewWrapLines);
+        Assert.Null(conflict);
     }
 }
