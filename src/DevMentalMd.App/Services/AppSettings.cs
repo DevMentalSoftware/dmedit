@@ -150,12 +150,18 @@ public sealed class AppSettings {
     // -----------------------------------------------------------------
 
     /// <summary>
-    /// User overrides for keyboard shortcuts. Maps command ID (e.g.
+    /// User overrides for primary keyboard shortcuts. Maps command ID (e.g.
     /// <c>"Edit.Undo"</c>) to gesture string (e.g. <c>"Ctrl+Y"</c>).
     /// Empty string means the command is explicitly unbound.
     /// Null means no overrides — all defaults from CommandRegistry apply.
     /// </summary>
     public Dictionary<string, string>? KeyBindingOverrides { get; set; }
+
+    /// <summary>
+    /// User overrides for secondary keyboard shortcuts. Same format as
+    /// <see cref="KeyBindingOverrides"/> but for the Gesture2 slot.
+    /// </summary>
+    public Dictionary<string, string>? KeyBinding2Overrides { get; set; }
 
     // -----------------------------------------------------------------
     // Load / Save

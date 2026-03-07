@@ -13,16 +13,23 @@ public class CommandRegistryTests {
 
     [Fact]
     public void AllDefaultGesturesAreUnique() {
-        var gestures = CommandRegistry.All
-            .Where(c => c.DefaultGesture != null)
-            .Select(c => (c.Id, c.DefaultGesture!))
-            .ToList();
+        // Collect gestures from both Gesture and Gesture2 columns.
+        var entries = new List<(string Id, Avalonia.Input.KeyGesture Gesture)>();
+
+        foreach (var cmd in CommandRegistry.All) {
+            if (cmd.Gesture != null) {
+                entries.Add((cmd.Id + " (Gesture)", cmd.Gesture));
+            }
+            if (cmd.Gesture2 != null) {
+                entries.Add((cmd.Id + " (Gesture2)", cmd.Gesture2));
+            }
+        }
 
         var comparer = KeyGestureComparer.Instance;
         var seen = new HashSet<Avalonia.Input.KeyGesture>(comparer);
         var duplicates = new List<string>();
 
-        foreach (var (id, gesture) in gestures) {
+        foreach (var (id, gesture) in entries) {
             if (!seen.Add(gesture)) {
                 duplicates.Add($"{id} ({gesture})");
             }
@@ -69,9 +76,11 @@ public class CommandRegistryTests {
     }
 
     [Fact]
-    public void CommandIdFormatIsCategoryDotName() {
+    public void AllCommandIdsContainDot() {
+        // Category is derived from Id prefix before the first dot.
+        // Ensure every Id has at least one dot so Category doesn't throw.
         foreach (var cmd in CommandRegistry.All) {
-            Assert.StartsWith(cmd.Category + ".", cmd.Id);
+            Assert.Contains('.', cmd.Id);
         }
     }
 }

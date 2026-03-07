@@ -16,8 +16,8 @@ namespace DevMentalMd.App.Settings;
 /// <summary>
 /// Custom settings section for keyboard shortcut configuration. Displays a
 /// toolbar with category quick-filter buttons and a keystroke filter, a
-/// scrollable 3-column command list, and a bottom row with key capture box,
-/// conflict label, and assign/remove/reset buttons.
+/// scrollable 3-column command list, and a bottom row with slot toggle,
+/// key capture box, conflict label, and assign/remove/reset buttons.
 /// </summary>
 public class KeyboardSettingsSection : UserControl {
     private readonly KeyBindingService _keyBindings;
@@ -43,11 +43,16 @@ public class KeyboardSettingsSection : UserControl {
     private readonly Button _resetBtn;
     private readonly TextBlock _scrollHint;
 
+    // -- Slot toggle --
+    private readonly Button _primarySlotBtn;
+    private readonly Button _secondarySlotBtn;
+
     // -- State --
     private string? _selectedCommandId;
     private KeyGesture? _capturedGesture;
     private string? _activeCategory;        // null = All
     private KeyGesture? _keyFilter;         // keystroke filter
+    private int _editingSlot = 1;           // 1 = primary, 2 = secondary
     private EditorTheme _theme = EditorTheme.Light;
 
     // Tracks all command row borders for selection highlighting.
@@ -75,7 +80,7 @@ public class KeyboardSettingsSection : UserControl {
         // Category quick-filter buttons
         var categories = new List<String>(CommandRegistry.Categories.Count + 1);
         categories.Add("All");
-        categories.AddRange(CommandRegistry.Categories);    
+        categories.AddRange(CommandRegistry.Categories);
         foreach (var cat in categories) {
             var btn = new Button {
                 Content = cat,
@@ -163,7 +168,25 @@ public class KeyboardSettingsSection : UserControl {
         };
 
         // =====================================================================
-        // Bottom controls: capture box + clear + conflict + buttons on one line
+        // Slot toggle: Primary / Secondary
+        // =====================================================================
+        _primarySlotBtn = new Button {
+            Content = "Primary",
+            FontSize = 12,
+            Padding = new Thickness(8, 3),
+            Margin = new Thickness(0, 0, 4, 0),
+        };
+        _secondarySlotBtn = new Button {
+            Content = "Secondary",
+            FontSize = 12,
+            Padding = new Thickness(8, 3),
+            Margin = new Thickness(0, 0, 8, 0),
+        };
+        _primarySlotBtn.Click += (_, _) => SetEditingSlot(1);
+        _secondarySlotBtn.Click += (_, _) => SetEditingSlot(2);
+
+        // =====================================================================
+        // Bottom controls: slot toggle + capture box + clear + conflict + buttons
         // =====================================================================
         _captureBox = new TextBox {
             Watermark = "Press shortcut keys\u2026",
@@ -208,6 +231,8 @@ public class KeyboardSettingsSection : UserControl {
             Orientation = Orientation.Horizontal,
             Margin = new Thickness(0, 4, 0, 0),
         };
+        bottomRow.Children.Add(_primarySlotBtn);
+        bottomRow.Children.Add(_secondarySlotBtn);
         bottomRow.Children.Add(_captureBox);
         bottomRow.Children.Add(_captureClearBtn);
         bottomRow.Children.Add(_conflictLabel);
@@ -223,6 +248,7 @@ public class KeyboardSettingsSection : UserControl {
             FontSize = 11,
             Foreground = _theme.SettingsDimForeground,
             Margin = new Thickness(24, 0, 0, 2),
+            IsVisible = false, // Shown dynamically when outer page needs scrolling.
         };
 
         var root = new StackPanel { Margin = new Thickness(12, 8, 12, 8) };
@@ -236,6 +262,7 @@ public class KeyboardSettingsSection : UserControl {
 
         BuildCommandList();
         UpdateCategoryButtonStyles();
+        UpdateSlotButtonStyles();
         UpdateButtonStates();
     }
 
@@ -258,6 +285,28 @@ public class KeyboardSettingsSection : UserControl {
                     || (_activeCategory != null && tag == _activeCategory));
             btn.Background = isActive ? _theme.SettingsButtonActive : Brushes.Transparent;
         }
+    }
+
+    // =====================================================================
+    // Slot toggle
+    // =====================================================================
+
+    private void SetEditingSlot(int slot) {
+        _editingSlot = slot;
+        UpdateSlotButtonStyles();
+        ClearCapturedGesture();
+        // Refresh the shortcut label to reflect the active slot.
+        if (_selectedCommandId != null) {
+            UpdateShortcutLabel(_selectedCommandId);
+        }
+        UpdateButtonStates();
+    }
+
+    private void UpdateSlotButtonStyles() {
+        _primarySlotBtn.Background = _editingSlot == 1
+            ? _theme.SettingsButtonActive : Brushes.Transparent;
+        _secondarySlotBtn.Background = _editingSlot == 2
+            ? _theme.SettingsButtonActive : Brushes.Transparent;
     }
 
     // =====================================================================
@@ -309,6 +358,8 @@ public class KeyboardSettingsSection : UserControl {
         var outer = FindOuterScrollViewer(_commandScroll);
         var outerNeedsScroll = outer != null && outer.Extent.Height > outer.Viewport.Height;
         var scrollInner = e.KeyModifiers.HasFlag(KeyModifiers.Control) || !outerNeedsScroll;
+
+        _scrollHint.IsVisible = outerNeedsScroll;
 
         if (scrollInner) {
             var delta = e.Delta.Y * 50;
@@ -373,6 +424,7 @@ public class KeyboardSettingsSection : UserControl {
 
     private Border CreateCommandRow(CommandDescriptor cmd) {
         var gestureText = _keyBindings.GetGestureText(cmd.Id) ?? "";
+        var gesture2Text = _keyBindings.GetGesture2Text(cmd.Id) ?? "";
 
         var nameText = new TextBlock {
             Text = cmd.DisplayName,
@@ -389,8 +441,8 @@ public class KeyboardSettingsSection : UserControl {
             Tag = "dim",
         };
 
-        var descLabel = new TextBlock {
-            Text = cmd.Description ?? "",
+        var gesture2Label = new TextBlock {
+            Text = gesture2Text,
             FontSize = 12,
             Foreground = _theme.SettingsDimForeground,
             VerticalAlignment = VerticalAlignment.Center,
@@ -398,16 +450,16 @@ public class KeyboardSettingsSection : UserControl {
             Tag = "dim",
         };
 
-        // 3-column grid: Name (flex) | Gesture (fixed) | Description (flex)
+        // 3-column grid: Name (flex) | Gesture (fixed) | Gesture2 (flex)
         var grid = new Grid {
-            ColumnDefinitions = ColumnDefinitions.Parse("*,260,*"),
+            ColumnDefinitions = ColumnDefinitions.Parse("*,130,*"),
         };
         Grid.SetColumn(nameText, 0);
         Grid.SetColumn(gestureLabel, 1);
-        Grid.SetColumn(descLabel, 2);
+        Grid.SetColumn(gesture2Label, 2);
         grid.Children.Add(nameText);
         grid.Children.Add(gestureLabel);
-        grid.Children.Add(descLabel);
+        grid.Children.Add(gesture2Label);
 
         var border = new Border {
             Child = grid,
@@ -439,14 +491,19 @@ public class KeyboardSettingsSection : UserControl {
                 : Brushes.Transparent;
         }
 
-        // Show current binding
-        var gesture = _keyBindings.GetGestureText(commandId);
-        var desc = KeyBindingService.GetDescriptor(commandId);
-        _shortcutLabel.Text = gesture != null
-            ? $"Shortcut for {desc?.DisplayName ?? commandId}: {gesture}"
-            : $"Shortcut for {desc?.DisplayName ?? commandId}: (none)";
-
+        UpdateShortcutLabel(commandId);
         UpdateButtonStates();
+    }
+
+    private void UpdateShortcutLabel(string commandId) {
+        var gesture1 = _keyBindings.GetGestureText(commandId);
+        var gesture2 = _keyBindings.GetGesture2Text(commandId);
+        var desc = KeyBindingService.GetDescriptor(commandId);
+        var name = desc?.DisplayName ?? commandId;
+
+        var primary = gesture1 ?? "(none)";
+        var secondary = gesture2 ?? "(none)";
+        _shortcutLabel.Text = $"{name}:  Primary: {primary}  |  Secondary: {secondary}";
     }
 
     // =====================================================================
@@ -498,7 +555,11 @@ public class KeyboardSettingsSection : UserControl {
         if (_selectedCommandId == null || _capturedGesture == null) {
             return;
         }
-        _keyBindings.SetBinding(_selectedCommandId, _capturedGesture);
+        if (_editingSlot == 1) {
+            _keyBindings.SetBinding(_selectedCommandId, _capturedGesture);
+        } else {
+            _keyBindings.SetBinding2(_selectedCommandId, _capturedGesture);
+        }
         RefreshAfterChange();
     }
 
@@ -506,7 +567,11 @@ public class KeyboardSettingsSection : UserControl {
         if (_selectedCommandId == null) {
             return;
         }
-        _keyBindings.SetBinding(_selectedCommandId, null);
+        if (_editingSlot == 1) {
+            _keyBindings.SetBinding(_selectedCommandId, null);
+        } else {
+            _keyBindings.SetBinding2(_selectedCommandId, null);
+        }
         RefreshAfterChange();
     }
 
@@ -539,8 +604,16 @@ public class KeyboardSettingsSection : UserControl {
 
     private void UpdateButtonStates() {
         _assignBtn.IsEnabled = _selectedCommandId != null && _capturedGesture != null;
-        _removeBtn.IsEnabled = _selectedCommandId != null
-                               && _keyBindings.GetGesture(_selectedCommandId) != null;
+
+        if (_selectedCommandId != null) {
+            var activeGesture = _editingSlot == 1
+                ? _keyBindings.GetGesture(_selectedCommandId)
+                : _keyBindings.GetGesture2(_selectedCommandId);
+            _removeBtn.IsEnabled = activeGesture != null;
+        } else {
+            _removeBtn.IsEnabled = false;
+        }
+
         _resetBtn.IsEnabled = _selectedCommandId != null;
     }
 
@@ -558,15 +631,19 @@ public class KeyboardSettingsSection : UserControl {
                     var visible = categoryMatch;
 
                     // Keystroke filter: match by key (modifiers must be subset).
+                    // Check both primary and secondary gestures.
                     if (visible && _keyFilter != null) {
-                        var cmdGesture = _keyBindings.GetGesture(commandId);
-                        if (cmdGesture == null) {
-                            visible = false;
-                        } else {
-                            visible = cmdGesture.Key == _keyFilter.Key
-                                && (cmdGesture.KeyModifiers & _keyFilter.KeyModifiers)
-                                    == _keyFilter.KeyModifiers;
-                        }
+                        var g1 = _keyBindings.GetGesture(commandId);
+                        var g2 = _keyBindings.GetGesture2(commandId);
+                        var match1 = g1 != null
+                            && g1.Key == _keyFilter.Key
+                            && (g1.KeyModifiers & _keyFilter.KeyModifiers)
+                                == _keyFilter.KeyModifiers;
+                        var match2 = g2 != null
+                            && g2.Key == _keyFilter.Key
+                            && (g2.KeyModifiers & _keyFilter.KeyModifiers)
+                                == _keyFilter.KeyModifiers;
+                        visible = match1 || match2;
                     }
 
                     row.IsVisible = visible;
@@ -637,7 +714,8 @@ public class KeyboardSettingsSection : UserControl {
             ? theme.EditorForeground
             : theme.SettingsDimForeground;
 
-        // Category button active states
+        // Category button + slot button active states
         UpdateCategoryButtonStyles();
+        UpdateSlotButtonStyles();
     }
 }
