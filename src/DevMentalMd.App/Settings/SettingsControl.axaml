@@ -39,6 +39,11 @@
                       HorizontalScrollBarVisibility="Disabled"
                       VerticalScrollBarVisibility="Auto"
                       AllowAutoHide="False">
+            <ScrollViewer.Styles>
+                <Style Selector="ScrollBar:vertical">
+                    <Setter Property="Margin" Value="0,0,0,8" />
+                </Style>
+            </ScrollViewer.Styles>
             <StackPanel x:Name="SettingsContent"
                         Spacing="0"
                         Margin="0,0,0,20" />
