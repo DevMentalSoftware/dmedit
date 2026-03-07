@@ -4,12 +4,15 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using DevMentalMd.App.Commands;
 using DevMentalMd.App.Services;
 
 namespace DevMentalMd.App.Settings;
 
 public partial class SettingsControl : UserControl {
     private AppSettings? _settings;
+    private KeyBindingService? _keyBindings;
+    private KeyboardSettingsSection? _keyboardSection;
     private readonly Dictionary<string, List<Border>> _rowsByCategory = new();
     private readonly Dictionary<string, TextBlock> _headersByCategory = new();
     private readonly List<Border> _allRows = [];
@@ -21,6 +24,11 @@ public partial class SettingsControl : UserControl {
     /// </summary>
     public event Action<string>? SettingChanged;
 
+    /// <summary>
+    /// Fired when any keyboard binding changes.
+    /// </summary>
+    public event Action? KeyBindingChanged;
+
     public SettingsControl() {
         InitializeComponent();
     }
@@ -28,11 +36,13 @@ public partial class SettingsControl : UserControl {
     /// <summary>
     /// Initializes the control with the given settings. Call once after construction.
     /// </summary>
-    public void Initialize(AppSettings settings) {
+    public void Initialize(AppSettings settings, KeyBindingService keyBindings) {
         _settings = settings;
+        _keyBindings = keyBindings;
         BuildCategoryList();
         BuildSettingRows();
         WireSearch();
+        ApplyFilter();
     }
 
     private void BuildCategoryList() {
@@ -54,6 +64,28 @@ public partial class SettingsControl : UserControl {
         if (_settings is null) return;
 
         foreach (var cat in SettingsRegistry.Categories) {
+            // "Keyboard" category gets a custom section instead of standard rows.
+            if (cat == "Keyboard") {
+                _rowsByCategory[cat] = [];
+                var kbHeader = new TextBlock {
+                    Text = cat,
+                    FontSize = 16,
+                    FontWeight = FontWeight.SemiBold,
+                    Margin = new Thickness(12, 16, 12, 4),
+                    Tag = cat,
+                };
+                _allHeaders.Add(kbHeader);
+                _headersByCategory[cat] = kbHeader;
+                SettingsContent.Children.Add(kbHeader);
+                if (_keyBindings != null) {
+                    _keyboardSection = new KeyboardSettingsSection(_keyBindings, _settings);
+                    _keyboardSection.IsVisible = false;
+                    _keyboardSection.BindingChanged += () => KeyBindingChanged?.Invoke();
+                    SettingsContent.Children.Add(_keyboardSection);
+                }
+                continue;
+            }
+
             _rowsByCategory[cat] = [];
 
             // Category header
@@ -88,9 +120,21 @@ public partial class SettingsControl : UserControl {
     private void ApplyFilter() {
         var search = SearchBox.Text?.Trim() ?? "";
         var showAllCategories = _selectedCategory == "All Settings";
+        var isKeyboardSelected = _selectedCategory == "Keyboard";
 
+        // Hide/show the keyboard section and its header based on category selection.
+        var showKeyboard = isKeyboardSelected
+            || (showAllCategories && string.IsNullOrEmpty(search));
+        if (_keyboardSection != null)
+            _keyboardSection.IsVisible = showKeyboard;
+        if (_headersByCategory.TryGetValue("Keyboard", out var kbH))
+            kbH.IsVisible = showKeyboard;
+
+        // Hide/show standard settings rows.
         foreach (var cat in SettingsRegistry.Categories) {
-            var showCategory = showAllCategories || _selectedCategory == cat;
+            if (cat == "Keyboard") continue;
+
+            var showCategory = (showAllCategories || _selectedCategory == cat) && !isKeyboardSelected;
             var anyVisible = false;
 
             if (_rowsByCategory.TryGetValue(cat, out var rows)) {
@@ -127,5 +171,7 @@ public partial class SettingsControl : UserControl {
         foreach (var header in _allHeaders) {
             header.Foreground = theme.EditorForeground;
         }
+
+        _keyboardSection?.ApplyTheme(theme);
     }
 }

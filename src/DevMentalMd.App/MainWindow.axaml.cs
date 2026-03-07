@@ -15,6 +15,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using DevMentalMd.App.Commands;
 using DevMentalMd.App.Services;
 using DevMentalMd.App.Settings;
 using DevMentalMd.Core.Buffers;
@@ -34,6 +35,7 @@ public partial class MainWindow : Window {
     private TabState? _activeTab;
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
     private readonly AppSettings _settings = AppSettings.Load();
+    private readonly KeyBindingService _keyBindings;
     private int _staticMenuItemCount;
     private readonly DispatcherTimer _statsTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private EditorTheme _theme = EditorTheme.Light;
@@ -45,6 +47,7 @@ public partial class MainWindow : Window {
 
     public MainWindow() {
         InitializeComponent();
+        _keyBindings = new KeyBindingService(_settings);
 
         // On Linux the WM ignores ExtendClientAreaToDecorationsHint and draws
         // its own title bar. Remove it so we can draw custom chrome buttons
@@ -63,6 +66,7 @@ public partial class MainWindow : Window {
         MenuOpen.Click += OnOpen;
         MenuSave.Click += OnSave;
         MenuSaveAs.Click += OnSaveAs;
+        MenuSaveAll.Click += (_, _) => SaveAll();
         MenuClose.Click += (_, _) => { if (_activeTab != null) CloseTab(_activeTab); };
         MenuCloseAll.Click += (_, _) => CloseAllTabs();
         MenuExit.Click += (_, _) => Close();
@@ -78,6 +82,7 @@ public partial class MainWindow : Window {
         WireStatsBar();
         WireWindowState();
         WireSettingsPanel();
+        SyncMenuGestures();
 
         // Clicking on empty menu bar space should fully dismiss any open menu,
         // but must not intercept clicks on actual MenuItems in the bar.
@@ -285,32 +290,153 @@ public partial class MainWindow : Window {
     }
 
     // -------------------------------------------------------------------------
-    // Keyboard shortcuts (tab switching)
+    // Centralized keyboard dispatch (command system)
     // -------------------------------------------------------------------------
 
     protected override void OnKeyDown(KeyEventArgs e) {
         base.OnKeyDown(e);
-        if (e.Key == Key.F4 && e.KeyModifiers.HasFlag(KeyModifiers.Control)) {
-            if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) {
-                CloseAllTabs();
-            } else if (_activeTab != null) {
-                CloseTab(_activeTab);
-            }
+
+        var commandId = _keyBindings.Resolve(e.Key, e.KeyModifiers);
+        if (commandId == null) return;
+
+        if (ExecuteWindowCommand(commandId)) {
             e.Handled = true;
-        } else if (e.Key == Key.Tab && e.KeyModifiers.HasFlag(KeyModifiers.Control)) {
-            if (_tabs.Count <= 1) {
-                e.Handled = true;
-                return;
-            }
-            var idx = _activeTab != null ? _tabs.IndexOf(_activeTab) : 0;
-            if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) {
-                idx = (idx - 1 + _tabs.Count) % _tabs.Count;
-            } else {
-                idx = (idx + 1) % _tabs.Count;
-            }
-            SwitchToTab(_tabs[idx]);
+        } else if (_activeTab is not { IsSettings: true }
+                   && Editor.ExecuteCommand(commandId)) {
             e.Handled = true;
         }
+    }
+
+    private bool ExecuteWindowCommand(string commandId) {
+        switch (commandId) {
+            // -- File --
+            case CommandIds.FileNew:
+                OnNew(null, null!);
+                return true;
+            case CommandIds.FileOpen:
+                OnOpen(null, null!);
+                return true;
+            case CommandIds.FileSave:
+                OnSave(null, null!);
+                return true;
+            case CommandIds.FileSaveAs:
+                OnSaveAs(null, null!);
+                return true;
+            case CommandIds.FileSaveAll:
+                SaveAll();
+                return true;
+            case CommandIds.FileClose:
+                if (_activeTab != null) CloseTab(_activeTab);
+                return true;
+            case CommandIds.FileCloseAll:
+                CloseAllTabs();
+                return true;
+            case CommandIds.FileExit:
+                Close();
+                return true;
+
+            // -- View --
+            case CommandIds.ViewLineNumbers:
+                ToggleLineNumbers();
+                return true;
+            case CommandIds.ViewStatusBar:
+                ToggleStatusBar();
+                return true;
+            case CommandIds.ViewWrapLines:
+                ToggleWrapLines();
+                return true;
+
+            // -- Window --
+            case CommandIds.WindowNextTab:
+                CycleTab(+1);
+                return true;
+            case CommandIds.WindowPrevTab:
+                CycleTab(-1);
+                return true;
+            case CommandIds.WindowSettings:
+                OpenSettings();
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    private void CycleTab(int direction) {
+        if (_tabs.Count <= 1) return;
+        var idx = _activeTab != null ? _tabs.IndexOf(_activeTab) : 0;
+        idx = (idx + direction + _tabs.Count) % _tabs.Count;
+        SwitchToTab(_tabs[idx]);
+    }
+
+    private void ToggleLineNumbers() {
+        var show = !_settings.ShowLineNumbers;
+        _settings.ShowLineNumbers = show;
+        _settings.ScheduleSave();
+        Editor.ShowLineNumbers = show;
+        _lineNumGlyph!.Opacity = show ? 1.0 : 0.0;
+    }
+
+    private void ToggleStatusBar() {
+        var show = !_settings.ShowStatusBar;
+        _settings.ShowStatusBar = show;
+        _settings.ScheduleSave();
+        _statusBarGlyph!.Opacity = show ? 1.0 : 0.0;
+        UpdateStatusBarVisibility();
+    }
+
+    private void ToggleWrapLines() {
+        var wrap = !_settings.WrapLines;
+        _settings.WrapLines = wrap;
+        _settings.ScheduleSave();
+        Editor.WrapLines = wrap;
+        _wrapLinesGlyph!.Opacity = wrap ? 1.0 : 0.0;
+    }
+
+    private void SaveAll() {
+        // Save All: save every tab that has a file path and is dirty.
+        foreach (var tab in _tabs) {
+            if (tab.FilePath != null && tab.IsDirty) {
+                _ = SaveToAsync(tab.FilePath);
+                tab.Document.MarkSavePoint();
+                tab.IsDirty = false;
+            }
+        }
+        UpdateTabBar();
+    }
+
+    /// <summary>
+    /// Updates menu item InputGesture text to reflect current key bindings.
+    /// Called after construction and after any binding change in settings.
+    /// </summary>
+    private void SyncMenuGestures() {
+        SetMenuGesture(MenuNew, CommandIds.FileNew);
+        SetMenuGesture(MenuOpen, CommandIds.FileOpen);
+        SetMenuGesture(MenuSave, CommandIds.FileSave);
+        SetMenuGesture(MenuSaveAs, CommandIds.FileSaveAs);
+        SetMenuGesture(MenuSaveAll, CommandIds.FileSaveAll);
+        SetMenuGesture(MenuClose, CommandIds.FileClose);
+        SetMenuGesture(MenuCloseAll, CommandIds.FileCloseAll);
+        SetMenuGesture(MenuExit, CommandIds.FileExit);
+        SetMenuGesture(MenuUndo, CommandIds.EditUndo);
+        SetMenuGesture(MenuRedo, CommandIds.EditRedo);
+        SetMenuGesture(MenuCut, CommandIds.EditCut);
+        SetMenuGesture(MenuCopy, CommandIds.EditCopy);
+        SetMenuGesture(MenuPaste, CommandIds.EditPaste);
+        SetMenuGesture(MenuPasteMore, CommandIds.EditPaste); // PasteMore shares for now
+        SetMenuGesture(MenuDelete, CommandIds.EditDelete);
+        SetMenuGesture(MenuSelectAll, CommandIds.EditSelectAll);
+        SetMenuGesture(MenuSelectWord, CommandIds.EditSelectWord);
+        SetMenuGesture(MenuDeleteLine, CommandIds.EditDeleteLine);
+        SetMenuGesture(MenuMoveLineUp, CommandIds.EditMoveLineUp);
+        SetMenuGesture(MenuMoveLineDown, CommandIds.EditMoveLineDown);
+        SetMenuGesture(MenuCaseUpper, CommandIds.EditUpperCase);
+        SetMenuGesture(MenuCaseLower, CommandIds.EditLowerCase);
+        SetMenuGesture(MenuCaseProper, CommandIds.EditProperCase);
+    }
+
+    private void SetMenuGesture(MenuItem item, string commandId) {
+        item.InputGesture = _keyBindings.GetGesture(commandId);
     }
 
     // -------------------------------------------------------------------------
@@ -500,37 +626,19 @@ public partial class MainWindow : Window {
         Editor.ShowLineNumbers = _settings.ShowLineNumbers;
         _lineNumGlyph = CreateMenuCheckGlyph(_settings.ShowLineNumbers);
         MenuLineNumbers.Icon = _lineNumGlyph;
-        MenuLineNumbers.Click += (_, _) => {
-            var show = !_settings.ShowLineNumbers;
-            _settings.ShowLineNumbers = show;
-            _settings.ScheduleSave();
-            Editor.ShowLineNumbers = show;
-            _lineNumGlyph.Opacity = show ? 1.0 : 0.0;
-        };
+        MenuLineNumbers.Click += (_, _) => ToggleLineNumbers();
 
         // Status Bar
         _statusBarGlyph = CreateMenuCheckGlyph(_settings.ShowStatusBar);
         MenuStatusBar.Icon = _statusBarGlyph;
-        MenuStatusBar.Click += (_, _) => {
-            var show = !_settings.ShowStatusBar;
-            _settings.ShowStatusBar = show;
-            _settings.ScheduleSave();
-            _statusBarGlyph.Opacity = show ? 1.0 : 0.0;
-            UpdateStatusBarVisibility();
-        };
+        MenuStatusBar.Click += (_, _) => ToggleStatusBar();
 
         // Wrap Lines + column limit
         Editor.WrapLines = _settings.WrapLines;
         Editor.WrapLinesAt = _settings.WrapLinesAt;
         _wrapLinesGlyph = CreateMenuCheckGlyph(_settings.WrapLines);
         MenuWrapLines.Icon = _wrapLinesGlyph;
-        MenuWrapLines.Click += (_, _) => {
-            var wrap = !_settings.WrapLines;
-            _settings.WrapLines = wrap;
-            _settings.ScheduleSave();
-            Editor.WrapLines = wrap;
-            _wrapLinesGlyph.Opacity = wrap ? 1.0 : 0.0;
-        };
+        MenuWrapLines.Click += (_, _) => ToggleWrapLines();
 
         // Undo coalesce idle timer (settings-only, no menu item)
         Editor.CoalesceTimerMs = _settings.CoalesceTimerMs;
@@ -914,7 +1022,8 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     private void WireSettingsPanel() {
-        SettingsPanel.Initialize(_settings);
+        SettingsPanel.Initialize(_settings, _keyBindings);
+        SettingsPanel.KeyBindingChanged += () => SyncMenuGestures();
         GearButton.PointerPressed += (_, _) => OpenSettings();
         GearButton.PointerEntered += (_, _) => GearButton.Background = _theme.TabInactiveHoverBg;
         GearButton.PointerExited += (_, _) => GearButton.Background = Brushes.Transparent;

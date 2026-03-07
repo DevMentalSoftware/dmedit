@@ -1196,24 +1196,39 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         ResetCaretBlink();
     }
 
-    protected override void OnKeyDown(KeyEventArgs e) {
-        base.OnKeyDown(e);
+    // -------------------------------------------------------------------------
+    // Command dispatch (called by MainWindow after key → command resolution)
+    // -------------------------------------------------------------------------
+
+    private static readonly HashSet<string> VerticalNavCommands = [
+        Commands.CommandIds.NavMoveUp,
+        Commands.CommandIds.NavMoveDown,
+        Commands.CommandIds.NavSelectUp,
+        Commands.CommandIds.NavSelectDown,
+        Commands.CommandIds.NavPageUp,
+        Commands.CommandIds.NavPageDown,
+        Commands.CommandIds.NavSelectPageUp,
+        Commands.CommandIds.NavSelectPageDown,
+    ];
+
+    /// <summary>
+    /// Executes an editor-level command by ID. Returns true if the command
+    /// was handled. Called by MainWindow's centralized dispatch after
+    /// resolving a key gesture to a command ID via KeyBindingService.
+    /// </summary>
+    public bool ExecuteCommand(string commandId) {
         var doc = Document;
-        if (doc == null) {
-            return;
-        }
+        if (doc == null) return false;
 
         // Vertical movement keys preserve the preferred column; everything
         // else resets it so the next Up/Down captures a fresh X position.
-        if (e.Key is not (Key.Up or Key.Down or Key.PageUp or Key.PageDown)) {
+        if (!VerticalNavCommands.Contains(commandId)) {
             _preferredCaretX = -1;
         }
 
-        var ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-
-        switch (e.Key) {
-            case Key.Back:
+        switch (commandId) {
+            // -- Edit commands --
+            case Commands.CommandIds.EditBackspace:
                 Coalesce("backspace");
                 _editSw.Restart();
                 doc.DeleteBackward();
@@ -1222,133 +1237,65 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
-                e.Handled = true;
-                break;
+                return true;
 
-            case Key.Delete:
+            case Commands.CommandIds.EditDelete:
                 EditDelete();
-                e.Handled = true;
-                break;
+                return true;
 
-            case Key.Left:
-                FlushCompound();
-                MoveCaretHorizontal(doc, -1, ctrl, shift);
-                e.Handled = true;
-                break;
+            case Commands.CommandIds.EditUndo:
+                PerformUndo();
+                return true;
 
-            case Key.Right:
-                FlushCompound();
-                MoveCaretHorizontal(doc, +1, ctrl, shift);
-                e.Handled = true;
-                break;
+            case Commands.CommandIds.EditRedo:
+                PerformRedo();
+                return true;
 
-            case Key.Up:
-                if (e.KeyModifiers.HasFlag(KeyModifiers.Alt)) {
-                    PerformMoveLineUp();
-                } else {
-                    FlushCompound();
-                    MoveCaretVertical(doc, -1, shift);
-                }
-                e.Handled = true;
-                break;
-
-            case Key.Down:
-                if (e.KeyModifiers.HasFlag(KeyModifiers.Alt)) {
-                    PerformMoveLineDown();
-                } else {
-                    FlushCompound();
-                    MoveCaretVertical(doc, +1, shift);
-                }
-                e.Handled = true;
-                break;
-
-            case Key.Home:
-                FlushCompound();
-                if (ctrl) {
-                    var target = 0L;
-                    doc.Selection = shift
-                        ? doc.Selection.ExtendTo(target)
-                        : Selection.Collapsed(target);
-                    ScrollCaretIntoView();
-                    InvalidateVisual();
-                    ResetCaretBlink();
-                } else {
-                    MoveCaretToLineEdge(doc, toStart: true, shift);
-                }
-                e.Handled = true;
-                break;
-
-            case Key.End:
-                FlushCompound();
-                if (ctrl) {
-                    var target = doc.Table.Length;
-                    doc.Selection = shift
-                        ? doc.Selection.ExtendTo(target)
-                        : Selection.Collapsed(target);
-                    ScrollCaretIntoView();
-                    InvalidateVisual();
-                    ResetCaretBlink();
-                } else {
-                    MoveCaretToLineEdge(doc, toStart: false, shift);
-                }
-                e.Handled = true;
-                break;
-
-            case Key.Z when ctrl:
-                if (shift) {
-                    PerformRedo();
-                } else {
-                    PerformUndo();
-                }
-                e.Handled = true;
-                break;
-
-            case Key.Y when ctrl:
-                PerformDeleteLine();
-                e.Handled = true;
-                break;
-
-            case Key.A when ctrl:
-                PerformSelectAll();
-                e.Handled = true;
-                break;
-
-            case Key.W when ctrl:
-                PerformSelectWord();
-                e.Handled = true;
-                break;
-
-            case Key.C when ctrl && !shift:
-                _ = CopyAsync();
-                e.Handled = true;
-                break;
-
-            case Key.X when ctrl && !shift:
+            case Commands.CommandIds.EditCut:
                 _ = CutAsync();
-                e.Handled = true;
-                break;
+                return true;
 
-            case Key.V when ctrl && !shift:
+            case Commands.CommandIds.EditCopy:
+                _ = CopyAsync();
+                return true;
+
+            case Commands.CommandIds.EditPaste:
                 _ = PasteAsync();
-                e.Handled = true;
-                break;
+                return true;
 
-            case Key.U when ctrl && shift:
+            case Commands.CommandIds.EditSelectAll:
+                PerformSelectAll();
+                return true;
+
+            case Commands.CommandIds.EditSelectWord:
+                PerformSelectWord();
+                return true;
+
+            case Commands.CommandIds.EditDeleteLine:
+                PerformDeleteLine();
+                return true;
+
+            case Commands.CommandIds.EditMoveLineUp:
+                PerformMoveLineUp();
+                return true;
+
+            case Commands.CommandIds.EditMoveLineDown:
+                PerformMoveLineDown();
+                return true;
+
+            case Commands.CommandIds.EditUpperCase:
                 PerformTransformCase(CaseTransform.Upper);
-                e.Handled = true;
-                break;
+                return true;
 
-            case Key.L when ctrl && shift:
+            case Commands.CommandIds.EditLowerCase:
                 PerformTransformCase(CaseTransform.Lower);
-                e.Handled = true;
-                break;
+                return true;
 
-            case Key.P when ctrl && shift:
+            case Commands.CommandIds.EditProperCase:
                 PerformTransformCase(CaseTransform.Proper);
-                e.Handled = true;
-                break;
+                return true;
 
-            case Key.Return:
+            case Commands.CommandIds.EditNewline:
                 FlushCompound();
                 _editSw.Restart();
                 doc.Insert("\n");
@@ -1357,10 +1304,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
-                e.Handled = true;
-                break;
+                return true;
 
-            case Key.Tab when !ctrl:
+            case Commands.CommandIds.EditTab:
                 Coalesce("tab");
                 _editSw.Restart();
                 doc.Insert("    ");
@@ -1369,25 +1315,149 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
-                e.Handled = true;
-                break;
+                return true;
 
-            case Key.PageUp:
+            // -- Navigation: horizontal --
+            case Commands.CommandIds.NavMoveLeft:
                 FlushCompound();
-                MoveCaretByPage(doc, -1, shift);
-                e.Handled = true;
-                break;
+                MoveCaretHorizontal(doc, -1, false, false);
+                return true;
 
-            case Key.PageDown:
+            case Commands.CommandIds.NavSelectLeft:
                 FlushCompound();
-                MoveCaretByPage(doc, +1, shift);
-                e.Handled = true;
-                break;
+                MoveCaretHorizontal(doc, -1, false, true);
+                return true;
+
+            case Commands.CommandIds.NavMoveRight:
+                FlushCompound();
+                MoveCaretHorizontal(doc, +1, false, false);
+                return true;
+
+            case Commands.CommandIds.NavSelectRight:
+                FlushCompound();
+                MoveCaretHorizontal(doc, +1, false, true);
+                return true;
+
+            case Commands.CommandIds.NavMoveWordLeft:
+                FlushCompound();
+                MoveCaretHorizontal(doc, -1, true, false);
+                return true;
+
+            case Commands.CommandIds.NavSelectWordLeft:
+                FlushCompound();
+                MoveCaretHorizontal(doc, -1, true, true);
+                return true;
+
+            case Commands.CommandIds.NavMoveWordRight:
+                FlushCompound();
+                MoveCaretHorizontal(doc, +1, true, false);
+                return true;
+
+            case Commands.CommandIds.NavSelectWordRight:
+                FlushCompound();
+                MoveCaretHorizontal(doc, +1, true, true);
+                return true;
+
+            // -- Navigation: vertical --
+            case Commands.CommandIds.NavMoveUp:
+                FlushCompound();
+                MoveCaretVertical(doc, -1, false);
+                return true;
+
+            case Commands.CommandIds.NavSelectUp:
+                FlushCompound();
+                MoveCaretVertical(doc, -1, true);
+                return true;
+
+            case Commands.CommandIds.NavMoveDown:
+                FlushCompound();
+                MoveCaretVertical(doc, +1, false);
+                return true;
+
+            case Commands.CommandIds.NavSelectDown:
+                FlushCompound();
+                MoveCaretVertical(doc, +1, true);
+                return true;
+
+            // -- Navigation: home/end --
+            case Commands.CommandIds.NavMoveHome:
+                FlushCompound();
+                MoveCaretToLineEdge(doc, toStart: true, false);
+                return true;
+
+            case Commands.CommandIds.NavSelectHome:
+                FlushCompound();
+                MoveCaretToLineEdge(doc, toStart: true, true);
+                return true;
+
+            case Commands.CommandIds.NavMoveEnd:
+                FlushCompound();
+                MoveCaretToLineEdge(doc, toStart: false, false);
+                return true;
+
+            case Commands.CommandIds.NavSelectEnd:
+                FlushCompound();
+                MoveCaretToLineEdge(doc, toStart: false, true);
+                return true;
+
+            // -- Navigation: document start/end --
+            case Commands.CommandIds.NavMoveDocStart:
+                FlushCompound();
+                doc.Selection = Selection.Collapsed(0);
+                ScrollCaretIntoView();
+                InvalidateVisual();
+                ResetCaretBlink();
+                return true;
+
+            case Commands.CommandIds.NavSelectDocStart:
+                FlushCompound();
+                doc.Selection = doc.Selection.ExtendTo(0);
+                ScrollCaretIntoView();
+                InvalidateVisual();
+                ResetCaretBlink();
+                return true;
+
+            case Commands.CommandIds.NavMoveDocEnd:
+                FlushCompound();
+                doc.Selection = Selection.Collapsed(doc.Table.Length);
+                ScrollCaretIntoView();
+                InvalidateVisual();
+                ResetCaretBlink();
+                return true;
+
+            case Commands.CommandIds.NavSelectDocEnd:
+                FlushCompound();
+                doc.Selection = doc.Selection.ExtendTo(doc.Table.Length);
+                ScrollCaretIntoView();
+                InvalidateVisual();
+                ResetCaretBlink();
+                return true;
+
+            // -- Navigation: page up/down --
+            case Commands.CommandIds.NavPageUp:
+                FlushCompound();
+                MoveCaretByPage(doc, -1, false);
+                return true;
+
+            case Commands.CommandIds.NavSelectPageUp:
+                FlushCompound();
+                MoveCaretByPage(doc, -1, true);
+                return true;
+
+            case Commands.CommandIds.NavPageDown:
+                FlushCompound();
+                MoveCaretByPage(doc, +1, false);
+                return true;
+
+            case Commands.CommandIds.NavSelectPageDown:
+                FlushCompound();
+                MoveCaretByPage(doc, +1, true);
+                return true;
+
+            default:
+                return false;
         }
     }
-
-    // OnKeyUp is no longer needed for compound management — coalescing is
-    // timer-based and key-change-based rather than key-up-based.
 
     // -------------------------------------------------------------------------
     // Caret movement helpers

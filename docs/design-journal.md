@@ -1616,3 +1616,67 @@ shift-click extend, middle-drag scroll).
 ### Other
 
 - [-] Command Palette (Ctrl+Shift+P)
+
+## 2026-03-06 — Command Registry, Key Binding System & Keyboard Settings UI
+
+Replaced scattered hardcoded keyboard handling with a centralized command infrastructure.
+All ~55 existing shortcuts now flow through a single dispatch point and are user-
+customizable from the Settings panel.
+
+### Architecture
+
+```
+CommandRegistry (static metadata: Id, DisplayName, Category, DefaultGesture)
+    ↓ defaults
+KeyBindingService (runtime: overlays user overrides from AppSettings)
+    ↓ resolves Key+Modifiers → CommandId
+MainWindow.OnKeyDown (centralized dispatch)
+    ├── Window commands → ExecuteWindowCommand()
+    └── Editor commands → EditorControl.ExecuteCommand()
+```
+
+### Phase 1 — Command Infrastructure (5 new files + test project)
+
+- `Commands/CommandDescriptor.cs` — sealed record for command metadata
+- `Commands/CommandIds.cs` — ~55 const string IDs in `"Category.Name"` format
+- `Commands/CommandRegistry.cs` — static list of all CommandDescriptors with default KeyGestures
+- `Commands/KeyGestureComparer.cs` — IEqualityComparer<KeyGesture> (Avalonia's doesn't override Equals)
+- `Commands/KeyBindingService.cs` — two-pass Rebuild() (defaults first, then user overrides always win),
+  O(1) gesture→command resolution, conflict detection, SetBinding/ResetBinding/ResetAll
+- `tests/DevMentalMd.App.Tests/` — 21 tests (6 registry integrity + 13 service behavior + 2 comparer)
+
+### Phase 2 — Centralized Dispatch
+
+- `EditorControl.cs`: removed `OnKeyDown` (~190 lines), added `ExecuteCommand(string commandId)`
+  with full switch mapping all Edit.* and Nav.* commands
+- `MainWindow.axaml.cs`: replaced OnKeyDown with centralized dispatch through KeyBindingService,
+  extracted `CycleTab()`, `ToggleLineNumbers()`, `ToggleStatusBar()`, `ToggleWrapLines()`, `SaveAll()`,
+  added `SyncMenuGestures()` for dynamic menu shortcut text, wired `MenuSaveAll.Click`
+
+### Phase 3 — Persistence
+
+- `AppSettings.cs`: added `Dictionary<string, string>? KeyBindingOverrides` — maps command ID
+  to gesture string (empty = unbound, missing = use default, null dict = no overrides)
+
+### Phase 4 — Keyboard Settings UI
+
+- `Settings/KeyboardSettingsSection.cs` — code-only UserControl: grouped command list with
+  category headers, current bindings, filter box, key capture box (tunneling handler),
+  conflict detection, Assign/Remove/Reset buttons
+- `Settings/SettingsRegistry.cs` — added "Scrollbar" and "Keyboard" categories
+- `Settings/SettingsControl.axaml.cs` — accepts KeyBindingService, handles Keyboard category
+  showing KeyboardSettingsSection, fires KeyBindingChanged event
+
+### Key design decisions
+
+- **Two-pass Rebuild()**: Pass 1 loads defaults for non-overridden commands, Pass 2 applies
+  user overrides last so they always win the gesture→command map (fixes conflict when user
+  rebinds to a gesture that's another command's default)
+- **Tunneling key capture**: TextBox uses `AddHandler(KeyDownEvent, ..., RoutingStrategies.Tunnel)`
+  so captured keys don't bubble to MainWindow's dispatch
+- **OnTextInput untouched**: Character typing still goes directly to EditorControl, not through
+  the command system
+- **Menu gestures synced dynamically**: `SyncMenuGestures()` updates all menu InputGesture text
+  from KeyBindingService, so customized shortcuts show in menus
+
+### Test baseline: 308 (266 Core + 21 Rendering + 21 App)

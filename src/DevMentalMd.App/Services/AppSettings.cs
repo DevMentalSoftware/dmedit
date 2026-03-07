@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -133,6 +134,18 @@ public sealed class AppSettings {
     /// keystroke, so only actual pauses trigger a flush. Default: 1000.
     /// </summary>
     public int CoalesceTimerMs { get; set; } = 1000;
+
+    // -----------------------------------------------------------------
+    // Keyboard shortcuts
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// User overrides for keyboard shortcuts. Maps command ID (e.g.
+    /// <c>"Edit.Undo"</c>) to gesture string (e.g. <c>"Ctrl+Y"</c>).
+    /// Empty string means the command is explicitly unbound.
+    /// Null means no overrides — all defaults from CommandRegistry apply.
+    /// </summary>
+    public Dictionary<string, string>? KeyBindingOverrides { get; set; }
 
     // -----------------------------------------------------------------
     // Load / Save

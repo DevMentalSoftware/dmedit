@@ -12,7 +12,9 @@ public static class SettingsRegistry {
     public static readonly IReadOnlyList<string> Categories = [
         "Display",
         "Editor",
+        "Scrollbar",
         "Advanced",
+        "Keyboard",
     ];
 
     public static readonly IReadOnlyList<SettingDescriptor> All = [
