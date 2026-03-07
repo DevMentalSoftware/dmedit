@@ -102,9 +102,7 @@ public class KeyboardSettingsSection : UserControl {
         _nameFilter = new TextBox {
             Watermark = "Search commands\u2026",
             FontSize = 13,
-            MinWidth = 140,
-            Margin = new Thickness(4, 0, 0, 4),
-            VerticalContentAlignment = VerticalAlignment.Center,
+            MinWidth = 160,
         };
         _nameFilterClearBtn = new Button {
             Content = "\u2715",
@@ -143,9 +141,11 @@ public class KeyboardSettingsSection : UserControl {
         // Keystroke filter panel (focusable border, not a TextBox)
         _keyFilterText = new TextBlock {
             Text = "Filter by key\u2026",
-            FontSize = 12,
+            FontSize = 13,
             Foreground = _theme.SettingsDimForeground,
             VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(4,2),
         };
         _keyFilterClearBtn = new Button {
             Content = "\u2715",
@@ -174,7 +174,7 @@ public class KeyboardSettingsSection : UserControl {
             BorderBrush = _theme.SettingsInputBorder,
             CornerRadius = new CornerRadius(3),
             Padding = new Thickness(6, 3),
-            Margin = new Thickness(4, 0, 0, 4),
+            Margin = new Thickness(4, 4, 0, 4),
             MinWidth = 120,
             Focusable = true,
             Cursor = new Cursor(StandardCursorType.Ibeam),
@@ -197,7 +197,7 @@ public class KeyboardSettingsSection : UserControl {
             Content = _commandList,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Height = 350,
+            AllowAutoHide = false,
             Width = 600,
             HorizontalAlignment = HorizontalAlignment.Left,
         };
@@ -239,7 +239,6 @@ public class KeyboardSettingsSection : UserControl {
             FontSize = 13,
             IsReadOnly = true,
             MinWidth = 180,
-            HorizontalAlignment = HorizontalAlignment.Left,
         };
         _captureBox.AddHandler(
             KeyDownEvent, OnCaptureKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -308,12 +307,18 @@ public class KeyboardSettingsSection : UserControl {
             IsVisible = false, // Shown dynamically when outer page needs scrolling.
         };
 
-        var root = new StackPanel { Margin = new Thickness(12, 8, 12, 8) };
+        var root = new DockPanel { Margin = new Thickness(12, 8, 12, 8) };
+        DockPanel.SetDock(toolbar, Dock.Top);
+        DockPanel.SetDock(_scrollHint, Dock.Top);
+        DockPanel.SetDock(_shortcutLabel, Dock.Bottom);
+        DockPanel.SetDock(bottomRow, Dock.Bottom);
+        // Order matters: dock top/bottom chrome first, then _commandScroll
+        // fills the remaining space as the last (undocked) child.
         root.Children.Add(toolbar);
         root.Children.Add(_scrollHint);
-        root.Children.Add(_commandScroll);
-        root.Children.Add(_shortcutLabel);
         root.Children.Add(bottomRow);
+        root.Children.Add(_shortcutLabel);
+        root.Children.Add(_commandScroll);
 
         Content = root;
 
@@ -755,6 +760,22 @@ public class KeyboardSettingsSection : UserControl {
             _scrollHint.IsVisible = outer != null
                 && outer.Extent.Height > outer.Viewport.Height;
         });
+    }
+
+    // =====================================================================
+    // Sizing
+    // =====================================================================
+
+    /// <summary>
+    /// Sizes the command list to fill the given height, subtracting the
+    /// heights of all sibling controls (toolbar, hint, label, buttons).
+    /// Called by <see cref="SettingsControl"/> when the viewport changes.
+    /// </summary>
+    public void SetAvailableHeight(double height) {
+        // The root DockPanel handles internal layout: toolbar and bottom row
+        // are docked, and _commandScroll fills the remaining space.
+        // We just set the section's overall height; DockPanel does the rest.
+        Height = Math.Max(200, height);
     }
 
     // =====================================================================

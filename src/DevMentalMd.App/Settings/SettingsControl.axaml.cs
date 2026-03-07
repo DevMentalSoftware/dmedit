@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Threading;
 using DevMentalMd.App.Commands;
 using DevMentalMd.App.Services;
 
@@ -43,6 +44,12 @@ public partial class SettingsControl : UserControl {
         BuildSettingRows();
         WireSearch();
         ApplyFilter();
+
+        ContentScroll.PropertyChanged += (_, e) => {
+            if (e.Property == BoundsProperty) {
+                UpdateKeyboardSectionHeight();
+            }
+        };
     }
 
     private void BuildCategoryList() {
@@ -144,6 +151,8 @@ public partial class SettingsControl : UserControl {
             _keyboardSection.IsVisible = showKeyboard;
         if (_headersByCategory.TryGetValue("Keyboard", out var kbH))
             kbH.IsVisible = showKeyboard;
+        if (showKeyboard && _keyboardSection != null)
+            Dispatcher.UIThread.Post(UpdateKeyboardSectionHeight);
 
         // Hide/show standard settings rows.
         foreach (var cat in SettingsRegistry.Categories) {
@@ -171,17 +180,29 @@ public partial class SettingsControl : UserControl {
         }
     }
 
+    private void UpdateKeyboardSectionHeight() {
+        if (_keyboardSection == null || !_keyboardSection.IsVisible) return;
+
+        var viewportHeight = ContentScroll.Viewport.Height;
+        if (viewportHeight <= 0) return;
+
+        var headerHeight = _headersByCategory.TryGetValue("Keyboard", out var kbH)
+            ? kbH.Bounds.Height + kbH.Margin.Top + kbH.Margin.Bottom : 0;
+        var sectionMargin = _keyboardSection.Margin.Top + _keyboardSection.Margin.Bottom;
+        var available = viewportHeight - headerHeight - sectionMargin
+            - SettingsContent.Margin.Bottom;
+        _keyboardSection.SetAvailableHeight(available);
+    }
+
     /// <summary>
     /// Applies theme colors to the settings panel.
     /// </summary>
     public void ApplyTheme(EditorTheme theme) {
         Background = theme.EditorBackground;
-        SearchBarBorder.BorderBrush = theme.StatusBarBorder;
-        SearchBarBorder.Background = theme.EditorBackground;
-        ToolbarBorder.BorderBrush = theme.StatusBarBorder;
-        ToolbarBorder.Background = theme.EditorBackground;
-        SidebarBorder.BorderBrush = theme.StatusBarBorder;
-        SidebarBorder.Background = theme.EditorBackground;
+        SearchBarBorder.BorderBrush = theme.TabActiveBackground;
+        SearchBarBorder.Background = theme.TabActiveBackground;
+        SidebarBorder.BorderBrush = theme.TabActiveBackground;
+        SidebarBorder.Background = theme.TabActiveBackground;
 
         SearchBox.Foreground = theme.EditorForeground;
         SearchClearBtn.Foreground = theme.EditorForeground;

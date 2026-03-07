@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -44,6 +45,10 @@ public partial class MainWindow : Window {
     private TextBlock? _lineNumGlyph;
     private TextBlock? _statusBarGlyph;
     private TextBlock? _wrapLinesGlyph;
+
+    // Chord gesture display: cached PART_InputGestureText references.
+    private readonly Dictionary<MenuItem, Control> _menuGestureParts = [];
+    private readonly HashSet<MenuItem> _gestureHooked = [];
 
     // Chord state: two-keystroke shortcut in progress.
     private KeyGesture? _chordFirst;
@@ -295,6 +300,8 @@ public partial class MainWindow : Window {
         if (fromIndex < 0 || fromIndex >= _tabs.Count) return;
         if (toIndex < 0 || toIndex >= _tabs.Count) return;
         if (fromIndex == toIndex) return;
+        // Settings tab is pinned to position 0 — don't move it or displace it.
+        if (_tabs[fromIndex].IsSettings || _tabs[toIndex].IsSettings) return;
         var tab = _tabs[fromIndex];
         _tabs.RemoveAt(fromIndex);
         _tabs.Insert(toIndex, tab);
@@ -496,8 +503,42 @@ public partial class MainWindow : Window {
 
     private void SetMenuGesture(MenuItem item, string commandId) {
         var g = _keyBindings.GetGesture(commandId);
-        // Avalonia menus can't display chords; show null for chord bindings.
-        item.InputGesture = g is { IsChord: false } ? g.First : null;
+        var isChord = g is { IsChord: true };
+
+        // Single gestures use native InputGesture display.
+        // Chords need manual PART_InputGestureText override.
+        item.InputGesture = isChord ? null : g?.First;
+
+        if (!isChord) {
+            // Restore template-driven display if we previously overrode it.
+            if (_menuGestureParts.TryGetValue(item, out var part)) {
+                part.ClearValue(IsVisibleProperty);
+                if (part is TextBlock tb) tb.ClearValue(TextBlock.TextProperty);
+                else if (part is ContentPresenter cp) cp.ClearValue(ContentPresenter.ContentProperty);
+            }
+            return;
+        }
+
+        var text = g!.ToString();
+
+        if (_menuGestureParts.TryGetValue(item, out var cached)) {
+            cached.IsVisible = true;
+            if (cached is TextBlock tb) tb.Text = text;
+            else if (cached is ContentPresenter cp) cp.Content = text;
+        } else {
+            item.Tag = text;
+            if (_gestureHooked.Add(item)) {
+                item.TemplateApplied += (_, e) => {
+                    if (e.NameScope.Find("PART_InputGestureText") is not Control c) return;
+                    _menuGestureParts[item] = c;
+                    if (item.Tag is string t) {
+                        c.IsVisible = true;
+                        if (c is TextBlock tb2) tb2.Text = t;
+                        else if (c is ContentPresenter cp2) cp2.Content = t;
+                    }
+                };
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -1134,7 +1175,9 @@ public partial class MainWindow : Window {
             return;
         }
         _settingsTab = TabState.CreateSettings();
-        AddTab(_settingsTab);
+        _tabs.Insert(0, _settingsTab);
+        _settingsTab.Document.Changed += (_, _) => OnTabDocumentChanged(_settingsTab);
+        UpdateTabBar();
         SwitchToTab(_settingsTab);
     }
 

@@ -1,10 +1,15 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DevMentalMd.App.Settings.SettingsControl">
-    <DockPanel>
-        <!-- Top bar: search (sidebar width) + toolbar placeholder (remaining) -->
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="220,*">
-            <Border Grid.Column="0" Padding="8" BorderThickness="0,0,1,1"
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="200" MinWidth="200" MaxWidth="400" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <!-- Left column: search + categories -->
+        <DockPanel Grid.Column="0">
+            <Border DockPanel.Dock="Top" Padding="8" BorderThickness="0,0,1,1"
                     x:Name="SearchBarBorder">
                 <Grid ColumnDefinitions="*,Auto">
                     <TextBox x:Name="SearchBox" Grid.Column="0"
@@ -18,34 +23,25 @@
                             IsVisible="False" />
                 </Grid>
             </Border>
-
-            <!-- Toolbar placeholder (future) -->
-            <Border Grid.Column="1" Padding="8" BorderThickness="0,0,0,1"
-                    x:Name="ToolbarBorder">
-            </Border>
-        </Grid>
-
-        <Grid ColumnDefinitions="220,Auto,*">
-            <!-- Category sidebar -->
-            <Border Grid.Column="0" BorderThickness="0,0,1,0"
-                    x:Name="SidebarBorder">
+            <Border BorderThickness="0,0,1,0" x:Name="SidebarBorder">
                 <ListBox x:Name="CategoryList"
                          Padding="4"
                          FontSize="13"
                          SelectionMode="Single" />
             </Border>
+        </DockPanel>
 
-            <!-- Splitter -->
-            <GridSplitter Grid.Column="1" Width="1" />
+        <!-- Splitter -->
+        <GridSplitter Grid.Column="1" Width="1" />
 
-            <!-- Settings content -->
-            <ScrollViewer Grid.Column="2"
-                          HorizontalScrollBarVisibility="Disabled"
-                          VerticalScrollBarVisibility="Auto">
-                <StackPanel x:Name="SettingsContent"
-                            Spacing="0"
-                            Margin="0,0,0,20" />
-            </ScrollViewer>
-        </Grid>
-    </DockPanel>
+        <!-- Settings content -->
+        <ScrollViewer x:Name="ContentScroll" Grid.Column="2"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto"
+                      AllowAutoHide="False">
+            <StackPanel x:Name="SettingsContent"
+                        Spacing="0"
+                        Margin="0,0,0,20" />
+        </ScrollViewer>
+    </Grid>
 </UserControl>
