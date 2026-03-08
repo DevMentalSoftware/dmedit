@@ -32,6 +32,8 @@
 						<MenuItem Header="Save _As…" x:Name="MenuSaveAs" />
 						<MenuItem Header="Save A_ll" x:Name="MenuSaveAll" />
 						<Separator />
+						<MenuItem Header="_Revert File" x:Name="MenuRevertFile" />
+						<Separator />
 						<MenuItem Header="_Close" x:Name="MenuClose" />
 						<MenuItem Header="Close A_ll" x:Name="MenuCloseAll" />
 						<Separator />
@@ -54,17 +56,53 @@
 						<MenuItem Header="Move Line _Up" x:Name="MenuMoveLineUp" />
 						<MenuItem Header="Move Line Dow_n" x:Name="MenuMoveLineDown" />
 						<Separator />
+						<MenuItem Header="Insert Line _Below" x:Name="MenuInsertLineBelow" />
+						<MenuItem Header="Insert Line A_bove" x:Name="MenuInsertLineAbove" />
+						<MenuItem Header="D_uplicate Line" x:Name="MenuDuplicateLine" />
+						<Separator />
+						<MenuItem Header="Delete Word Le_ft" x:Name="MenuDeleteWordLeft" />
+						<MenuItem Header="Delete Word Ri_ght" x:Name="MenuDeleteWordRight" />
+						<MenuItem Header="In_dent" x:Name="MenuIndent" />
+						<Separator />
 						<MenuItem Header="Transform Case" x:Name="MenuTransformCase">
 							<MenuItem Header="_Upper Case" x:Name="MenuCaseUpper" />
 							<MenuItem Header="_Lower Case" x:Name="MenuCaseLower" />
 							<MenuItem Header="_Proper Case" x:Name="MenuCaseProper" />
 						</MenuItem>
+						<Separator />
+						<MenuItem Header="Advanced">
+							<MenuItem Header="Select All _Occurrences" x:Name="MenuSelectAllOccurrences" />
+							<MenuItem Header="Co_lumn Select" x:Name="MenuColumnSelect" />
+						</MenuItem>
+					</MenuItem>
+					<MenuItem Header="_Search" x:Name="MenuSearch">
+						<MenuItem Header="_Find" x:Name="MenuFind" />
+						<MenuItem Header="_Replace" x:Name="MenuReplace" />
+						<Separator />
+						<MenuItem Header="Find _Next" x:Name="MenuFindNext" />
+						<MenuItem Header="Find _Previous" x:Name="MenuFindPrevious" />
+						<Separator />
+						<MenuItem Header="Find _Word or Selection" x:Name="MenuFindWordOrSel" />
+						<MenuItem Header="_Incremental Search" x:Name="MenuIncrementalSearch" />
+						<Separator />
+						<MenuItem Header="_Go to Line" x:Name="MenuGoToLine" />
+						<Separator />
+						<MenuItem Header="Command _Palette" x:Name="MenuCommandPalette" />
 					</MenuItem>
 					<MenuItem Header="_View" x:Name="MenuView">
 						<MenuItem Header="_Line Numbers" x:Name="MenuLineNumbers" />
 						<MenuItem Header="_Status Bar" x:Name="MenuStatusBar" />
 						<Separator />
 						<MenuItem Header="_Wrap Lines" x:Name="MenuWrapLines" />
+						<Separator />
+						<MenuItem Header="_Zoom">
+							<MenuItem Header="Zoom _In" x:Name="MenuZoomIn" />
+							<MenuItem Header="Zoom _Out" x:Name="MenuZoomOut" />
+							<MenuItem Header="Zoom _Reset" x:Name="MenuZoomReset" />
+						</MenuItem>
+						<Separator />
+						<MenuItem Header="Scroll Line _Up" x:Name="MenuScrollLineUp" />
+						<MenuItem Header="Scroll Line _Down" x:Name="MenuScrollLineDown" />
 					</MenuItem>
 				</Menu>
 				<Border x:Name="GearButton" Grid.Column="1"

@@ -21,6 +21,7 @@ public static class CommandRegistry {
         new(CommandIds.FileClose, "Close"),
         new(CommandIds.FileCloseAll, "Close All"),
         new(CommandIds.FileExit, "Exit"),
+        new(CommandIds.FileRevertFile, "Revert File"),
 
         // -- Edit --
         new(CommandIds.EditUndo, "Undo"),
@@ -40,16 +41,36 @@ public static class CommandRegistry {
         new(CommandIds.EditProperCase, "Proper Case"),
         new(CommandIds.EditNewline, "Insert Newline"),
         new(CommandIds.EditTab, "Insert Tab"),
+        new(CommandIds.EditInsertLineBelow, "Insert Line Below"),
+        new(CommandIds.EditInsertLineAbove, "Insert Line Above"),
+        new(CommandIds.EditDeleteWordLeft, "Delete Word Left"),
+        new(CommandIds.EditDeleteWordRight, "Delete Word Right"),
+        new(CommandIds.EditDuplicateLine, "Duplicate Line"),
+        new(CommandIds.EditIndent, "Indent"),
+        new(CommandIds.EditSelectAllOccurrences, "Select All Occurrences"),
+        new(CommandIds.EditColumnSelect, "Column Select"),
+
+        // -- Find --
+        new(CommandIds.FindFind, "Find"),
+        new(CommandIds.FindReplace, "Replace"),
+        new(CommandIds.FindFindNext, "Find Next"),
+        new(CommandIds.FindFindPrevious, "Find Previous"),
+        new(CommandIds.FindFindWordOrSel, "Find Word or Selection"),
+        new(CommandIds.FindIncrementalSearch, "Incremental Search"),
 
         // -- View --
         new(CommandIds.ViewLineNumbers, "Line Numbers"),
         new(CommandIds.ViewStatusBar, "Status Bar"),
         new(CommandIds.ViewWrapLines, "Wrap Lines"),
+        new(CommandIds.ViewZoomIn, "Zoom In"),
+        new(CommandIds.ViewZoomOut, "Zoom Out"),
+        new(CommandIds.ViewZoomReset, "Zoom Reset"),
 
         // -- Window --
         new(CommandIds.WindowNextTab, "Next Tab"),
         new(CommandIds.WindowPrevTab, "Previous Tab"),
         new(CommandIds.WindowSettings, "Settings"),
+        new(CommandIds.WindowCommandPalette, "Command Palette"),
 
         // -- Nav: movement --
         new(CommandIds.NavMoveLeft, "Move Left"),
@@ -64,6 +85,9 @@ public static class CommandRegistry {
         new(CommandIds.NavMoveDocEnd, "Move to Document End"),
         new(CommandIds.NavPageUp, "Page Up"),
         new(CommandIds.NavPageDown, "Page Down"),
+        new(CommandIds.NavGoToLine, "Go to Line"),
+        new(CommandIds.NavScrollLineUp, "Scroll Line Up"),
+        new(CommandIds.NavScrollLineDown, "Scroll Line Down"),
 
         // -- Nav: selection extension --
         new(CommandIds.NavSelectLeft, "Select Left"),

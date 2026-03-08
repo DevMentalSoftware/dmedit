@@ -25,9 +25,20 @@
     "Edit.ProperCase": "Ctrl+Shift+P",
     "Edit.Newline": "Return",
     "Edit.Tab": "Tab",
+    "Edit.DeleteWordLeft": "Ctrl+Back",
+    "Edit.DeleteWordRight": "Ctrl+Delete",
+
+    "Find.Find": "Ctrl+F",
+    "Find.Replace": "Ctrl+H",
+    "Find.FindNext": "F3",
+    "Find.FindPrevious": "Shift+F3",
+    "Find.FindWordOrSelection": "Ctrl+F3",
+
+    "View.ZoomReset": "Ctrl+D0",
 
     "Window.NextTab": "Alt+Right",
     "Window.PrevTab": "Alt+Left",
+    "Window.CommandPalette": "F1",
 
     "Nav.MoveLeft": "Left",
     "Nav.MoveRight": "Right",
@@ -41,6 +52,9 @@
     "Nav.MoveDocEnd": "Ctrl+End",
     "Nav.PageUp": "PageUp",
     "Nav.PageDown": "PageDown",
+    "Nav.GoToLine": "Ctrl+G",
+    "Nav.ScrollLineUp": "Ctrl+Up",
+    "Nav.ScrollLineDown": "Ctrl+Down",
 
     "Nav.SelectLeft": "Shift+Left",
     "Nav.SelectRight": "Shift+Right",

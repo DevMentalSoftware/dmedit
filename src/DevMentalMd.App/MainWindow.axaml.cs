@@ -17,6 +17,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using DevMentalMd.App.Commands;
+using DevMentalMd.App.Controls;
 using DevMentalMd.App.Services;
 using DevMentalMd.App.Settings;
 using DevMentalMd.Core.Buffers;
@@ -83,12 +84,14 @@ public partial class MainWindow : Window {
         MenuClose.Click += (_, _) => { if (_activeTab != null) CloseTab(_activeTab); };
         MenuCloseAll.Click += (_, _) => CloseAllTabs();
         MenuExit.Click += (_, _) => Close();
+        MenuRevertFile.Click += (_, _) => _ = RevertFileAsync();
 
         _staticMenuItemCount = MenuFile.Items.Count;
 
         RebuildRecentMenu();
         WireScrollBar();
         WireEditMenu();
+        WireSearchMenu();
         WireViewMenu();
         WireSettingsPanel();
         WireThemeSettings();
@@ -408,6 +411,15 @@ public partial class MainWindow : Window {
             case CommandIds.ViewWrapLines:
                 ToggleWrapLines();
                 return true;
+            case CommandIds.ViewZoomIn:
+                Editor.FontSize = Math.Min(Editor.FontSize + 1, 72);
+                return true;
+            case CommandIds.ViewZoomOut:
+                Editor.FontSize = Math.Max(Editor.FontSize - 1, 6);
+                return true;
+            case CommandIds.ViewZoomReset:
+                Editor.FontSize = 11.ToPixels();
+                return true;
 
             // -- Window --
             case CommandIds.WindowNextTab:
@@ -418,6 +430,26 @@ public partial class MainWindow : Window {
                 return true;
             case CommandIds.WindowSettings:
                 OpenSettings();
+                return true;
+            case CommandIds.WindowCommandPalette:
+                OpenCommandPalette();
+                return true;
+
+            // -- File: Revert --
+            case CommandIds.FileRevertFile:
+                _ = RevertFileAsync();
+                return true;
+
+            // -- Stubs (not yet implemented) --
+            case CommandIds.FindFind:
+            case CommandIds.FindReplace:
+            case CommandIds.FindFindNext:
+            case CommandIds.FindFindPrevious:
+            case CommandIds.FindFindWordOrSel:
+            case CommandIds.FindIncrementalSearch:
+            case CommandIds.NavGoToLine:
+            case CommandIds.EditSelectAllOccurrences:
+            case CommandIds.EditColumnSelect:
                 return true;
 
             default:
@@ -496,9 +528,31 @@ public partial class MainWindow : Window {
         SetMenuGesture(MenuCaseUpper, CommandIds.EditUpperCase);
         SetMenuGesture(MenuCaseLower, CommandIds.EditLowerCase);
         SetMenuGesture(MenuCaseProper, CommandIds.EditProperCase);
+        SetMenuGesture(MenuInsertLineBelow, CommandIds.EditInsertLineBelow);
+        SetMenuGesture(MenuInsertLineAbove, CommandIds.EditInsertLineAbove);
+        SetMenuGesture(MenuDuplicateLine, CommandIds.EditDuplicateLine);
+        SetMenuGesture(MenuDeleteWordLeft, CommandIds.EditDeleteWordLeft);
+        SetMenuGesture(MenuDeleteWordRight, CommandIds.EditDeleteWordRight);
+        SetMenuGesture(MenuIndent, CommandIds.EditIndent);
+        SetMenuGesture(MenuSelectAllOccurrences, CommandIds.EditSelectAllOccurrences);
+        SetMenuGesture(MenuColumnSelect, CommandIds.EditColumnSelect);
+        SetMenuGesture(MenuFind, CommandIds.FindFind);
+        SetMenuGesture(MenuReplace, CommandIds.FindReplace);
+        SetMenuGesture(MenuFindNext, CommandIds.FindFindNext);
+        SetMenuGesture(MenuFindPrevious, CommandIds.FindFindPrevious);
+        SetMenuGesture(MenuFindWordOrSel, CommandIds.FindFindWordOrSel);
+        SetMenuGesture(MenuIncrementalSearch, CommandIds.FindIncrementalSearch);
+        SetMenuGesture(MenuGoToLine, CommandIds.NavGoToLine);
         SetMenuGesture(MenuLineNumbers, CommandIds.ViewLineNumbers);
         SetMenuGesture(MenuStatusBar, CommandIds.ViewStatusBar);
         SetMenuGesture(MenuWrapLines, CommandIds.ViewWrapLines);
+        SetMenuGesture(MenuZoomIn, CommandIds.ViewZoomIn);
+        SetMenuGesture(MenuZoomOut, CommandIds.ViewZoomOut);
+        SetMenuGesture(MenuZoomReset, CommandIds.ViewZoomReset);
+        SetMenuGesture(MenuScrollLineUp, CommandIds.NavScrollLineUp);
+        SetMenuGesture(MenuScrollLineDown, CommandIds.NavScrollLineDown);
+        SetMenuGesture(MenuRevertFile, CommandIds.FileRevertFile);
+        SetMenuGesture(MenuCommandPalette, CommandIds.WindowCommandPalette);
     }
 
     private void SetMenuGesture(MenuItem item, string commandId) {
@@ -560,6 +614,14 @@ public partial class MainWindow : Window {
         MenuCaseUpper.Click += (_, _) => Editor.PerformTransformCase(CaseTransform.Upper);
         MenuCaseLower.Click += (_, _) => Editor.PerformTransformCase(CaseTransform.Lower);
         MenuCaseProper.Click += (_, _) => Editor.PerformTransformCase(CaseTransform.Proper);
+        MenuInsertLineBelow.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditInsertLineBelow);
+        MenuInsertLineAbove.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditInsertLineAbove);
+        MenuDuplicateLine.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditDuplicateLine);
+        MenuDeleteWordLeft.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditDeleteWordLeft);
+        MenuDeleteWordRight.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditDeleteWordRight);
+        MenuIndent.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditIndent);
+        MenuSelectAllOccurrences.Click += (_, _) => ExecuteWindowCommand(CommandIds.EditSelectAllOccurrences);
+        MenuColumnSelect.Click += (_, _) => ExecuteWindowCommand(CommandIds.EditColumnSelect);
         ReplaceSubmenuArrow(MenuTransformCase);
     }
 
@@ -742,10 +804,28 @@ public partial class MainWindow : Window {
         MenuWrapLines.Icon = _wrapLinesGlyph;
         MenuWrapLines.Click += (_, _) => ToggleWrapLines();
 
+        // Zoom
+        MenuZoomIn.Click += (_, _) => ExecuteWindowCommand(CommandIds.ViewZoomIn);
+        MenuZoomOut.Click += (_, _) => ExecuteWindowCommand(CommandIds.ViewZoomOut);
+        MenuZoomReset.Click += (_, _) => ExecuteWindowCommand(CommandIds.ViewZoomReset);
+        MenuScrollLineUp.Click += (_, _) => Editor.ExecuteCommand(CommandIds.NavScrollLineUp);
+        MenuScrollLineDown.Click += (_, _) => Editor.ExecuteCommand(CommandIds.NavScrollLineDown);
+
         // Undo coalesce idle timer (settings-only, no menu item)
         Editor.CoalesceTimerMs = _settings.CoalesceTimerMs;
 
         UpdateStatusBarVisibility();
+    }
+
+    private void WireSearchMenu() {
+        MenuFind.Click += (_, _) => ExecuteWindowCommand(CommandIds.FindFind);
+        MenuReplace.Click += (_, _) => ExecuteWindowCommand(CommandIds.FindReplace);
+        MenuFindNext.Click += (_, _) => ExecuteWindowCommand(CommandIds.FindFindNext);
+        MenuFindPrevious.Click += (_, _) => ExecuteWindowCommand(CommandIds.FindFindPrevious);
+        MenuFindWordOrSel.Click += (_, _) => ExecuteWindowCommand(CommandIds.FindFindWordOrSel);
+        MenuIncrementalSearch.Click += (_, _) => ExecuteWindowCommand(CommandIds.FindIncrementalSearch);
+        MenuGoToLine.Click += (_, _) => ExecuteWindowCommand(CommandIds.NavGoToLine);
+        MenuCommandPalette.Click += (_, _) => OpenCommandPalette();
     }
 
     // -------------------------------------------------------------------------
@@ -1074,6 +1154,15 @@ public partial class MainWindow : Window {
         Editor.PerfStats.SaveTimeMs = sw.Elapsed.TotalMilliseconds;
     }
 
+    private async Task RevertFileAsync() {
+        if (_activeTab?.FilePath is not { } path) return;
+        if (!File.Exists(path)) return;
+        Editor.FlushCompound();
+        var idx = _tabs.IndexOf(_activeTab);
+        _tabs.Remove(_activeTab);
+        await OpenFileInTabAsync(path);
+    }
+
     // -------------------------------------------------------------------------
     // Streaming file load progress
     // -------------------------------------------------------------------------
@@ -1179,6 +1268,20 @@ public partial class MainWindow : Window {
         _settingsTab.Document.Changed += (_, _) => OnTabDocumentChanged(_settingsTab);
         UpdateTabBar();
         SwitchToTab(_settingsTab);
+    }
+
+    private async void OpenCommandPalette() {
+        var palette = new CommandPaletteWindow(_keyBindings, _theme);
+        await palette.ShowDialog(this);
+
+        if (palette.SelectedCommandId is { } cmdId) {
+            // Dispatch the chosen command through the normal path.
+            if (!ExecuteWindowCommand(cmdId)) {
+                if (_activeTab is not { IsSettings: true }) {
+                    Editor.ExecuteCommand(cmdId);
+                }
+            }
+        }
     }
 
     // -------------------------------------------------------------------------

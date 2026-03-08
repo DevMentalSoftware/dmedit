@@ -1209,6 +1209,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         Commands.CommandIds.NavPageDown,
         Commands.CommandIds.NavSelectPageUp,
         Commands.CommandIds.NavSelectPageDown,
+        Commands.CommandIds.NavScrollLineUp,
+        Commands.CommandIds.NavScrollLineDown,
     ];
 
     /// <summary>
@@ -1454,6 +1456,69 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 MoveCaretByPage(doc, +1, true);
                 return true;
 
+            // -- New editing commands --
+            case Commands.CommandIds.EditDeleteWordLeft:
+                FlushCompound();
+                if (!doc.Selection.IsEmpty) {
+                    doc.DeleteSelection();
+                } else {
+                    var wordLeft = FindWordBoundaryLeft(doc, doc.Selection.Caret);
+                    if (wordLeft < doc.Selection.Caret) {
+                        doc.Selection = new Selection(wordLeft, doc.Selection.Caret);
+                        doc.DeleteSelection();
+                    }
+                }
+                ScrollCaretIntoView();
+                InvalidateLayout();
+                ResetCaretBlink();
+                return true;
+
+            case Commands.CommandIds.EditDeleteWordRight:
+                FlushCompound();
+                if (!doc.Selection.IsEmpty) {
+                    doc.DeleteSelection();
+                } else {
+                    var wordRight = FindWordBoundaryRight(doc, doc.Selection.Caret);
+                    if (wordRight > doc.Selection.Caret) {
+                        doc.Selection = new Selection(doc.Selection.Caret, wordRight);
+                        doc.DeleteSelection();
+                    }
+                }
+                ScrollCaretIntoView();
+                InvalidateLayout();
+                ResetCaretBlink();
+                return true;
+
+            case Commands.CommandIds.EditInsertLineBelow:
+                PerformInsertLineBelow();
+                return true;
+
+            case Commands.CommandIds.EditInsertLineAbove:
+                PerformInsertLineAbove();
+                return true;
+
+            case Commands.CommandIds.EditDuplicateLine:
+                PerformDuplicateLine();
+                return true;
+
+            case Commands.CommandIds.EditIndent:
+                Coalesce("indent");
+                PerformIndent();
+                return true;
+
+            // -- Scroll without moving caret --
+            case Commands.CommandIds.NavScrollLineUp:
+                FlushCompound();
+                ScrollValue -= GetRowHeight();
+                InvalidateVisual();
+                return true;
+
+            case Commands.CommandIds.NavScrollLineDown:
+                FlushCompound();
+                ScrollValue += GetRowHeight();
+                InvalidateVisual();
+                return true;
+
             default:
                 return false;
         }
@@ -1598,6 +1663,111 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             pos++;
         }
         return caret + pos;
+    }
+
+    // -------------------------------------------------------------------------
+    // New editing command helpers
+    // -------------------------------------------------------------------------
+
+    private void PerformInsertLineBelow() {
+        var doc = Document;
+        if (doc == null) return;
+        FlushCompound();
+        var lineIdx = doc.Table.LineFromOfs(doc.Selection.Caret);
+        if (lineIdx + 1 < doc.Table.LineCount) {
+            var nextLineStart = doc.Table.LineStartOfs(lineIdx + 1);
+            doc.Selection = Selection.Collapsed(nextLineStart);
+            doc.Insert("\n");
+            doc.Selection = Selection.Collapsed(nextLineStart);
+        } else {
+            // Last line — append newline at end
+            doc.Selection = Selection.Collapsed(doc.Table.Length);
+            doc.Insert("\n");
+        }
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    private void PerformInsertLineAbove() {
+        var doc = Document;
+        if (doc == null) return;
+        FlushCompound();
+        var lineStart = doc.Table.LineStartOfs(doc.Table.LineFromOfs(doc.Selection.Caret));
+        doc.Selection = Selection.Collapsed(lineStart);
+        doc.Insert("\n");
+        doc.Selection = Selection.Collapsed(lineStart);
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    private void PerformDuplicateLine() {
+        var doc = Document;
+        if (doc == null) return;
+        FlushCompound();
+        var table = doc.Table;
+        var caret = doc.Selection.Caret;
+        var lineIdx = table.LineFromOfs(caret);
+        var lineStart = table.LineStartOfs(lineIdx);
+        var caretCol = caret - lineStart;
+        long lineEnd = lineIdx + 1 < table.LineCount
+            ? table.LineStartOfs(lineIdx + 1)
+            : table.Length;
+        var lineText = table.GetText(lineStart, (int)(lineEnd - lineStart));
+
+        // If the line doesn't end with a newline (last line), prepend one.
+        if (lineEnd == table.Length && (lineText.Length == 0 || lineText[^1] != '\n')) {
+            doc.BeginCompound();
+            doc.Selection = Selection.Collapsed(table.Length);
+            doc.Insert("\n" + lineText);
+            doc.EndCompound();
+        } else {
+            doc.Selection = Selection.Collapsed(lineEnd);
+            doc.Insert(lineText);
+        }
+        // Place caret on the duplicated line at the same column offset.
+        var newLineStart = lineEnd + (lineText.Length > 0 && lineText[^1] != '\n' ? 1 : 0);
+        doc.Selection = Selection.Collapsed(Math.Min(newLineStart + caretCol, table.Length));
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    private void PerformIndent() {
+        var doc = Document;
+        if (doc == null) return;
+        var table = doc.Table;
+        var sel = doc.Selection;
+
+        // If selection spans multiple lines, indent each line.
+        var startLine = table.LineFromOfs(sel.Start);
+        var endLine = table.LineFromOfs(Math.Max(sel.Start, sel.End - 1));
+        if (sel.IsEmpty || startLine == endLine) {
+            // Single-line or no selection: just insert 4 spaces at caret.
+            _editSw.Restart();
+            doc.Insert("    ");
+            _editSw.Stop();
+            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        } else {
+            // Multi-line selection: prepend 4 spaces to each line.
+            doc.BeginCompound();
+            for (var line = startLine; line <= endLine; line++) {
+                var ofs = table.LineStartOfs(line);
+                doc.Selection = Selection.Collapsed(ofs);
+                doc.Insert("    ");
+            }
+            doc.EndCompound();
+            // Select the full indented line range so the user can indent again.
+            var rangeStart = table.LineStartOfs(startLine);
+            var rangeEnd = endLine + 1 < table.LineCount
+                ? table.LineStartOfs(endLine + 1)
+                : table.Length;
+            doc.Selection = new Selection(rangeStart, rangeEnd);
+        }
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
     }
 
     private static int FindLineIndexForOfs(long charOfs, LayoutResult layout) {
