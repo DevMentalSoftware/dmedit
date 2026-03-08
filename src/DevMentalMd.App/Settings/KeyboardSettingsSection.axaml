@@ -74,6 +74,16 @@
 						        Cursor="Arrow" />
 					</Grid>
 				</Border>
+				<ToggleButton x:Name="ModifiedFilterBtn"
+				              Grid.Column="2"
+				              Content="M"
+				              FontSize="12"
+				              FontWeight="SemiBold"
+				              Padding="7,3"
+				              Margin="6,0,0,0"
+				              HorizontalAlignment="Left"
+				              VerticalAlignment="Stretch"
+				              ToolTip.Tip="Show modified only" />
 			</Grid>
 		</Border>
 

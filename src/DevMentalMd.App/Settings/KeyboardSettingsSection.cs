@@ -26,6 +26,7 @@ public partial class KeyboardSettingsSection : UserControl {
     private string? _selectedCommandId;
     private ChordGesture? _captured;         // single key or chord
     private KeyGesture? _keyFilter;          // keystroke filter
+    private bool _showModifiedOnly;          // "M" toggle: show only customised rows
     private EditorTheme _theme = EditorTheme.Light;
 
     // Tracks all command row borders for selection highlighting.
@@ -81,6 +82,10 @@ public partial class KeyboardSettingsSection : UserControl {
         };
 
         KeyFilterClearBtn.Click += (_, _) => ClearKeyFilter();
+        ModifiedFilterBtn.IsCheckedChanged += (_, _) => {
+            _showModifiedOnly = ModifiedFilterBtn.IsChecked == true;
+            ApplyFilter();
+        };
         KeyFilterPanel.AddHandler(
             KeyDownEvent, OnKeyFilterKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         KeyFilterPanel.GotFocus += (_, _) => {
@@ -469,6 +474,12 @@ public partial class KeyboardSettingsSection : UserControl {
                     if (visible && _keyFilter != null) {
                         visible = MatchesKeyFilter(_keyBindings.GetGesture(commandId))
                             || MatchesKeyFilter(_keyBindings.GetGesture2(commandId));
+                    }
+
+                    // Modified filter: only show rows with at least one customised slot.
+                    if (visible && _showModifiedOnly) {
+                        visible = IsBindingModified(commandId, 1)
+                            || IsBindingModified(commandId, 2);
                     }
 
                     row.IsVisible = visible;
