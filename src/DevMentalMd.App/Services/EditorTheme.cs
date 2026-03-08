@@ -97,6 +97,8 @@ public sealed class EditorTheme {
         new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90));
     public IBrush SettingsWarnForeground { get; init; } =
         new SolidColorBrush(Color.FromRgb(0xCC, 0x66, 0x00));
+    public IBrush SettingsErrorForeground { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xC4, 0x2B, 0x1C));
     public IBrush SettingsInputBorder { get; init; } =
         new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
     public IBrush SettingsAccent { get; init; } =

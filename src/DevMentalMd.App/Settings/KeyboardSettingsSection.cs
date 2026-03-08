@@ -109,6 +109,9 @@ public partial class KeyboardSettingsSection : UserControl {
         BuildCommandList();
         UpdateButtonStates();
         ApplyTheme(_theme);
+
+        // Guard against an unbounded layout before SetAvailableHeight is first called.
+        CommandScroll.MaxHeight = 500;
     }
 
     // =====================================================================
@@ -160,9 +163,6 @@ public partial class KeyboardSettingsSection : UserControl {
         var outer = FindOuterScrollViewer(CommandScroll);
         var outerNeedsScroll = outer != null && outer.Extent.Height > outer.Viewport.Height;
         var scrollInner = e.KeyModifiers.HasFlag(KeyModifiers.Control) || !outerNeedsScroll;
-
-        // Update hint synchronously during scroll (layout is already current).
-        ScrollHint.IsVisible = outerNeedsScroll;
 
         var delta = e.Delta.Y * 50;
         if (scrollInner) {
@@ -311,19 +311,7 @@ public partial class KeyboardSettingsSection : UserControl {
                 : Brushes.Transparent;
         }
 
-        UpdateShortcutLabel(commandId);
         UpdateButtonStates();
-    }
-
-    private void UpdateShortcutLabel(string commandId) {
-        var gesture1 = _keyBindings.GetGestureText(commandId);
-        var gesture2 = _keyBindings.GetGesture2Text(commandId);
-        var desc = KeyBindingService.GetDescriptor(commandId);
-        var name = desc?.DisplayName ?? commandId;
-
-        var primary = gesture1 ?? "(none)";
-        var secondary = gesture2 ?? "(none)";
-        ShortcutLabel.Text = $"{name}:  Primary: {primary}  |  Secondary: {secondary}";
     }
 
     // =====================================================================
@@ -629,15 +617,18 @@ public partial class KeyboardSettingsSection : UserControl {
     // =====================================================================
 
     /// <summary>
-    /// Sizes the command list to fill the given height, subtracting the
-    /// heights of all sibling controls (toolbar, hint, label, buttons).
+    /// Caps the command-list scroll area at the available viewport height so
+    /// it can scroll internally when the full list is shown, while still
+    /// auto-shrinking when the list is filtered short (no dead space).
+    /// The section itself sizes to its content via the StackPanel root.
     /// Called by <see cref="SettingsControl"/> when the viewport changes.
     /// </summary>
     public void SetAvailableHeight(double height) {
-        // The root DockPanel handles internal layout: toolbar and bottom row
-        // are docked, and CommandScroll fills the remaining space.
-        // We just set the section's overall height; DockPanel does the rest.
-        Height = Math.Max(200, height);
+        // Subtract a fixed estimate of the non-list elements (profile combo,
+        // filter row, buttons, labels, margins ≈ 150px) so the list fills the
+        // available space without overflowing.
+        CommandScroll.MaxHeight = Math.Max(100, height - 150);
+        UpdateScrollHintVisibility();
     }
 
     // =====================================================================
@@ -688,7 +679,6 @@ public partial class KeyboardSettingsSection : UserControl {
         ScrollHint.Foreground = theme.SettingsDimForeground;
 
         // Labels
-        ShortcutLabel.Foreground = theme.EditorForeground;
         ConflictLabel.Foreground = theme.SettingsWarnForeground;
 
         // Name filter + its clear button
@@ -698,6 +688,9 @@ public partial class KeyboardSettingsSection : UserControl {
         // Capture box + its clear button
         CaptureBox.Foreground = theme.EditorForeground;
         CaptureClearBtn.Foreground = theme.EditorForeground;
+
+        // Command list border
+        CommandListBorder.BorderBrush = theme.SettingsInputBorder;
 
         // Key filter panel border (unfocused state)
         if (!KeyFilterPanel.IsFocused) {
