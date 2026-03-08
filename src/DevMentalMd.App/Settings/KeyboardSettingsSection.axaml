@@ -1,0 +1,149 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DevMentalMd.App.Settings.KeyboardSettingsSection">
+	<UserControl.Styles>
+		<!-- Override the Fluent theme's subtle focus ring with a bright accent
+		     so focused text inputs are clearly visible on both light and dark themes. -->
+		<Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+			<Setter Property="BorderBrush" Value="#3399FF" />
+			<Setter Property="BorderThickness" Value="2" />
+		</Style>
+	</UserControl.Styles>
+
+	<DockPanel Margin="12,8,12,8">
+
+		<!-- Profile selector -->
+		<ComboBox x:Name="ProfileCombo"
+		          DockPanel.Dock="Top"
+		          FontSize="12"
+		          Padding="8,3"
+		          Margin="0,0,0,6"
+		          MinWidth="130" />
+
+		<!-- Filter row: name + shortcut filters aligned with command columns.
+		     The wrapping Border is the same width as the command ScrollViewer (600).
+		     Its Padding mirrors command row geometry — 3px border + 21px padding =
+		     24px left, 8px right — so the inner Grid's columns align precisely
+		     with the rows below. -->
+		<Border DockPanel.Dock="Top"
+		        Width="600"
+		        HorizontalAlignment="Left"
+		        Padding="24,0,8,4">
+		<Grid ColumnDefinitions="*,130,*">
+			<Grid Grid.Column="0" ColumnDefinitions="*,Auto">
+				<TextBox x:Name="NameFilter"
+				         Grid.ColumnSpan="2"
+				         Watermark="Search commands&#x2026;"
+				         FontSize="13"
+				         MinWidth="160" />
+				<Button x:Name="NameFilterClearBtn"
+				        Grid.Column="1"
+				        Content="&#x2715;"
+				        FontSize="11"
+				        Padding="4,2"
+				        Background="Transparent"
+				        BorderThickness="0"
+				        VerticalAlignment="Center"
+				        HorizontalAlignment="Right"
+				        Margin="0,0,6,0"
+				        IsVisible="False"
+				        Cursor="Arrow" />
+			</Grid>
+			<Border x:Name="KeyFilterPanel"
+			        Grid.Column="1"
+			        BorderThickness="1"
+			        CornerRadius="3"
+			        Padding="6,3"
+			        Focusable="True"
+			        Cursor="Ibeam">
+				<Grid ColumnDefinitions="*,Auto">
+					<TextBlock x:Name="KeyFilterText"
+					           Text="Filter by shortcut&#x2026;"
+					           FontSize="13"
+					           VerticalAlignment="Center"
+					           HorizontalAlignment="Left"
+					           Padding="4,2" />
+					<Button x:Name="KeyFilterClearBtn"
+					        Grid.Column="1"
+					        Content="&#x2715;"
+					        FontSize="11"
+					        Padding="3,0"
+					        Background="Transparent"
+					        BorderThickness="0"
+					        VerticalAlignment="Center"
+					        HorizontalAlignment="Right"
+					        IsVisible="False"
+					        Cursor="Arrow" />
+				</Grid>
+			</Border>
+		</Grid>
+		</Border>
+
+		<!-- Scroll hint (shown when outer page needs scrolling) -->
+		<TextBlock x:Name="ScrollHint"
+		           DockPanel.Dock="Top"
+		           Text="Ctrl+Scroll to scroll this list when the page also scrolls."
+		           FontSize="11"
+		           Margin="0,0,0,2"
+		           IsVisible="False" />
+
+		<!-- Bottom: action buttons (docked to very bottom) -->
+		<WrapPanel DockPanel.Dock="Bottom"
+		           Orientation="Horizontal"
+		           Margin="0,4,0,0">
+			<Grid MaxWidth="260" ColumnDefinitions="*,Auto">
+				<TextBox x:Name="CaptureBox"
+				         Grid.ColumnSpan="2"
+				         Watermark="Press shortcut keys&#x2026;"
+				         FontSize="13"
+				         IsReadOnly="True"
+				         MinWidth="180" />
+				<Button x:Name="CaptureClearBtn"
+				        Grid.Column="1"
+				        Content="&#x2715;"
+				        FontSize="11"
+				        Padding="4,2"
+				        Background="Transparent"
+				        BorderThickness="0"
+				        VerticalAlignment="Center"
+				        HorizontalAlignment="Right"
+				        Margin="0,0,6,0"
+				        IsVisible="False"
+				        Cursor="Arrow" />
+			</Grid>
+			<TextBlock x:Name="ConflictLabel"
+			           FontSize="11"
+			           VerticalAlignment="Center"
+			           TextWrapping="NoWrap"
+			           Margin="8,0,0,0" />
+			<Button x:Name="AssignBtn" Content="Assign" Margin="8,0,4,0" />
+			<Button x:Name="RemoveBtn" Content="Remove" Margin="0,0,4,0" />
+			<Button x:Name="ResetBtn" Content="Reset" />
+		</WrapPanel>
+
+		<!-- Shortcut display label -->
+		<TextBlock x:Name="ShortcutLabel"
+		           DockPanel.Dock="Bottom"
+		           FontSize="13"
+		           Margin="0,8,0,4" />
+
+		<!-- Error banner (duplicate gesture warnings) -->
+		<TextBlock x:Name="ErrorBanner"
+		           DockPanel.Dock="Bottom"
+		           FontSize="12"
+		           TextWrapping="Wrap"
+		           Margin="0,4,0,0"
+		           IsVisible="False" />
+
+		<!-- Fill: scrollable command list -->
+		<ScrollViewer x:Name="CommandScroll"
+		              HorizontalScrollBarVisibility="Disabled"
+		              VerticalScrollBarVisibility="Auto"
+		              AllowAutoHide="False"
+		              Width="600"
+		              HorizontalAlignment="Left">
+			<StackPanel x:Name="CommandList" Spacing="0" />
+		</ScrollViewer>
+
+	</DockPanel>
+</UserControl>

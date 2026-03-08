@@ -1,5 +1,5 @@
 {
-  "name": "Default",
+  "name": "Default Profile",
   "bindings": {
     "File.New": "Ctrl+N",
     "File.Open": "Ctrl+O",
@@ -9,7 +9,7 @@
     "File.Close": "Ctrl+F4",
     "File.CloseAll": "Ctrl+Shift+F4",
     "File.Exit": "Alt+F4",
-
+    "File.RevertFile": "",
     "Edit.Undo": "Ctrl+Z",
     "Edit.Redo": "Ctrl+Shift+Z",
     "Edit.Cut": "Ctrl+X",
@@ -26,24 +26,31 @@
     "Edit.LowerCase": "Ctrl+Shift+L",
     "Edit.ProperCase": "",
     "Edit.Newline": "Return",
+    "Edit.Tab": "",
+    "Edit.InsertLineBelow": "",
+    "Edit.InsertLineAbove": "",
     "Edit.DeleteWordLeft": "Ctrl+Back",
     "Edit.DeleteWordRight": "Ctrl+Delete",
+    "Edit.DuplicateLine": "",
     "Edit.Indent": "Tab",
-
+    "Edit.SelectAllOccurrences": "",
+    "Edit.ColumnSelect": "",
     "Find.Find": "Ctrl+F",
     "Find.Replace": "Ctrl+H",
     "Find.FindNext": "F3",
     "Find.FindPrevious": "Shift+F3",
     "Find.FindWordOrSelection": "Ctrl+F3",
     "Find.IncrementalSearch": "Ctrl+I",
-
+    "View.LineNumbers": "",
+    "View.StatusBar": "",
     "View.WrapLines": "Ctrl+E, Ctrl+W",
-    "View.ZoomReset": "Ctrl+0",
-
+    "View.ZoomIn": "",
+    "View.ZoomOut": "",
+    "View.ZoomReset": "Ctrl+D0",
     "Window.NextTab": "Ctrl+Tab",
     "Window.PrevTab": "Ctrl+Shift+Tab",
+    "Window.Settings": "",
     "Window.CommandPalette": "F1",
-
     "Nav.MoveLeft": "Left",
     "Nav.MoveRight": "Right",
     "Nav.MoveUp": "Up",
@@ -59,7 +66,6 @@
     "Nav.GoToLine": "Ctrl+G",
     "Nav.ScrollLineUp": "Ctrl+Up",
     "Nav.ScrollLineDown": "Ctrl+Down",
-
     "Nav.SelectLeft": "Shift+Left",
     "Nav.SelectRight": "Shift+Right",
     "Nav.SelectUp": "Shift+Up",

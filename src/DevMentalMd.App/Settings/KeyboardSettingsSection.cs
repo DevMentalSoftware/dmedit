@@ -3,52 +3,24 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
-
 using Avalonia.Threading;
-
 using DevMentalMd.App.Commands;
 using DevMentalMd.App.Services;
 
 namespace DevMentalMd.App.Settings;
 
 /// <summary>
-/// Custom settings section for keyboard shortcut configuration. Displays a
-/// profile selector, name/shortcut filter row, a scrollable 3-column command
-/// list, and a bottom row with key capture box, conflict label, and
-/// assign/remove/reset buttons.
+/// Custom settings section for keyboard shortcut configuration. Layout is
+/// defined in KeyboardSettingsSection.axaml — profile selector, name/shortcut
+/// filter row, scrollable 3-column command list, and a bottom row with key
+/// capture box, conflict label, and assign/remove/reset buttons.
 /// </summary>
-public class KeyboardSettingsSection : UserControl {
+public partial class KeyboardSettingsSection : UserControl {
     private readonly KeyBindingService _keyBindings;
     private readonly AppSettings _settings;
-
-    // -- Toolbar --
-    private readonly ComboBox _profileCombo;
-    private readonly TextBox _nameFilter;
-    private readonly Button _nameFilterClearBtn;
-    private readonly Border _keyFilterPanel;
-    private readonly TextBlock _keyFilterText;
-    private readonly Button _keyFilterClearBtn;
-
-    // -- Command list --
-    private readonly StackPanel _commandList;
-    private readonly ScrollViewer _commandScroll;
-
-    // -- Error banner --
-    private readonly TextBlock _errorBanner;
-
-    // -- Bottom controls --
-    private readonly TextBlock _shortcutLabel;
-    private readonly TextBox _captureBox;
-    private readonly Button _captureClearBtn;
-    private readonly TextBlock _conflictLabel;
-    private readonly Button _assignBtn;
-    private readonly Button _removeBtn;
-    private readonly Button _resetBtn;
-    private readonly TextBlock _scrollHint;
 
     // -- State --
     private string? _selectedCommandId;
@@ -68,277 +40,75 @@ public class KeyboardSettingsSection : UserControl {
     /// </summary>
     public event Action? BindingChanged;
 
+    /// <summary>Design-time constructor for AXAML previewer.</summary>
+    public KeyboardSettingsSection() {
+        _keyBindings = null!;
+        _settings = null!;
+        InitializeComponent();
+    }
+
     public KeyboardSettingsSection(KeyBindingService keyBindings, AppSettings settings) {
         _keyBindings = keyBindings;
         _settings = settings;
+        InitializeComponent();
 
         // =====================================================================
-        // Toolbar: profile selector
+        // Populate profile selector
         // =====================================================================
-        var toolbar = new WrapPanel {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 0, 0, 6),
-        };
-
-        // Profile selector
-        _profileCombo = new ComboBox {
-            FontSize = 12,
-            Padding = new Thickness(8, 3),
-            Margin = new Thickness(0, 0, 8, 4),
-            MinWidth = 130,
-        };
         foreach (var id in ProfileLoader.ProfileIds) {
             var displayName = ProfileLoader.GetDisplayName(id);
-            if (id == "default") displayName = "Default Profile";
-            _profileCombo.Items.Add(new ComboBoxItem {
+            ProfileCombo.Items.Add(new ComboBoxItem {
                 Content = displayName,
                 Tag = id,
             });
         }
-        // Select current profile.
         var activeId = _keyBindings.ActiveProfileId;
         for (var i = 0; i < ProfileLoader.ProfileIds.Count; i++) {
             if (ProfileLoader.ProfileIds[i] == activeId) {
-                _profileCombo.SelectedIndex = i;
+                ProfileCombo.SelectedIndex = i;
                 break;
             }
         }
-        _profileCombo.SelectionChanged += OnProfileSelectionChanged;
-        toolbar.Children.Add(_profileCombo);
+        ProfileCombo.SelectionChanged += OnProfileSelectionChanged;
 
-        // Name filter (text search for command display names)
-        _nameFilter = new TextBox {
-            Watermark = "Search commands\u2026",
-            FontSize = 13,
-            MinWidth = 160,
-        };
-        _nameFilterClearBtn = new Button {
-            Content = "\u2715",
-            FontSize = 11,
-            Padding = new Thickness(4, 2),
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 0, 6, 0),
-            IsVisible = false,
-            Cursor = new Cursor(StandardCursorType.Arrow),
-        };
-        _nameFilterClearBtn.Click += (_, _) => {
-            _nameFilter.Text = "";
-            // ApplyFilter fires via PropertyChanged
-        };
-        _nameFilter.PropertyChanged += (_, e) => {
+        // =====================================================================
+        // Wire event handlers
+        // =====================================================================
+        NameFilterClearBtn.Click += (_, _) => { NameFilter.Text = ""; };
+        NameFilter.PropertyChanged += (_, e) => {
             if (e.Property == TextBox.TextProperty) {
-                _nameFilterClearBtn.IsVisible = !string.IsNullOrEmpty(_nameFilter.Text);
+                NameFilterClearBtn.IsVisible = !string.IsNullOrEmpty(NameFilter.Text);
                 ApplyFilter();
             }
         };
 
-        // Name filter and key filter are placed in a separate row below the
-        // toolbar, aligned with the command list columns (see filterRow below).
-
-        // Keystroke filter panel (focusable border, not a TextBox)
-        _keyFilterText = new TextBlock {
-            Text = "Filter by shortcut\u2026",
-            FontSize = 13,
-            Foreground = _theme.SettingsDimForeground,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Padding = new Thickness(4, 2),
-        };
-        _keyFilterClearBtn = new Button {
-            Content = "\u2715",
-            FontSize = 11,
-            Padding = new Thickness(3, 0),
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            IsVisible = false,
-            Cursor = new Cursor(StandardCursorType.Arrow),
-        };
-        _keyFilterClearBtn.Click += (_, _) => ClearKeyFilter();
-
-        var keyFilterContent = new Grid {
-            ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"),
-        };
-        Grid.SetColumn(_keyFilterText, 0);
-        Grid.SetColumn(_keyFilterClearBtn, 1);
-        keyFilterContent.Children.Add(_keyFilterText);
-        keyFilterContent.Children.Add(_keyFilterClearBtn);
-
-        _keyFilterPanel = new Border {
-            Child = keyFilterContent,
-            BorderThickness = new Thickness(1),
-            BorderBrush = _theme.SettingsInputBorder,
-            CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(6, 3),
-            Focusable = true,
-            Cursor = new Cursor(StandardCursorType.Ibeam),
-        };
-        _keyFilterPanel.AddHandler(
+        KeyFilterClearBtn.Click += (_, _) => ClearKeyFilter();
+        KeyFilterPanel.AddHandler(
             KeyDownEvent, OnKeyFilterKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        _keyFilterPanel.GotFocus += (_, _) => {
-            _keyFilterPanel.BorderBrush = _theme.SettingsAccent;
+        KeyFilterPanel.GotFocus += (_, _) => {
+            KeyFilterPanel.BorderBrush = _theme.SettingsAccent;
         };
-        _keyFilterPanel.LostFocus += (_, _) => {
-            _keyFilterPanel.BorderBrush = _theme.SettingsInputBorder;
+        KeyFilterPanel.LostFocus += (_, _) => {
+            KeyFilterPanel.BorderBrush = _theme.SettingsInputBorder;
         };
 
-        // Filter row: matches the 3-column grid of command rows (*,130,*).
-        // Name filter sits in column 0 (aligned with command names), key
-        // filter sits in column 1 (aligned with Keystroke column).
-        var nameFilterWrapper = new Grid {
-            ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"),
-        };
-        Grid.SetColumn(_nameFilter, 0);
-        Grid.SetColumnSpan(_nameFilter, 2);
-        Grid.SetColumn(_nameFilterClearBtn, 1);
-        nameFilterWrapper.Children.Add(_nameFilter);
-        nameFilterWrapper.Children.Add(_nameFilterClearBtn);
-
-        var filterRow = new Grid {
-            ColumnDefinitions = ColumnDefinitions.Parse("*,150,*"),
-            Margin = new Thickness(24, 0, 8, 4),
-            Width = 600,
-            HorizontalAlignment = HorizontalAlignment.Left,
-        };
-        Grid.SetColumn(nameFilterWrapper, 0);
-        Grid.SetColumn(_keyFilterPanel, 1);
-        filterRow.Children.Add(nameFilterWrapper);
-        filterRow.Children.Add(_keyFilterPanel);
-
-        // =====================================================================
-        // Command list (scrollable)
-        // =====================================================================
-        _commandList = new StackPanel { Spacing = 0 };
-        _commandScroll = new ScrollViewer {
-            Content = _commandList,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            AllowAutoHide = false,
-            Width = 600,
-            HorizontalAlignment = HorizontalAlignment.Left,
-        };
-        // Ctrl+Scroll routes to inner scrollviewer, plain scroll bubbles up.
-        _commandScroll.AddHandler(PointerWheelChangedEvent, OnCommandListWheel,
+        CommandScroll.AddHandler(PointerWheelChangedEvent, OnCommandListWheel,
             Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
-        // =====================================================================
-        // Error banner (duplicate gesture warnings)
-        // =====================================================================
-        _errorBanner = new TextBlock {
-            FontSize = 12,
-            Foreground = _theme.SettingsWarnForeground,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 4, 0, 0),
-            IsVisible = false,
-        };
-
-        // =====================================================================
-        // Shortcut display
-        // =====================================================================
-        _shortcutLabel = new TextBlock {
-            FontSize = 13,
-            Margin = new Thickness(0, 8, 0, 4),
-        };
-
-        // =====================================================================
-        // Bottom controls: capture box + clear + conflict + buttons
-        // =====================================================================
-        _captureBox = new TextBox {
-            Watermark = "Press shortcut keys\u2026",
-            FontSize = 13,
-            IsReadOnly = true,
-            MinWidth = 180,
-        };
-        _captureBox.AddHandler(
+        CaptureBox.AddHandler(
             KeyDownEvent, OnCaptureKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        CaptureClearBtn.Click += (_, _) => ClearCapturedGesture();
 
-        _captureClearBtn = new Button {
-            Content = "\u2715",
-            FontSize = 11,
-            Padding = new Thickness(4, 2),
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 0, 6, 0),
-            IsVisible = false,
-            Cursor = new Cursor(StandardCursorType.Arrow),
-        };
-        _captureClearBtn.Click += (_, _) => ClearCapturedGesture();
-
-        // Wrap capture box + clear button in a Grid so the ✕ sits inside the box.
-        var captureWrapper = new Grid {
-            ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"),
-            MaxWidth = 260,
-        };
-        Grid.SetColumn(_captureBox, 0);
-        Grid.SetColumnSpan(_captureBox, 2); // TextBox spans full width
-        Grid.SetColumn(_captureClearBtn, 1); // Button overlays on the right
-        captureWrapper.Children.Add(_captureBox);
-        captureWrapper.Children.Add(_captureClearBtn);
-
-        _conflictLabel = new TextBlock {
-            FontSize = 11,
-            Foreground = _theme.SettingsWarnForeground,
-            VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.NoWrap,
-            Margin = new Thickness(8, 0, 0, 0),
-        };
-
-        _assignBtn = new Button { Content = "Assign", Margin = new Thickness(8, 0, 4, 0) };
-        _removeBtn = new Button { Content = "Remove", Margin = new Thickness(0, 0, 4, 0) };
-        _resetBtn = new Button { Content = "Reset" };
-
-        _assignBtn.Click += OnAssign;
-        _removeBtn.Click += OnRemove;
-        _resetBtn.Click += OnReset;
-
-        var bottomRow = new WrapPanel {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 4, 0, 0),
-        };
-        bottomRow.Children.Add(captureWrapper);
-        bottomRow.Children.Add(_conflictLabel);
-        bottomRow.Children.Add(_assignBtn);
-        bottomRow.Children.Add(_removeBtn);
-        bottomRow.Children.Add(_resetBtn);
+        AssignBtn.Click += OnAssign;
+        RemoveBtn.Click += OnRemove;
+        ResetBtn.Click += OnReset;
 
         // =====================================================================
-        // Root layout
+        // Initial build
         // =====================================================================
-        _scrollHint = new TextBlock {
-            Text = "Ctrl+Scroll to scroll this list when the page also scrolls.",
-            FontSize = 11,
-            Foreground = _theme.SettingsDimForeground,
-            Margin = new Thickness(24, 0, 0, 2),
-            IsVisible = false, // Shown dynamically when outer page needs scrolling.
-        };
-
-        var root = new DockPanel { Margin = new Thickness(12, 8, 12, 8) };
-        DockPanel.SetDock(toolbar, Dock.Top);
-        DockPanel.SetDock(filterRow, Dock.Top);
-        DockPanel.SetDock(_scrollHint, Dock.Top);
-        DockPanel.SetDock(_errorBanner, Dock.Bottom);
-        DockPanel.SetDock(_shortcutLabel, Dock.Bottom);
-        DockPanel.SetDock(bottomRow, Dock.Bottom);
-        // Order matters: dock top/bottom chrome first, then _commandScroll
-        // fills the remaining space as the last (undocked) child.
-        root.Children.Add(toolbar);
-        root.Children.Add(filterRow);
-        root.Children.Add(_scrollHint);
-        root.Children.Add(bottomRow);
-        root.Children.Add(_shortcutLabel);
-        root.Children.Add(_errorBanner);
-        root.Children.Add(_commandScroll);
-
-        Content = root;
-
         BuildCommandList();
         UpdateButtonStates();
+        ApplyTheme(_theme);
     }
 
     // =====================================================================
@@ -363,18 +133,18 @@ public class KeyboardSettingsSection : UserControl {
         }
 
         _keyFilter = new KeyGesture(e.Key, e.KeyModifiers);
-        _keyFilterText.Text = _keyFilter.ToString();
-        _keyFilterText.Foreground = _theme.EditorForeground;
-        _keyFilterClearBtn.IsVisible = true;
+        KeyFilterText.Text = _keyFilter.ToString();
+        KeyFilterText.Foreground = _theme.EditorForeground;
+        KeyFilterClearBtn.IsVisible = true;
         ApplyFilter();
         e.Handled = true;
     }
 
     private void ClearKeyFilter() {
         _keyFilter = null;
-        _keyFilterText.Text = "Filter by shortcut\u2026";
-        _keyFilterText.Foreground = _theme.SettingsDimForeground;
-        _keyFilterClearBtn.IsVisible = false;
+        KeyFilterText.Text = "Filter by shortcut\u2026";
+        KeyFilterText.Foreground = _theme.SettingsDimForeground;
+        KeyFilterClearBtn.IsVisible = false;
         ApplyFilter();
     }
 
@@ -387,18 +157,18 @@ public class KeyboardSettingsSection : UserControl {
         // on its own. We then manually scroll the right target.
         e.Handled = true;
 
-        var outer = FindOuterScrollViewer(_commandScroll);
+        var outer = FindOuterScrollViewer(CommandScroll);
         var outerNeedsScroll = outer != null && outer.Extent.Height > outer.Viewport.Height;
         var scrollInner = e.KeyModifiers.HasFlag(KeyModifiers.Control) || !outerNeedsScroll;
 
         // Update hint synchronously during scroll (layout is already current).
-        _scrollHint.IsVisible = outerNeedsScroll;
+        ScrollHint.IsVisible = outerNeedsScroll;
 
         var delta = e.Delta.Y * 50;
         if (scrollInner) {
-            _commandScroll.Offset = new Vector(
-                _commandScroll.Offset.X,
-                _commandScroll.Offset.Y - delta);
+            CommandScroll.Offset = new Vector(
+                CommandScroll.Offset.X,
+                CommandScroll.Offset.Y - delta);
         } else {
             outer!.Offset = new Vector(
                 outer.Offset.X,
@@ -420,7 +190,7 @@ public class KeyboardSettingsSection : UserControl {
     // =====================================================================
 
     private void BuildCommandList() {
-        _commandList.Children.Clear();
+        CommandList.Children.Clear();
         _commandRows.Clear();
         _categoryGroups.Clear();
         DetectDuplicateGestures();
@@ -440,13 +210,13 @@ public class KeyboardSettingsSection : UserControl {
                 FontWeight = FontWeight.SemiBold,
                 Margin = new Thickness(4, 10, 0, 2),
             };
-            _commandList.Children.Add(header);
+            CommandList.Children.Add(header);
 
             var rowsInCategory = new List<Border>();
 
             foreach (var cmd in commands) {
                 var row = CreateCommandRow(cmd);
-                _commandList.Children.Add(row);
+                CommandList.Children.Add(row);
                 _commandRows.Add((row, cmd.Id));
                 rowsInCategory.Add(row);
             }
@@ -520,7 +290,7 @@ public class KeyboardSettingsSection : UserControl {
 
         border.DoubleTapped += (_, e) => {
             SelectCommand(cmd.Id);
-            _captureBox.Focus();
+            CaptureBox.Focus();
             e.Handled = true;
         };
 
@@ -530,9 +300,9 @@ public class KeyboardSettingsSection : UserControl {
     private void SelectCommand(string commandId) {
         _selectedCommandId = commandId;
         _captured = null;
-        _captureBox.Text = "";
-        _conflictLabel.Text = "";
-        _captureClearBtn.IsVisible = false;
+        CaptureBox.Text = "";
+        ConflictLabel.Text = "";
+        CaptureClearBtn.IsVisible = false;
 
         // Update selection highlight
         foreach (var (border, id) in _commandRows) {
@@ -553,7 +323,7 @@ public class KeyboardSettingsSection : UserControl {
 
         var primary = gesture1 ?? "(none)";
         var secondary = gesture2 ?? "(none)";
-        _shortcutLabel.Text = $"{name}:  Primary: {primary}  |  Secondary: {secondary}";
+        ShortcutLabel.Text = $"{name}:  Primary: {primary}  |  Secondary: {secondary}";
     }
 
     // =====================================================================
@@ -562,9 +332,9 @@ public class KeyboardSettingsSection : UserControl {
 
     private void ClearCapturedGesture() {
         _captured = null;
-        _captureBox.Text = "";
-        _conflictLabel.Text = "";
-        _captureClearBtn.IsVisible = false;
+        CaptureBox.Text = "";
+        ConflictLabel.Text = "";
+        CaptureClearBtn.IsVisible = false;
         UpdateButtonStates();
     }
 
@@ -594,13 +364,13 @@ public class KeyboardSettingsSection : UserControl {
             _captured = new ChordGesture(gesture);
         }
 
-        _captureBox.Text = _captured.ToString();
-        _captureClearBtn.IsVisible = true;
+        CaptureBox.Text = _captured.ToString();
+        CaptureClearBtn.IsVisible = true;
 
         // Check for conflicts.
         if (_selectedCommandId != null) {
             var conflict = _keyBindings.FindConflict(_captured, _selectedCommandId);
-            _conflictLabel.Text = conflict != null
+            ConflictLabel.Text = conflict != null
                 ? $"Conflict: {KeyBindingService.GetDescriptor(conflict)?.DisplayName ?? conflict}"
                 : "";
         }
@@ -657,34 +427,34 @@ public class KeyboardSettingsSection : UserControl {
         }
 
         _captured = null;
-        _captureBox.Text = "";
-        _conflictLabel.Text = "";
-        _captureClearBtn.IsVisible = false;
+        CaptureBox.Text = "";
+        ConflictLabel.Text = "";
+        CaptureClearBtn.IsVisible = false;
         UpdateButtonStates();
 
         BindingChanged?.Invoke();
     }
 
     private void UpdateButtonStates() {
-        _assignBtn.IsEnabled = _selectedCommandId != null && _captured != null;
+        AssignBtn.IsEnabled = _selectedCommandId != null && _captured != null;
 
         if (_selectedCommandId != null) {
             var hasAny = _keyBindings.GetGesture(_selectedCommandId) != null
                 || _keyBindings.GetGesture2(_selectedCommandId) != null;
-            _removeBtn.IsEnabled = hasAny;
+            RemoveBtn.IsEnabled = hasAny;
         } else {
-            _removeBtn.IsEnabled = false;
+            RemoveBtn.IsEnabled = false;
         }
 
-        _resetBtn.IsEnabled = _selectedCommandId != null;
+        ResetBtn.IsEnabled = _selectedCommandId != null;
     }
 
     // =====================================================================
-    // Combined filter: category buttons + keystroke filter
+    // Combined filter
     // =====================================================================
 
     private void ApplyFilter() {
-        var nameSearch = _nameFilter.Text?.Trim();
+        var nameSearch = NameFilter.Text?.Trim();
         var hasNameFilter = !string.IsNullOrEmpty(nameSearch);
 
         foreach (var (header, category, rows) in _categoryGroups) {
@@ -748,8 +518,8 @@ public class KeyboardSettingsSection : UserControl {
     /// </summary>
     private void UpdateScrollHintVisibility() {
         Dispatcher.UIThread.Post(() => {
-            var outer = FindOuterScrollViewer(_commandScroll);
-            _scrollHint.IsVisible = outer != null
+            var outer = FindOuterScrollViewer(CommandScroll);
+            ScrollHint.IsVisible = outer != null
                 && outer.Extent.Height > outer.Viewport.Height;
         });
     }
@@ -759,7 +529,7 @@ public class KeyboardSettingsSection : UserControl {
     // =====================================================================
 
     private void OnProfileSelectionChanged(object? sender, SelectionChangedEventArgs e) {
-        if (_profileCombo.SelectedItem is not ComboBoxItem item
+        if (ProfileCombo.SelectedItem is not ComboBoxItem item
             || item.Tag is not string profileId) {
             return;
         }
@@ -779,13 +549,23 @@ public class KeyboardSettingsSection : UserControl {
 
     /// <summary>
     /// Returns true if the user has a custom override for the given command
-    /// in the given slot (differing from or absent in the active profile).
+    /// in the given slot that differs from the active profile's default.
     /// </summary>
     private bool IsBindingModified(string commandId, int slot) {
         var overrides = slot == 1
             ? _settings.KeyBindingOverrides
             : _settings.KeyBinding2Overrides;
-        return overrides != null && overrides.ContainsKey(commandId);
+        if (overrides == null || !overrides.ContainsKey(commandId)) return false;
+        // Compare effective gesture to profile default — if they match, the
+        // override is a no-op (e.g. user removed a binding that was already
+        // unbound in the profile) and shouldn't show as modified.
+        var effective = slot == 1
+            ? _keyBindings.GetGesture(commandId)
+            : _keyBindings.GetGesture2(commandId);
+        var profileDefault = _keyBindings.GetProfileDefault(commandId, slot);
+        if (effective == null && profileDefault == null) return false;
+        if (effective == null || profileDefault == null) return true;
+        return effective.ToString() != profileDefault.ToString();
     }
 
     /// <summary>
@@ -806,8 +586,8 @@ public class KeyboardSettingsSection : UserControl {
                 singleKeySeen, chordSeen, errors);
         }
 
-        _errorBanner.IsVisible = errors.Count > 0;
-        _errorBanner.Text = errors.Count > 0
+        ErrorBanner.IsVisible = errors.Count > 0;
+        ErrorBanner.Text = errors.Count > 0
             ? string.Join("  |  ", errors)
             : "";
     }
@@ -855,7 +635,7 @@ public class KeyboardSettingsSection : UserControl {
     /// </summary>
     public void SetAvailableHeight(double height) {
         // The root DockPanel handles internal layout: toolbar and bottom row
-        // are docked, and _commandScroll fills the remaining space.
+        // are docked, and CommandScroll fills the remaining space.
         // We just set the section's overall height; DockPanel does the rest.
         Height = Math.Max(200, height);
     }
@@ -902,35 +682,34 @@ public class KeyboardSettingsSection : UserControl {
         }
 
         // Error banner
-        _errorBanner.Foreground = theme.SettingsWarnForeground;
+        ErrorBanner.Foreground = theme.SettingsWarnForeground;
 
         // Scroll hint
-        _scrollHint.Foreground = theme.SettingsDimForeground;
+        ScrollHint.Foreground = theme.SettingsDimForeground;
 
         // Labels
-        _shortcutLabel.Foreground = theme.EditorForeground;
-        _conflictLabel.Foreground = theme.SettingsWarnForeground;
+        ShortcutLabel.Foreground = theme.EditorForeground;
+        ConflictLabel.Foreground = theme.SettingsWarnForeground;
 
         // Name filter + its clear button
-        _nameFilter.Foreground = theme.EditorForeground;
-        _nameFilterClearBtn.Foreground = theme.EditorForeground;
+        NameFilter.Foreground = theme.EditorForeground;
+        NameFilterClearBtn.Foreground = theme.EditorForeground;
 
         // Capture box + its clear button
-        _captureBox.Foreground = theme.EditorForeground;
-        _captureClearBtn.Foreground = theme.EditorForeground;
+        CaptureBox.Foreground = theme.EditorForeground;
+        CaptureClearBtn.Foreground = theme.EditorForeground;
 
         // Key filter panel border (unfocused state)
-        if (!_keyFilterPanel.IsFocused) {
-            _keyFilterPanel.BorderBrush = theme.SettingsInputBorder;
+        if (!KeyFilterPanel.IsFocused) {
+            KeyFilterPanel.BorderBrush = theme.SettingsInputBorder;
         } else {
-            _keyFilterPanel.BorderBrush = theme.SettingsAccent;
+            KeyFilterPanel.BorderBrush = theme.SettingsAccent;
         }
 
         // Keystroke filter text + clear button
-        _keyFilterClearBtn.Foreground = theme.EditorForeground;
-        _keyFilterText.Foreground = _keyFilter != null
+        KeyFilterClearBtn.Foreground = theme.EditorForeground;
+        KeyFilterText.Foreground = _keyFilter != null
             ? theme.EditorForeground
             : theme.SettingsDimForeground;
-
     }
 }

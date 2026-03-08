@@ -1,5 +1,8 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.Json;
 using Avalonia.Input;
 using DevMentalMd.App.Commands;
 
@@ -141,6 +144,132 @@ public class ProfileLoaderTests {
             foreach (var cmdId in catCommands) {
                 Assert.Contains(cmdId, boundIds);
             }
+        }
+    }
+
+    /// <summary>
+    /// Verifies that every profile JSON contains an entry in "bindings" for
+    /// every command in <see cref="CommandRegistry"/>. Missing commands should
+    /// be present with an empty string value to indicate "intentionally unbound".
+    /// When the test fails, the output shows the exact JSON entries to add.
+    /// </summary>
+    [Fact]
+    public void AllProfilesContainEveryCommandId() {
+        var allIds = CommandRegistry.All.Select(c => c.Id).ToList();
+        var failures = new StringBuilder();
+
+        foreach (var profileId in ProfileLoader.ProfileIds) {
+            var profile = ProfileLoader.Load(profileId);
+            var bindingKeys = profile.Bindings?.Keys.ToHashSet() ?? [];
+
+            var missing = allIds.Where(id => !bindingKeys.Contains(id)).ToList();
+            if (missing.Count == 0) {
+                continue;
+            }
+
+            failures.AppendLine();
+            failures.AppendLine($"--- {profileId}.json is missing {missing.Count} command(s) in \"bindings\". Add: ---");
+            foreach (var id in missing) {
+                failures.AppendLine($"    \"{id}\": \"\",");
+            }
+        }
+
+        Assert.True(failures.Length == 0,
+            $"Some profiles are missing command entries in \"bindings\".{failures}");
+    }
+
+    /// <summary>
+    /// Helper: reads each profile JSON from disk, adds missing command IDs
+    /// with empty-string values, and writes the result back. Call from a
+    /// scratch test or manual runner to bulk-fix all profiles.
+    /// Skipped by default so it does not run in CI.
+    /// </summary>
+    [Fact(Skip = "Manual helper — remove Skip to auto-fix profile JSONs")]
+    public void FixProfiles_AddMissingCommandIds() {
+        var allIds = CommandRegistry.All.Select(c => c.Id).ToList();
+
+        // Walk up from the test output directory to the repo root.
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !System.IO.File.Exists(Path.Combine(dir.FullName, "DevMentalMD.slnx"))) {
+            dir = dir.Parent;
+        }
+        Assert.NotNull(dir);
+
+        var profilesDir = Path.Combine(dir!.FullName,
+            "src", "DevMentalMd.App", "Commands", "Profiles");
+
+        foreach (var profileId in ProfileLoader.ProfileIds) {
+            var filePath = Path.Combine(profilesDir, $"{profileId}.json");
+            Assert.True(System.IO.File.Exists(filePath), $"Profile not found: {filePath}");
+
+            var json = System.IO.File.ReadAllText(filePath);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // Rebuild the JSON with missing keys inserted.
+            var bindings = root.GetProperty("bindings");
+            var existing = new Dictionary<string, string>();
+            foreach (var prop in bindings.EnumerateObject()) {
+                existing[prop.Name] = prop.Value.GetString() ?? "";
+            }
+
+            var changed = false;
+            foreach (var id in allIds) {
+                if (!existing.ContainsKey(id)) {
+                    existing[id] = "";
+                    changed = true;
+                }
+            }
+
+            if (!changed) {
+                continue;
+            }
+
+            // Rewrite the file preserving structure: reorder bindings to match
+            // CommandRegistry order, keeping any extras at the end.
+            var ordered = new List<KeyValuePair<string, string>>();
+            foreach (var id in allIds) {
+                ordered.Add(new(id, existing[id]));
+            }
+            // Append any keys present in JSON but not in CommandRegistry (shouldn't
+            // happen, but don't lose data).
+            foreach (var kvp in existing) {
+                if (!allIds.Contains(kvp.Key)) {
+                    ordered.Add(kvp);
+                }
+            }
+
+            using var ms = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(ms, new JsonWriterOptions {
+                Indented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            })) {
+                writer.WriteStartObject();
+                writer.WriteString("name", root.GetProperty("name").GetString());
+
+                writer.WritePropertyName("bindings");
+                writer.WriteStartObject();
+                foreach (var kvp in ordered) {
+                    writer.WriteString(kvp.Key, kvp.Value);
+                }
+                writer.WriteEndObject();
+
+                if (root.TryGetProperty("bindings2", out var bindings2)) {
+                    writer.WritePropertyName("bindings2");
+                    writer.WriteStartObject();
+                    foreach (var prop in bindings2.EnumerateObject()) {
+                        writer.WriteString(prop.Name, prop.Value.GetString());
+                    }
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndObject();
+            }
+
+            var output = Encoding.UTF8.GetString(ms.ToArray());
+            // Normalize line endings to match existing files.
+            output = output.Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
+            System.IO.File.WriteAllText(filePath, output + Environment.NewLine);
         }
     }
 }

@@ -35,16 +35,22 @@ public sealed class ChordGesture {
             var parts = text.Split(',', 2, StringSplitOptions.TrimEntries);
             if (parts.Length == 2) {
                 try {
-                    return new ChordGesture(
-                        KeyGesture.Parse(parts[0]),
-                        KeyGesture.Parse(parts[1]));
+                    var first = KeyGesture.Parse(parts[0]);
+                    var second = KeyGesture.Parse(parts[1]);
+                    if (first.Key == Key.None || second.Key == Key.None)
+                        return null;
+                    return new ChordGesture(first, second);
                 } catch {
                     // Fall through to single-key parse.
                 }
             }
         }
         try {
-            return new ChordGesture(KeyGesture.Parse(text));
+            var single = KeyGesture.Parse(text);
+            // Reject gestures with Key.None — typically caused by numeric
+            // strings like "0" being parsed as enum value 0 rather than
+            // the intended key (e.g. Key.D0 for the "0" key).
+            return single.Key == Key.None ? null : new ChordGesture(single);
         } catch {
             return null;
         }
