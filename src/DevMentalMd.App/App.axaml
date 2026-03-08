@@ -6,6 +6,11 @@
 
 	<Application.Styles>
 		<FluentTheme />
+
+		<!-- ================================================================
+		     Control normalization — consistent sizing across all themes.
+		     Local property values in AXAML still override these defaults.
+		     ================================================================ -->
 		<Style Selector="TextBox">
 			<Setter Property="Padding" Value="4,4" />
 			<Setter Property="MinHeight" Value="0" />
@@ -17,6 +22,53 @@
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
+		</Style>
+		<Style Selector="ToggleButton">
+			<Setter Property="Padding" Value="4,4" />
+			<Setter Property="MinHeight" Value="0" />
+			<Setter Property="FontSize" Value="13" />
+			<Setter Property="VerticalAlignment" Value="Center" />
+		</Style>
+		<Style Selector="ComboBox">
+			<Setter Property="Padding" Value="8,4" />
+			<Setter Property="MinHeight" Value="0" />
+			<Setter Property="FontSize" Value="13" />
+			<Setter Property="VerticalAlignment" Value="Center" />
+		</Style>
+
+		<!-- ================================================================
+		     Accent colour (#3399FF) — focus ring, checked state, selection.
+		     These come after FluentTheme so they take precedence.
+		     ================================================================ -->
+
+		<!-- TextBox: replace Fluent's subtle focus ring with a bright accent. -->
+		<Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+			<Setter Property="BorderBrush" Value="#3399FF" />
+			<Setter Property="BorderThickness" Value="2" />
+		</Style>
+
+		<!-- ToggleButton: accent background + white text when checked. -->
+		<Style Selector="ToggleButton:checked /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="#3399FF" />
+		</Style>
+		<Style Selector="ToggleButton:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="#3399FF" />
+		</Style>
+		<Style Selector="ToggleButton:checked">
+			<Setter Property="Foreground" Value="White" />
+		</Style>
+
+		<!-- ListBoxItem: accent background + white text when selected.
+		     Foreground must be on the ContentPresenter (not ListBoxItem) because
+		     the Fluent template binds the inner TextBlock's colour directly from
+		     a theme resource and does not inherit from the ListBoxItem ancestor. -->
+		<Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="#3399FF" />
+			<Setter Property="Foreground" Value="White" />
+		</Style>
+		<Style Selector="ListBoxItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="#3399FF" />
+			<Setter Property="Foreground" Value="White" />
 		</Style>
 	</Application.Styles>
 	<Application.Resources>

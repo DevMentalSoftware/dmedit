@@ -489,7 +489,7 @@ public partial class KeyboardSettingsSection : UserControl {
                 }
             }
 
-            header.IsVisible = anyVisible || (_keyFilter == null && !hasNameFilter);
+            header.IsVisible = anyVisible || (_keyFilter == null && !hasNameFilter && !_showModifiedOnly);
         }
 
         UpdateScrollHintVisibility();
