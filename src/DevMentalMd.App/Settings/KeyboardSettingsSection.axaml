@@ -109,13 +109,6 @@
 			</ScrollViewer>
 		</Border>
 
-		<!-- Error banner (duplicate gesture warnings) -->
-		<TextBlock x:Name="ErrorBanner"
-		           FontSize="12"
-		           TextWrapping="Wrap"
-		           Margin="0,0,0,4"
-		           IsVisible="False" />
-
 		<!-- Action buttons -->
 		<WrapPanel Orientation="Horizontal">
 			<Grid MaxWidth="260" ColumnDefinitions="*,Auto">
@@ -138,15 +131,16 @@
 				        IsVisible="False"
 				        Cursor="Arrow" />
 			</Grid>
-			<TextBlock x:Name="ConflictLabel"
-			           FontSize="11"
-			           VerticalAlignment="Center"
-			           TextWrapping="NoWrap"
-			           Margin="8,0,0,0" />
 			<Button x:Name="AssignBtn" Content="Assign" Margin="8,0,4,0" />
 			<Button x:Name="RemoveBtn" Content="Remove" Margin="0,0,4,0" />
 			<Button x:Name="ResetBtn" Content="Reset" />
 		</WrapPanel>
+
+		<!-- Replacement notice: "Will replace the shortcut already assigned to [Cmd]".
+		     Empty (no height) when no conflict. Built from code. -->
+		<StackPanel x:Name="ConflictPanel"
+		            Orientation="Horizontal"
+		            Margin="0,4,0,0" />
 
 	</StackPanel>
 </UserControl>

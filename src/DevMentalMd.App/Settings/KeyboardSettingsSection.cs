@@ -32,8 +32,6 @@ public partial class KeyboardSettingsSection : UserControl {
     private readonly List<(Border border, string commandId)> _commandRows = [];
     // Tracks category headers for filtering.
     private readonly List<(TextBlock header, string category, List<Border> rows)> _categoryGroups = [];
-    // Tracks command IDs with duplicate gesture conflicts.
-    private HashSet<string> _duplicateCommandIds = [];
 
     /// <summary>
     /// Fired when any binding is changed (assigned, removed, or reset).
@@ -193,7 +191,6 @@ public partial class KeyboardSettingsSection : UserControl {
         CommandList.Children.Clear();
         _commandRows.Clear();
         _categoryGroups.Clear();
-        DetectDuplicateGestures();
 
         foreach (var category in CommandRegistry.Categories) {
             var commands = CommandRegistry.All
@@ -231,34 +228,29 @@ public partial class KeyboardSettingsSection : UserControl {
 
         var g1Modified = IsBindingModified(cmd.Id, 1);
         var g2Modified = IsBindingModified(cmd.Id, 2);
-        var isDuplicate = _duplicateCommandIds.Contains(cmd.Id);
 
         var nameText = new TextBlock {
             Text = cmd.DisplayName,
             FontSize = 13,
             VerticalAlignment = VerticalAlignment.Center,
-            Tag = isDuplicate ? "error" : "name",
+            Tag = "name",
         };
 
         var gestureLabel = new TextBlock {
             Text = gestureText,
             FontSize = 12,
-            Foreground = isDuplicate ? _theme.SettingsWarnForeground
-                : g1Modified ? _theme.SettingsAccent
-                : _theme.SettingsDimForeground,
+            Foreground = g1Modified ? _theme.SettingsAccent : _theme.SettingsDimForeground,
             VerticalAlignment = VerticalAlignment.Center,
-            Tag = isDuplicate ? "error" : g1Modified ? "modified" : "dim",
+            Tag = g1Modified ? "modified" : "dim",
         };
 
         var gesture2Label = new TextBlock {
             Text = gesture2Text,
             FontSize = 12,
-            Foreground = isDuplicate ? _theme.SettingsWarnForeground
-                : g2Modified ? _theme.SettingsAccent
-                : _theme.SettingsDimForeground,
+            Foreground = g2Modified ? _theme.SettingsAccent : _theme.SettingsDimForeground,
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            Tag = isDuplicate ? "error" : g2Modified ? "modified" : "dim",
+            Tag = g2Modified ? "modified" : "dim",
         };
 
         // 3-column grid: Name (flex) | Gesture (fixed) | Gesture2 (flex)
@@ -301,7 +293,7 @@ public partial class KeyboardSettingsSection : UserControl {
         _selectedCommandId = commandId;
         _captured = null;
         CaptureBox.Text = "";
-        ConflictLabel.Text = "";
+        SetConflict(null);
         CaptureClearBtn.IsVisible = false;
 
         // Update selection highlight
@@ -321,7 +313,7 @@ public partial class KeyboardSettingsSection : UserControl {
     private void ClearCapturedGesture() {
         _captured = null;
         CaptureBox.Text = "";
-        ConflictLabel.Text = "";
+        SetConflict(null);
         CaptureClearBtn.IsVisible = false;
         UpdateButtonStates();
     }
@@ -357,10 +349,7 @@ public partial class KeyboardSettingsSection : UserControl {
 
         // Check for conflicts.
         if (_selectedCommandId != null) {
-            var conflict = _keyBindings.FindConflict(_captured, _selectedCommandId);
-            ConflictLabel.Text = conflict != null
-                ? $"Conflict: {KeyBindingService.GetDescriptor(conflict)?.DisplayName ?? conflict}"
-                : "";
+            SetConflict(_keyBindings.FindConflict(_captured, _selectedCommandId));
         }
 
         UpdateButtonStates();
@@ -373,6 +362,10 @@ public partial class KeyboardSettingsSection : UserControl {
 
     private void OnAssign(object? sender, Avalonia.Interactivity.RoutedEventArgs e) {
         if (_selectedCommandId == null || _captured == null) return;
+
+        // If the captured gesture is already bound to another command, evict it.
+        RemoveConflict(_captured, _selectedCommandId);
+
         // Auto-slot: fill the first available slot. If primary is empty use it,
         // otherwise use (overwrite) secondary.
         var hasPrimary = _keyBindings.GetGesture(_selectedCommandId) != null;
@@ -397,9 +390,18 @@ public partial class KeyboardSettingsSection : UserControl {
     }
 
     private void OnReset(object? sender, Avalonia.Interactivity.RoutedEventArgs e) {
-        if (_selectedCommandId == null) {
-            return;
+        if (_selectedCommandId == null) return;
+
+        // The profile defaults for this command may be currently owned by other
+        // commands (e.g. Ctrl+C was re-assigned to Insert Line Below).  Evict
+        // each conflicting owner — promoting its secondary binding if present —
+        // so the reset doesn't create duplicates.
+        for (var slot = 1; slot <= 2; slot++) {
+            var defaultGesture = _keyBindings.GetProfileDefault(_selectedCommandId, slot);
+            if (defaultGesture == null) continue;
+            RemoveConflict(defaultGesture, _selectedCommandId);
         }
+
         _keyBindings.ResetBinding(_selectedCommandId);
         RefreshAfterChange();
     }
@@ -416,7 +418,7 @@ public partial class KeyboardSettingsSection : UserControl {
 
         _captured = null;
         CaptureBox.Text = "";
-        ConflictLabel.Text = "";
+        SetConflict(null);
         CaptureClearBtn.IsVisible = false;
         UpdateButtonStates();
 
@@ -556,62 +558,6 @@ public partial class KeyboardSettingsSection : UserControl {
         return effective.ToString() != profileDefault.ToString();
     }
 
-    /// <summary>
-    /// Scans all effective bindings for duplicate single-key gestures and
-    /// duplicate chords. Populates <see cref="_duplicateCommandIds"/> and
-    /// updates the error banner.
-    /// </summary>
-    private void DetectDuplicateGestures() {
-        _duplicateCommandIds = [];
-        var singleKeySeen = new Dictionary<KeyGesture, string>(KeyGestureComparer.Instance);
-        var chordSeen = new Dictionary<(int, int, int, int), string>();
-        var errors = new List<string>();
-
-        foreach (var cmd in CommandRegistry.All) {
-            CheckGestureForDuplicate(cmd.Id, _keyBindings.GetGesture(cmd.Id),
-                singleKeySeen, chordSeen, errors);
-            CheckGestureForDuplicate(cmd.Id, _keyBindings.GetGesture2(cmd.Id),
-                singleKeySeen, chordSeen, errors);
-        }
-
-        ErrorBanner.IsVisible = errors.Count > 0;
-        ErrorBanner.Text = errors.Count > 0
-            ? string.Join("  |  ", errors)
-            : "";
-    }
-
-    private void CheckGestureForDuplicate(string cmdId, ChordGesture? gesture,
-        Dictionary<KeyGesture, string> singleKeySeen,
-        Dictionary<(int, int, int, int), string> chordSeen,
-        List<string> errors) {
-        if (gesture == null) return;
-
-        if (gesture.IsChord) {
-            var key = (
-                (int)gesture.First.Key, (int)gesture.First.KeyModifiers,
-                (int)gesture.Second!.Key, (int)gesture.Second.KeyModifiers);
-            if (chordSeen.TryGetValue(key, out var existing)) {
-                _duplicateCommandIds.Add(cmdId);
-                _duplicateCommandIds.Add(existing);
-                var desc1 = KeyBindingService.GetDescriptor(existing)?.DisplayName ?? existing;
-                var desc2 = KeyBindingService.GetDescriptor(cmdId)?.DisplayName ?? cmdId;
-                errors.Add($"{gesture}: {desc1} / {desc2}");
-            } else {
-                chordSeen[key] = cmdId;
-            }
-        } else {
-            if (singleKeySeen.TryGetValue(gesture.First, out var existing)) {
-                _duplicateCommandIds.Add(cmdId);
-                _duplicateCommandIds.Add(existing);
-                var desc1 = KeyBindingService.GetDescriptor(existing)?.DisplayName ?? existing;
-                var desc2 = KeyBindingService.GetDescriptor(cmdId)?.DisplayName ?? cmdId;
-                errors.Add($"{gesture}: {desc1} / {desc2}");
-            } else {
-                singleKeySeen[gesture.First] = cmdId;
-            }
-        }
-    }
-
     // =====================================================================
     // Sizing
     // =====================================================================
@@ -629,6 +575,95 @@ public partial class KeyboardSettingsSection : UserControl {
         // available space without overflowing.
         CommandScroll.MaxHeight = Math.Max(100, height - 150);
         UpdateScrollHintVisibility();
+    }
+
+    // =====================================================================
+    // Conflict resolution
+    // =====================================================================
+
+    /// <summary>
+    /// If <paramref name="gesture"/> is currently bound to any command other
+    /// than <paramref name="excludeCommandId"/>, removes it from that command.
+    /// When the evicted slot was the primary binding and a secondary exists,
+    /// the secondary is promoted to primary so the command keeps a shortcut.
+    /// </summary>
+    private void RemoveConflict(ChordGesture gesture, string excludeCommandId) {
+        var conflict = _keyBindings.FindConflict(gesture, excludeCommandId);
+        if (conflict == null) return;
+        var g1 = _keyBindings.GetGesture(conflict);
+        var g2 = _keyBindings.GetGesture2(conflict);
+        if (g1 != null && g1.ToString() == gesture.ToString()) {
+            // Conflict is in slot 1: promote slot 2 into slot 1, clear slot 2.
+            _keyBindings.SetBinding(conflict, g2);
+            _keyBindings.SetBinding2(conflict, null);
+        } else {
+            // Conflict is in slot 2: just clear it.
+            _keyBindings.SetBinding2(conflict, null);
+        }
+    }
+
+    // =====================================================================
+    // Chip helpers
+    // =====================================================================
+
+    /// <summary>
+    /// Creates a rounded "chip" border that highlights a command name inline
+    /// with warning text. Uses EditorForeground for text so the name stands
+    /// out against the orange SettingsWarnForeground of the surrounding words.
+    /// </summary>
+    private Border MakeNameChip(string name, double fontSize) =>
+        new() {
+            CornerRadius = new CornerRadius(3),
+            BorderThickness = new Thickness(1),
+            BorderBrush = _theme.SettingsInputBorder,
+            Background = Brushes.Transparent,
+            Padding = new Thickness(4, 1),
+            Margin = new Thickness(3, 0, 1, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Tag = "chip",
+            Child = new TextBlock {
+                Text = name,
+                FontSize = fontSize,
+                Foreground = _theme.EditorForeground,
+                VerticalAlignment = VerticalAlignment.Center,
+            },
+        };
+
+    /// <summary>Creates a plain warning-coloured TextBlock for use beside chips.</summary>
+    private TextBlock MakeWarnRun(string text, double fontSize) =>
+        new() {
+            Text = text,
+            FontSize = fontSize,
+            Foreground = _theme.SettingsWarnForeground,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+    /// <summary>
+    /// Rebuilds ConflictPanel to show "Already assigned to [chip]", or clears
+    /// it when <paramref name="conflictingCommandId"/> is null.
+    /// </summary>
+    private void SetConflict(string? conflictingCommandId) {
+        ConflictPanel.Children.Clear();
+        if (conflictingCommandId == null) return;
+        var name = KeyBindingService.GetDescriptor(conflictingCommandId)?.DisplayName
+            ?? conflictingCommandId;
+        ConflictPanel.Children.Add(MakeWarnRun("Will replace the shortcut already assigned to", 11));
+        ConflictPanel.Children.Add(MakeNameChip(name, 11));
+    }
+
+    /// <summary>
+    /// Re-applies theme colors to a single row of warning text and name chips.
+    /// </summary>
+    private static void ReThemeWarnRow(Panel panel, EditorTheme theme) {
+        foreach (var child in panel.Children) {
+            if (child is TextBlock tb)
+                tb.Foreground = theme.SettingsWarnForeground;
+            if (child is Border b && b.Tag is "chip") {
+                b.BorderBrush = theme.SettingsInputBorder;
+                if (b.Child is TextBlock inner)
+                    inner.Foreground = theme.EditorForeground;
+            }
+        }
     }
 
     // =====================================================================
@@ -654,7 +689,6 @@ public partial class KeyboardSettingsSection : UserControl {
                         tb.Foreground = tb.Tag switch {
                             "dim" => theme.SettingsDimForeground,
                             "modified" => theme.SettingsAccent,
-                            "error" => theme.SettingsWarnForeground,
                             _ => theme.EditorForeground,
                         };
                     }
@@ -672,14 +706,11 @@ public partial class KeyboardSettingsSection : UserControl {
                 : Brushes.Transparent;
         }
 
-        // Error banner
-        ErrorBanner.Foreground = theme.SettingsWarnForeground;
+        // Replacement notice chips
+        ReThemeWarnRow(ConflictPanel, theme);
 
         // Scroll hint
         ScrollHint.Foreground = theme.SettingsDimForeground;
-
-        // Labels
-        ConflictLabel.Foreground = theme.SettingsWarnForeground;
 
         // Name filter + its clear button
         NameFilter.Foreground = theme.EditorForeground;
