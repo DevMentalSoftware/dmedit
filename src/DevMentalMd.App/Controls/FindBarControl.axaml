@@ -62,7 +62,7 @@
                 <Button x:Name="ExpandBtn"
                         Grid.Column="1" Grid.Row="0"
                         VerticalAlignment="Center"
-                        Padding="4"
+                        Width="24" Height="24" Padding="0"
                         Margin="0,0,4,0"
                         ToolTip.Tip="Toggle Replace" />
 
@@ -92,10 +92,10 @@
                 <StackPanel Grid.Column="3" Grid.Row="0"
                             Orientation="Horizontal" Spacing="2">
                     <Button x:Name="PrevBtn"
-                            Content="Prev"
+                            Content="Prev" Height="24"
                             ToolTip.Tip="Previous Match (Shift+Enter)" />
                     <Button x:Name="NextBtn"
-                            Content="Next"
+                            Content="Next" Height="24"
                             ToolTip.Tip="Next Match (Enter)" />
                 </StackPanel>
 
@@ -105,10 +105,10 @@
                             Margin="0,2,0,0"
                             IsVisible="False">
                     <Button x:Name="ReplaceBtn"
-                            Content="Replace"
+                            Content="Replace" Height="24"
                             ToolTip.Tip="Replace current match" />
                     <Button x:Name="ReplaceAllBtn"
-                            Content="Replace All"
+                            Content="Replace All" Height="24"
                             ToolTip.Tip="Replace all matches" />
                 </StackPanel>
 
@@ -116,7 +116,7 @@
                 <Button x:Name="CloseBtn"
                         Grid.Column="5" Grid.Row="0"
                         ToolTip.Tip="Close (Escape)"
-                        Padding="6,4"
+                        Width="24" Height="24" Padding="0"
                         HorizontalContentAlignment="Center"
                         VerticalContentAlignment="Center" />
 
@@ -142,11 +142,12 @@
                            Margin="0,4,0,0">
                     <ToggleButton x:Name="MatchCaseBtn"
                                   DockPanel.Dock="Left"
-                                  Content="Abc"
+                                  Content="Abc" Height="24"
                                   ToolTip.Tip="Match Case" />
                     <ToggleButton x:Name="WholeWordBtn"
                                   DockPanel.Dock="Left"
-                                  Content="w"
+                                  Content="w" Height="24"
+                                  Width="24"
                                   Margin="4,0,0,0"
                                   ToolTip.Tip="Match Whole Word" />
                     <Border DockPanel.Dock="Left"

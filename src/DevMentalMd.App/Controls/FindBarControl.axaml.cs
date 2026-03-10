@@ -67,11 +67,11 @@ public partial class FindBarControl : UserControl {
         };
         UpdateExpandGlyph();
 
-        // Close button glyph — centered
+        // Close button glyph — centered, 12px to match tab bar buttons
         CloseBtn.Content = new TextBlock {
             Text = IconGlyphs.Close,
             FontFamily = IconGlyphs.Family,
-            FontSize = 14,
+            FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
         };
@@ -162,6 +162,20 @@ public partial class FindBarControl : UserControl {
         ReplaceBox.Foreground = theme.EditorForeground;
         OptionsSeparator.Background = theme.TabBarBorder;
         OptionsSeparator2.Background = theme.TabBarBorder;
+
+        // Button hover/pressed colors — match the tab bar's DrawIconButton
+        // hover background so all toolbar-style buttons look consistent.
+        var hoverBrush = theme.TabInactiveHoverBg;
+        var hoverColor = ((ISolidColorBrush)hoverBrush).Color;
+        double factor = hoverColor.R > 128 ? 0.88 : 1.15;
+        var pressedBrush = new SolidColorBrush(Color.FromRgb(
+            (byte)Math.Clamp(hoverColor.R * factor, 0, 255),
+            (byte)Math.Clamp(hoverColor.G * factor, 0, 255),
+            (byte)Math.Clamp(hoverColor.B * factor, 0, 255)));
+        Resources["ButtonBackgroundPointerOver"] = hoverBrush;
+        Resources["ButtonBackgroundPressed"] = pressedBrush;
+        Resources["ToggleButtonBackgroundPointerOver"] = hoverBrush;
+        Resources["ToggleButtonBackgroundPressed"] = pressedBrush;
     }
 
     private static void SetupClearButton(Button btn) {
