@@ -16,24 +16,29 @@
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
+			<Setter Property="Foreground" Value="#999999" />
+			<Setter Property="Background" Value="#383838" />
 		</Style>
 		<Style Selector="Button">
 			<Setter Property="Padding" Value="4,4" />
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
+			<Setter Property="Foreground" Value="#999999" />
 		</Style>
 		<Style Selector="ToggleButton">
 			<Setter Property="Padding" Value="4,4" />
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
+			<Setter Property="Foreground" Value="#999999" />
 		</Style>
 		<Style Selector="ComboBox">
 			<Setter Property="Padding" Value="8,4" />
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
+			<Setter Property="Foreground" Value="#999999" />
 		</Style>
 
 		<!-- ================================================================
@@ -43,7 +48,11 @@
 
 		<!-- TextBox: replace Fluent's subtle focus ring with a bright accent. -->
 		<Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
-			<Setter Property="BorderBrush" Value="#3399FF" />
+			<Setter Property="BorderBrush" Value="#383838" />
+			<Setter Property="BorderThickness" Value="2" />
+		</Style>
+		<Style Selector="TextBox /template/ Border#PART_BorderElement">
+			<Setter Property="BorderBrush" Value="#383838" />
 			<Setter Property="BorderThickness" Value="2" />
 		</Style>
 
@@ -67,6 +76,20 @@
 			<Setter Property="Foreground" Value="White" />
 		</Style>
 		<Style Selector="ListBoxItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="#3399FF" />
+			<Setter Property="Foreground" Value="White" />
+		</Style>
+
+		<!-- ComboBoxItem: same accent treatment as ListBoxItem. -->
+		<Style Selector="ComboBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="#3399FF" />
+			<Setter Property="Foreground" Value="White" />
+		</Style>
+		<Style Selector="ComboBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="#3399FF" />
+			<Setter Property="Foreground" Value="White" />
+		</Style>
+		<Style Selector="ComboBoxItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter">
 			<Setter Property="Background" Value="#3399FF" />
 			<Setter Property="Foreground" Value="White" />
 		</Style>

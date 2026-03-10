@@ -25,6 +25,7 @@ public partial class FindBarControl : UserControl {
     public event Action<string>? ReplaceRequested;
     public event Action? ReplaceAllRequested;
     public event Action? SearchTermChanged;
+    public event Action<double>? Resized;
 
     public string SearchTerm => SearchBox.Text ?? "";
     public string ReplaceTerm => ReplaceBox.Text ?? "";
@@ -255,6 +256,9 @@ public partial class FindBarControl : UserControl {
             _resizing = false;
             e.Pointer.Capture(null);
             e.Handled = true;
+            if (Width is > 0 and var w) {
+                Resized?.Invoke(w);
+            }
         }
     }
 }

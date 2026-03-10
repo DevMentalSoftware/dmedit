@@ -1339,6 +1339,10 @@ public partial class MainWindow : Window {
 
     private void WireFindBar() {
         FindBar.CloseRequested += CloseFindBar;
+        FindBar.Resized += w => {
+            _settings.FindBarWidth = w;
+            _settings.Save();
+        };
         FindBar.ApplyTheme(_theme);
 
         // Restore persisted width.
