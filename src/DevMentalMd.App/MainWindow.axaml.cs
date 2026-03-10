@@ -97,6 +97,7 @@ public partial class MainWindow : Window {
         WireThemeSettings();
         WireTabBar();
         WireStatsBar();
+        WireFindBar();
         WireWindowState();
         SyncMenuGestures();
 
@@ -109,24 +110,17 @@ public partial class MainWindow : Window {
             MenuBar.Close();
         };
 
-        // The editor is the only focusable control (when not on settings).
-        // Grab focus on activation and reclaim it whenever anything else
-        // receives focus — but only when the editor tab is active.
-        Activated += (_, _) => {
-            TabBar.IsWindowActive = true;
-            if (_activeTab is not { IsSettings: true }) {
-                Editor.Focus();
-            }
-        };
+        // Window activation tracking for tab bar (active/inactive styling).
+        // No focus stealing — focus stays wherever the user left it.
+        Activated += (_, _) => TabBar.IsWindowActive = true;
         Deactivated += (_, _) => {
             TabBar.IsWindowActive = false;
             CancelChord();
         };
-        GotFocus += (_, e) => {
-            if (_activeTab is not { IsSettings: true }
-                && e.Source != Editor
-                && e.Source is not MenuItem
-                && e.Source is not Menu) {
+
+        // Give the editor initial focus once at startup.
+        Opened += (_, _) => {
+            if (_activeTab is not { IsSettings: true }) {
                 Editor.Focus();
             }
         };
@@ -440,13 +434,36 @@ public partial class MainWindow : Window {
                 _ = RevertFileAsync();
                 return true;
 
-            // -- Stubs (not yet implemented) --
+            // -- Find --
             case CommandIds.FindFind:
-            case CommandIds.FindReplace:
-            case CommandIds.FindFindNext:
-            case CommandIds.FindFindPrevious:
-            case CommandIds.FindFindWordOrSel:
             case CommandIds.FindIncrementalSearch:
+                OpenFindBar(replaceMode: false);
+                return true;
+            case CommandIds.FindReplace:
+                OpenFindBar(replaceMode: true);
+                return true;
+            case CommandIds.FindFindNext:
+                if (!FindBar.IsVisible) {
+                    OpenFindBar(replaceMode: false);
+                }
+                return true;
+            case CommandIds.FindFindPrevious:
+                if (!FindBar.IsVisible) {
+                    OpenFindBar(replaceMode: false);
+                }
+                return true;
+            case CommandIds.FindFindWordOrSel:
+                OpenFindBarWithSelection();
+                return true;
+
+            // -- Focus --
+            case CommandIds.NavFocusEditor:
+                if (_activeTab is not { IsSettings: true }) {
+                    Editor.Focus();
+                }
+                return true;
+
+            // -- Stubs (not yet implemented) --
             case CommandIds.NavGoToLine:
             case CommandIds.EditSelectAllOccurrences:
             case CommandIds.EditColumnSelect:
@@ -718,6 +735,7 @@ public partial class MainWindow : Window {
         Editor.ApplyTheme(theme);
         ScrollBar.ApplyTheme(theme);
         SettingsPanel.ApplyTheme(theme);
+        FindBar.ApplyTheme(theme);
 
         // Tab bar
         TabBar.ApplyTheme(theme);
@@ -1281,6 +1299,51 @@ public partial class MainWindow : Window {
                     Editor.ExecuteCommand(cmdId);
                 }
             }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Find bar
+    // -------------------------------------------------------------------------
+
+    private void OpenFindBar(bool replaceMode) {
+        FindBar.IsReplaceMode = replaceMode;
+        FindBar.IsVisible = true;
+        // When already open and re-invoked, focus the appropriate box.
+        if (replaceMode) {
+            FindBar.FocusReplaceBox();
+        } else {
+            FindBar.FocusSearchBox();
+        }
+    }
+
+    private void OpenFindBarWithSelection() {
+        var doc = _activeTab is not { IsSettings: true } ? Editor.Document : null;
+        if (doc != null && !doc.Selection.IsEmpty) {
+            FindBar.SetSearchTerm(doc.GetSelectedText());
+        }
+        OpenFindBar(replaceMode: false);
+    }
+
+    private void CloseFindBar() {
+        // Persist width for next session.
+        if (FindBar.Width is > 0 and var w) {
+            _settings.FindBarWidth = w;
+            _settings.Save();
+        }
+        FindBar.IsVisible = false;
+        if (_activeTab is not { IsSettings: true }) {
+            Editor.Focus();
+        }
+    }
+
+    private void WireFindBar() {
+        FindBar.CloseRequested += CloseFindBar;
+        FindBar.ApplyTheme(_theme);
+
+        // Restore persisted width.
+        if (_settings.FindBarWidth is > 0 and var w) {
+            FindBar.Width = w;
         }
     }
 

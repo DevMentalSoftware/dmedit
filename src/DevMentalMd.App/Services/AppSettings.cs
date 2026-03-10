@@ -146,6 +146,15 @@ public sealed class AppSettings {
     public string? LastSettingsPage { get; set; }
 
     // -----------------------------------------------------------------
+    // Find bar
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Remembered width of the find bar in DIPs. Null = use default MinWidth.
+    /// </summary>
+    public double? FindBarWidth { get; set; }
+
+    // -----------------------------------------------------------------
     // Keyboard shortcuts
     // -----------------------------------------------------------------
 

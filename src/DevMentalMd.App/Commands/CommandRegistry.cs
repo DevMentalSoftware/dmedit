@@ -88,6 +88,7 @@ public static class CommandRegistry {
         new(CommandIds.NavGoToLine, "Go to Line"),
         new(CommandIds.NavScrollLineUp, "Scroll Line Up"),
         new(CommandIds.NavScrollLineDown, "Scroll Line Down"),
+        new(CommandIds.NavFocusEditor, "Focus Editor"),
 
         // -- Nav: selection extension --
         new(CommandIds.NavSelectLeft, "Select Left"),

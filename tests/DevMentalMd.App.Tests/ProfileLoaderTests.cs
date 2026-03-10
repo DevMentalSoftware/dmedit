@@ -131,6 +131,7 @@ public class ProfileLoaderTests {
             CommandIds.ViewZoomIn,
             CommandIds.ViewZoomOut,
             CommandIds.WindowSettings,
+            CommandIds.NavFocusEditor,
         };
 
         // At minimum, all File, Edit, Nav commands (minus exclusions) should be bound.

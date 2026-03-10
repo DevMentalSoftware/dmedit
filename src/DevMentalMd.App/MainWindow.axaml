@@ -164,6 +164,12 @@
 				<controls:EditorControl x:Name="Editor"
 				                        Grid.Column="0"
 				                        HorizontalAlignment="Stretch" />
+				<controls:FindBarControl x:Name="FindBar"
+				                         Grid.Column="0"
+				                         HorizontalAlignment="Right"
+				                         VerticalAlignment="Top"
+				                         Margin="0,-1,0,0"
+				                         IsVisible="False" />
 				<controls:DualZoneScrollBar x:Name="ScrollBar"
 				                            Grid.Column="1"
 				                            Focusable="False" />

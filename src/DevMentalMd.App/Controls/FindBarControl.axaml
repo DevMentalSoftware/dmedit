@@ -1,0 +1,179 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DevMentalMd.App.Controls.FindBarControl">
+
+    <!-- Override Fluent theme resource keys so every Button and ToggleButton
+         inside this control is flat/transparent until hovered or pressed. -->
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="ButtonBackground" Color="Transparent" />
+        <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#20808080" />
+        <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#30808080" />
+        <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="Transparent" />
+        <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
+        <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+        <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+        <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="Transparent" />
+        <SolidColorBrush x:Key="ToggleButtonBackground" Color="Transparent" />
+        <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#20808080" />
+        <SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="#30808080" />
+        <SolidColorBrush x:Key="ToggleButtonBorderBrush" Color="Transparent" />
+        <SolidColorBrush x:Key="ToggleButtonBorderBrushPointerOver" Color="Transparent" />
+        <SolidColorBrush x:Key="ToggleButtonBorderBrushPressed" Color="Transparent" />
+    </UserControl.Resources>
+
+    <!-- Outer wrapper: 6px taller and 12px wider than the body so the concave
+         ear corners have room to render.  Background is transparent so only
+         the ear fills and the body itself are visible. -->
+    <Grid x:Name="RootGrid" RowDefinitions="6,*" ColumnDefinitions="6,*,6"
+          MinWidth="372">
+
+        <!-- Row 0 Col 0: Left concave ear.  A Path whose arc (sweep=CCW,
+             center at bottom-left of cell) bulges into the upper-right,
+             leaving the lower-left transparent so the editor bg shows
+             through — matching the active-tab concave corner style. -->
+        <Path x:Name="EarLeft" Grid.Row="0" Grid.Column="0"
+              Data="M 0,0 L 6,0 L 6,6 A 6,6 0 0 0 0,0 Z" />
+
+        <!-- Row 0 Col 1: Top strip (same bg as body, bridging the ears) -->
+        <Border Grid.Row="0" Grid.Column="1" x:Name="TopStrip" />
+
+        <!-- Row 0 Col 2: Right concave ear (mirror of left, sweep=CW) -->
+        <Path x:Name="EarRight" Grid.Row="0" Grid.Column="2"
+              Data="M 6,0 L 0,0 L 0,6 A 6,6 0 0 1 6,0 Z" />
+
+        <!-- Row 1: Main body with rounded bottom corners only.
+             Spans the middle column; the 6px ear columns stay empty in this
+             row so the body is narrower than the ear strip above. -->
+        <Border Grid.Row="1" Grid.Column="1"
+                x:Name="OuterBorder"
+                CornerRadius="0,0,6,6"
+                ClipToBounds="True"
+                Padding="0,2,6,6">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,8,Auto"
+                  RowDefinitions="Auto,Auto,Auto">
+
+                <!-- Col 0: Resize grip (left edge) -->
+                <Border x:Name="ResizeGrip"
+                        Grid.Column="0" Grid.RowSpan="3"
+                        Width="6" Cursor="SizeWestEast"
+                        Background="Transparent" />
+
+                <!-- Col 1: Expand/collapse chevron -->
+                <Button x:Name="ExpandBtn"
+                        Grid.Column="1" Grid.Row="0"
+                        VerticalAlignment="Center"
+                        Padding="4"
+                        Margin="0,0,4,0"
+                        ToolTip.Tip="Toggle Replace" />
+
+                <!-- Col 2: SearchBox (star-sized) -->
+                <TextBox x:Name="SearchBox"
+                         Grid.Column="2" Grid.Row="0"
+                         Watermark="Find..."
+                         FontSize="13"
+                         Margin="0,0,4,0">
+                    <TextBox.InnerRightContent>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="MatchCount"
+                                       Text=""
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,4,0" />
+                            <Button x:Name="SearchClearBtn"
+                                    Padding="2"
+                                    IsVisible="False"
+                                    VerticalAlignment="Center"
+                                    ToolTip.Tip="Clear search" />
+                        </StackPanel>
+                    </TextBox.InnerRightContent>
+                </TextBox>
+
+                <!-- Col 3: Prev + Next (Row 0)  /  Replace + Replace All (Row 1) -->
+                <StackPanel Grid.Column="3" Grid.Row="0"
+                            Orientation="Horizontal" Spacing="2">
+                    <Button x:Name="PrevBtn"
+                            Content="Prev"
+                            ToolTip.Tip="Previous Match (Shift+Enter)" />
+                    <Button x:Name="NextBtn"
+                            Content="Next"
+                            ToolTip.Tip="Next Match (Enter)" />
+                </StackPanel>
+
+                <StackPanel x:Name="ReplaceButtons"
+                            Grid.Column="3" Grid.Row="1"
+                            Orientation="Horizontal" Spacing="2"
+                            Margin="0,2,0,0"
+                            IsVisible="False">
+                    <Button x:Name="ReplaceBtn"
+                            Content="Replace"
+                            ToolTip.Tip="Replace current match" />
+                    <Button x:Name="ReplaceAllBtn"
+                            Content="Replace All"
+                            ToolTip.Tip="Replace all matches" />
+                </StackPanel>
+
+                <!-- Col 5: Close (Row 0 only) -->
+                <Button x:Name="CloseBtn"
+                        Grid.Column="5" Grid.Row="0"
+                        ToolTip.Tip="Close (Escape)"
+                        Padding="6,4"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center" />
+
+                <!-- Row 1, Col 2: ReplaceBox (same star column as SearchBox) -->
+                <TextBox x:Name="ReplaceBox"
+                         Grid.Column="2" Grid.Row="1"
+                         Watermark="Replace..."
+                         FontSize="13"
+                         Margin="0,2,4,0"
+                         IsVisible="False">
+                    <TextBox.InnerRightContent>
+                        <Button x:Name="ReplaceClearBtn"
+                                Padding="2"
+                                IsVisible="False"
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="Clear replace" />
+                    </TextBox.InnerRightContent>
+                </TextBox>
+
+                <!-- Row 2: Options (spans Col 2–5).
+                     DockPanel LastChildFill makes ScopeBox stretch to fill. -->
+                <DockPanel Grid.Column="2" Grid.ColumnSpan="4" Grid.Row="2"
+                           Margin="0,4,0,0">
+                    <ToggleButton x:Name="MatchCaseBtn"
+                                  DockPanel.Dock="Left"
+                                  Content="Abc"
+                                  ToolTip.Tip="Match Case" />
+                    <ToggleButton x:Name="WholeWordBtn"
+                                  DockPanel.Dock="Left"
+                                  Content="w"
+                                  Margin="4,0,0,0"
+                                  ToolTip.Tip="Match Whole Word" />
+                    <Border DockPanel.Dock="Left"
+                            Width="1" Margin="8,2"
+                            x:Name="OptionsSeparator" />
+                    <ComboBox x:Name="SearchModeBox"
+                              DockPanel.Dock="Left"
+                              SelectedIndex="0"
+                              MinWidth="100"
+                              ToolTip.Tip="Search mode">
+                        <ComboBoxItem Content="Normal" />
+                        <ComboBoxItem Content="Wildcard" />
+                        <ComboBoxItem Content="Regex" />
+                    </ComboBox>
+                    <Border DockPanel.Dock="Left"
+                            Width="1" Margin="8,2"
+                            x:Name="OptionsSeparator2" />
+                    <ComboBox x:Name="ScopeBox"
+                              SelectedIndex="0"
+                              HorizontalAlignment="Stretch"
+                              ToolTip.Tip="Search scope">
+                        <ComboBoxItem Content="Current document" />
+                        <ComboBoxItem Content="Open documents" />
+                    </ComboBox>
+                </DockPanel>
+
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

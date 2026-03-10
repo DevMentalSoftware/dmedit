@@ -92,8 +92,9 @@ public static class CommandIds {
     public const string NavPageUp         = "Nav.PageUp";
     public const string NavPageDown      = "Nav.PageDown";
     public const string NavGoToLine      = "Nav.GoToLine";
-    public const string NavScrollLineUp  = "Nav.ScrollLineUp";
-    public const string NavScrollLineDown = "Nav.ScrollLineDown";
+    public const string NavScrollLineUp   = "Nav.ScrollLineUp";
+    public const string NavScrollLineDown  = "Nav.ScrollLineDown";
+    public const string NavFocusEditor     = "Nav.FocusEditor";
 
     // -----------------------------------------------------------------
     // Navigation — selection extension

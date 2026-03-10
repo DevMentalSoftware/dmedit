@@ -66,6 +66,7 @@
     "Nav.GoToLine": "",
     "Nav.ScrollLineUp": "Ctrl+Up",
     "Nav.ScrollLineDown": "Ctrl+Down",
+    "Nav.FocusEditor": "",
     "Nav.SelectLeft": "Shift+Left",
     "Nav.SelectRight": "Shift+Right",
     "Nav.SelectUp": "Shift+Up",
