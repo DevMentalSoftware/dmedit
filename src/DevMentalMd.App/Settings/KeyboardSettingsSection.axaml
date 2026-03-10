@@ -8,8 +8,6 @@
 
 		<!-- Profile selector -->
 		<ComboBox x:Name="ProfileCombo"
-		          FontSize="12"
-		          Padding="8,3"
 		          Margin="0,0,0,6"
 		          MinWidth="130" />
 
@@ -22,7 +20,6 @@
 					<TextBox x:Name="NameFilter"
 					         Grid.ColumnSpan="2"
 					         Watermark="Search commands&#x2026;"
-					         FontSize="13"
 					         MinWidth="160" />
 					<Button x:Name="NameFilterClearBtn"
 					        Grid.Column="1"
