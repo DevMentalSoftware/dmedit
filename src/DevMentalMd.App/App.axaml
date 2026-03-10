@@ -36,12 +36,12 @@
 			<Setter Property="VerticalAlignment" Value="Center" />
 		</Style>
 		<Style Selector="ComboBox">
-			<Setter Property="Padding" Value="6,6" />
+			<Setter Property="Padding" Value="6,4" />
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
 		</Style>
-		<Style Selector="ButtonSpinner">
+		<Style Selector="NumericUpDown">
 			<Setter Property="Padding" Value="4,4" />
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
@@ -60,4 +60,47 @@
 			<Setter Property="VerticalAlignment" Value="Center" />
 		</Style>
 	</Application.Styles>
+	<Application.Resources>
+		<ResourceDictionary>
+			<ResourceDictionary.MergedDictionaries>
+				<ResourceInclude Source="avares://dmedit/Themes/NumericUpDownTheme.axaml" />
+			</ResourceDictionary.MergedDictionaries>
+			<ResourceDictionary.ThemeDictionaries>
+				<!-- Flat/transparent buttons and toggle buttons globally.
+				     Semi-transparent hover/pressed so they work on any surface. -->
+				<ResourceDictionary x:Key="Light">
+					<SolidColorBrush x:Key="ButtonBackground" Color="Transparent" />
+					<SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#20808080" />
+					<SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#30808080" />
+					<SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="Transparent" />
+					<SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
+					<SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+					<SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+					<SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="Transparent" />
+					<SolidColorBrush x:Key="ToggleButtonBackground" Color="Transparent" />
+					<SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#20808080" />
+					<SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="#30808080" />
+					<SolidColorBrush x:Key="ToggleButtonBorderBrush" Color="Transparent" />
+					<SolidColorBrush x:Key="ToggleButtonBorderBrushPointerOver" Color="Transparent" />
+					<SolidColorBrush x:Key="ToggleButtonBorderBrushPressed" Color="Transparent" />
+				</ResourceDictionary>
+				<ResourceDictionary x:Key="Dark">
+					<SolidColorBrush x:Key="ButtonBackground" Color="Transparent" />
+					<SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#20808080" />
+					<SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#30808080" />
+					<SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="Transparent" />
+					<SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
+					<SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+					<SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+					<SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="Transparent" />
+					<SolidColorBrush x:Key="ToggleButtonBackground" Color="Transparent" />
+					<SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#20808080" />
+					<SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="#30808080" />
+					<SolidColorBrush x:Key="ToggleButtonBorderBrush" Color="Transparent" />
+					<SolidColorBrush x:Key="ToggleButtonBorderBrushPointerOver" Color="Transparent" />
+					<SolidColorBrush x:Key="ToggleButtonBorderBrushPressed" Color="Transparent" />
+				</ResourceDictionary>
+			</ResourceDictionary.ThemeDictionaries>
+		</ResourceDictionary>
+	</Application.Resources>
 </Application>

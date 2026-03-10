@@ -441,7 +441,8 @@ public partial class KeyboardSettingsSection : UserControl {
             RemoveBtn.IsEnabled = false;
         }
 
-        ResetBtn.IsEnabled = _selectedCommandId != null;
+        ResetBtn.IsEnabled = _selectedCommandId != null
+            && (IsBindingModified(_selectedCommandId, 1) || IsBindingModified(_selectedCommandId, 2));
     }
 
     // =====================================================================

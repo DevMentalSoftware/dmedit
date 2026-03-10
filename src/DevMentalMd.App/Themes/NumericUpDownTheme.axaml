@@ -1,0 +1,164 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+	<!-- ══════════════════════════════════════════════════════════════════
+	     Custom NumericUpDown theme — matches ComboBox appearance.
+	     Side-by-side up/down chevrons on the right, matching the
+	     ComboBox dropdown chevron size exactly.
+	     ══════════════════════════════════════════════════════════════════ -->
+
+	<!-- ── Compact RepeatButton for spinner arrows ─────────────────── -->
+	<ControlTheme x:Key="CompactSpinnerRepeatButton" TargetType="RepeatButton">
+		<Setter Property="MinWidth" Value="0" />
+		<Setter Property="MinHeight" Value="0" />
+		<Setter Property="Padding" Value="0" />
+		<Setter Property="Background" Value="Transparent" />
+		<Setter Property="Foreground" Value="{DynamicResource ComboBoxDropDownGlyphForeground}" />
+		<Setter Property="HorizontalContentAlignment" Value="Center" />
+		<Setter Property="VerticalContentAlignment" Value="Center" />
+		<Setter Property="Template">
+			<ControlTemplate>
+				<ContentPresenter x:Name="PART_ContentPresenter"
+				                  Background="{TemplateBinding Background}"
+				                  Content="{TemplateBinding Content}"
+				                  ContentTemplate="{TemplateBinding ContentTemplate}"
+				                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+				                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+			</ControlTemplate>
+		</Setter>
+
+		<Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+		</Style>
+		<Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+		</Style>
+		<Style Selector="^:disabled">
+			<Setter Property="Foreground" Value="{DynamicResource ComboBoxDropDownGlyphForegroundDisabled}" />
+		</Style>
+	</ControlTheme>
+
+	<!-- ── Compact ButtonSpinner — ComboBox-like layout ─────────────── -->
+	<ControlTheme x:Key="CompactButtonSpinner" TargetType="ButtonSpinner">
+		<Setter Property="Background" Value="{DynamicResource ComboBoxBackground}" />
+		<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrush}" />
+		<Setter Property="BorderThickness" Value="{DynamicResource ComboBoxBorderThemeThickness}" />
+		<Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+		<Setter Property="Foreground" Value="{DynamicResource ComboBoxForeground}" />
+		<Setter Property="MinHeight" Value="0" />
+		<Setter Property="MinWidth" Value="0" />
+		<Setter Property="Padding" Value="0" />
+		<Setter Property="HorizontalContentAlignment" Value="Stretch" />
+		<Setter Property="VerticalContentAlignment" Value="Stretch" />
+		<Setter Property="Template">
+			<ControlTemplate>
+				<Border x:Name="Background"
+				        Background="{TemplateBinding Background}"
+				        BorderBrush="{TemplateBinding BorderBrush}"
+				        BorderThickness="{TemplateBinding BorderThickness}"
+				        CornerRadius="{TemplateBinding CornerRadius}">
+					<Grid ColumnDefinitions="*,Auto">
+						<ContentPresenter Name="PART_ContentPresenter"
+						                  Grid.Column="0"
+						                  Content="{TemplateBinding Content}"
+						                  ContentTemplate="{TemplateBinding ContentTemplate}"
+						                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+						                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+						                  Padding="{TemplateBinding Padding}" />
+						<StackPanel Grid.Column="1"
+						            Orientation="Horizontal"
+						            VerticalAlignment="Center"
+						            IsVisible="{TemplateBinding ShowButtonSpinner}">
+							<RepeatButton Name="PART_IncreaseButton"
+							              Theme="{StaticResource CompactSpinnerRepeatButton}"
+							              Width="16" Height="16"
+							              IsTabStop="False">
+								<PathIcon Width="12" Height="12"
+								          Data="M 1939,1581 L 2029,1491 L 1024,486 L 19,1491 L 109,1581 L 1024,666 Z"
+								          Foreground="{DynamicResource ComboBoxDropDownGlyphForeground}" />
+							</RepeatButton>
+							<RepeatButton Name="PART_DecreaseButton"
+							              Theme="{StaticResource CompactSpinnerRepeatButton}"
+							              Width="16" Height="16"
+							              Margin="0,0,4,0"
+							              IsTabStop="False">
+								<PathIcon Width="12" Height="12"
+								          Data="M 1939,486 L 2029,576 L 1024,1581 L 19,576 L 109,486 L 1024,1401 Z"
+								          Foreground="{DynamicResource ComboBoxDropDownGlyphForeground}" />
+							</RepeatButton>
+						</StackPanel>
+					</Grid>
+				</Border>
+			</ControlTemplate>
+		</Setter>
+
+		<Style Selector="^:pointerover /template/ Border#Background">
+			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}" />
+			<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushPointerOver}" />
+		</Style>
+		<Style Selector="^:disabled /template/ Border#Background">
+			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundDisabled}" />
+			<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushDisabled}" />
+		</Style>
+	</ControlTheme>
+
+	<!-- ── NumericUpDown implicit theme override ───────────────────── -->
+	<ControlTheme x:Key="{x:Type NumericUpDown}" TargetType="NumericUpDown">
+		<Setter Property="Foreground" Value="{DynamicResource ComboBoxForeground}" />
+		<Setter Property="Background" Value="{DynamicResource ComboBoxBackground}" />
+		<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrush}" />
+		<Setter Property="BorderThickness" Value="{DynamicResource ComboBoxBorderThemeThickness}" />
+		<Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+		<Setter Property="MinHeight" Value="0" />
+		<Setter Property="Padding" Value="6,6" />
+		<Setter Property="FontSize" Value="13" />
+		<Setter Property="HorizontalContentAlignment" Value="Left" />
+		<Setter Property="VerticalContentAlignment" Value="Center" />
+		<Setter Property="Template">
+			<ControlTemplate>
+				<DataValidationErrors>
+					<ButtonSpinner Name="PART_Spinner"
+					               Theme="{StaticResource CompactButtonSpinner}"
+					               Background="{TemplateBinding Background}"
+					               BorderBrush="{TemplateBinding BorderBrush}"
+					               BorderThickness="{TemplateBinding BorderThickness}"
+					               CornerRadius="{TemplateBinding CornerRadius}"
+					               Padding="0"
+					               MinWidth="0"
+					               MinHeight="0"
+					               HorizontalContentAlignment="Stretch"
+					               VerticalContentAlignment="Stretch"
+					               AllowSpin="{TemplateBinding AllowSpin}"
+					               ShowButtonSpinner="{TemplateBinding ShowButtonSpinner}"
+					               ButtonSpinnerLocation="{TemplateBinding ButtonSpinnerLocation}"
+					               IsTabStop="False">
+						<TextBox Name="PART_TextBox"
+						         Background="Transparent"
+						         BorderThickness="0"
+						         Margin="0"
+						         Padding="{TemplateBinding Padding}"
+						         MinWidth="0"
+						         MinHeight="0"
+						         FontSize="{TemplateBinding FontSize}"
+						         Foreground="{TemplateBinding Foreground}"
+						         Watermark="{TemplateBinding Watermark}"
+						         IsReadOnly="{TemplateBinding IsReadOnly}"
+						         VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+						         HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+						         AcceptsReturn="False"
+						         TextWrapping="NoWrap">
+							<TextBox.Resources>
+								<SolidColorBrush x:Key="TextControlBackgroundFocused">Transparent</SolidColorBrush>
+								<SolidColorBrush x:Key="TextControlBackgroundPointerOver">Transparent</SolidColorBrush>
+								<SolidColorBrush x:Key="TextControlBorderBrushFocused">Transparent</SolidColorBrush>
+								<SolidColorBrush x:Key="TextControlBorderBrushPointerOver">Transparent</SolidColorBrush>
+								<Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
+							</TextBox.Resources>
+						</TextBox>
+					</ButtonSpinner>
+				</DataValidationErrors>
+			</ControlTemplate>
+		</Setter>
+	</ControlTheme>
+
+</ResourceDictionary>

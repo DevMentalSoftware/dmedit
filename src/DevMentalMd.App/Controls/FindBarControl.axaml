@@ -2,25 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DevMentalMd.App.Controls.FindBarControl">
 
-    <!-- Override Fluent theme resource keys so every Button and ToggleButton
-         inside this control is flat/transparent until hovered or pressed. -->
-    <UserControl.Resources>
-        <SolidColorBrush x:Key="ButtonBackground" Color="Transparent" />
-        <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#20808080" />
-        <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#30808080" />
-        <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="Transparent" />
-        <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
-        <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
-        <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
-        <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="Transparent" />
-        <SolidColorBrush x:Key="ToggleButtonBackground" Color="Transparent" />
-        <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#20808080" />
-        <SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="#30808080" />
-        <SolidColorBrush x:Key="ToggleButtonBorderBrush" Color="Transparent" />
-        <SolidColorBrush x:Key="ToggleButtonBorderBrushPointerOver" Color="Transparent" />
-        <SolidColorBrush x:Key="ToggleButtonBorderBrushPressed" Color="Transparent" />
-    </UserControl.Resources>
-
     <!-- Outer wrapper: 6px taller and 12px wider than the body so the concave
          ear corners have room to render.  Background is transparent so only
          the ear fills and the body itself are visible. -->
@@ -70,7 +51,6 @@
                 <TextBox x:Name="SearchBox"
                          Grid.Column="2" Grid.Row="0"
                          Watermark="Find..."
-                         FontSize="13"
                          Margin="0,0,4,0">
                     <TextBox.InnerRightContent>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -124,7 +104,6 @@
                 <TextBox x:Name="ReplaceBox"
                          Grid.Column="2" Grid.Row="1"
                          Watermark="Replace..."
-                         FontSize="13"
                          Margin="0,2,4,0"
                          IsVisible="False">
                     <TextBox.InnerRightContent>
