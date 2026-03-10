@@ -97,7 +97,6 @@
                         Grid.Column="5" Grid.Row="0"
                         ToolTip.Tip="Close (Escape)"
                         Width="24" Height="24" Padding="0"
-                        HorizontalContentAlignment="Center"
                         VerticalContentAlignment="Center" />
 
                 <!-- Row 1, Col 2: ReplaceBox (same star column as SearchBox) -->

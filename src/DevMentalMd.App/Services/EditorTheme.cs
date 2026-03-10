@@ -9,7 +9,7 @@ namespace DevMentalMd.App.Services;
 public sealed class EditorTheme {
     // -- Editor surface --
     public IBrush EditorBackground { get; init; } = 
-        new SolidColorBrush(Color.FromRgb(0xF9, 0xF9, 0xF9));
+        new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
     public IBrush EditorForeground { get; init; } = Brushes.Black;
     public IBrush CaretBrush { get; init; } = Brushes.Black;
     public IBrush SelectionBrush { get; init; } =

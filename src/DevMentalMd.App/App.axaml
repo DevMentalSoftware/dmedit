@@ -28,12 +28,16 @@
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
 		</Style>
 		<Style Selector="ToggleButton">
 			<Setter Property="Padding" Value="4,4" />
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
 		</Style>
 		<Style Selector="ComboBox">
 			<Setter Property="Padding" Value="6,4" />
@@ -63,6 +67,9 @@
 	<Application.Resources>
 		<ResourceDictionary>
 			<ResourceDictionary.MergedDictionaries>
+				<ResourceInclude Source="avares://dmedit/Themes/ComboBoxTheme.axaml" />
+				<ResourceInclude Source="avares://dmedit/Themes/TextBoxTheme.axaml" />
+				<ResourceInclude Source="avares://dmedit/Themes/ListBoxTheme.axaml" />
 				<ResourceInclude Source="avares://dmedit/Themes/NumericUpDownTheme.axaml" />
 			</ResourceDictionary.MergedDictionaries>
 			<ResourceDictionary.ThemeDictionaries>
@@ -85,6 +92,18 @@
 					<SolidColorBrush x:Key="ToggleButtonBorderBrushPressed" Color="Transparent" />
 				</ResourceDictionary>
 				<ResourceDictionary x:Key="Dark">
+					<!-- Unfocused controls use dark gray; focused uses near-black -->
+					<SolidColorBrush x:Key="TextControlBackground" Color="#383838" />
+					<SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#20FFFFFF" />
+					<SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#222222" />
+					<SolidColorBrush x:Key="TextControlBorderBrush" Color="#222222" />
+					<SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#222222" />
+					<SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#222222" />
+					<SolidColorBrush x:Key="ComboBoxBackground" Color="#383838" />
+					<SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#20FFFFFF" />
+					<SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#222222" />
+					<SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#222222" />
+					<SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#222222" />
 					<SolidColorBrush x:Key="ButtonBackground" Color="Transparent" />
 					<SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#20808080" />
 					<SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#30808080" />

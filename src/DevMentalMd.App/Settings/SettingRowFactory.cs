@@ -73,7 +73,7 @@ public static class SettingRowFactory {
         var glyph = new TextBlock {
             Text = IconGlyphs.CheckMark,
             FontFamily = IconGlyphs.Family,
-            FontSize = 14,
+            FontSize = 18,
             Width = 20,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -105,8 +105,7 @@ public static class SettingRowFactory {
 
         var hitArea = new Border {
             Child = row,
-            Background = Brushes.Transparent,
-            Cursor = new Cursor(StandardCursorType.Hand),
+            Background = Brushes.Transparent
         };
 
         hitArea.PointerPressed += (_, e) => {

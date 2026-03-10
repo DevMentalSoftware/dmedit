@@ -28,10 +28,10 @@
 		</Setter>
 
 		<Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+			<Setter Property="Background" Value="#20808080" />
 		</Style>
 		<Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+			<Setter Property="Background" Value="#30808080" />
 		</Style>
 		<Style Selector="^:disabled">
 			<Setter Property="Foreground" Value="{DynamicResource ComboBoxDropDownGlyphForegroundDisabled}" />
@@ -67,11 +67,12 @@
 						                  Padding="{TemplateBinding Padding}" />
 						<StackPanel Grid.Column="1"
 						            Orientation="Horizontal"
-						            VerticalAlignment="Center"
+						            VerticalAlignment="Stretch"
 						            IsVisible="{TemplateBinding ShowButtonSpinner}">
 							<RepeatButton Name="PART_IncreaseButton"
 							              Theme="{StaticResource CompactSpinnerRepeatButton}"
-							              Width="16" Height="16"
+							              Width="16"
+							              VerticalAlignment="Stretch"
 							              IsTabStop="False">
 								<PathIcon Width="12" Height="12"
 								          Data="M 1939,1581 L 2029,1491 L 1024,486 L 19,1491 L 109,1581 L 1024,666 Z"
@@ -79,8 +80,9 @@
 							</RepeatButton>
 							<RepeatButton Name="PART_DecreaseButton"
 							              Theme="{StaticResource CompactSpinnerRepeatButton}"
-							              Width="16" Height="16"
+							              Width="16"
 							              Margin="0,0,4,0"
+							              VerticalAlignment="Stretch"
 							              IsTabStop="False">
 								<PathIcon Width="12" Height="12"
 								          Data="M 1939,486 L 2029,576 L 1024,1581 L 19,576 L 109,486 L 1024,1401 Z"
@@ -92,10 +94,12 @@
 			</ControlTemplate>
 		</Setter>
 
+		<!-- Pointer-over: tint the whole background uniformly, matching ComboBox/TextBox -->
 		<Style Selector="^:pointerover /template/ Border#Background">
 			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}" />
 			<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushPointerOver}" />
 		</Style>
+
 		<Style Selector="^:disabled /template/ Border#Background">
 			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundDisabled}" />
 			<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushDisabled}" />
