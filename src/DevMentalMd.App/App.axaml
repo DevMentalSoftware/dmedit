@@ -5,7 +5,13 @@
 	<!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
 	<Application.Styles>
-		<FluentTheme />
+		<FluentTheme>
+			<FluentTheme.Palettes>
+				<ColorPaletteResources x:Key="Light" Accent="#ff0073cf" AltHigh="White" AltLow="White" AltMedium="White" AltMediumHigh="White" AltMediumLow="White" BaseHigh="Black" BaseLow="#ffcccccc" BaseMedium="#ff898989" BaseMediumHigh="#ff5d5d5d" BaseMediumLow="#ff737373" ChromeAltLow="#ff5d5d5d" ChromeBlackHigh="Black" ChromeBlackLow="#ffcccccc" ChromeBlackMedium="#ff5d5d5d" ChromeBlackMediumLow="#ff898989" ChromeDisabledHigh="#ffcccccc" ChromeDisabledLow="#ff898989" ChromeGray="#ff737373" ChromeHigh="#ffcccccc" ChromeLow="#ffececec" ChromeMedium="#ffe6e6e6" ChromeMediumLow="#ffececec" ChromeWhite="White" ListLow="#ffe6e6e6" ListMedium="#ffcccccc" RegionColor="White" />
+				<ColorPaletteResources x:Key="Dark" Accent="#ff0073cf" AltHigh="Black" AltLow="Black" AltMedium="Black" AltMediumHigh="Black" AltMediumLow="Black" BaseHigh="White" BaseLow="#ff333333" BaseMedium="#ff9a9a9a" BaseMediumHigh="#ffb4b4b4" BaseMediumLow="#ff676767" ChromeAltLow="#ffb4b4b4" ChromeBlackHigh="Black" ChromeBlackLow="#ffb4b4b4" ChromeBlackMedium="Black" ChromeBlackMediumLow="Black" ChromeDisabledHigh="#ff333333" ChromeDisabledLow="#ff9a9a9a" ChromeGray="Gray" ChromeHigh="Gray" ChromeLow="#ff151515" ChromeMedium="#ff1d1d1d" ChromeMediumLow="#ff2c2c2c" ChromeWhite="White" ListLow="#ff1d1d1d" ListMedium="#ff333333" RegionColor="Black" />
+			</FluentTheme.Palettes>
+		</FluentTheme>
+
 
 		<!-- ================================================================
 		     Control normalization — consistent sizing across all themes.
@@ -16,96 +22,42 @@
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
-			<Setter Property="Foreground" Value="#999999" />
-			<Setter Property="Background" Value="#383838" />
 		</Style>
 		<Style Selector="Button">
 			<Setter Property="Padding" Value="4,4" />
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
-			<Setter Property="Foreground" Value="#999999" />
 		</Style>
 		<Style Selector="ToggleButton">
 			<Setter Property="Padding" Value="4,4" />
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
-			<Setter Property="Foreground" Value="#999999" />
 		</Style>
 		<Style Selector="ComboBox">
-			<Setter Property="Padding" Value="8,4" />
+			<Setter Property="Padding" Value="4,4" />
 			<Setter Property="MinHeight" Value="0" />
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
-			<Setter Property="Foreground" Value="#999999" />
 		</Style>
-
-		<!-- ================================================================
-		     Accent colour (#3399FF) — focus ring, checked state, selection.
-		     These come after FluentTheme so they take precedence.
-		     ================================================================ -->
-
-		<!-- TextBox: replace Fluent's subtle focus ring with a bright accent. -->
-		<Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
-			<Setter Property="BorderBrush" Value="#383838" />
-			<Setter Property="BorderThickness" Value="2" />
+		<Style Selector="ButtonSpinner">
+			<Setter Property="Padding" Value="4,4" />
+			<Setter Property="MinHeight" Value="0" />
+			<Setter Property="FontSize" Value="13" />
+			<Setter Property="VerticalAlignment" Value="Center" />
 		</Style>
-		<Style Selector="TextBox /template/ Border#PART_BorderElement">
-			<Setter Property="BorderBrush" Value="#383838" />
-			<Setter Property="BorderThickness" Value="2" />
+		<Style Selector="ListBoxItem">
+			<Setter Property="Padding" Value="4,4" />
+			<Setter Property="MinHeight" Value="0" />
+			<Setter Property="FontSize" Value="13" />
+			<Setter Property="VerticalAlignment" Value="Center" />
 		</Style>
-
-		<!-- ToggleButton: accent background + white text when checked. -->
-		<Style Selector="ToggleButton:checked /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="#3399FF" />
-		</Style>
-		<Style Selector="ToggleButton:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="#3399FF" />
-		</Style>
-		<Style Selector="ToggleButton:checked">
-			<Setter Property="Foreground" Value="White" />
-		</Style>
-
-		<!-- ListBoxItem: accent background + white text when selected.
-		     Foreground must be on the ContentPresenter (not ListBoxItem) because
-		     the Fluent template binds the inner TextBlock's colour directly from
-		     a theme resource and does not inherit from the ListBoxItem ancestor. -->
-		<Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="#3399FF" />
-			<Setter Property="Foreground" Value="White" />
-		</Style>
-		<Style Selector="ListBoxItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="#3399FF" />
-			<Setter Property="Foreground" Value="White" />
-		</Style>
-
-		<!-- ComboBoxItem: same accent treatment as ListBoxItem. -->
-		<Style Selector="ComboBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="#3399FF" />
-			<Setter Property="Foreground" Value="White" />
-		</Style>
-		<Style Selector="ComboBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="#3399FF" />
-			<Setter Property="Foreground" Value="White" />
-		</Style>
-		<Style Selector="ComboBoxItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="#3399FF" />
-			<Setter Property="Foreground" Value="White" />
+		<Style Selector="ComboBoxItem">
+			<Setter Property="Padding" Value="4,4" />
+			<Setter Property="MinHeight" Value="0" />
+			<Setter Property="FontSize" Value="13" />
+			<Setter Property="VerticalAlignment" Value="Center" />
 		</Style>
 	</Application.Styles>
-	<Application.Resources>
-		<ResourceDictionary>
-			<ResourceDictionary.ThemeDictionaries>
-				<ResourceDictionary x:Key="Light">
-					<SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#AA000000" />
-					<SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#AA000000" />
-				</ResourceDictionary>
-				<ResourceDictionary x:Key="Dark">
-					<SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#FFFFFFFF" />
-					<SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#FFFFFFFF" />
-				</ResourceDictionary>
-			</ResourceDictionary.ThemeDictionaries>
-		</ResourceDictionary>
-	</Application.Resources>
 </Application>
