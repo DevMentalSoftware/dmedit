@@ -3,11 +3,20 @@
 
 	<!-- ══════════════════════════════════════════════════════════════════
 	     Custom NumericUpDown theme — TextBox-like hover behaviour.
-	     Each zone handles its own :pointerover independently:
-	       • Text zone  → inner TextBox tints via TextControlBackgroundPointerOver
-	       • Up button   → RepeatButton tints
-	       • Down button  → RepeatButton tints
-	     No cross-zone hover contamination.
+
+	     Layout (CompactButtonSpinner):
+	       Panel
+	         ├─ #Background    (non-hit-testable border/shell)
+	         ├─ #TextZone      (transparent, wraps ContentPresenter)
+	         └─ StackPanel     (buttons, Panel sibling of TextZone)
+
+	     TextZone wraps the ContentPresenter so the TextBox is a descendant
+	     — hovering the TextBox bubbles :pointerover up to TextZone.
+	     Buttons are Panel siblings of TextZone (not descendants), so they
+	     don't trigger TextZone:pointerover.  TextZone spans the full area,
+	     so its hover tint shows behind the transparent buttons — exactly
+	     matching how TextBox's PART_BorderElement tints behind its clear
+	     button.
 	     ══════════════════════════════════════════════════════════════════ -->
 
 	<!-- ── Compact RepeatButton for spinner arrows ─────────────────── -->
@@ -21,19 +30,22 @@
 		<Setter Property="VerticalContentAlignment" Value="Center" />
 		<Setter Property="Template">
 			<ControlTemplate>
-				<ContentPresenter x:Name="PART_ContentPresenter"
-				                  Background="{TemplateBinding Background}"
-				                  Content="{TemplateBinding Content}"
-				                  ContentTemplate="{TemplateBinding ContentTemplate}"
-				                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-				                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+				<Border x:Name="PART_Border"
+				        Background="{TemplateBinding Background}"
+				        CornerRadius="{TemplateBinding CornerRadius}">
+					<ContentPresenter x:Name="PART_ContentPresenter"
+					                  Content="{TemplateBinding Content}"
+					                  ContentTemplate="{TemplateBinding ContentTemplate}"
+					                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+					                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+				</Border>
 			</ControlTemplate>
 		</Setter>
 
-		<Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+		<Style Selector="^:pointerover /template/ Border#PART_Border">
 			<Setter Property="Background" Value="{DynamicResource TextControlButtonBackgroundPointerOver}" />
 		</Style>
-		<Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
+		<Style Selector="^:pressed /template/ Border#PART_Border">
 			<Setter Property="Background" Value="#30808080" />
 		</Style>
 		<Style Selector="^:disabled">
@@ -42,14 +54,6 @@
 	</ControlTheme>
 
 	<!-- ── Compact ButtonSpinner — TextBox-like hover ──────────────── -->
-	<!--
-	     Hover anywhere on the control tints the whole #Background (like
-	     TextBox's PART_BorderElement).  The RepeatButtons sit on top with
-	     transparent backgrounds, so the tint shows through — matching how
-	     TextBox's clear button looks hovered when the text area is hovered.
-	     Each button gets an additional tint on its own :pointerover.
-	     Suppressed when the TextBox is focused (:focus-within).
-	-->
 	<ControlTheme x:Key="CompactButtonSpinner" TargetType="ButtonSpinner">
 		<Setter Property="Background" Value="{DynamicResource ComboBoxBackground}" />
 		<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrush}" />
@@ -63,73 +67,77 @@
 		<Setter Property="VerticalContentAlignment" Value="Stretch" />
 		<Setter Property="Template">
 			<ControlTemplate>
-				<!-- Panel layers: #Background (visual shell, not hit-testable)
-				     sits behind a Grid whose col 0 holds the TextBox and col 1
-				     holds the buttons.  Because #Background is not hit-testable,
-				     hovering the TextBox fires TextBox:pointerover (which bubbles
-				     to ButtonSpinner:pointerover), while hovering a RepeatButton
-				     fires only that button's :pointerover — NOT the ButtonSpinner's,
-				     because the button is a sibling of #Background in the Panel,
-				     not a child of it. -->
 				<Panel>
+					<!-- Visual shell: border + resting background, not hit-testable -->
 					<Border x:Name="Background"
 					        IsHitTestVisible="False"
 					        Background="{TemplateBinding Background}"
 					        BorderBrush="{TemplateBinding BorderBrush}"
 					        BorderThickness="{TemplateBinding BorderThickness}"
 					        CornerRadius="{TemplateBinding CornerRadius}" />
-					<Grid ColumnDefinitions="*,Auto"
-					      Margin="{TemplateBinding BorderThickness}">
+
+					<!-- TextZone: wraps ContentPresenter so TextBox is a descendant.
+					     Hover on the TextBox bubbles up here.  Spans the full area
+					     so the tint shows behind the transparent buttons. -->
+					<Border x:Name="TextZone"
+					        Background="Transparent"
+					        CornerRadius="{TemplateBinding CornerRadius}"
+					        Margin="{TemplateBinding BorderThickness}">
 						<ContentPresenter Name="PART_ContentPresenter"
-						                  Grid.Column="0"
 						                  Content="{TemplateBinding Content}"
 						                  ContentTemplate="{TemplateBinding ContentTemplate}"
 						                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
 						                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-						                  Padding="{TemplateBinding Padding}" />
-						<StackPanel Grid.Column="1"
-						            Orientation="Horizontal"
-						            VerticalAlignment="Stretch"
-						            IsVisible="{TemplateBinding ShowButtonSpinner}">
-							<RepeatButton Name="PART_IncreaseButton"
-							              Theme="{StaticResource CompactSpinnerRepeatButton}"
-							              Width="16"
-							              VerticalAlignment="Stretch"
-							              IsTabStop="False">
-								<PathIcon Width="12" Height="12"
-								          Data="M 1939,1581 L 2029,1491 L 1024,486 L 19,1491 L 109,1581 L 1024,666 Z"
-								          Foreground="{DynamicResource ComboBoxDropDownGlyphForeground}" />
-							</RepeatButton>
-							<RepeatButton Name="PART_DecreaseButton"
-							              Theme="{StaticResource CompactSpinnerRepeatButton}"
-							              Width="16"
-							              Margin="0,0,4,0"
-							              VerticalAlignment="Stretch"
-							              IsTabStop="False">
-								<PathIcon Width="12" Height="12"
-								          Data="M 1939,486 L 2029,576 L 1024,1581 L 19,576 L 109,486 L 1024,1401 Z"
-								          Foreground="{DynamicResource ComboBoxDropDownGlyphForeground}" />
-							</RepeatButton>
-						</StackPanel>
-					</Grid>
+						                  Padding="{TemplateBinding Padding}"
+						                  Margin="0,0,48,0" />
+					</Border>
+
+					<!-- Buttons: Panel siblings of TextZone — hovering them does NOT
+					     trigger TextZone:pointerover.  Each button has its own hover
+					     via CompactSpinnerRepeatButton theme. -->
+					<StackPanel Orientation="Horizontal"
+					            HorizontalAlignment="Right"
+					            VerticalAlignment="Stretch"
+					            Margin="{TemplateBinding BorderThickness}"
+					            IsVisible="{TemplateBinding ShowButtonSpinner}">
+						<RepeatButton Name="PART_IncreaseButton"
+						              Theme="{StaticResource CompactSpinnerRepeatButton}"
+						              Width="30"
+						              VerticalAlignment="Stretch"
+						              Margin="0,1,0,1"
+						              IsTabStop="False">
+							<PathIcon Width="12" Height="12"
+							          Data="M 1939,1581 L 2029,1491 L 1024,486 L 19,1491 L 109,1581 L 1024,666 Z"
+							          Foreground="{DynamicResource ComboBoxDropDownGlyphForeground}" />
+						</RepeatButton>
+						<RepeatButton Name="PART_DecreaseButton"
+						              Theme="{StaticResource CompactSpinnerRepeatButton}"
+						              CornerRadius="0,4,4,0"
+						              Width="30"
+						              VerticalAlignment="Stretch"
+						              Margin="0,1,0,1"
+						              IsTabStop="False">
+							<PathIcon Width="12" Height="12"
+							          Data="M 1939,486 L 2029,576 L 1024,1581 L 19,576 L 109,486 L 1024,1401 Z"
+							          Foreground="{DynamicResource ComboBoxDropDownGlyphForeground}" />
+						</RepeatButton>
+					</StackPanel>
 				</Panel>
 			</ControlTemplate>
 		</Setter>
 
-		<!-- Pointer-over: tint the whole control.  Hovering the text area
-		     or a button both fire ButtonSpinner:pointerover (children bubble).
-		     This matches TextBox behaviour where PART_BorderElement tints
-		     regardless of which child is hovered. -->
-		<Style Selector="^:pointerover /template/ Border#Background">
+		<!-- Text-area hover: tint TextZone (shows behind transparent buttons) -->
+		<Style Selector="^ /template/ Border#TextZone:pointerover">
 			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}" />
-			<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushPointerOver}" />
 		</Style>
-		<!-- Focused: override hover back to base so the focused TextBox owns
-		     all visuals.  This mirrors TextBox where :focus takes precedence
-		     over :pointerover. -->
+
+		<!-- Focused: #Background shows focused color, suppress TextZone hover -->
 		<Style Selector="^:focus-within /template/ Border#Background">
-			<Setter Property="Background" Value="{DynamicResource ComboBoxBackground}" />
-			<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrush}" />
+			<Setter Property="Background" Value="{DynamicResource TextControlBackgroundFocused}" />
+			<Setter Property="BorderBrush" Value="{DynamicResource TextControlBorderBrushFocused}" />
+		</Style>
+		<Style Selector="^:focus-within /template/ Border#TextZone:pointerover">
+			<Setter Property="Background" Value="Transparent" />
 		</Style>
 
 		<Style Selector="^:disabled /template/ Border#Background">
@@ -184,8 +192,8 @@
 						         AcceptsReturn="False"
 						         TextWrapping="NoWrap">
 							<TextBox.Resources>
-								<!-- Inner TextBox is always transparent — the outer ButtonSpinner
-								     shell controls all background visuals including hover. -->
+								<!-- Inner TextBox always transparent — outer shell handles
+								     all background visuals (rest, hover, focus). -->
 								<SolidColorBrush x:Key="TextControlBackground">Transparent</SolidColorBrush>
 								<SolidColorBrush x:Key="TextControlBackgroundPointerOver">Transparent</SolidColorBrush>
 								<SolidColorBrush x:Key="TextControlBackgroundFocused">Transparent</SolidColorBrush>

@@ -25,7 +25,7 @@
 			<SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#383838" />
 			<SolidColorBrush x:Key="TextControlForeground" Color="#FFFFFF" />
 			<SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#EEEEEE" />
-			<SolidColorBrush x:Key="TextControlButtonBackgroundPointerOver" Color="#454545" />
+			<SolidColorBrush x:Key="TextControlButtonBackgroundPointerOver" Color="#505050" />
 		</ResourceDictionary>
 	</ResourceDictionary.ThemeDictionaries>
 
