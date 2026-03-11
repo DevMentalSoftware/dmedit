@@ -2,9 +2,12 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
 	<!-- ══════════════════════════════════════════════════════════════════
-	     Custom NumericUpDown theme — matches ComboBox appearance.
-	     Side-by-side up/down chevrons on the right, matching the
-	     ComboBox dropdown chevron size exactly.
+	     Custom NumericUpDown theme — TextBox-like hover behaviour.
+	     Each zone handles its own :pointerover independently:
+	       • Text zone  → inner TextBox tints via TextControlBackgroundPointerOver
+	       • Up button   → RepeatButton tints
+	       • Down button  → RepeatButton tints
+	     No cross-zone hover contamination.
 	     ══════════════════════════════════════════════════════════════════ -->
 
 	<!-- ── Compact RepeatButton for spinner arrows ─────────────────── -->
@@ -28,7 +31,7 @@
 		</Setter>
 
 		<Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="#20808080" />
+			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}" />
 		</Style>
 		<Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
 			<Setter Property="Background" Value="#30808080" />
@@ -38,7 +41,15 @@
 		</Style>
 	</ControlTheme>
 
-	<!-- ── Compact ButtonSpinner — ComboBox-like layout ─────────────── -->
+	<!-- ── Compact ButtonSpinner — TextBox-like hover ──────────────── -->
+	<!--
+	     Hover anywhere on the control tints the whole #Background (like
+	     TextBox's PART_BorderElement).  The RepeatButtons sit on top with
+	     transparent backgrounds, so the tint shows through — matching how
+	     TextBox's clear button looks hovered when the text area is hovered.
+	     Each button gets an additional tint on its own :pointerover.
+	     Suppressed when the TextBox is focused (:focus-within).
+	-->
 	<ControlTheme x:Key="CompactButtonSpinner" TargetType="ButtonSpinner">
 		<Setter Property="Background" Value="{DynamicResource ComboBoxBackground}" />
 		<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrush}" />
@@ -52,12 +63,23 @@
 		<Setter Property="VerticalContentAlignment" Value="Stretch" />
 		<Setter Property="Template">
 			<ControlTemplate>
-				<Border x:Name="Background"
-				        Background="{TemplateBinding Background}"
-				        BorderBrush="{TemplateBinding BorderBrush}"
-				        BorderThickness="{TemplateBinding BorderThickness}"
-				        CornerRadius="{TemplateBinding CornerRadius}">
-					<Grid ColumnDefinitions="*,Auto">
+				<!-- Panel layers: #Background (visual shell, not hit-testable)
+				     sits behind a Grid whose col 0 holds the TextBox and col 1
+				     holds the buttons.  Because #Background is not hit-testable,
+				     hovering the TextBox fires TextBox:pointerover (which bubbles
+				     to ButtonSpinner:pointerover), while hovering a RepeatButton
+				     fires only that button's :pointerover — NOT the ButtonSpinner's,
+				     because the button is a sibling of #Background in the Panel,
+				     not a child of it. -->
+				<Panel>
+					<Border x:Name="Background"
+					        IsHitTestVisible="False"
+					        Background="{TemplateBinding Background}"
+					        BorderBrush="{TemplateBinding BorderBrush}"
+					        BorderThickness="{TemplateBinding BorderThickness}"
+					        CornerRadius="{TemplateBinding CornerRadius}" />
+					<Grid ColumnDefinitions="*,Auto"
+					      Margin="{TemplateBinding BorderThickness}">
 						<ContentPresenter Name="PART_ContentPresenter"
 						                  Grid.Column="0"
 						                  Content="{TemplateBinding Content}"
@@ -90,14 +112,23 @@
 							</RepeatButton>
 						</StackPanel>
 					</Grid>
-				</Border>
+				</Panel>
 			</ControlTemplate>
 		</Setter>
 
-		<!-- Pointer-over: tint the whole outer shell uniformly.
-		     The inner TextBox is fully transparent so the outer shell controls all visuals. -->
+		<!-- Pointer-over: tint the whole control.  Hovering the text area
+		     or a button both fire ButtonSpinner:pointerover (children bubble).
+		     This matches TextBox behaviour where PART_BorderElement tints
+		     regardless of which child is hovered. -->
 		<Style Selector="^:pointerover /template/ Border#Background">
 			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}" />
+			<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushPointerOver}" />
+		</Style>
+		<!-- Focused: override hover back to base so the focused TextBox owns
+		     all visuals.  This mirrors TextBox where :focus takes precedence
+		     over :pointerover. -->
+		<Style Selector="^:focus-within /template/ Border#Background">
+			<Setter Property="Background" Value="{DynamicResource ComboBoxBackground}" />
 			<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrush}" />
 		</Style>
 
@@ -153,7 +184,8 @@
 						         AcceptsReturn="False"
 						         TextWrapping="NoWrap">
 							<TextBox.Resources>
-								<!-- Inner TextBox is always transparent — outer NUD shell controls all visuals. -->
+								<!-- Inner TextBox is always transparent — the outer ButtonSpinner
+								     shell controls all background visuals including hover. -->
 								<SolidColorBrush x:Key="TextControlBackground">Transparent</SolidColorBrush>
 								<SolidColorBrush x:Key="TextControlBackgroundPointerOver">Transparent</SolidColorBrush>
 								<SolidColorBrush x:Key="TextControlBackgroundFocused">Transparent</SolidColorBrush>
