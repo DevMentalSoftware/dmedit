@@ -159,8 +159,6 @@ public partial class FindBarControl : UserControl {
         EarRight.Fill = theme.TabActiveBackground;
         TopStrip.Background = theme.TabActiveBackground;
         MatchCount.Foreground = theme.SettingsDimForeground;
-        SearchBox.Foreground = theme.EditorForeground;
-        ReplaceBox.Foreground = theme.EditorForeground;
         OptionsSeparator.Background = theme.TabBarBorder;
         OptionsSeparator2.Background = theme.TabBarBorder;
 

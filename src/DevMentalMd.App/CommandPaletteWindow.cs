@@ -332,7 +332,6 @@ public class CommandPaletteWindow : Window {
         Background = theme.EditorBackground;
         _rootBorder.BorderBrush = theme.TabBarBorder;
 
-        _filterBox.Foreground = theme.EditorForeground;
         _hintText.Foreground = theme.SettingsDimForeground;
 
         foreach (var (border, cmd) in _visibleRows) {
