@@ -31,7 +31,7 @@
 		</Setter>
 
 		<Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}" />
+			<Setter Property="Background" Value="{DynamicResource TextControlButtonBackgroundPointerOver}" />
 		</Style>
 		<Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
 			<Setter Property="Background" Value="#30808080" />

@@ -203,7 +203,7 @@
 		     DropDownOverlay is declared last so it's on top in col 1, stealing hits
 		     from ContentArea — ContentArea loses :pointerover and reverts. -->
 		<Style Selector="^ /template/ Border#DropDownOverlay:pointerover">
-			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}" />
+			<Setter Property="Background" Value="{DynamicResource TextControlButtonBackgroundPointerOver}" />
 		</Style>
 
 		<!-- Pressed -->

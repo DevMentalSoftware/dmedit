@@ -1,6 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DevMentalMd.App.Settings.SettingsControl">
+    <UserControl.Styles>
+        <Style Selector="Button.textBoxClear:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource TextControlButtonBackgroundPointerOver}" />
+        </Style>
+    </UserControl.Styles>
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="200" MinWidth="200" MaxWidth="400" />
@@ -16,9 +21,11 @@
                              Watermark="Search settings..."
                              FontSize="13" />
                     <Button x:Name="SearchClearBtn" Grid.Column="1"
+                            Classes="textBoxClear"
                             Content="✕" FontSize="12"
-                            Padding="10,0" Margin="0,1,0,1"
+                            Padding="12,0" Margin="0,1,0,1"
                             Background="Transparent" BorderThickness="0"
+                            CornerRadius="0,4,4,0"
                             VerticalAlignment="Stretch"
                             IsVisible="False" />
                 </Grid>
