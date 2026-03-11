@@ -12,6 +12,8 @@
 			<SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#E8E8E8" />
 			<SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#E8E8E8" />
 			<SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#E8E8E8" />
+			<!-- Keep foreground unchanged on hover -->
+			<SolidColorBrush x:Key="ComboBoxForegroundPointerOver" Color="#000000" />
 		</ResourceDictionary>
 		<ResourceDictionary x:Key="Dark">
 			<SolidColorBrush x:Key="ComboBoxBackground" Color="#383838" />
@@ -19,6 +21,8 @@
 			<SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#383838" />
 			<SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#383838" />
 			<SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#383838" />
+			<!-- Keep foreground unchanged on hover -->
+			<SolidColorBrush x:Key="ComboBoxForegroundPointerOver" Color="#FFFFFF" />
 		</ResourceDictionary>
 	</ResourceDictionary.ThemeDictionaries>
 
@@ -81,8 +85,21 @@
 						        BorderThickness="{TemplateBinding BorderThickness}"
 						        CornerRadius="{TemplateBinding CornerRadius}"
 						        IsVisible="False" />
+						<!-- Content-area hover overlay — spans both columns, declared before
+						     text so it renders behind it.  Text elements are IsHitTestVisible=False
+						     so pointer events fall through to this border for :pointerover.
+						     DropDownOverlay (declared after text, col 1) sits on top and steals
+						     hits in the button zone, so ContentArea only gets :pointerover in col 0.
+						     Hidden when editable so PART_EditableTextBox can receive input. -->
+						<Border x:Name="ContentArea"
+						        Grid.Column="0"
+						        Grid.ColumnSpan="2"
+						        Background="Transparent"
+						        CornerRadius="{TemplateBinding CornerRadius}"
+						        IsVisible="{TemplateBinding IsEditable, Converter={x:Static BoolConverters.Not}}" />
 						<TextBlock x:Name="PlaceholderTextBlock"
 						           Grid.Column="0"
+						           IsHitTestVisible="False"
 						           HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
 						           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
 						           Margin="{TemplateBinding Padding}"
@@ -97,6 +114,7 @@
 						</TextBlock>
 						<ContentControl x:Name="ContentPresenter"
 						                Grid.Column="0"
+						                IsHitTestVisible="False"
 						                Content="{TemplateBinding SelectionBoxItem}"
 						                Margin="{TemplateBinding Padding}"
 						                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
@@ -120,16 +138,13 @@
 								<Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
 							</TextBox.Resources>
 						</TextBox>
-						<!-- Transparent overlay covering col 0 — sole hit-target for the content area.
-						     Hidden when editable so PART_EditableTextBox can receive input. -->
-						<Border x:Name="ContentArea"
-						        Grid.Column="0"
-						        Background="Transparent"
-						        IsVisible="{TemplateBinding IsEditable, Converter={x:Static BoolConverters.Not}}" />
-						<!-- Transparent hit-target covering col 1 for drop-down button hover detection. -->
+						<!-- Drop-down button hover overlay — col 1 only, declared after text
+						     so it's on top for hit-testing.  Steals hits from ContentArea in
+						     the button zone. Right corners rounded to match outer border. -->
 						<Border x:Name="DropDownOverlay"
 						        Grid.Column="1"
-						        Background="Transparent" />
+						        Background="Transparent"
+						        CornerRadius="0,4,4,0" />
 						<PathIcon x:Name="DropDownGlyph"
 						          Grid.Column="1"
 						          UseLayoutRounding="False"
@@ -171,19 +186,24 @@
 			</ControlTemplate>
 		</Setter>
 
-		<!-- Pointer-over: update border colour only; each zone handles its own background tint. -->
+		<!-- Pointer-over: update border colour only. -->
 		<Style Selector="^:pointerover /template/ Border#Background">
 			<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushPointerOver}" />
 		</Style>
 
-		<!-- Content area hover: tint the left zone when pointer is over it. -->
+		<!-- Content area hover (col 0): tint the whole combobox — ContentArea spans
+		     both columns with CornerRadius matching the outer border.  Text renders
+		     on top (declared after ContentArea) but is IsHitTestVisible=False so
+		     pointer events fall through to ContentArea. -->
 		<Style Selector="^ /template/ Border#ContentArea:pointerover">
 			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}" />
 		</Style>
 
-		<!-- Drop-down button hover: tint the right zone when pointer is over col 1. -->
+		<!-- Drop-down button hover (col 1): tint only the button zone.
+		     DropDownOverlay is declared last so it's on top in col 1, stealing hits
+		     from ContentArea — ContentArea loses :pointerover and reverts. -->
 		<Style Selector="^ /template/ Border#DropDownOverlay:pointerover">
-			<Setter Property="Background" Value="#20808080" />
+			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}" />
 		</Style>
 
 		<!-- Pressed -->
