@@ -2,6 +2,26 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="using:System">
 
+	<ResourceDictionary.ThemeDictionaries>
+		<!-- Border = Background so the border only provides corner rounding.
+		     ComboBoxBackgroundPointerOver is used by the ContentArea overlay child
+		     to tint just the content zone on hover. -->
+		<ResourceDictionary x:Key="Light">
+			<SolidColorBrush x:Key="ComboBoxBackground" Color="#E8E8E8" />
+			<SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#DEDEDE" />
+			<SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#E8E8E8" />
+			<SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#E8E8E8" />
+			<SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#E8E8E8" />
+		</ResourceDictionary>
+		<ResourceDictionary x:Key="Dark">
+			<SolidColorBrush x:Key="ComboBoxBackground" Color="#383838" />
+			<SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#454545" />
+			<SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#383838" />
+			<SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#383838" />
+			<SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#383838" />
+		</ResourceDictionary>
+	</ResourceDictionary.ThemeDictionaries>
+
 	<Design.PreviewWith>
 		<Border Padding="20">
 			<StackPanel Spacing="10">
@@ -100,13 +120,16 @@
 								<Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
 							</TextBox.Resources>
 						</TextBox>
+						<!-- Transparent overlay covering col 0 — sole hit-target for the content area.
+						     Hidden when editable so PART_EditableTextBox can receive input. -->
+						<Border x:Name="ContentArea"
+						        Grid.Column="0"
+						        Background="Transparent"
+						        IsVisible="{TemplateBinding IsEditable, Converter={x:Static BoolConverters.Not}}" />
+						<!-- Transparent hit-target covering col 1 for drop-down button hover detection. -->
 						<Border x:Name="DropDownOverlay"
 						        Grid.Column="1"
-						        Background="Transparent"
-						        Margin="0,1,1,1"
-						        Width="30"
-						        IsVisible="False"
-						        HorizontalAlignment="Right" />
+						        Background="Transparent" />
 						<PathIcon x:Name="DropDownGlyph"
 						          Grid.Column="1"
 						          UseLayoutRounding="False"
@@ -148,15 +171,18 @@
 			</ControlTemplate>
 		</Setter>
 
-		<!-- Pointer-over: tint the whole background uniformly -->
+		<!-- Pointer-over: update border colour only; each zone handles its own background tint. -->
 		<Style Selector="^:pointerover /template/ Border#Background">
-			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}" />
 			<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushPointerOver}" />
 		</Style>
 
-		<!-- Chevron button hover: only when pointer is directly over it, not the content area -->
+		<!-- Content area hover: tint the left zone when pointer is over it. -->
+		<Style Selector="^ /template/ Border#ContentArea:pointerover">
+			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}" />
+		</Style>
+
+		<!-- Drop-down button hover: tint the right zone when pointer is over col 1. -->
 		<Style Selector="^ /template/ Border#DropDownOverlay:pointerover">
-			<Setter Property="IsVisible" Value="True" />
 			<Setter Property="Background" Value="#20808080" />
 		</Style>
 

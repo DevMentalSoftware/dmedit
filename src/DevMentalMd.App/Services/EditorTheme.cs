@@ -90,7 +90,7 @@ public sealed class EditorTheme {
 
     // -- Menu --
     public IBrush MenuBackground { get; init; } =
-        new SolidColorBrush(Color.FromRgb(0xF9, 0xF9, 0xF9));
+        new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
 
     // -- Settings UI --
     public IBrush SettingsDimForeground { get; init; } =

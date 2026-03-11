@@ -1,6 +1,32 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+	<ResourceDictionary.ThemeDictionaries>
+		<!-- Border = Background at rest so the border only provides corner rounding.
+		     Foreground is always black/white and never changes on hover or focus.
+		     All state feedback is via background color only. -->
+		<ResourceDictionary x:Key="Light">
+			<SolidColorBrush x:Key="TextControlBackground" Color="#E8E8E8" />
+			<SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#DEDEDE" />
+			<SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#FFFFFF" />
+			<SolidColorBrush x:Key="TextControlBorderBrush" Color="#E8E8E8" />
+			<SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#E8E8E8" />
+			<SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#E8E8E8" />
+			<SolidColorBrush x:Key="TextControlForeground" Color="#000000" />
+			<SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#909090" />
+		</ResourceDictionary>
+		<ResourceDictionary x:Key="Dark">
+			<SolidColorBrush x:Key="TextControlBackground" Color="#383838" />
+			<SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#454545" />
+			<SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#2C2C2C" />
+			<SolidColorBrush x:Key="TextControlBorderBrush" Color="#383838" />
+			<SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#383838" />
+			<SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#383838" />
+			<SolidColorBrush x:Key="TextControlForeground" Color="#FFFFFF" />
+			<SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#909090" />
+		</ResourceDictionary>
+	</ResourceDictionary.ThemeDictionaries>
+
 	<Design.PreviewWith>
 		<Border Padding="20">
 			<StackPanel Spacing="10">
@@ -191,7 +217,6 @@
 
 		<!-- Pointer-over -->
 		<Style Selector="^:pointerover">
-			<Setter Property="Foreground" Value="{DynamicResource TextControlForegroundPointerOver}" />
 			<Style Selector="^ /template/ Border#PART_BorderElement">
 				<Setter Property="BorderBrush" Value="{DynamicResource TextControlBorderBrushPointerOver}" />
 				<Setter Property="Background" Value="{DynamicResource TextControlBackgroundPointerOver}" />
@@ -200,7 +225,6 @@
 
 		<!-- Focused -->
 		<Style Selector="^:focus">
-			<Setter Property="Foreground" Value="{DynamicResource TextControlForegroundFocused}" />
 			<Style Selector="^ /template/ Border#PART_BorderElement">
 				<Setter Property="Background" Value="{DynamicResource TextControlBackgroundFocused}" />
 				<Setter Property="BorderBrush" Value="{DynamicResource TextControlBorderBrushFocused}" />

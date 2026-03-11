@@ -2,8 +2,9 @@
 
 ## First steps for every session
 
-1. Read `docs/design-journal.md` — chronological record of all design decisions and
-   architectural direction. The latest entries describe current work and deferred TODOs.
+1. Read `docs/design-journal.md` — index of all design decisions and architectural
+   direction. "In progress" section describes current work; "Recently completed" covers
+   the last few milestones. Detail files are in `docs/design-journal/`.
 2. Read `docs/csharp-style.md` — K&R braces, naming conventions, modern C# features.
 3. Read `docs/project-conventions.md` — abbreviations, reserved names, markdown preferences.
 
@@ -38,3 +39,4 @@ All tests must pass before and after any change. Current baseline: **287 tests**
 Debug builds enable DevMode automatically. In Release builds, set
 `DevModeEnabled: true` in `%APPDATA%/DevMentalMD/settings.json`.
 DevMode shows: Dev menu, procedural sample documents in Recent menu, performance stats bar.
+The

@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
@@ -198,13 +197,12 @@ public partial class SettingsControl : UserControl {
     /// Applies theme colors to the settings panel.
     /// </summary>
     public void ApplyTheme(EditorTheme theme) {
-        Background = theme.EditorBackground;
+        Background = theme.MenuBackground;
         SearchBarBorder.BorderBrush = theme.TabActiveBackground;
         SearchBarBorder.Background = theme.TabActiveBackground;
         SidebarBorder.BorderBrush = theme.TabActiveBackground;
         SidebarBorder.Background = theme.TabActiveBackground;
 
-        SearchBox.Foreground = theme.EditorForeground;
         SearchClearBtn.Foreground = theme.EditorForeground;
 
         foreach (var header in _allHeaders) {

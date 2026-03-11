@@ -720,32 +720,5 @@ public partial class KeyboardSettingsSection : UserControl {
 
         // Replacement notice chips
         ReThemeWarnRow(ConflictPanel, theme);
-
-        // Scroll hint
-        ScrollHint.Foreground = theme.SettingsDimForeground;
-
-        // Name filter + its clear button
-        NameFilter.Foreground = theme.EditorForeground;
-        NameFilterClearBtn.Foreground = theme.EditorForeground;
-
-        // Capture box + its clear button
-        CaptureBox.Foreground = theme.EditorForeground;
-        CaptureClearBtn.Foreground = theme.EditorForeground;
-
-        // Command list border
-        CommandListBorder.BorderBrush = theme.SettingsInputBorder;
-
-        // Key filter panel border (unfocused state)
-        if (!KeyFilterPanel.IsFocused) {
-            KeyFilterPanel.BorderBrush = theme.SettingsInputBorder;
-        } else {
-            KeyFilterPanel.BorderBrush = theme.SettingsAccent;
-        }
-
-        // Keystroke filter text + clear button
-        KeyFilterClearBtn.Foreground = theme.EditorForeground;
-        KeyFilterText.Foreground = _keyFilter != null
-            ? theme.EditorForeground
-            : theme.SettingsDimForeground;
     }
 }

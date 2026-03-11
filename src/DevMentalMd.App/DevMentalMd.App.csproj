@@ -10,11 +10,11 @@
     <Company>DevMental Software LLC</Company>
     <Description>This is a text editor that supports simple and large text files as well as WYSIWYG Markdown editing.</Description>
     <ApplicationIcon>app_icon.ico</ApplicationIcon>
+    <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
     <AvaloniaResource Include="app_icon.ico" />
-    <AvaloniaResource Include="..\..\resources\FluentSystemIcons-Regular.ttf"
-                      Link="Resources\FluentSystemIcons-Regular.ttf" />
+    <AvaloniaResource Include="..\..\resources\FluentSystemIcons-Regular.ttf" Link="Resources\FluentSystemIcons-Regular.ttf" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="manual.md" CopyToOutputDirectory="PreserveNewest" />
@@ -28,11 +28,7 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
-    <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
-    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.12">
-      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
-      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
-    </PackageReference>
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.12" Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>
 
   <ItemGroup>

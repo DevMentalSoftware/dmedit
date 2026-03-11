@@ -94,10 +94,11 @@
 			</ControlTemplate>
 		</Setter>
 
-		<!-- Pointer-over: tint the whole background uniformly, matching ComboBox/TextBox -->
+		<!-- Pointer-over: tint the whole outer shell uniformly.
+		     The inner TextBox is fully transparent so the outer shell controls all visuals. -->
 		<Style Selector="^:pointerover /template/ Border#Background">
 			<Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}" />
-			<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushPointerOver}" />
+			<Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrush}" />
 		</Style>
 
 		<Style Selector="^:disabled /template/ Border#Background">
@@ -152,8 +153,10 @@
 						         AcceptsReturn="False"
 						         TextWrapping="NoWrap">
 							<TextBox.Resources>
-								<SolidColorBrush x:Key="TextControlBackgroundFocused">Transparent</SolidColorBrush>
+								<!-- Inner TextBox is always transparent — outer NUD shell controls all visuals. -->
+								<SolidColorBrush x:Key="TextControlBackground">Transparent</SolidColorBrush>
 								<SolidColorBrush x:Key="TextControlBackgroundPointerOver">Transparent</SolidColorBrush>
+								<SolidColorBrush x:Key="TextControlBackgroundFocused">Transparent</SolidColorBrush>
 								<SolidColorBrush x:Key="TextControlBorderBrushFocused">Transparent</SolidColorBrush>
 								<SolidColorBrush x:Key="TextControlBorderBrushPointerOver">Transparent</SolidColorBrush>
 								<Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>

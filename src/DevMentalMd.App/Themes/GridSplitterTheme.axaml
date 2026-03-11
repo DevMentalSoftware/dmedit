@@ -1,0 +1,37 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+	<ResourceDictionary.ThemeDictionaries>
+		<ResourceDictionary x:Key="Light">
+			<!-- Resting: barely visible against a white/near-white surface. -->
+			<SolidColorBrush x:Key="GridSplitterBackground"             Color="#E4E4E4" />
+			<SolidColorBrush x:Key="GridSplitterBackgroundPointerOver"  Color="#C0C0C0" />
+			<SolidColorBrush x:Key="GridSplitterBackgroundPressed"      Color="#A0A0A0" />
+		</ResourceDictionary>
+		<ResourceDictionary x:Key="Dark">
+			<!-- Resting: barely visible against a dark surface (#252525 settings bg). -->
+			<SolidColorBrush x:Key="GridSplitterBackground"             Color="#383838" />
+			<SolidColorBrush x:Key="GridSplitterBackgroundPointerOver"  Color="#505050" />
+			<SolidColorBrush x:Key="GridSplitterBackgroundPressed"      Color="#686868" />
+		</ResourceDictionary>
+	</ResourceDictionary.ThemeDictionaries>
+
+	<ControlTheme x:Key="{x:Type GridSplitter}" TargetType="GridSplitter">
+		<Setter Property="Background" Value="{DynamicResource GridSplitterBackground}" />
+		<Setter Property="MinWidth"   Value="1" />
+		<Setter Property="MinHeight"  Value="1" />
+		<Setter Property="Template">
+			<ControlTemplate>
+				<Border Background="{TemplateBinding Background}" />
+			</ControlTemplate>
+		</Setter>
+
+		<Style Selector="^:pointerover">
+			<Setter Property="Background" Value="{DynamicResource GridSplitterBackgroundPointerOver}" />
+		</Style>
+		<Style Selector="^:pressed">
+			<Setter Property="Background" Value="{DynamicResource GridSplitterBackgroundPressed}" />
+		</Style>
+	</ControlTheme>
+
+</ResourceDictionary>
