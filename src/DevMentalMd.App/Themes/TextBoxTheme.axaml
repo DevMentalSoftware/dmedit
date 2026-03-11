@@ -216,7 +216,10 @@
 			</Style>
 		</Style>
 
-		<!-- Pointer-over -->
+		<!-- Pointer-over: tints the whole TextBox.  The clear/reveal button
+		     is only visible when focused, and :focus (below) overrides
+		     :pointerover — so hovering the button while focused doesn't
+		     show the hover background (the focus background wins). -->
 		<Style Selector="^:pointerover">
 			<Style Selector="^ /template/ Border#PART_BorderElement">
 				<Setter Property="BorderBrush" Value="{DynamicResource TextControlBorderBrushPointerOver}" />

@@ -1,3 +1,10 @@
+Notes :
+
+
+Thickness(left, top, right, bottom)
+
+
+
 * Add Reset button for any changed setting.
 * Add zoom button to status bar.
 * Add feature to hide Settings that are duplicated on the Menu/Tool bar.

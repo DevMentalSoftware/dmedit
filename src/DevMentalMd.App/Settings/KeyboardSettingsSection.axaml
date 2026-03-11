@@ -25,12 +25,12 @@
 					        Grid.Column="1"
 					        Content="&#x2715;"
 					        FontSize="11"
-					        Padding="4,2"
+					        Padding="10,0"
 					        Background="Transparent"
 					        BorderThickness="0"
-					        VerticalAlignment="Center"
+					        VerticalAlignment="Stretch"
 					        HorizontalAlignment="Right"
-					        Margin="0,0,6,0"
+					        Margin="0,1,0,1"
 					        IsVisible="False"
 					        Cursor="Arrow" />
 				</Grid>
@@ -44,12 +44,12 @@
 							Grid.Column="1"
 							Content="&#x2715;"
 							FontSize="11"
-							Padding="4,2"
+							Padding="10,0"
 							Background="Transparent"
 							BorderThickness="0"
-							VerticalAlignment="Center"
+							VerticalAlignment="Stretch"
 							HorizontalAlignment="Right"
-							Margin="0,0,6,0"
+							Margin="0,1,0,1"
 							IsVisible="False"
 							Cursor="Arrow" />
 				</Grid>
@@ -111,12 +111,12 @@
 				        Grid.Column="1"
 				        Content="&#x2715;"
 				        FontSize="11"
-				        Padding="4,2"
+				        Padding="10,0"
 				        Background="Transparent"
 				        BorderThickness="0"
-				        VerticalAlignment="Center"
+				        VerticalAlignment="Stretch"
 				        HorizontalAlignment="Right"
-				        Margin="0,0,6,0"
+				        Margin="0,1,0,1"
 				        IsVisible="False"
 				        Cursor="Arrow" />
 			</Grid>
