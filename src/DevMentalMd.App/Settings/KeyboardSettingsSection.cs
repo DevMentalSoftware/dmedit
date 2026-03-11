@@ -25,9 +25,9 @@ public partial class KeyboardSettingsSection : UserControl {
     // -- State --
     private string? _selectedCommandId;
     private ChordGesture? _captured;         // single key or chord
-    private KeyGesture? _keyFilter;          // keystroke filter
     private bool _showModifiedOnly;          // "M" toggle: show only customised rows
     private EditorTheme _theme = EditorTheme.Light;
+    private KeyGesture? _findFirstGesture;   // first key of a potential chord in FindShortcut
 
     // Tracks all command row borders for selection highlighting.
     private readonly List<(Border border, string commandId)> _commandRows = [];
@@ -81,20 +81,15 @@ public partial class KeyboardSettingsSection : UserControl {
             }
         };
 
-        KeyFilterClearBtn.Click += (_, _) => ClearKeyFilter();
+        FindShortcut.AddHandler(
+            KeyDownEvent, OnFindShortcutKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        FindClearBtn.Click += (_, _) => ClearFindShortcut();
+
         ModifiedFilterBtn.IsCheckedChanged += (_, _) => {
             _showModifiedOnly = ModifiedFilterBtn.IsChecked == true;
             ApplyFilter();
         };
-        KeyFilterPanel.AddHandler(
-            KeyDownEvent, OnKeyFilterKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        KeyFilterPanel.GotFocus += (_, _) => {
-            KeyFilterPanel.BorderBrush = _theme.SettingsAccent;
-        };
-        KeyFilterPanel.LostFocus += (_, _) => {
-            KeyFilterPanel.BorderBrush = _theme.SettingsInputBorder;
-        };
-
+        
         CommandScroll.AddHandler(PointerWheelChangedEvent, OnCommandListWheel,
             Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
@@ -112,47 +107,11 @@ public partial class KeyboardSettingsSection : UserControl {
         BuildCommandList();
         UpdateButtonStates();
         ApplyTheme(_theme);
-
+        
         // Guard against an unbounded layout before SetAvailableHeight is first called.
         CommandScroll.MaxHeight = 500;
     }
 
-    // =====================================================================
-    // Keystroke filter panel
-    // =====================================================================
-
-    private void OnKeyFilterKeyDown(object? sender, KeyEventArgs e) {
-        // Escape clears the filter.
-        if (e.Key == Key.Escape) {
-            ClearKeyFilter();
-            e.Handled = true;
-            return;
-        }
-
-        // Ignore bare modifier keys.
-        if (e.Key is Key.LeftShift or Key.RightShift
-            or Key.LeftCtrl or Key.RightCtrl
-            or Key.LeftAlt or Key.RightAlt
-            or Key.LWin or Key.RWin) {
-            e.Handled = true;
-            return;
-        }
-
-        _keyFilter = new KeyGesture(e.Key, e.KeyModifiers);
-        KeyFilterText.Text = _keyFilter.ToString();
-        KeyFilterText.Foreground = _theme.EditorForeground;
-        KeyFilterClearBtn.IsVisible = true;
-        ApplyFilter();
-        e.Handled = true;
-    }
-
-    private void ClearKeyFilter() {
-        _keyFilter = null;
-        KeyFilterText.Text = "Filter by shortcut\u2026";
-        KeyFilterText.Foreground = _theme.SettingsDimForeground;
-        KeyFilterClearBtn.IsVisible = false;
-        ApplyFilter();
-    }
 
     // =====================================================================
     // Ctrl+Scroll on command list
@@ -362,6 +321,76 @@ public partial class KeyboardSettingsSection : UserControl {
     }
 
     // =====================================================================
+    // Find shortcut box
+    // =====================================================================
+
+    private void ClearFindShortcut() {
+        _findFirstGesture = null;
+        FindShortcut.Text = "";
+        FindClearBtn.IsVisible = false;
+    }
+
+    private void OnFindShortcutKeyDown(object? sender, KeyEventArgs e) {
+        // Ignore bare modifier keys.
+        if (e.Key is Key.LeftShift or Key.RightShift
+            or Key.LeftCtrl or Key.RightCtrl
+            or Key.LeftAlt or Key.RightAlt
+            or Key.LWin or Key.RWin) {
+            e.Handled = true;
+            return;
+        }
+
+        var gesture = new KeyGesture(e.Key, e.KeyModifiers);
+
+        if (_findFirstGesture != null) {
+            // Second key press — try to resolve as a chord.
+            var chord = new ChordGesture(_findFirstGesture, gesture);
+            FindShortcut.Text = chord.ToString();
+            var commandId = _keyBindings.ResolveChord(_findFirstGesture, e.Key, e.KeyModifiers);
+            if (commandId != null) {
+                SelectCommandAndScrollTo(commandId);
+            }
+            // Chord is complete (matched or not) — clear.
+            ClearFindShortcut();
+        } else {
+            // First key press.
+            FindShortcut.Text = gesture.ToString();
+
+            if (_keyBindings.IsChordPrefix(e.Key, e.KeyModifiers)) {
+                // Could be the start of a chord — wait for second key.
+                _findFirstGesture = gesture;
+                FindClearBtn.IsVisible = true;
+            } else {
+                // Not a chord prefix — try single-key resolve.
+                var commandId = _keyBindings.Resolve(e.Key, e.KeyModifiers);
+                if (commandId != null) {
+                    SelectCommandAndScrollTo(commandId);
+                }
+                // Done (matched or not) — clear.
+                ClearFindShortcut();
+            }
+        }
+
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Selects a command row and scrolls it into view in the command list.
+    /// </summary>
+    private void SelectCommandAndScrollTo(string commandId) {
+        SelectCommand(commandId);
+
+        // Find the row border and scroll it into view.
+        foreach (var (border, id) in _commandRows) {
+            if (id == commandId) {
+                // Use BringIntoView to scroll the CommandScroll so the row is visible.
+                border.BringIntoView();
+                break;
+            }
+        }
+    }
+
+    // =====================================================================
     // Assign / Remove / Reset
     // =====================================================================
 
@@ -470,13 +499,6 @@ public partial class KeyboardSettingsSection : UserControl {
                                     StringComparison.OrdinalIgnoreCase));
                     }
 
-                    // Keystroke filter: match by key (modifiers must be subset).
-                    // Checks both gesture slots; chords match on either key.
-                    if (visible && _keyFilter != null) {
-                        visible = MatchesKeyFilter(_keyBindings.GetGesture(commandId))
-                            || MatchesKeyFilter(_keyBindings.GetGesture2(commandId));
-                    }
-
                     // Modified filter: only show rows with at least one customised slot.
                     if (visible && _showModifiedOnly) {
                         visible = IsBindingModified(commandId, 1)
@@ -490,26 +512,13 @@ public partial class KeyboardSettingsSection : UserControl {
                 }
             }
 
-            header.IsVisible = anyVisible || (_keyFilter == null && !hasNameFilter && !_showModifiedOnly);
+            header.IsVisible = anyVisible || (!hasNameFilter && !_showModifiedOnly);
         }
 
         UpdateScrollHintVisibility();
     }
 
-    private bool MatchesKeyFilter(ChordGesture? gesture) {
-        if (gesture == null || _keyFilter == null) return false;
-        if (gesture.IsChord) {
-            return MatchesSingleKey(gesture.First)
-                || MatchesSingleKey(gesture.Second!);
-        }
-        return MatchesSingleKey(gesture.First);
-    }
-
-    private bool MatchesSingleKey(KeyGesture g) =>
-        _keyFilter != null
-        && g.Key == _keyFilter.Key
-        && (g.KeyModifiers & _keyFilter.KeyModifiers) == _keyFilter.KeyModifiers;
-
+  
     // =====================================================================
     // Scroll hint visibility
     // =====================================================================
