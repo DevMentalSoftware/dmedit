@@ -145,17 +145,16 @@
 						        Grid.Column="1"
 						        Background="Transparent"
 						        CornerRadius="0,4,4,0" />
-						<PathIcon x:Name="DropDownGlyph"
-						          Grid.Column="1"
-						          UseLayoutRounding="False"
-						          IsHitTestVisible="False"
-						          Height="12"
-						          Width="12"
-						          Margin="0,0,10,0"
-						          HorizontalAlignment="Right"
-						          VerticalAlignment="Center"
-						          Foreground="{DynamicResource ComboBoxDropDownGlyphForeground}"
-						          Data="M1939 486L2029 576L1024 1581L19 576L109 486L1024 1401L1939 486Z" />
+						<TextBlock x:Name="DropDownGlyph"
+					           Grid.Column="1"
+					           IsHitTestVisible="False"
+					           Text="&#xF2A1;"
+					           FontFamily="{DynamicResource ControlButtonIconFont}"
+					           FontSize="{DynamicResource ControlButtonIconSize}"
+					           Margin="0,0,10,0"
+					           HorizontalAlignment="Right"
+					           VerticalAlignment="Center"
+					           Foreground="{DynamicResource ComboBoxDropDownGlyphForeground}" />
 						<Popup Name="PART_Popup"
 						       WindowManagerAddShadowHint="False"
 						       IsOpen="{TemplateBinding IsDropDownOpen, Mode=TwoWay}"
@@ -225,7 +224,7 @@
 			<Style Selector="^ /template/ TextBlock#PlaceholderTextBlock">
 				<Setter Property="Foreground" Value="{DynamicResource ComboBoxPlaceHolderForegroundFocusedPressed}" />
 			</Style>
-			<Style Selector="^ /template/ PathIcon#DropDownGlyph">
+			<Style Selector="^ /template/ TextBlock#DropDownGlyph">
 				<Setter Property="Foreground" Value="{DynamicResource ComboBoxDropDownGlyphForegroundFocusedPressed}" />
 			</Style>
 		</Style>
@@ -242,7 +241,7 @@
 			<Style Selector="^ /template/ TextBlock#PlaceholderTextBlock">
 				<Setter Property="Foreground" Value="{DynamicResource ComboBoxForegroundFocused}" />
 			</Style>
-			<Style Selector="^ /template/ PathIcon#DropDownGlyph">
+			<Style Selector="^ /template/ TextBlock#DropDownGlyph">
 				<Setter Property="Foreground" Value="{DynamicResource ComboBoxDropDownGlyphForegroundFocused}" />
 			</Style>
 		</Style>
@@ -259,7 +258,7 @@
 			<Style Selector="^ /template/ TextBlock#PlaceholderTextBlock">
 				<Setter Property="Foreground" Value="{DynamicResource ComboBoxForegroundDisabled}" />
 			</Style>
-			<Style Selector="^ /template/ PathIcon#DropDownGlyph">
+			<Style Selector="^ /template/ TextBlock#DropDownGlyph">
 				<Setter Property="Foreground" Value="{DynamicResource ComboBoxDropDownGlyphForegroundDisabled}" />
 			</Style>
 		</Style>

@@ -154,6 +154,44 @@ public sealed class AppSettings {
     /// </summary>
     public double? FindBarWidth { get; set; }
 
+    /// <summary>
+    /// Most-recently-used search terms (newest first). Max 20 entries.
+    /// </summary>
+    public List<string>? RecentFindTerms { get; set; }
+
+    /// <summary>
+    /// Most-recently-used replace terms (newest first). Max 20 entries.
+    /// </summary>
+    public List<string>? RecentReplaceTerms { get; set; }
+
+    private const int MaxRecentTerms = 20;
+
+    /// <summary>
+    /// Pushes a term to the front of the recent find terms list, deduplicating
+    /// and truncating to <see cref="MaxRecentTerms"/> entries.
+    /// </summary>
+    public void PushRecentFindTerm(string term) {
+        if (string.IsNullOrEmpty(term)) return;
+        RecentFindTerms ??= new List<string>();
+        RecentFindTerms.Remove(term);
+        RecentFindTerms.Insert(0, term);
+        if (RecentFindTerms.Count > MaxRecentTerms)
+            RecentFindTerms.RemoveRange(MaxRecentTerms, RecentFindTerms.Count - MaxRecentTerms);
+    }
+
+    /// <summary>
+    /// Pushes a term to the front of the recent replace terms list, deduplicating
+    /// and truncating to <see cref="MaxRecentTerms"/> entries.
+    /// </summary>
+    public void PushRecentReplaceTerm(string term) {
+        if (string.IsNullOrEmpty(term)) return;
+        RecentReplaceTerms ??= new List<string>();
+        RecentReplaceTerms.Remove(term);
+        RecentReplaceTerms.Insert(0, term);
+        if (RecentReplaceTerms.Count > MaxRecentTerms)
+            RecentReplaceTerms.RemoveRange(MaxRecentTerms, RecentReplaceTerms.Count - MaxRecentTerms);
+    }
+
     // -----------------------------------------------------------------
     // Keyboard shortcuts
     // -----------------------------------------------------------------

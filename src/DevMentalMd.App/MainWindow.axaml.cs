@@ -35,6 +35,7 @@ public partial class MainWindow : Window {
 
     private readonly List<TabState> _tabs = [];
     private TabState? _activeTab;
+    private TabState? _findBarTab;
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
     private readonly AppSettings _settings = AppSettings.Load();
     private readonly KeyBindingService _keyBindings;
@@ -163,12 +164,17 @@ public partial class MainWindow : Window {
             Editor.Document = tab.Document;
             Editor.RestoreScrollState(tab);
         }
+        // Show find bar only if this tab owns it.
+        FindBar.IsVisible = (tab == _findBarTab);
         UpdateTabBar();
     }
 
     private void CloseTab(TabState tab) {
         if (tab.IsSettings) {
             _settingsTab = null;
+        }
+        if (tab == _findBarTab) {
+            _findBarTab = null;
         }
         var closedIdx = _tabs.IndexOf(tab);
         _tabs.Remove(tab);
@@ -1307,8 +1313,10 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     private void OpenFindBar(bool replaceMode) {
+        _findBarTab = _activeTab;
         FindBar.IsReplaceMode = replaceMode;
         FindBar.IsVisible = true;
+        FindBar.ResetState();
         // When already open and re-invoked, focus the appropriate box.
         if (replaceMode) {
             FindBar.FocusReplaceBox();
@@ -1326,6 +1334,7 @@ public partial class MainWindow : Window {
     }
 
     private void CloseFindBar() {
+        _findBarTab = null;
         // Persist width for next session.
         if (FindBar.Width is > 0 and var w) {
             _settings.FindBarWidth = w;
@@ -1344,6 +1353,27 @@ public partial class MainWindow : Window {
             _settings.Save();
         };
         FindBar.ApplyTheme(_theme);
+
+        // Provide history lists from settings (shared reference — mutations
+        // by AppSettings.PushRecentTerm update the same list).
+        FindBar.SetHistory(_settings.RecentFindTerms, _settings.RecentReplaceTerms);
+
+        // Push search/replace terms into history when a find/replace is executed.
+        FindBar.FindRequested += _ => {
+            _settings.PushRecentFindTerm(FindBar.SearchTerm);
+            FindBar.SetHistory(_settings.RecentFindTerms, _settings.RecentReplaceTerms);
+            _settings.ScheduleSave();
+        };
+        FindBar.ReplaceRequested += _ => {
+            _settings.PushRecentReplaceTerm(FindBar.ReplaceTerm);
+            FindBar.SetHistory(_settings.RecentFindTerms, _settings.RecentReplaceTerms);
+            _settings.ScheduleSave();
+        };
+        FindBar.ReplaceAllRequested += () => {
+            _settings.PushRecentReplaceTerm(FindBar.ReplaceTerm);
+            FindBar.SetHistory(_settings.RecentFindTerms, _settings.RecentReplaceTerms);
+            _settings.ScheduleSave();
+        };
 
         // Restore persisted width.
         if (_settings.FindBarWidth is > 0 and var w) {

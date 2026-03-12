@@ -1,6 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:DevMentalMd.App"
              x:Class="DevMentalMd.App.Controls.FindBarControl">
+
+    <!-- No local icon font or hover styles needed — FluentTextBoxButton + global
+         ControlButtonIconFont/ControlButtonIconSize handle everything. -->
 
     <!-- Outer wrapper: 6px taller and 12px wider than the body so the concave
          ear corners have room to render.  Background is transparent so only
@@ -8,23 +12,18 @@
     <Grid x:Name="RootGrid" RowDefinitions="6,*" ColumnDefinitions="6,*,6"
           MinWidth="372">
 
-        <!-- Row 0 Col 0: Left concave ear.  A Path whose arc (sweep=CCW,
-             center at bottom-left of cell) bulges into the upper-right,
-             leaving the lower-left transparent so the editor bg shows
-             through — matching the active-tab concave corner style. -->
+        <!-- Row 0 Col 0: Left concave ear -->
         <Path x:Name="EarLeft" Grid.Row="0" Grid.Column="0"
               Data="M 0,0 L 6,0 L 6,6 A 6,6 0 0 0 0,0 Z" />
 
         <!-- Row 0 Col 1: Top strip (same bg as body, bridging the ears) -->
         <Border Grid.Row="0" Grid.Column="1" x:Name="TopStrip" />
 
-        <!-- Row 0 Col 2: Right concave ear (mirror of left, sweep=CW) -->
+        <!-- Row 0 Col 2: Right concave ear (mirror of left) -->
         <Path x:Name="EarRight" Grid.Row="0" Grid.Column="2"
               Data="M 6,0 L 0,0 L 0,6 A 6,6 0 0 1 6,0 Z" />
 
-        <!-- Row 1: Main body with rounded bottom corners only.
-             Spans the middle column; the 6px ear columns stay empty in this
-             row so the body is narrower than the ear strip above. -->
+        <!-- Row 1: Main body with rounded bottom corners only -->
         <Border Grid.Row="1" Grid.Column="1"
                 x:Name="OuterBorder"
                 CornerRadius="0,0,6,6"
@@ -45,7 +44,14 @@
                         VerticalAlignment="Center"
                         Width="24" Height="24" Padding="0"
                         Margin="0,0,4,0"
-                        ToolTip.Tip="Toggle Replace" />
+                        ToolTip.Tip="Toggle Replace">
+                    <TextBlock x:Name="ExpandGlyph"
+                               Text="&#xF2B1;"
+                               FontFamily="{DynamicResource ControlButtonIconFont}"
+                               FontSize="{DynamicResource ControlButtonIconSize}"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center" />
+                </Button>
 
                 <!-- Col 2: SearchBox (star-sized) -->
                 <TextBox x:Name="SearchBox"
@@ -53,30 +59,58 @@
                          Watermark="Find..."
                          Margin="0,0,4,0">
                     <TextBox.InnerRightContent>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch"
+                                    ClipToBounds="True"
+                                    Margin="0,1,0,1">
                             <TextBlock x:Name="MatchCount"
                                        Text=""
                                        FontSize="11"
                                        VerticalAlignment="Center"
                                        Margin="0,0,4,0" />
+                            <Button x:Name="SearchHistoryBtn"
+                                    Theme="{StaticResource FluentTextBoxButton}"
+                                    ClipToBounds="True"
+                                    ToolTip.Tip="Search history">
+                                <TextBlock Text="&#xF2A1;"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Center" />
+                            </Button>
                             <Button x:Name="SearchClearBtn"
-                                    Padding="2"
+                                    Theme="{StaticResource FluentTextBoxButton}"
                                     IsVisible="False"
-                                    VerticalAlignment="Center"
-                                    ToolTip.Tip="Clear search" />
+                                    ClipToBounds="True"
+                                    CornerRadius="0,4,4,0"
+                                    ToolTip.Tip="Clear search">
+                                <TextBlock Text="&#xF369;"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Center" />
+                            </Button>
                         </StackPanel>
                     </TextBox.InnerRightContent>
                 </TextBox>
 
-                <!-- Col 3: Prev + Next (Row 0)  /  Replace + Replace All (Row 1) -->
+                <!-- Col 3: Direction + Menu (Row 0)  /  Replace + Replace All (Row 1) -->
                 <StackPanel Grid.Column="3" Grid.Row="0"
                             Orientation="Horizontal" Spacing="2">
-                    <Button x:Name="PrevBtn"
-                            Content="Prev" Height="24"
-                            ToolTip.Tip="Previous Match (Shift+Enter)" />
-                    <Button x:Name="NextBtn"
-                            Content="Next" Height="24"
-                            ToolTip.Tip="Next Match (Enter)" />
+                    <Button x:Name="FindDirectionBtn"
+                            Height="24" Width="24" Padding="0"
+                            ToolTip.Tip="Find in current direction (Enter)">
+                        <TextBlock x:Name="DirectionGlyph"
+                                   Text="&#xF181;"
+                                   FontFamily="{DynamicResource ControlButtonIconFont}"
+                                   FontSize="{DynamicResource ControlButtonIconSize}"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Center" />
+                    </Button>
+                    <Button x:Name="FindMenuBtn"
+                            Height="24" Width="24" Padding="0"
+                            ToolTip.Tip="Find options">
+                        <TextBlock Text="&#xF2A1;"
+                                   FontFamily="{DynamicResource ControlButtonIconFont}"
+                                   FontSize="{DynamicResource ControlButtonIconSize}"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Center" />
+                    </Button>
                 </StackPanel>
 
                 <StackPanel x:Name="ReplaceButtons"
@@ -97,7 +131,13 @@
                         Grid.Column="5" Grid.Row="0"
                         ToolTip.Tip="Close (Escape)"
                         Width="24" Height="24" Padding="0"
-                        VerticalContentAlignment="Center" />
+                        VerticalContentAlignment="Center">
+                    <TextBlock Text="&#xF369;"
+                               FontFamily="{DynamicResource ControlButtonIconFont}"
+                               FontSize="{DynamicResource ControlButtonIconSize}"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center" />
+                </Button>
 
                 <!-- Row 1, Col 2: ReplaceBox (same star column as SearchBox) -->
                 <TextBox x:Name="ReplaceBox"
@@ -106,16 +146,33 @@
                          Margin="0,2,4,0"
                          IsVisible="False">
                     <TextBox.InnerRightContent>
-                        <Button x:Name="ReplaceClearBtn"
-                                Padding="2"
-                                IsVisible="False"
-                                VerticalAlignment="Center"
-                                ToolTip.Tip="Clear replace" />
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch"
+                                    ClipToBounds="True"
+                                    Margin="0,1,0,1">
+                            <Button x:Name="ReplaceHistoryBtn"
+                                    Theme="{StaticResource FluentTextBoxButton}"
+                                    ClipToBounds="True"
+                                    ToolTip.Tip="Replace history">
+                                <TextBlock Text="&#xF2A1;"
+                                           FontFamily="{DynamicResource ControlButtonIconFont}"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Center" />
+                            </Button>
+                            <Button x:Name="ReplaceClearBtn"
+                                    Theme="{StaticResource FluentTextBoxButton}"
+                                    IsVisible="False"
+                                    ClipToBounds="True"
+                                    CornerRadius="0,4,4,0"
+                                    ToolTip.Tip="Clear replace">
+                                <TextBlock Text="&#xF369;"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Center" />
+                            </Button>
+                        </StackPanel>
                     </TextBox.InnerRightContent>
                 </TextBox>
 
-                <!-- Row 2: Options (spans Col 2–5).
-                     DockPanel LastChildFill makes ScopeBox stretch to fill. -->
+                <!-- Row 2: Options (spans Col 2–5) -->
                 <DockPanel Grid.Column="2" Grid.ColumnSpan="4" Grid.Row="2"
                            Margin="0,4,0,0">
                     <ToggleButton x:Name="MatchCaseBtn"
@@ -154,5 +211,39 @@
 
             </Grid>
         </Border>
+
+        <!-- Search history popup -->
+        <Popup x:Name="SearchHistoryPopup"
+               PlacementTarget="{Binding #SearchBox}"
+               Placement="Bottom"
+               IsLightDismissEnabled="True"
+               MaxHeight="200">
+            <Border Background="{DynamicResource MenuFlyoutPresenterBackground}"
+                    BorderBrush="{DynamicResource MenuFlyoutPresenterBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="0">
+                <ListBox x:Name="SearchHistoryList"
+                         MaxHeight="190"
+                         MinWidth="200" />
+            </Border>
+        </Popup>
+
+        <!-- Replace history popup -->
+        <Popup x:Name="ReplaceHistoryPopup"
+               PlacementTarget="{Binding #ReplaceBox}"
+               Placement="Bottom"
+               IsLightDismissEnabled="True"
+               MaxHeight="200">
+            <Border Background="{DynamicResource MenuFlyoutPresenterBackground}"
+                    BorderBrush="{DynamicResource MenuFlyoutPresenterBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="0">
+                <ListBox x:Name="ReplaceHistoryList"
+                         MaxHeight="190"
+                         MinWidth="200" />
+            </Border>
+        </Popup>
     </Grid>
 </UserControl>

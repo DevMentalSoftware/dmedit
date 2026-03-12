@@ -26,6 +26,8 @@
 		<Setter Property="Padding" Value="0" />
 		<Setter Property="Background" Value="Transparent" />
 		<Setter Property="Foreground" Value="{DynamicResource ComboBoxDropDownGlyphForeground}" />
+		<Setter Property="TextElement.FontFamily" Value="{DynamicResource ControlButtonIconFont}" />
+		<Setter Property="TextElement.FontSize" Value="{DynamicResource ControlButtonIconSize}" />
 		<Setter Property="HorizontalContentAlignment" Value="Center" />
 		<Setter Property="VerticalContentAlignment" Value="Center" />
 		<Setter Property="Template">
@@ -106,9 +108,9 @@
 						              VerticalAlignment="Stretch"
 						              Margin="0,1,0,1"
 						              IsTabStop="False">
-							<PathIcon Width="12" Height="12"
-							          Data="M 1939,1581 L 2029,1491 L 1024,486 L 19,1491 L 109,1581 L 1024,666 Z"
-							          Foreground="{DynamicResource ComboBoxDropDownGlyphForeground}" />
+							<TextBlock Text="&#xF2B4;"
+							           VerticalAlignment="Center"
+							           HorizontalAlignment="Center" />
 						</RepeatButton>
 						<RepeatButton Name="PART_DecreaseButton"
 						              Theme="{StaticResource CompactSpinnerRepeatButton}"
@@ -117,9 +119,9 @@
 						              VerticalAlignment="Stretch"
 						              Margin="0,1,0,1"
 						              IsTabStop="False">
-							<PathIcon Width="12" Height="12"
-							          Data="M 1939,486 L 2029,576 L 1024,1581 L 19,576 L 109,486 L 1024,1401 Z"
-							          Foreground="{DynamicResource ComboBoxDropDownGlyphForeground}" />
+							<TextBlock Text="&#xF2A1;"
+							           VerticalAlignment="Center"
+							           HorizontalAlignment="Center" />
 						</RepeatButton>
 					</StackPanel>
 				</Panel>

@@ -4,14 +4,7 @@
 	<!-- StackPanel stacks items at their natural height — no fill element and
 	     no dead space.  MaxHeight on CommandScroll (set from code) caps the
 	     inner scroll area so the full list scrolls internally. -->
-	<UserControl.Styles>
-		<!-- Clear buttons sit inside TextBox grids; use an opaque hover so the
-		     focused TextBox background doesn't bleed through the default
-		     semi-transparent ButtonBackgroundPointerOver (#20808080). -->
-		<Style Selector="Button.textBoxClear:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="{DynamicResource TextControlButtonBackgroundPointerOver}" />
-		</Style>
-	</UserControl.Styles>
+	<!-- No duplicate hover style needed — FluentTextBoxButton handles it. -->
 	<StackPanel Margin="12,8,12,8">
 
 		<!-- Profile selector -->
@@ -31,18 +24,18 @@
 					         MinWidth="160" />
 					<Button x:Name="NameFilterClearBtn"
 					        Grid.Column="1"
-					        Classes="textBoxClear"
-					        Content="&#x2715;"
-					        FontSize="11"
-					        Padding="12,0"
-					        Background="Transparent"
-					        BorderThickness="0"
+					        Theme="{StaticResource FluentTextBoxButton}"
 					        CornerRadius="0,4,4,0"
 					        VerticalAlignment="Stretch"
 					        HorizontalAlignment="Right"
 					        Margin="0,1,0,1"
 					        IsVisible="False"
-					        Cursor="Arrow" />
+					        ClipToBounds="True"
+					        Cursor="Arrow">
+						<TextBlock Text="&#xF369;"
+						           VerticalAlignment="Center"
+						           HorizontalAlignment="Center" />
+					</Button>
 				</Grid>
 				<Grid ColumnDefinitions="*,Auto" Grid.Column="1">
 					<TextBox x:Name="FindShortcut"
@@ -52,18 +45,18 @@
 							 />
 					<Button x:Name="FindClearBtn"
 							Grid.Column="1"
-							Classes="textBoxClear"
-							Content="&#x2715;"
-							FontSize="11"
-							Padding="12,0"
-							Background="Transparent"
-							BorderThickness="0"
+							Theme="{StaticResource FluentTextBoxButton}"
 							CornerRadius="0,4,4,0"
 							VerticalAlignment="Stretch"
 							HorizontalAlignment="Right"
 							Margin="0,1,0,1"
 							IsVisible="False"
-							Cursor="Arrow" />
+							ClipToBounds="True"
+							Cursor="Arrow">
+						<TextBlock Text="&#xF369;"
+						           VerticalAlignment="Center"
+						           HorizontalAlignment="Center" />
+					</Button>
 				</Grid>
 				<ToggleButton x:Name="ModifiedFilterBtn"
 				              Grid.Column="2"
@@ -121,18 +114,18 @@
 				         MinWidth="180" />
 				<Button x:Name="CaptureClearBtn"
 				        Grid.Column="1"
-				        Classes="textBoxClear"
-				        Content="&#x2715;"
-				        FontSize="11"
-				        Padding="12,0"
-				        Background="Transparent"
-				        BorderThickness="0"
+				        Theme="{StaticResource FluentTextBoxButton}"
 				        CornerRadius="0,4,4,0"
 				        VerticalAlignment="Stretch"
 				        HorizontalAlignment="Right"
 				        Margin="0,1,0,1"
 				        IsVisible="False"
-				        Cursor="Arrow" />
+				        ClipToBounds="True"
+				        Cursor="Arrow">
+					<TextBlock Text="&#xF369;"
+					           VerticalAlignment="Center"
+					           HorizontalAlignment="Center" />
+				</Button>
 			</Grid>
 			<Button x:Name="AssignBtn" Content="Assign" Margin="8,0,4,0" />
 			<Button x:Name="RemoveBtn" Content="Remove" Margin="0,0,4,0" />

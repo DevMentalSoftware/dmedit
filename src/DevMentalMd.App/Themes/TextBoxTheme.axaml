@@ -40,6 +40,10 @@
 		</Border>
 	</Design.PreviewWith>
 
+	<!-- ── Shared icon-font resources for all inner-control buttons ── -->
+	<FontFamily x:Key="ControlButtonIconFont">avares://dmedit/Resources/FluentSystemIcons-Regular.ttf#FluentSystemIcons-Regular</FontFamily>
+	<x:Double x:Key="ControlButtonIconSize">12</x:Double>
+
 	<Thickness x:Key="TextBoxTopHeaderMargin">0,0,0,4</Thickness>
 	<StreamGeometry x:Key="TextBoxClearButtonData">M 11.416016,10 20,1.4160156 18.583984,0 10,8.5839846 1.4160156,0 0,1.4160156 8.5839844,10 0,18.583985 1.4160156,20 10,11.416015 18.583984,20 20,18.583985 Z</StreamGeometry>
 	<StreamGeometry x:Key="PasswordBoxRevealButtonData">m10.051 7.0032c2.215 0 4.0105 1.7901 4.0105 3.9984s-1.7956 3.9984-4.0105 3.9984c-2.215 0-4.0105-1.7901-4.0105-3.9984s1.7956-3.9984 4.0105-3.9984zm0 1.4994c-1.3844 0-2.5066 1.1188-2.5066 2.499s1.1222 2.499 2.5066 2.499 2.5066-1.1188 2.5066-2.499-1.1222-2.499-2.5066-2.499zm0-5.0026c4.6257 0 8.6188 3.1487 9.7267 7.5613 0.10085 0.40165-0.14399 0.80877-0.54686 0.90931-0.40288 0.10054-0.81122-0.14355-0.91208-0.54521-0.94136-3.7492-4.3361-6.4261-8.2678-6.4261-3.9334 0-7.3292 2.6792-8.2689 6.4306-0.10063 0.40171-0.50884 0.64603-0.91177 0.54571s-0.648-0.5073-0.54737-0.90901c1.106-4.4152 5.1003-7.5667 9.728-7.5667z</StreamGeometry>
@@ -61,7 +65,8 @@
 		          InputGesture="{x:Static TextBox.PasteGesture}" />
 	</MenuFlyout>
 
-	<!-- Inline button inside a TextBox (clear, reveal-password) -->
+	<!-- Inline button inside a TextBox (clear, reveal-password, history).
+	     Sets icon font + size so child TextBlocks inherit — single source of truth. -->
 	<ControlTheme x:Key="FluentTextBoxButton" TargetType="Button">
 		<Setter Property="Background" Value="{DynamicResource TextControlButtonBackground}" />
 		<Setter Property="BorderBrush" Value="{DynamicResource TextControlButtonBorderBrush}" />
@@ -69,6 +74,8 @@
 		<Setter Property="MinWidth" Value="34" />
 		<Setter Property="Padding" Value="{DynamicResource ButtonPadding}" />
 		<Setter Property="Width" Value="{Binding $self.Bounds.Height}" />
+		<Setter Property="TextElement.FontFamily" Value="{DynamicResource ControlButtonIconFont}" />
+		<Setter Property="TextElement.FontSize" Value="{DynamicResource ControlButtonIconSize}" />
 		<Setter Property="TextElement.Foreground" Value="{DynamicResource TextControlButtonForeground}" />
 		<Setter Property="Template">
 			<Setter.Value>
@@ -82,15 +89,15 @@
 				</ControlTemplate>
 			</Setter.Value>
 		</Setter>
+		<!-- Foreground intentionally unchanged on hover/pressed — all state
+		     feedback via background only (project design rule). -->
 		<Style Selector="^:pointerover /template/ ContentPresenter">
 			<Setter Property="Background" Value="{DynamicResource TextControlButtonBackgroundPointerOver}" />
 			<Setter Property="BorderBrush" Value="{DynamicResource TextControlButtonBorderBrushPointerOver}" />
-			<Setter Property="Foreground" Value="{DynamicResource TextControlButtonForegroundPointerOver}" />
 		</Style>
 		<Style Selector="^:pressed /template/ ContentPresenter">
 			<Setter Property="Background" Value="{DynamicResource TextControlButtonBackgroundPressed}" />
 			<Setter Property="BorderBrush" Value="{DynamicResource TextControlButtonBorderBrushPressed}" />
-			<Setter Property="Foreground" Value="{DynamicResource TextControlButtonForegroundPressed}" />
 		</Style>
 		<Style Selector="^:disabled /template/ ContentPresenter">
 			<Setter Property="Opacity" Value="0" />
@@ -200,8 +207,7 @@
 								</DockPanel>
 								<ContentPresenter Grid.Column="2"
 								                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-								                  Content="{TemplateBinding InnerRightContent}"
-								                  Margin="0,0,4,0" />
+								                  Content="{TemplateBinding InnerRightContent}" />
 							</Grid>
 						</Border>
 					</Panel>
@@ -270,7 +276,9 @@
 					<Button Theme="{StaticResource FluentTextBoxButton}"
 					        Command="{Binding $parent[TextBox].Clear}"
 					        ClipToBounds="True">
-						<PathIcon Data="{StaticResource TextBoxClearButtonData}" Height="10" Width="10" />
+						<TextBlock Text="&#xF369;"
+						           VerticalAlignment="Center"
+						           HorizontalAlignment="Center" />
 					</Button>
 				</Template>
 			</Setter>
