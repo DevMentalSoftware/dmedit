@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using DevMentalMd.Core.Buffers;
 using DevMentalMd.Core.Documents;
@@ -15,6 +16,13 @@ public sealed record LoadResult(Document Document, string DisplayName, bool WasZ
     /// <c>null</c> for non-zip files.
     /// </summary>
     public string? InnerEntryName { get; init; }
+
+    /// <summary>
+    /// SHA-1 hash of the raw file bytes at load time (hex, lowercase).
+    /// Used for session persistence to detect external modifications.
+    /// <c>null</c> for untitled documents.
+    /// </summary>
+    public string? BaseSha1 { get; init; }
 }
 
 /// <summary>
@@ -60,18 +68,24 @@ public static class FileLoader {
         }
         var byteLen = new FileInfo(path).Length;
         if (byteLen <= SmallThreshold) {
-            var doc = await Task.Run(() => {
+            var (doc, sha1) = await Task.Run(() => {
+                var hash = ComputeSha1File(path);
                 var text = File.ReadAllText(path, Encoding.UTF8);
-                return new Document(text);
+                return (new Document(text), hash);
             }, ct);
-            return new LoadResult(doc, Path.GetFileName(path), WasZipped: false);
+            return new LoadResult(doc, Path.GetFileName(path), WasZipped: false) {
+                BaseSha1 = sha1
+            };
         }
+        var sha1Large = await Task.Run(() => ComputeSha1File(path), ct);
         var paged = new PagedFileBuffer(path, byteLen);
         paged.StartLoading(ct);
         return new LoadResult(
             new Document(new PieceTable(paged)),
             Path.GetFileName(path),
-            WasZipped: false);
+            WasZipped: false) {
+            BaseSha1 = sha1Large
+        };
     }
 
     /// <summary>
@@ -88,9 +102,13 @@ public static class FileLoader {
         }
         var byteLen = new FileInfo(path).Length;
         if (byteLen <= SmallThreshold) {
+            var sha1 = ComputeSha1File(path);
             var text = File.ReadAllText(path, Encoding.UTF8);
-            return new LoadResult(new Document(text), Path.GetFileName(path), WasZipped: false);
+            return new LoadResult(new Document(text), Path.GetFileName(path), WasZipped: false) {
+                BaseSha1 = sha1
+            };
         }
+        var sha1Large = ComputeSha1File(path);
         // Very large file: paged buffer (bounded ~16 MB memory).
         if (pagedThreshold > 0 && byteLen > pagedThreshold) {
             var paged = new PagedFileBuffer(path, byteLen);
@@ -98,7 +116,9 @@ public static class FileLoader {
             return new LoadResult(
                 new Document(new PieceTable(paged)),
                 Path.GetFileName(path),
-                WasZipped: false);
+                WasZipped: false) {
+                BaseSha1 = sha1Large
+            };
         }
         // Large file: streaming background load (~2× file size in memory).
         var buf = new StreamingFileBuffer(path, byteLen);
@@ -106,7 +126,23 @@ public static class FileLoader {
         return new LoadResult(
             new Document(new PieceTable(buf)),
             Path.GetFileName(path),
-            WasZipped: false);
+            WasZipped: false) {
+            BaseSha1 = sha1Large
+        };
+    }
+
+    // -----------------------------------------------------------------
+    // SHA-1 hashing
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Computes the SHA-1 hash of a file on disk. Returns lowercase hex.
+    /// Used by session restore to verify base-file identity.
+    /// </summary>
+    public static string ComputeSha1File(string path) {
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var hash = SHA1.HashData(fs);
+        return Convert.ToHexStringLower(hash);
     }
 
     // -----------------------------------------------------------------
@@ -127,6 +163,8 @@ public static class FileLoader {
     }
 
     private static LoadResult LoadZip(string path, CancellationToken ct) {
+        // Hash the outer zip file for identity.
+        var sha1 = ComputeSha1File(path);
         var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         ZipArchive? zip = null;
         try {
@@ -151,7 +189,8 @@ public static class FileLoader {
                 var text = reader.ReadToEnd();
                 zip.Dispose(); // done with the archive
                 return new LoadResult(new Document(text), displayName, WasZipped: true) {
-                    InnerEntryName = entry.Name
+                    InnerEntryName = entry.Name,
+                    BaseSha1 = sha1
                 };
             }
 
@@ -167,7 +206,8 @@ public static class FileLoader {
                 new Document(new PieceTable(buf)),
                 displayName,
                 WasZipped: true) {
-                InnerEntryName = entry.Name
+                InnerEntryName = entry.Name,
+                BaseSha1 = sha1
             };
         } catch {
             zip?.Dispose();

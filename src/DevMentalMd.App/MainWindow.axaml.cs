@@ -126,11 +126,13 @@ public partial class MainWindow : Window {
             }
         };
 
-        if (_settings.DevMode) {
-            LoadManual();
-        } else {
-            var tab = AddTab(TabState.CreateUntitled(_tabs));
-            SwitchToTab(tab);
+        if (!TryRestoreSession()) {
+            if (_settings.DevMode) {
+                LoadManual();
+            } else {
+                var tab = AddTab(TabState.CreateUntitled(_tabs));
+                SwitchToTab(tab);
+            }
         }
     }
 
@@ -1105,6 +1107,7 @@ public partial class MainWindow : Window {
 
         var tab = new TabState(result.Document, path, result.DisplayName) {
             LoadResult = result,
+            BaseSha1 = result.BaseSha1,
         };
         AddTab(tab);
         SwitchToTab(tab);
@@ -1438,6 +1441,154 @@ public partial class MainWindow : Window {
                 }
             }
         };
+    }
+
+    // -------------------------------------------------------------------------
+    // Session persistence
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Attempts to restore the previous session. Returns true if at least one
+    /// tab was restored; false if no session exists.
+    /// </summary>
+    private bool TryRestoreSession() {
+        var session = SessionStore.Load();
+        if (session is null || session.Value.Tabs.Count == 0) {
+            return false;
+        }
+
+        var (restoredTabs, activeIdx) = session.Value;
+        var conflicts = new List<SessionStore.RestoredTab>();
+
+        foreach (var rt in restoredTabs) {
+            var tab = AddTab(rt.Tab);
+            if (rt.Conflict is not null) {
+                conflicts.Add(rt);
+            }
+        }
+
+        // Activate the saved tab (clamped to valid range).
+        var idx = Math.Clamp(activeIdx, 0, _tabs.Count - 1);
+        SwitchToTab(_tabs[idx]);
+
+        // Show conflict dialogs after the window is fully loaded.
+        if (conflicts.Count > 0) {
+            Opened += async (_, _) => {
+                foreach (var rt in conflicts) {
+                    await ShowFileConflictDialogAsync(rt);
+                }
+            };
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Shows a conflict dialog for a session-restored tab and handles the
+    /// user's choice.
+    /// </summary>
+    private async Task ShowFileConflictDialogAsync(SessionStore.RestoredTab rt) {
+        var conflict = rt.Conflict!;
+        var dialog = new FileConflictDialog(conflict);
+        await dialog.ShowDialog(this);
+
+        switch (dialog.Choice) {
+            case FileConflictChoice.LocateFile: {
+                // Let the user browse for the file.
+                var picked = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions {
+                    Title = "Locate File",
+                    AllowMultiple = false,
+                    FileTypeFilter = FileTypeFilters,
+                });
+                if (picked.Count > 0) {
+                    var newPath = picked[0].TryGetLocalPath();
+                    if (newPath is not null && File.Exists(newPath)) {
+                        // Re-check SHA-1 against the located file.
+                        var sha1 = FileLoader.ComputeSha1File(newPath);
+                        if (sha1 == conflict.ExpectedSha1) {
+                            // Match — reload and replay edits.
+                            var doc = FileLoader.Load(newPath).Document;
+                            var entry = new SessionStore.TabEntry {
+                                Id = rt.Tab.Id,
+                                SavePointDepth = rt.Tab.Document.History.SavePointDepth,
+                            };
+                            // Replay edits onto the fresh document.
+                            doc.History.RestoreEntries(
+                                doc.Table,
+                                rt.Tab.Document.History.GetUndoEntries(),
+                                rt.Tab.Document.History.GetRedoEntries(),
+                                rt.Tab.Document.History.SavePointDepth);
+                            doc.Selection = rt.Tab.Document.Selection;
+                            // Replace tab in-place.
+                            var idx = _tabs.IndexOf(rt.Tab);
+                            if (idx >= 0) {
+                                var newTab = new TabState(doc, newPath, Path.GetFileName(newPath)) {
+                                    Id = rt.Tab.Id,
+                                    BaseSha1 = sha1,
+                                    IsDirty = rt.Tab.IsDirty,
+                                    ScrollOffsetY = rt.Tab.ScrollOffsetY,
+                                    WinTopLine = rt.Tab.WinTopLine,
+                                    WinScrollOffset = rt.Tab.WinScrollOffset,
+                                    WinRenderOffsetY = rt.Tab.WinRenderOffsetY,
+                                    WinFirstLineHeight = rt.Tab.WinFirstLineHeight,
+                                };
+                                _tabs[idx] = newTab;
+                                newTab.Document.Changed += (_, _) => OnTabDocumentChanged(newTab);
+                                if (_activeTab == rt.Tab) {
+                                    SwitchToTab(newTab);
+                                }
+                                UpdateTabBar();
+                            }
+                        } else {
+                            // SHA-1 mismatch — the located file is different.
+                            // Re-show as a "changed" conflict.
+                            var changedConflict = new SessionStore.RestoredTab {
+                                Tab = rt.Tab,
+                                Conflict = new SessionStore.FileConflict {
+                                    Kind = SessionStore.FileConflictKind.Changed,
+                                    FilePath = newPath,
+                                    ExpectedSha1 = conflict.ExpectedSha1,
+                                    ActualSha1 = sha1,
+                                },
+                            };
+                            await ShowFileConflictDialogAsync(changedConflict);
+                        }
+                    }
+                }
+                break;
+            }
+            case FileConflictChoice.LoadDiskVersion:
+                // The tab already has the disk version loaded (SessionStore did this).
+                // Just clear the edit history since the edits are based on old content.
+                rt.Tab.IsDirty = false;
+                UpdateTabBar();
+                break;
+            case FileConflictChoice.Discard:
+                CloseTab(rt.Tab);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Saves the current session (open tabs, edit history, scroll/caret state)
+    /// so it can be restored on next launch.
+    /// </summary>
+    private void SaveSession() {
+        // Save scroll state for the active tab before serializing.
+        if (_activeTab is { IsSettings: false }) {
+            Editor.SaveScrollState(_activeTab);
+        }
+
+        // Flush any pending compound edits so the undo stack is clean.
+        Editor.FlushCompound();
+
+        var activeIdx = _activeTab is not null ? _tabs.IndexOf(_activeTab) : 0;
+        SessionStore.Save(_tabs, Math.Max(0, activeIdx));
+    }
+
+    protected override void OnClosing(WindowClosingEventArgs e) {
+        SaveSession();
+        base.OnClosing(e);
     }
 
     /// <summary>

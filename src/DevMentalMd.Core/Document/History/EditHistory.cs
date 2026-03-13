@@ -108,6 +108,9 @@ public sealed class EditHistory {
     /// </summary>
     public readonly record struct UndoRedoResult(IDocumentEdit Edit, Selection SelectionBefore);
 
+    /// <summary>A single entry in the undo or redo stack, exposed for serialization.</summary>
+    public readonly record struct HistoryEntry(IDocumentEdit Edit, Selection SelectionBefore);
+
     /// <summary>
     /// Reverts the most recent edit. Returns the edit and pre-edit selection,
     /// or <c>null</c> if nothing to undo.
@@ -134,5 +137,59 @@ public sealed class EditHistory {
         entry.Edit.Apply(table);
         _undoStack.Push(entry);
         return new UndoRedoResult(entry.Edit, entry.SelectionBefore);
+    }
+
+    // -----------------------------------------------------------------
+    // Serialization support
+    // -----------------------------------------------------------------
+
+    /// <summary>The undo-stack depth at the last save point.</summary>
+    public int SavePointDepth => _savePointDepth;
+
+    /// <summary>
+    /// Returns the undo stack entries bottom-to-top (oldest first).
+    /// </summary>
+    public IReadOnlyList<HistoryEntry> GetUndoEntries() {
+        var arr = _undoStack.ToArray();  // top-to-bottom
+        Array.Reverse(arr);
+        return Array.ConvertAll(arr, e => new HistoryEntry(e.Edit, e.SelectionBefore));
+    }
+
+    /// <summary>
+    /// Returns the redo stack entries bottom-to-top (oldest first).
+    /// </summary>
+    public IReadOnlyList<HistoryEntry> GetRedoEntries() {
+        var arr = _redoStack.ToArray();  // top-to-bottom
+        Array.Reverse(arr);
+        return Array.ConvertAll(arr, e => new HistoryEntry(e.Edit, e.SelectionBefore));
+    }
+
+    /// <summary>
+    /// Replays serialized entries into the undo and redo stacks, then applies
+    /// the undo entries to the <paramref name="table"/> so the document reaches
+    /// its edited state. Entries are bottom-to-top (oldest first).
+    /// </summary>
+    public void RestoreEntries(
+        PieceTable table,
+        IReadOnlyList<HistoryEntry> undoEntries,
+        IReadOnlyList<HistoryEntry> redoEntries,
+        int savePointDepth) {
+
+        _undoStack.Clear();
+        _redoStack.Clear();
+
+        // Apply undo entries in order (oldest first) to build up to the edited state.
+        foreach (var entry in undoEntries) {
+            entry.Edit.Apply(table);
+            _undoStack.Push(new Entry(entry.Edit, entry.SelectionBefore));
+        }
+
+        // Push redo entries without applying (they are future edits).
+        // Redo stack is LIFO, so push oldest first → newest ends up on top.
+        foreach (var entry in redoEntries) {
+            _redoStack.Push(new Entry(entry.Edit, entry.SelectionBefore));
+        }
+
+        _savePointDepth = savePointDepth;
     }
 }

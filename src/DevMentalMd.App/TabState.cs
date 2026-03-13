@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using DevMentalMd.Core.Documents;
 using DevMentalMd.Core.IO;
@@ -9,12 +10,25 @@ namespace DevMentalMd.App;
 /// file path, scroll position, and dirty flag for one open tab.
 /// </summary>
 public sealed class TabState {
+    /// <summary>
+    /// Stable identifier for this tab, used to name session-persistence files.
+    /// 12-char lowercase hex derived from a GUID.
+    /// </summary>
+    public string Id { get; init; } = Guid.NewGuid().ToString("N")[..12];
+
     public Document Document { get; }
     public string? FilePath { get; set; }
     public string DisplayName { get; set; }
     public LoadResult? LoadResult { get; set; }
     public bool IsDirty { get; set; }
     public bool IsSettings { get; init; }
+
+    /// <summary>
+    /// SHA-1 hash of the file's raw bytes at load time (lowercase hex).
+    /// <c>null</c> for untitled documents. Used by session persistence
+    /// to detect external modifications between sessions.
+    /// </summary>
+    public string? BaseSha1 { get; set; }
 
     // Scroll / windowed-layout state, saved when leaving the tab so
     // returning does not produce a visual jump.

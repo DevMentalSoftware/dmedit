@@ -31,6 +31,7 @@ public sealed class Document {
     // -------------------------------------------------------------------------
 
     public PieceTable Table => _table;
+    public EditHistory History => _history;
     public Selection Selection { get; set; } = Selection.Collapsed(0L);
 
     public bool CanUndo => _history.CanUndo;
