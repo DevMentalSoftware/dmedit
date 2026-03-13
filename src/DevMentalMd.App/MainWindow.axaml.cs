@@ -770,35 +770,8 @@ public partial class MainWindow : Window {
         MenuIndent.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditIndent);
         MenuSelectAllOccurrences.Click += (_, _) => ExecuteWindowCommand(CommandIds.EditSelectAllOccurrences);
         MenuColumnSelect.Click += (_, _) => ExecuteWindowCommand(CommandIds.EditColumnSelect);
-        ReplaceSubmenuArrow(MenuTransformCase);
     }
 
-    /// <summary>
-    /// Replaces the default submenu chevron (PART_ChevronPath) with a Segoe
-    /// Fluent Icons glyph so it matches our custom check-mark style.
-    /// </summary>
-    private static void ReplaceSubmenuArrow(MenuItem item) {
-        item.TemplateApplied += (_, e) => {
-            if (e.NameScope.Find("PART_ChevronPath") is not Control chevron) return;
-
-            chevron.IsVisible = false;
-            if (chevron.Parent is Panel parent) {
-                var glyph = new TextBlock {
-                    Text = IconGlyphs.ChevronRight,
-                    FontFamily = IconGlyphs.Family,
-                    FontSize = 12,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 2, 0, 0),
-                };
-                // Place in the same Grid column as the original chevron.
-                if (chevron is Avalonia.Controls.Shapes.Path p) {
-                    Grid.SetColumn(glyph, Grid.GetColumn(p));
-                }
-                parent.Children.Add(glyph);
-            }
-        };
-    }
 
     // -------------------------------------------------------------------------
     // Theme
