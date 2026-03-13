@@ -82,8 +82,8 @@ public partial class MainWindow : Window {
         MenuSave.Click += OnSave;
         MenuSaveAs.Click += OnSaveAs;
         MenuSaveAll.Click += (_, _) => SaveAll();
-        MenuClose.Click += (_, _) => { if (_activeTab != null) CloseTab(_activeTab); };
-        MenuCloseAll.Click += (_, _) => CloseAllTabs();
+        MenuClose.Click += async (_, _) => { if (_activeTab != null) await PromptAndCloseTabAsync(_activeTab); };
+        MenuCloseAll.Click += async (_, _) => await CloseAllTabsAsync();
         MenuExit.Click += (_, _) => Close();
         MenuRevertFile.Click += (_, _) => _ = RevertFileAsync();
 
@@ -150,8 +150,9 @@ public partial class MainWindow : Window {
     private void SwitchToTab(TabState tab) {
         if (_activeTab == tab) return;
         CancelChord();
-        // Save current tab's scroll state.
+        // Flush any pending compound edit and save scroll state on the outgoing tab.
         if (_activeTab != null && !_activeTab.IsSettings) {
+            Editor.FlushCompound();
             Editor.SaveScrollState(_activeTab);
         }
         _activeTab = tab;
@@ -171,7 +172,11 @@ public partial class MainWindow : Window {
         UpdateTabBar();
     }
 
-    private void CloseTab(TabState tab) {
+    /// <summary>
+    /// Closes the tab without prompting. Use <see cref="PromptAndCloseTabAsync"/>
+    /// for user-facing close operations on dirty tabs.
+    /// </summary>
+    private void CloseTabDirect(TabState tab) {
         if (tab.IsSettings) {
             _settingsTab = null;
             SettingsPanel.ResetState();
@@ -194,11 +199,123 @@ public partial class MainWindow : Window {
         }
     }
 
-    private void CloseAllTabs() {
+    /// <summary>
+    /// Prompts the user if <paramref name="tab"/> has unsaved changes,
+    /// then closes it. Returns false if the user cancelled.
+    /// </summary>
+    private async Task<bool> PromptAndCloseTabAsync(TabState tab) {
+        if (tab.IsSettings) {
+            CloseTabDirect(tab);
+            return true;
+        }
+        if (tab.IsDirty) {
+            var dialog = new SaveChangesDialog(tab.DisplayName);
+            await dialog.ShowDialog(this);
+            switch (dialog.Result.Choice) {
+                case SaveChoice.Save:
+                    if (!await SaveTabAsync(tab)) {
+                        return false; // Save was cancelled (e.g. user dismissed Save As)
+                    }
+                    break;
+                case SaveChoice.DontSave:
+                    break;
+                case SaveChoice.Cancel:
+                    return false;
+            }
+        }
+        CloseTabDirect(tab);
+        return true;
+    }
+
+    /// <summary>
+    /// Prompts the user about multiple dirty tabs, then closes all tabs.
+    /// Returns false if the user cancelled.
+    /// </summary>
+    private async Task<bool> PromptAndCloseMultipleTabsAsync(IReadOnlyList<TabState> tabsToClose) {
+        var dirtyTabs = tabsToClose.Where(t => t.IsDirty && !t.IsSettings).ToList();
+
+        if (dirtyTabs.Count == 0) {
+            // No dirty tabs — close directly.
+            foreach (var tab in tabsToClose.ToList()) {
+                CloseTabDirect(tab);
+            }
+            return true;
+        }
+
+        if (dirtyTabs.Count == 1) {
+            // Single dirty tab — use the simple dialog.
+            return await PromptAndCloseTabAsync(dirtyTabs[0]);
+        }
+
+        // Multiple dirty tabs — use the multi-tab dialog.
+        // Saves happen immediately when per-row [Save] is clicked.
+        var dialog = new MultiSaveChangesDialog(dirtyTabs, SaveTabAsync);
+        await dialog.ShowDialog(this);
+        var result = dialog.Result;
+        if (result.Cancelled) {
+            return false;
+        }
+
+        // Close all tabs (including clean ones).
+        foreach (var tab in tabsToClose.ToList()) {
+            CloseTabDirect(tab);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Saves a tab. For untitled tabs, opens a Save As dialog.
+    /// Returns false if the save was cancelled (user dismissed Save As).
+    /// </summary>
+    private async Task<bool> SaveTabAsync(TabState tab) {
+        Editor.FlushCompound();
+        if (tab.FilePath is null) {
+            // Untitled — need Save As.
+            // Temporarily switch to this tab so SaveToAsync works with Editor.Document.
+            var previousTab = _activeTab;
+            if (_activeTab != tab) {
+                SwitchToTab(tab);
+            }
+            await SaveAsAsync();
+            // If FilePath is still null after SaveAs, the user cancelled.
+            if (tab.FilePath is null) {
+                if (previousTab is not null && previousTab != tab && _tabs.Contains(previousTab)) {
+                    SwitchToTab(previousTab);
+                }
+                return false;
+            }
+            return true;
+        }
+        // File-backed — save directly.
+        await SaveToAsync(tab.FilePath);
+        tab.Document.MarkSavePoint();
+        tab.IsDirty = false;
+        UpdateTabBar();
+        return true;
+    }
+
+    private void CloseAllTabsDirect() {
         _tabs.Clear();
         _activeTab = null;
         var tab = AddTab(TabState.CreateUntitled(_tabs));
         SwitchToTab(tab);
+    }
+
+    private async Task CloseAllTabsAsync() {
+        var allTabs = _tabs.ToList();
+        var dirtyTabs = allTabs.Where(t => t.IsDirty && !t.IsSettings).ToList();
+        if (dirtyTabs.Count == 0) {
+            CloseAllTabsDirect();
+            return;
+        }
+        if (!await PromptAndCloseMultipleTabsAsync(allTabs)) {
+            return; // Cancelled
+        }
+        // Ensure we have at least one tab.
+        if (_tabs.Count == 0) {
+            var tab = AddTab(TabState.CreateUntitled(_tabs));
+            SwitchToTab(tab);
+        }
     }
 
     private void OnTabDocumentChanged(TabState tab) {
@@ -218,16 +335,16 @@ public partial class MainWindow : Window {
         TabBar.TabClicked += idx => {
             if (idx >= 0 && idx < _tabs.Count) SwitchToTab(_tabs[idx]);
         };
-        TabBar.TabCloseClicked += idx => {
-            if (idx >= 0 && idx < _tabs.Count) CloseTab(_tabs[idx]);
+        TabBar.TabCloseClicked += async idx => {
+            if (idx >= 0 && idx < _tabs.Count) await PromptAndCloseTabAsync(_tabs[idx]);
         };
         TabBar.PlusClicked += () => {
             var t = AddTab(TabState.CreateUntitled(_tabs));
             SwitchToTab(t);
         };
         TabBar.OverflowClicked += ShowOverflowMenu;
-        TabBar.CloseTabsToRightClicked += CloseTabsToRight;
-        TabBar.CloseOtherTabsClicked += CloseOtherTabs;
+        TabBar.CloseTabsToRightClicked += idx => _ = CloseTabsToRightAsync(idx);
+        TabBar.CloseOtherTabsClicked += idx => _ = CloseOtherTabsAsync(idx);
         TabBar.TabReordered += OnTabReordered;
         TabBar.DragAreaPressed += () => {
             // BeginMoveDrag is called from within a PointerPressed handler,
@@ -276,11 +393,11 @@ public partial class MainWindow : Window {
 
     private void UpdateTabBar() => TabBar.Update(_tabs, _activeTab);
 
-    private void CloseTabsToRight(int tabIndex) {
+    private async Task CloseTabsToRightAsync(int tabIndex) {
         if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
-        // Close all tabs with index > tabIndex
-        for (var i = _tabs.Count - 1; i > tabIndex; i--) {
-            _tabs.RemoveAt(i);
+        var toClose = _tabs.Skip(tabIndex + 1).ToList();
+        if (!await PromptAndCloseMultipleTabsAsync(toClose)) {
+            return;
         }
         // If active tab was removed, switch to the rightmost remaining
         if (_activeTab != null && !_tabs.Contains(_activeTab)) {
@@ -290,15 +407,17 @@ public partial class MainWindow : Window {
         }
     }
 
-    private void CloseOtherTabs(int tabIndex) {
+    private async Task CloseOtherTabsAsync(int tabIndex) {
         if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
         var keep = _tabs[tabIndex];
-        _tabs.Clear();
-        _tabs.Add(keep);
-        if (_activeTab == keep) {
-            UpdateTabBar();
-        } else {
+        var toClose = _tabs.Where(t => t != keep).ToList();
+        if (!await PromptAndCloseMultipleTabsAsync(toClose)) {
+            return;
+        }
+        if (_activeTab != keep && _tabs.Contains(keep)) {
             SwitchToTab(keep);
+        } else {
+            UpdateTabBar();
         }
     }
 
@@ -395,10 +514,10 @@ public partial class MainWindow : Window {
                 SaveAll();
                 return true;
             case CommandIds.FileClose:
-                if (_activeTab != null) CloseTab(_activeTab);
+                if (_activeTab != null) _ = PromptAndCloseTabAsync(_activeTab);
                 return true;
             case CommandIds.FileCloseAll:
-                CloseAllTabs();
+                _ = CloseAllTabsAsync();
                 return true;
             case CommandIds.FileExit:
                 Close();
@@ -941,7 +1060,7 @@ public partial class MainWindow : Window {
             var right = "";
             // During loading, line-start lookups can fail (pages not in memory).
             if (!stillLoading) {
-                var caret = doc.Selection.Caret;
+                var caret = Math.Min(doc.Selection.Caret, table.Length);
                 var lineIdx = table.LineFromOfs(caret);
                 var lineStart = table.LineStartOfs(lineIdx);
                 var col = caret - lineStart + 1;
@@ -1006,22 +1125,25 @@ public partial class MainWindow : Window {
     private async void OnOpen(object? sender, RoutedEventArgs e) {
         string? path;
         if (UseNativePicker) {
+            var startDir = await GetStartLocationAsync();
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions {
                 Title = "Open File",
                 AllowMultiple = false,
                 FileTypeFilter = FileTypeFilters,
+                SuggestedStartLocation = startDir,
             });
             if (files.Count == 0) {
                 return;
             }
             path = files[0].TryGetLocalPath();
         } else {
-            path = await LinuxFileDialog.OpenAsync("Open Markdown File");
+            path = await LinuxFileDialog.OpenAsync("Open Markdown File", _settings.LastFileDialogDir);
         }
         if (path is null) {
             return;
         }
 
+        UpdateLastFileDialogDir(path);
         await OpenFileInTabAsync(path);
     }
 
@@ -1144,27 +1266,30 @@ public partial class MainWindow : Window {
         } else if (_activeTab.FilePath is not null) {
             suggestedName = Path.GetFileName(_activeTab.FilePath);
         } else {
-            suggestedName = "untitled.txt";
+            suggestedName = _activeTab.DisplayName;
         }
 
         string? path;
         if (UseNativePicker) {
+            var startDir = await GetStartLocationAsync();
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions {
                 Title = "Save File",
                 SuggestedFileName = suggestedName,
                 FileTypeChoices = FileTypeFilters,
+                SuggestedStartLocation = startDir,
             });
             if (file is null) {
                 return;
             }
             path = file.TryGetLocalPath();
         } else {
-            path = await LinuxFileDialog.SaveAsync("Save Markdown File", suggestedName);
+            path = await LinuxFileDialog.SaveAsync("Save Markdown File", suggestedName, _settings.LastFileDialogDir);
         }
         if (path is null) {
             return;
         }
 
+        UpdateLastFileDialogDir(path);
         await SaveToAsync(path);
         _activeTab.Document.MarkSavePoint();
         _activeTab.FilePath = path;
@@ -1181,6 +1306,33 @@ public partial class MainWindow : Window {
         await FileSaver.SaveAsync(Editor.Document, path);
         sw.Stop();
         Editor.PerfStats.SaveTimeMs = sw.Elapsed.TotalMilliseconds;
+    }
+
+    /// <summary>
+    /// Returns the last-used file dialog directory as an <see cref="IStorageFolder"/>,
+    /// or null if none is set or the path is invalid.
+    /// </summary>
+    private async Task<IStorageFolder?> GetStartLocationAsync() {
+        if (_settings.LastFileDialogDir is not { } dir) {
+            return null;
+        }
+        try {
+            return await StorageProvider.TryGetFolderFromPathAsync(dir);
+        } catch {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Updates <see cref="AppSettings.LastFileDialogDir"/> to the directory
+    /// containing <paramref name="filePath"/> and schedules a settings save.
+    /// </summary>
+    private void UpdateLastFileDialogDir(string filePath) {
+        var dir = Path.GetDirectoryName(filePath);
+        if (dir is not null) {
+            _settings.LastFileDialogDir = dir;
+            _settings.ScheduleSave();
+        }
     }
 
     private async Task RevertFileAsync() {
@@ -1495,10 +1647,12 @@ public partial class MainWindow : Window {
         switch (dialog.Choice) {
             case FileConflictChoice.LocateFile: {
                 // Let the user browse for the file.
+                var startDir = await GetStartLocationAsync();
                 var picked = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions {
                     Title = "Locate File",
                     AllowMultiple = false,
                     FileTypeFilter = FileTypeFilters,
+                    SuggestedStartLocation = startDir,
                 });
                 if (picked.Count > 0) {
                     var newPath = picked[0].TryGetLocalPath();
@@ -1564,7 +1718,7 @@ public partial class MainWindow : Window {
                 UpdateTabBar();
                 break;
             case FileConflictChoice.Discard:
-                CloseTab(rt.Tab);
+                CloseTabDirect(rt.Tab);
                 break;
         }
     }
@@ -1579,8 +1733,15 @@ public partial class MainWindow : Window {
             Editor.SaveScrollState(_activeTab);
         }
 
-        // Flush any pending compound edits so the undo stack is clean.
+        // Flush pending compound edits on ALL tabs so undo stacks are complete.
+        // Editor.FlushCompound() only flushes the active document; inactive tabs
+        // may still have uncommitted compounds from earlier editing.
         Editor.FlushCompound();
+        foreach (var tab in _tabs) {
+            if (!tab.IsSettings) {
+                tab.Document.EndCompound();
+            }
+        }
 
         var activeIdx = _activeTab is not null ? _tabs.IndexOf(_activeTab) : 0;
         SessionStore.Save(_tabs, Math.Max(0, activeIdx));

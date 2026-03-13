@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Threading.Tasks;
 
 namespace DevMentalMd.App.Services;
@@ -13,21 +14,32 @@ public static class LinuxFileDialog {
     /// Shows a zenity open-file dialog.
     /// Returns the selected path, or <c>null</c> if the user cancelled or zenity is unavailable.
     /// </summary>
-    public static async Task<string?> OpenAsync(string title) {
-        return await RunZenityAsync(
-            "--file-selection " +
-            $"--title={Quote(title)}");
+    public static async Task<string?> OpenAsync(string title, string? startDir = null) {
+        var args = "--file-selection " +
+            $"--title={Quote(title)}";
+        if (startDir is not null && Directory.Exists(startDir)) {
+            // Trailing slash tells zenity to treat it as a directory, not a filename.
+            args += $" --filename={Quote(startDir.TrimEnd('/') + "/")}";
+        }
+        return await RunZenityAsync(args);
     }
 
     /// <summary>
     /// Shows a zenity save-file dialog with a suggested filename.
     /// Returns the selected path, or <c>null</c> if the user cancelled or zenity is unavailable.
     /// </summary>
-    public static async Task<string?> SaveAsync(string title, string suggestedName) {
+    public static async Task<string?> SaveAsync(string title, string suggestedName, string? startDir = null) {
+        string filenameArg;
+        if (startDir is not null && Directory.Exists(startDir)) {
+            // Combine directory + suggested name so zenity opens in the right folder.
+            filenameArg = Quote(Path.Combine(startDir, suggestedName));
+        } else {
+            filenameArg = Quote(suggestedName);
+        }
         return await RunZenityAsync(
             "--file-selection --save --confirm-overwrite " +
             $"--title={Quote(title)} " +
-            $"--filename={Quote(suggestedName)}");
+            $"--filename={filenameArg}");
     }
 
     private static async Task<string?> RunZenityAsync(string args) {

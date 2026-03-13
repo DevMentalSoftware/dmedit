@@ -201,8 +201,13 @@ public static class SessionStore {
             ReplayEdits(doc, entry);
         }
 
-        // Restore selection.
-        doc.Selection = new Selection(entry.CaretAnchor, entry.CaretActive);
+        // Restore selection, clamped to the document's actual length.
+        // The saved caret may be out of bounds if the base file changed,
+        // was missing, or edit replay failed/altered the expected length.
+        var len = doc.Table.Length;
+        doc.Selection = new Selection(
+            Math.Clamp(entry.CaretAnchor, 0, len),
+            Math.Clamp(entry.CaretActive, 0, len));
 
         var tab = new TabState(doc, entry.FilePath, entry.DisplayName) {
             Id = entry.Id,

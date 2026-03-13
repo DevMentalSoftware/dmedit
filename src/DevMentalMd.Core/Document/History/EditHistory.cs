@@ -37,9 +37,12 @@ public sealed class EditHistory {
     public void MarkSavePoint() => _savePointDepth = _undoStack.Count;
 
     /// <summary>
-    /// True when the current undo-stack depth matches the last saved position.
+    /// True when the current undo-stack depth matches the last saved position
+    /// and there are no uncommitted edits in a pending compound group.
     /// </summary>
-    public bool IsAtSavePoint => _undoStack.Count == _savePointDepth;
+    public bool IsAtSavePoint =>
+        _undoStack.Count == _savePointDepth
+        && (_compound is null || _compound.Count == 0);
 
     // -------------------------------------------------------------------------
     // Pushing edits

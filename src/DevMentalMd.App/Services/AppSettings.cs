@@ -201,6 +201,17 @@ public sealed class AppSettings {
     }
 
     // -----------------------------------------------------------------
+    // File dialogs
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Last directory used in an Open or Save file dialog. Null = OS default.
+    /// Updated whenever a file is opened or saved, so the next dialog starts
+    /// in the most recently used location.
+    /// </summary>
+    public string? LastFileDialogDir { get; set; }
+
+    // -----------------------------------------------------------------
     // Keyboard shortcuts
     // -----------------------------------------------------------------
 
