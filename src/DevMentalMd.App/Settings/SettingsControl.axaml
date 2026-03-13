@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:DevMentalMd.App.Controls"
              x:Class="DevMentalMd.App.Settings.SettingsControl">
-    <!-- No duplicate hover style needed — FluentTextBoxButton handles it. -->
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="200" MinWidth="200" MaxWidth="400" />
@@ -12,22 +12,8 @@
         <DockPanel Grid.Column="0">
             <Border DockPanel.Dock="Top" Padding="8" BorderThickness="0,0,1,1"
                     x:Name="SearchBarBorder">
-                <Grid ColumnDefinitions="*,Auto">
-                    <TextBox x:Name="SearchBox" Grid.Column="0" Grid.ColumnSpan="2"
-                             Watermark="Search settings..."
-                             FontSize="13" />
-                    <Button x:Name="SearchClearBtn" Grid.Column="1"
-                            Theme="{StaticResource FluentTextBoxButton}"
-                            CornerRadius="0,4,4,0"
-                            VerticalAlignment="Stretch"
-                            Margin="0,1,0,1"
-                            IsVisible="False"
-                            ClipToBounds="True">
-                        <TextBlock Text="&#xF369;"
-                                   VerticalAlignment="Center"
-                                   HorizontalAlignment="Center" />
-                    </Button>
-                </Grid>
+                <controls:DMTextBox x:Name="SearchBox"
+                                    Watermark="Search settings..." />
             </Border>
             <Border BorderThickness="0,0,1,0" x:Name="SidebarBorder">
                 <ListBox x:Name="CategoryList"

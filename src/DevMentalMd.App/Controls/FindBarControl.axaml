@@ -1,16 +1,14 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:DevMentalMd.App"
-             x:Class="DevMentalMd.App.Controls.FindBarControl">
-
-    <!-- No local icon font or hover styles needed — FluentTextBoxButton + global
-         ControlButtonIconFont/ControlButtonIconSize handle everything. -->
+             xmlns:controls="clr-namespace:DevMentalMd.App.Controls"
+             x:Class="DevMentalMd.App.Controls.FindBarControl"
+             MinWidth="372">
 
     <!-- Outer wrapper: 6px taller and 12px wider than the body so the concave
          ear corners have room to render.  Background is transparent so only
          the ear fills and the body itself are visible. -->
-    <Grid x:Name="RootGrid" RowDefinitions="6,*" ColumnDefinitions="6,*,6"
-          MinWidth="372">
+    <Grid x:Name="RootGrid" RowDefinitions="6,*" ColumnDefinitions="6,*,6">
 
         <!-- Row 0 Col 0: Left concave ear -->
         <Path x:Name="EarLeft" Grid.Row="0" Grid.Column="0"
@@ -53,41 +51,20 @@
                                HorizontalAlignment="Center" />
                 </Button>
 
-                <!-- Col 2: SearchBox (star-sized) -->
-                <TextBox x:Name="SearchBox"
-                         Grid.Column="2" Grid.Row="0"
-                         Watermark="Find..."
-                         Margin="0,0,4,0">
-                    <TextBox.InnerRightContent>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch"
-                                    ClipToBounds="True"
-                                    Margin="0,1,0,1">
-                            <TextBlock x:Name="MatchCount"
-                                       Text=""
-                                       FontSize="11"
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,4,0" />
-                            <Button x:Name="SearchHistoryBtn"
-                                    Theme="{StaticResource FluentTextBoxButton}"
-                                    ClipToBounds="True"
-                                    ToolTip.Tip="Search history">
-                                <TextBlock Text="&#xF2A1;"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Center" />
-                            </Button>
-                            <Button x:Name="SearchClearBtn"
-                                    Theme="{StaticResource FluentTextBoxButton}"
-                                    IsVisible="False"
-                                    ClipToBounds="True"
-                                    CornerRadius="0,4,4,0"
-                                    ToolTip.Tip="Clear search">
-                                <TextBlock Text="&#xF369;"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Center" />
-                            </Button>
-                        </StackPanel>
-                    </TextBox.InnerRightContent>
-                </TextBox>
+                <!-- Col 2: SearchBox -->
+                <Grid Grid.Column="2" Grid.Row="0"
+                      ColumnDefinitions="*,Auto" Margin="0,0,4,0">
+                    <controls:DMEditableCombo x:Name="SearchBox"
+                                              Grid.ColumnSpan="2"
+                                              Watermark="Find..." />
+                    <TextBlock x:Name="MatchCount"
+                               Grid.Column="1"
+                               Text=""
+                               FontSize="11"
+                               VerticalAlignment="Center"
+                               Margin="0,0,4,0"
+                               IsHitTestVisible="False" />
+                </Grid>
 
                 <!-- Col 3: Direction + Menu (Row 0)  /  Replace + Replace All (Row 1) -->
                 <StackPanel Grid.Column="3" Grid.Row="0"
@@ -140,37 +117,11 @@
                 </Button>
 
                 <!-- Row 1, Col 2: ReplaceBox -->
-                <TextBox x:Name="ReplaceBox"
-                         Grid.Column="2" Grid.Row="1"
-                         Watermark="Replace..."
-                         Margin="0,2,4,0"
-                         IsVisible="False">
-                    <TextBox.InnerRightContent>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch"
-                                    ClipToBounds="True"
-                                    Margin="0,1,0,1">
-                            <Button x:Name="ReplaceHistoryBtn"
-                                    Theme="{StaticResource FluentTextBoxButton}"
-                                    ClipToBounds="True"
-                                    ToolTip.Tip="Replace history">
-                                <TextBlock Text="&#xF2A1;"
-                                           FontFamily="{DynamicResource ControlButtonIconFont}"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Center" />
-                            </Button>
-                            <Button x:Name="ReplaceClearBtn"
-                                    Theme="{StaticResource FluentTextBoxButton}"
-                                    IsVisible="False"
-                                    ClipToBounds="True"
-                                    CornerRadius="0,4,4,0"
-                                    ToolTip.Tip="Clear replace">
-                                <TextBlock Text="&#xF369;"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Center" />
-                            </Button>
-                        </StackPanel>
-                    </TextBox.InnerRightContent>
-                </TextBox>
+                <controls:DMEditableCombo x:Name="ReplaceBox"
+                                          Grid.Column="2" Grid.Row="1"
+                                          Watermark="Replace..."
+                                          Margin="0,2,4,0"
+                                          IsVisible="False" />
 
                 <!-- Row 2: Options (spans Col 2–5) -->
                 <DockPanel Grid.Column="2" Grid.ColumnSpan="4" Grid.Row="2"
@@ -212,38 +163,5 @@
             </Grid>
         </Border>
 
-        <!-- Search history popup -->
-        <Popup x:Name="SearchHistoryPopup"
-               PlacementTarget="{Binding #SearchBox}"
-               Placement="Bottom"
-               IsLightDismissEnabled="True"
-               MaxHeight="200">
-            <Border Background="{DynamicResource MenuFlyoutPresenterBackground}"
-                    BorderBrush="{DynamicResource MenuFlyoutPresenterBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="4"
-                    Padding="0">
-                <ListBox x:Name="SearchHistoryList"
-                         MaxHeight="190"
-                         MinWidth="200" />
-            </Border>
-        </Popup>
-
-        <!-- Replace history popup -->
-        <Popup x:Name="ReplaceHistoryPopup"
-               PlacementTarget="{Binding #ReplaceBox}"
-               Placement="Bottom"
-               IsLightDismissEnabled="True"
-               MaxHeight="200">
-            <Border Background="{DynamicResource MenuFlyoutPresenterBackground}"
-                    BorderBrush="{DynamicResource MenuFlyoutPresenterBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="4"
-                    Padding="0">
-                <ListBox x:Name="ReplaceHistoryList"
-                         MaxHeight="190"
-                         MinWidth="200" />
-            </Border>
-        </Popup>
     </Grid>
 </UserControl>

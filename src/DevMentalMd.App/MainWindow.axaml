@@ -8,7 +8,7 @@
         x:Class="DevMentalMd.App.MainWindow"
         Title=""
         Width="900" Height="650"
-        MinWidth="280" MinHeight="130"
+        MinWidth="640" MinHeight="480"
 		Icon="avares://dmedit/app_icon.ico"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaChromeHints="NoChrome"
@@ -168,7 +168,7 @@
 				                         Grid.Column="0"
 				                         HorizontalAlignment="Right"
 				                         VerticalAlignment="Top"
-				                         Margin="0,-1,0,0"
+				                         Margin="0,-1,20,0"
 				                         IsVisible="False" />
 				<controls:DualZoneScrollBar x:Name="ScrollBar"
 				                            Grid.Column="1"

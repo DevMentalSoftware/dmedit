@@ -72,7 +72,9 @@
 				<ResourceInclude Source="avares://dmedit/Themes/TextBoxTheme.axaml" />
 				<ResourceInclude Source="avares://dmedit/Themes/ListBoxTheme.axaml" />
 				<ResourceInclude Source="avares://dmedit/Themes/NumericUpDownTheme.axaml" />
-			<ResourceInclude Source="avares://dmedit/Themes/GridSplitterTheme.axaml" />
+				<ResourceInclude Source="avares://dmedit/Themes/DMTextBoxTheme.axaml" />
+				<ResourceInclude Source="avares://dmedit/Themes/DMEditableComboTheme.axaml" />
+				<ResourceInclude Source="avares://dmedit/Themes/GridSplitterTheme.axaml" />
 			</ResourceDictionary.MergedDictionaries>
 		</ResourceDictionary>
 	</Application.Resources>

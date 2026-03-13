@@ -1356,22 +1356,22 @@ public partial class MainWindow : Window {
 
         // Provide history lists from settings (shared reference — mutations
         // by AppSettings.PushRecentTerm update the same list).
-        FindBar.SetHistory(_settings.RecentFindTerms, _settings.RecentReplaceTerms);
+        SyncFindBarHistory();
 
         // Push search/replace terms into history when a find/replace is executed.
         FindBar.FindRequested += _ => {
             _settings.PushRecentFindTerm(FindBar.SearchTerm);
-            FindBar.SetHistory(_settings.RecentFindTerms, _settings.RecentReplaceTerms);
+            SyncFindBarHistory();
             _settings.ScheduleSave();
         };
         FindBar.ReplaceRequested += _ => {
             _settings.PushRecentReplaceTerm(FindBar.ReplaceTerm);
-            FindBar.SetHistory(_settings.RecentFindTerms, _settings.RecentReplaceTerms);
+            SyncFindBarHistory();
             _settings.ScheduleSave();
         };
         FindBar.ReplaceAllRequested += () => {
             _settings.PushRecentReplaceTerm(FindBar.ReplaceTerm);
-            FindBar.SetHistory(_settings.RecentFindTerms, _settings.RecentReplaceTerms);
+            SyncFindBarHistory();
             _settings.ScheduleSave();
         };
 
@@ -1379,6 +1379,11 @@ public partial class MainWindow : Window {
         if (_settings.FindBarWidth is > 0 and var w) {
             FindBar.Width = w;
         }
+    }
+
+    private void SyncFindBarHistory() {
+        FindBar.SearchBox.ItemsSource = _settings.RecentFindTerms;
+        FindBar.ReplaceBox.ItemsSource = _settings.RecentReplaceTerms;
     }
 
     // -------------------------------------------------------------------------

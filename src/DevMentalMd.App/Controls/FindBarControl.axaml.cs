@@ -1,9 +1,6 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 
 using Avalonia.Media;
@@ -54,14 +51,6 @@ public partial class FindBarControl : UserControl {
     // Direction tracking: true = forward (right arrow), false = backward (left arrow).
     private bool _lastForward = true;
 
-    // History lists — set by the host (MainWindow) from AppSettings.
-    private List<string>? _searchHistory;
-    private List<string>? _replaceHistory;
-
-    // Suppress auto-suggest when we're programmatically filling the textbox from a
-    // history selection.
-    private bool _suppressAutoSuggest;
-
     // Resize drag state (left-edge grip).  Coordinates are in VisualRoot
     // space so they stay stable as the right-aligned control changes width.
     private bool _resizing;
@@ -104,62 +93,20 @@ public partial class FindBarControl : UserControl {
             UpdateExpandGlyph();
         };
 
-        // Search text changed → raise event + toggle clear button + auto-suggest
+        // Search text changed → raise event
         SearchBox.PropertyChanged += (_, e) => {
-            if (e.Property == TextBox.TextProperty) {
+            if (e.Property == DMEditableCombo.TextProperty) {
                 SearchTermChanged?.Invoke();
-                SearchClearBtn.IsVisible = !string.IsNullOrEmpty(SearchBox.Text);
-                if (!_suppressAutoSuggest) {
-                    ShowAutoSuggest(SearchBox, SearchHistoryPopup, SearchHistoryList, _searchHistory);
-                }
-            }
-        };
-
-        // Replace text changed → toggle clear button + auto-suggest
-        ReplaceBox.PropertyChanged += (_, e) => {
-            if (e.Property == TextBox.TextProperty) {
-                ReplaceClearBtn.IsVisible = !string.IsNullOrEmpty(ReplaceBox.Text);
-                if (!_suppressAutoSuggest) {
-                    ShowAutoSuggest(ReplaceBox, ReplaceHistoryPopup, ReplaceHistoryList, _replaceHistory);
-                }
-            }
-        };
-
-        // Clear button clicks
-        SearchClearBtn.Click += (_, _) => {
-            SearchBox.Text = "";
-            SearchBox.Focus();
-        };
-        ReplaceClearBtn.Click += (_, _) => {
-            ReplaceBox.Text = "";
-            ReplaceBox.Focus();
-        };
-
-        // History button clicks — show full unfiltered list
-        SearchHistoryBtn.Click += (_, _) => {
-            ShowHistoryPopup(SearchHistoryPopup, SearchHistoryList, _searchHistory, null);
-            SearchBox.Focus();
-        };
-        ReplaceHistoryBtn.Click += (_, _) => {
-            ShowHistoryPopup(ReplaceHistoryPopup, ReplaceHistoryList, _replaceHistory, null);
-            ReplaceBox.Focus();
-        };
-
-        // History list selection
-        SearchHistoryList.PointerReleased += (_, _) => {
-            if (SearchHistoryList.SelectedItem is string s) {
-                ApplyHistorySelection(SearchBox, SearchHistoryPopup, s);
-            }
-        };
-        ReplaceHistoryList.PointerReleased += (_, _) => {
-            if (ReplaceHistoryList.SelectedItem is string s) {
-                ApplyHistorySelection(ReplaceBox, ReplaceHistoryPopup, s);
             }
         };
 
         // Keyboard shortcuts within the text boxes
-        SearchBox.KeyDown += OnSearchBoxKeyDown;
-        ReplaceBox.KeyDown += OnReplaceBoxKeyDown;
+        if (SearchBox.InnerTextBox != null) {
+            SearchBox.InnerTextBox.KeyDown += OnSearchBoxKeyDown;
+        }
+        if (ReplaceBox.InnerTextBox != null) {
+            ReplaceBox.InnerTextBox.KeyDown += OnReplaceBoxKeyDown;
+        }
 
         // Left-edge resize grip drag
         ResizeGrip.PointerPressed += OnResizePointerPressed;
@@ -174,27 +121,18 @@ public partial class FindBarControl : UserControl {
     public void ResetState() {
         _lastForward = true;
         DirectionGlyph.Text = IconGlyphs.ArrowRight;
-        SearchHistoryPopup.IsOpen = false;
-        ReplaceHistoryPopup.IsOpen = false;
-    }
-
-    /// <summary>
-    /// Provides the history lists from AppSettings so the find bar can read
-    /// and display them. Call once at startup and whenever settings change.
-    /// </summary>
-    public void SetHistory(List<string>? searchHistory, List<string>? replaceHistory) {
-        _searchHistory = searchHistory;
-        _replaceHistory = replaceHistory;
+        SearchBox.ClosePopup();
+        ReplaceBox.ClosePopup();
     }
 
     public void FocusSearchBox() {
         SearchBox.Focus();
-        SearchBox.SelectAll();
+        SearchBox.InnerTextBox?.SelectAll();
     }
 
     public void FocusReplaceBox() {
         ReplaceBox.Focus();
-        ReplaceBox.SelectAll();
+        ReplaceBox.InnerTextBox?.SelectAll();
     }
 
     public void SetSearchTerm(string text) {
@@ -247,47 +185,6 @@ public partial class FindBarControl : UserControl {
         DirectionGlyph.Text = _lastForward ? IconGlyphs.ArrowRight : IconGlyphs.ArrowLeft;
     }
 
-    // -----------------------------------------------------------------
-    // History popups
-    // -----------------------------------------------------------------
-
-    private static void ShowHistoryPopup(Popup popup, ListBox list, List<string>? history, string? filter) {
-        if (history == null || history.Count == 0) return;
-
-        IEnumerable<string> items = history;
-        if (!string.IsNullOrEmpty(filter)) {
-            items = history.Where(h => h.Contains(filter, StringComparison.OrdinalIgnoreCase));
-        }
-
-        var filtered = items.ToList();
-        if (filtered.Count == 0) {
-            popup.IsOpen = false;
-            return;
-        }
-
-        list.ItemsSource = filtered;
-        list.SelectedIndex = -1;
-        popup.IsOpen = true;
-    }
-
-    private void ShowAutoSuggest(TextBox box, Popup popup, ListBox list, List<string>? history) {
-        var text = box.Text;
-        if (string.IsNullOrEmpty(text) || history == null || history.Count == 0) {
-            popup.IsOpen = false;
-            return;
-        }
-        ShowHistoryPopup(popup, list, history, text);
-    }
-
-    private void ApplyHistorySelection(TextBox box, Popup popup, string value) {
-        _suppressAutoSuggest = true;
-        box.Text = value;
-        _suppressAutoSuggest = false;
-        popup.IsOpen = false;
-        box.Focus();
-        box.SelectAll();
-    }
-
     private void UpdateExpandGlyph() {
         // Down chevron when expanded, right chevron when collapsed
         ExpandGlyph.Text = _isReplaceMode ? "\uF2A3" : "\uF2B1";
@@ -298,10 +195,9 @@ public partial class FindBarControl : UserControl {
     // -----------------------------------------------------------------
 
     private void OnSearchBoxKeyDown(object? sender, KeyEventArgs e) {
-        // If a history popup is open, let arrow keys and Enter navigate it.
-        if (SearchHistoryPopup.IsOpen && HandleHistoryKeyDown(e, SearchHistoryList, SearchBox, SearchHistoryPopup)) {
-            return;
-        }
+        // DMEditableCombo handles popup arrow-key/Enter/Escape internally.
+        // We only handle find-bar-specific keys here.
+        if (SearchBox.IsPopupOpen) return;
 
         switch (e.Key) {
             case Key.Return:
@@ -311,20 +207,14 @@ public partial class FindBarControl : UserControl {
                 e.Handled = true;
                 break;
             case Key.Escape:
-                if (SearchHistoryPopup.IsOpen) {
-                    SearchHistoryPopup.IsOpen = false;
-                } else {
-                    CloseRequested?.Invoke();
-                }
+                CloseRequested?.Invoke();
                 e.Handled = true;
                 break;
         }
     }
 
     private void OnReplaceBoxKeyDown(object? sender, KeyEventArgs e) {
-        if (ReplaceHistoryPopup.IsOpen && HandleHistoryKeyDown(e, ReplaceHistoryList, ReplaceBox, ReplaceHistoryPopup)) {
-            return;
-        }
+        if (ReplaceBox.IsPopupOpen) return;
 
         switch (e.Key) {
             case Key.Return:
@@ -332,43 +222,9 @@ public partial class FindBarControl : UserControl {
                 e.Handled = true;
                 break;
             case Key.Escape:
-                if (ReplaceHistoryPopup.IsOpen) {
-                    ReplaceHistoryPopup.IsOpen = false;
-                } else {
-                    CloseRequested?.Invoke();
-                }
+                CloseRequested?.Invoke();
                 e.Handled = true;
                 break;
-        }
-    }
-
-    /// <summary>
-    /// Handles arrow-key navigation and Enter selection in a history popup.
-    /// Returns true if the key was consumed.
-    /// </summary>
-    private bool HandleHistoryKeyDown(KeyEventArgs e, ListBox list, TextBox box, Popup popup) {
-        switch (e.Key) {
-            case Key.Down:
-                if (list.ItemCount > 0) {
-                    list.SelectedIndex = Math.Min(list.SelectedIndex + 1, list.ItemCount - 1);
-                }
-                e.Handled = true;
-                return true;
-            case Key.Up:
-                if (list.ItemCount > 0) {
-                    list.SelectedIndex = Math.Max(list.SelectedIndex - 1, 0);
-                }
-                e.Handled = true;
-                return true;
-            case Key.Return:
-                if (list.SelectedItem is string s) {
-                    ApplyHistorySelection(box, popup, s);
-                    e.Handled = true;
-                    return true;
-                }
-                return false;
-            default:
-                return false;
         }
     }
 

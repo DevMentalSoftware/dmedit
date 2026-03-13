@@ -129,12 +129,10 @@ public partial class SettingsControl : UserControl {
     }
 
     private void WireSearch() {
-        SearchBox.TextChanged += (_, _) => {
-            SearchClearBtn.IsVisible = !string.IsNullOrEmpty(SearchBox.Text);
-            ApplyFilter();
-        };
-        SearchClearBtn.Click += (_, _) => {
-            SearchBox.Text = "";
+        SearchBox.PropertyChanged += (_, e) => {
+            if (e.Property == Controls.DMTextBox.TextProperty) {
+                ApplyFilter();
+            }
         };
     }
 
@@ -202,8 +200,6 @@ public partial class SettingsControl : UserControl {
         SearchBarBorder.Background = theme.TabActiveBackground;
         SidebarBorder.BorderBrush = theme.TabActiveBackground;
         SidebarBorder.Background = theme.TabActiveBackground;
-
-        SearchClearBtn.Foreground = theme.EditorForeground;
 
         foreach (var header in _allHeaders) {
             header.Foreground = theme.EditorForeground;

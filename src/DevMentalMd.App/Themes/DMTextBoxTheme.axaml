@@ -1,0 +1,34 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:controls="clr-namespace:DevMentalMd.App.Controls">
+
+	<!-- DMTextBox: TextBox + auto-hiding clear button in an overlay Grid.
+	     The clear button sits outside the TextBox visual tree so hovering it
+	     does not propagate :pointerover to the TextBox. -->
+	<ControlTheme x:Key="{x:Type controls:DMTextBox}" TargetType="controls:DMTextBox">
+		<Setter Property="Template">
+			<ControlTemplate>
+				<Grid ColumnDefinitions="*,Auto">
+					<TextBox x:Name="PART_TextBox"
+					         Grid.ColumnSpan="2"
+					         Text="{TemplateBinding Text, Mode=TwoWay}"
+					         Watermark="{TemplateBinding Watermark}"
+					         IsReadOnly="{TemplateBinding IsReadOnly}"
+					         FontSize="{TemplateBinding FontSize}" />
+					<Button x:Name="PART_ClearButton"
+					        Grid.Column="1"
+					        Theme="{StaticResource FluentTextBoxButton}"
+					        CornerRadius="0,4,4,0"
+					        VerticalAlignment="Stretch"
+					        Margin="0,1,0,1"
+					        ClipToBounds="True"
+					        IsVisible="False">
+						<TextBlock Text="&#xF369;"
+						           VerticalAlignment="Center"
+						           HorizontalAlignment="Center" />
+					</Button>
+				</Grid>
+			</ControlTemplate>
+		</Setter>
+	</ControlTheme>
+</ResourceDictionary>

@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:DevMentalMd.App.Controls"
              x:Class="DevMentalMd.App.Settings.KeyboardSettingsSection">
 	<!-- StackPanel stacks items at their natural height — no fill element and
 	     no dead space.  MaxHeight on CommandScroll (set from code) caps the
@@ -17,47 +18,14 @@
 		<Border Width="580"
 		        HorizontalAlignment="Left">
 			<Grid ColumnDefinitions="226,160,*" ColumnSpacing="8">
-				<Grid Grid.Column="0" ColumnDefinitions="*,Auto" >
-					<TextBox x:Name="NameFilter"
-					         Grid.ColumnSpan="2"
-					         Watermark="Search commands&#x2026;"
-					         MinWidth="160" />
-					<Button x:Name="NameFilterClearBtn"
-					        Grid.Column="1"
-					        Theme="{StaticResource FluentTextBoxButton}"
-					        CornerRadius="0,4,4,0"
-					        VerticalAlignment="Stretch"
-					        HorizontalAlignment="Right"
-					        Margin="0,1,0,1"
-					        IsVisible="False"
-					        ClipToBounds="True"
-					        Cursor="Arrow">
-						<TextBlock Text="&#xF369;"
-						           VerticalAlignment="Center"
-						           HorizontalAlignment="Center" />
-					</Button>
-				</Grid>
-				<Grid ColumnDefinitions="*,Auto" Grid.Column="1">
-					<TextBox x:Name="FindShortcut"
-							 Grid.ColumnSpan="2"
-							 Watermark="Find Shortcut&#x2026;"
-							 IsReadOnly="True"
-							 />
-					<Button x:Name="FindClearBtn"
-							Grid.Column="1"
-							Theme="{StaticResource FluentTextBoxButton}"
-							CornerRadius="0,4,4,0"
-							VerticalAlignment="Stretch"
-							HorizontalAlignment="Right"
-							Margin="0,1,0,1"
-							IsVisible="False"
-							ClipToBounds="True"
-							Cursor="Arrow">
-						<TextBlock Text="&#xF369;"
-						           VerticalAlignment="Center"
-						           HorizontalAlignment="Center" />
-					</Button>
-				</Grid>
+				<controls:DMTextBox x:Name="NameFilter"
+				                    Grid.Column="0"
+				                    Watermark="Search commands&#x2026;"
+				                    MinWidth="160" />
+				<controls:DMTextBox x:Name="FindShortcut"
+				                    Grid.Column="1"
+				                    Watermark="Find Shortcut&#x2026;"
+				                    IsReadOnly="True" />
 				<ToggleButton x:Name="ModifiedFilterBtn"
 				              Grid.Column="2"
 				              Content="M"
@@ -105,28 +73,11 @@
 
 		<!-- Action buttons -->
 		<WrapPanel Orientation="Horizontal">
-			<Grid MaxWidth="260" ColumnDefinitions="*,Auto">
-				<TextBox x:Name="CaptureBox"
-				         Grid.ColumnSpan="2"
-				         Watermark="Press shortcut keys&#x2026;"
-				         FontSize="13"
-				         IsReadOnly="True"
-				         MinWidth="180" />
-				<Button x:Name="CaptureClearBtn"
-				        Grid.Column="1"
-				        Theme="{StaticResource FluentTextBoxButton}"
-				        CornerRadius="0,4,4,0"
-				        VerticalAlignment="Stretch"
-				        HorizontalAlignment="Right"
-				        Margin="0,1,0,1"
-				        IsVisible="False"
-				        ClipToBounds="True"
-				        Cursor="Arrow">
-					<TextBlock Text="&#xF369;"
-					           VerticalAlignment="Center"
-					           HorizontalAlignment="Center" />
-				</Button>
-			</Grid>
+			<controls:DMTextBox x:Name="CaptureBox"
+			                    MaxWidth="260"
+			                    Watermark="Press shortcut keys&#x2026;"
+			                    IsReadOnly="True"
+			                    MinWidth="180" />
 			<Button x:Name="AssignBtn" Content="Assign" Margin="8,0,4,0" />
 			<Button x:Name="RemoveBtn" Content="Remove" Margin="0,0,4,0" />
 			<Button x:Name="ResetBtn" Content="Reset" />

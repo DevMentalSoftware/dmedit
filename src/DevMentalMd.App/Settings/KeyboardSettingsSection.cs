@@ -73,17 +73,14 @@ public partial class KeyboardSettingsSection : UserControl {
         // =====================================================================
         // Wire event handlers
         // =====================================================================
-        NameFilterClearBtn.Click += (_, _) => { NameFilter.Text = ""; };
         NameFilter.PropertyChanged += (_, e) => {
-            if (e.Property == TextBox.TextProperty) {
-                NameFilterClearBtn.IsVisible = !string.IsNullOrEmpty(NameFilter.Text);
+            if (e.Property == Controls.DMTextBox.TextProperty) {
                 ApplyFilter();
             }
         };
 
-        FindShortcut.AddHandler(
+        FindShortcut.InnerTextBox?.AddHandler(
             KeyDownEvent, OnFindShortcutKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        FindClearBtn.Click += (_, _) => ClearFindShortcut();
 
         ModifiedFilterBtn.IsCheckedChanged += (_, _) => {
             _showModifiedOnly = ModifiedFilterBtn.IsChecked == true;
@@ -93,9 +90,8 @@ public partial class KeyboardSettingsSection : UserControl {
         CommandScroll.AddHandler(PointerWheelChangedEvent, OnCommandListWheel,
             Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
-        CaptureBox.AddHandler(
+        CaptureBox.InnerTextBox?.AddHandler(
             KeyDownEvent, OnCaptureKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        CaptureClearBtn.Click += (_, _) => ClearCapturedGesture();
 
         AssignBtn.Click += OnAssign;
         RemoveBtn.Click += OnRemove;
@@ -258,7 +254,6 @@ public partial class KeyboardSettingsSection : UserControl {
         _captured = null;
         CaptureBox.Text = "";
         SetConflict(null);
-        CaptureClearBtn.IsVisible = false;
 
         // Update selection highlight
         foreach (var (border, id) in _commandRows) {
@@ -278,7 +273,6 @@ public partial class KeyboardSettingsSection : UserControl {
         _captured = null;
         CaptureBox.Text = "";
         SetConflict(null);
-        CaptureClearBtn.IsVisible = false;
         UpdateButtonStates();
     }
 
@@ -309,7 +303,6 @@ public partial class KeyboardSettingsSection : UserControl {
         }
 
         CaptureBox.Text = _captured.ToString();
-        CaptureClearBtn.IsVisible = true;
 
         // Check for conflicts.
         if (_selectedCommandId != null) {
@@ -327,7 +320,6 @@ public partial class KeyboardSettingsSection : UserControl {
     private void ClearFindShortcut() {
         _findFirstGesture = null;
         FindShortcut.Text = "";
-        FindClearBtn.IsVisible = false;
     }
 
     private void OnFindShortcutKeyDown(object? sender, KeyEventArgs e) {
@@ -359,7 +351,6 @@ public partial class KeyboardSettingsSection : UserControl {
             if (_keyBindings.IsChordPrefix(e.Key, e.KeyModifiers)) {
                 // Could be the start of a chord — wait for second key.
                 _findFirstGesture = gesture;
-                FindClearBtn.IsVisible = true;
             } else {
                 // Not a chord prefix — try single-key resolve.
                 var commandId = _keyBindings.Resolve(e.Key, e.KeyModifiers);
@@ -453,7 +444,6 @@ public partial class KeyboardSettingsSection : UserControl {
         _captured = null;
         CaptureBox.Text = "";
         SetConflict(null);
-        CaptureClearBtn.IsVisible = false;
         UpdateButtonStates();
 
         BindingChanged?.Invoke();
