@@ -139,7 +139,7 @@
                                HorizontalAlignment="Center" />
                 </Button>
 
-                <!-- Row 1, Col 2: ReplaceBox (same star column as SearchBox) -->
+                <!-- Row 1, Col 2: ReplaceBox -->
                 <TextBox x:Name="ReplaceBox"
                          Grid.Column="2" Grid.Row="1"
                          Watermark="Replace..."
