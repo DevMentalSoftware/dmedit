@@ -89,6 +89,7 @@ public partial class MainWindow : Window {
 
         _staticMenuItemCount = MenuFile.Items.Count;
 
+        PruneRecentFiles();
         RebuildRecentMenu();
         WireScrollBar();
         WireEditMenu();
@@ -290,6 +291,7 @@ public partial class MainWindow : Window {
         await SaveToAsync(tab.FilePath);
         tab.Document.MarkSavePoint();
         tab.IsDirty = false;
+        PushRecentFile(tab.FilePath);
         UpdateTabBar();
         return true;
     }
@@ -640,6 +642,7 @@ public partial class MainWindow : Window {
                 _ = SaveToAsync(tab.FilePath);
                 tab.Document.MarkSavePoint();
                 tab.IsDirty = false;
+                PushRecentFile(tab.FilePath);
             }
         }
         UpdateTabBar();
@@ -1157,6 +1160,7 @@ public partial class MainWindow : Window {
         await SaveToAsync(_activeTab.FilePath);
         _activeTab.Document.MarkSavePoint();
         _activeTab.IsDirty = false;
+        PushRecentFile(_activeTab.FilePath);
         UpdateTabBar();
     }
 
@@ -1235,9 +1239,7 @@ public partial class MainWindow : Window {
         SwitchToTab(tab);
         WireStreamingProgress(sw, tab);
 
-        _recentFiles.Push(path);
-        _recentFiles.Save();
-        RebuildRecentMenu();
+        PushRecentFile(path);
     }
 
     private void OpenDevSample(ProceduralSample sample) {
@@ -1250,6 +1252,21 @@ public partial class MainWindow : Window {
         SwitchToTab(tab);
         Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
     }
+
+    /// <summary>
+    /// Adds <paramref name="path"/> to the recent files list and rebuilds the menu.
+    /// </summary>
+    private void PushRecentFile(string path) {
+        _recentFiles.Push(path);
+        _recentFiles.Save();
+        RebuildRecentMenu();
+    }
+
+    /// <summary>
+    /// Prunes recent file entries for local files that no longer exist.
+    /// Network paths are left alone (the server may just be offline).
+    /// </summary>
+    private void PruneRecentFiles() => _recentFiles.PruneMissing();
 
     // -------------------------------------------------------------------------
     // Save helpers
@@ -1269,11 +1286,13 @@ public partial class MainWindow : Window {
             suggestedName = _activeTab.DisplayName;
         }
 
+        var title = $"Save \u2014 {_activeTab.DisplayName}";
+
         string? path;
         if (UseNativePicker) {
             var startDir = await GetStartLocationAsync();
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions {
-                Title = "Save File",
+                Title = title,
                 SuggestedFileName = suggestedName,
                 FileTypeChoices = FileTypeFilters,
                 SuggestedStartLocation = startDir,
@@ -1283,7 +1302,7 @@ public partial class MainWindow : Window {
             }
             path = file.TryGetLocalPath();
         } else {
-            path = await LinuxFileDialog.SaveAsync("Save Markdown File", suggestedName, _settings.LastFileDialogDir);
+            path = await LinuxFileDialog.SaveAsync(title, suggestedName, _settings.LastFileDialogDir);
         }
         if (path is null) {
             return;
@@ -1295,6 +1314,7 @@ public partial class MainWindow : Window {
         _activeTab.FilePath = path;
         _activeTab.DisplayName = Path.GetFileName(path);
         _activeTab.IsDirty = false;
+        PushRecentFile(path);
         UpdateTabBar();
     }
 
