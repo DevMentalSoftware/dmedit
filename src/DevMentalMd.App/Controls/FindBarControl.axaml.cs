@@ -100,13 +100,16 @@ public partial class FindBarControl : UserControl {
             }
         };
 
-        // Keyboard shortcuts within the text boxes
-        if (SearchBox.InnerTextBox != null) {
-            SearchBox.InnerTextBox.KeyDown += OnSearchBoxKeyDown;
-        }
-        if (ReplaceBox.InnerTextBox != null) {
-            ReplaceBox.InnerTextBox.KeyDown += OnReplaceBoxKeyDown;
-        }
+        // Keyboard shortcuts within the text boxes — InnerTextBox is null
+        // until OnApplyTemplate runs, so defer wiring.
+        SearchBox.TemplateApplied += (_, _) => {
+            if (SearchBox.InnerTextBox != null)
+                SearchBox.InnerTextBox.KeyDown += OnSearchBoxKeyDown;
+        };
+        ReplaceBox.TemplateApplied += (_, _) => {
+            if (ReplaceBox.InnerTextBox != null)
+                ReplaceBox.InnerTextBox.KeyDown += OnReplaceBoxKeyDown;
+        };
 
         // Left-edge resize grip drag
         ResizeGrip.PointerPressed += OnResizePointerPressed;

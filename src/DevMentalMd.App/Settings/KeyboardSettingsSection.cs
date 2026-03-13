@@ -79,19 +79,23 @@ public partial class KeyboardSettingsSection : UserControl {
             }
         };
 
-        FindShortcut.InnerTextBox?.AddHandler(
-            KeyDownEvent, OnFindShortcutKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        // InnerTextBox is null until OnApplyTemplate runs (after first layout),
+        // so defer handler wiring until the template is applied.
+        FindShortcut.TemplateApplied += (_, _) =>
+            FindShortcut.InnerTextBox?.AddHandler(
+                KeyDownEvent, OnFindShortcutKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         ModifiedFilterBtn.IsCheckedChanged += (_, _) => {
             _showModifiedOnly = ModifiedFilterBtn.IsChecked == true;
             ApplyFilter();
         };
-        
+
         CommandScroll.AddHandler(PointerWheelChangedEvent, OnCommandListWheel,
             Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
-        CaptureBox.InnerTextBox?.AddHandler(
-            KeyDownEvent, OnCaptureKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        CaptureBox.TemplateApplied += (_, _) =>
+            CaptureBox.InnerTextBox?.AddHandler(
+                KeyDownEvent, OnCaptureKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         AssignBtn.Click += OnAssign;
         RemoveBtn.Click += OnRemove;
