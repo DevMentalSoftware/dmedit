@@ -192,6 +192,16 @@ public partial class SettingsControl : UserControl {
     }
 
     /// <summary>
+    /// Clears transient UI state: search text, scroll position, and keyboard
+    /// section state. Called when the settings tab is closed.
+    /// </summary>
+    public void ResetState() {
+        SearchBox.Text = "";
+        ContentScroll.Offset = default;
+        _keyboardSection?.ResetState();
+    }
+
+    /// <summary>
     /// Applies theme colors to the settings panel.
     /// </summary>
     public void ApplyTheme(EditorTheme theme) {

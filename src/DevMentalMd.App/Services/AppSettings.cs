@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
+using DevMentalMd.Core.Documents;
 
 namespace DevMentalMd.App.Services;
 
@@ -134,6 +135,13 @@ public sealed class AppSettings {
     /// keystroke, so only actual pauses trigger a flush. Default: 1000.
     /// </summary>
     public int CoalesceTimerMs { get; set; } = 1000;
+
+    /// <summary>
+    /// Controls the hierarchy of levels used by Expand Selection.
+    /// <see cref="ExpandSelectionMode.SubwordFirst"/> starts with camelCase/underscore
+    /// boundaries; <see cref="ExpandSelectionMode.Word"/> starts with whitespace boundaries.
+    /// </summary>
+    public ExpandSelectionMode ExpandSelectionMode { get; set; } = ExpandSelectionMode.SubwordFirst;
 
     // -----------------------------------------------------------------
     // Settings UI state

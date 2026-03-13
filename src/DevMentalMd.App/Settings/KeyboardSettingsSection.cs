@@ -682,6 +682,38 @@ public partial class KeyboardSettingsSection : UserControl {
     }
 
     // =====================================================================
+    // State reset
+    // =====================================================================
+
+    /// <summary>
+    /// Clears transient UI state: deselects the active command, clears the
+    /// capture and find-shortcut boxes, resets the modified-only filter,
+    /// and scrolls to top. Called when the settings tab is closed.
+    /// </summary>
+    public void ResetState() {
+        _selectedCommandId = null;
+        _captured = null;
+        _findFirstGesture = null;
+        CaptureBox.Text = "";
+        FindShortcut.Text = "";
+        NameFilter.Text = "";
+        SetConflict(null);
+
+        // Deselect all rows.
+        foreach (var (border, _) in _commandRows) {
+            border.Background = Brushes.Transparent;
+        }
+
+        // Reset modified-only filter toggle and reapply filter.
+        _showModifiedOnly = false;
+        ModifiedFilterBtn.IsChecked = false;
+        ApplyFilter();
+
+        UpdateButtonStates();
+        CommandScroll.Offset = default;
+    }
+
+    // =====================================================================
     // Theming
     // =====================================================================
 

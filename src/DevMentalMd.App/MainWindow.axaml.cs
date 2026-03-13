@@ -172,6 +172,7 @@ public partial class MainWindow : Window {
     private void CloseTab(TabState tab) {
         if (tab.IsSettings) {
             _settingsTab = null;
+            SettingsPanel.ResetState();
         }
         if (tab == _findBarTab) {
             _findBarTab = null;
@@ -837,6 +838,7 @@ public partial class MainWindow : Window {
 
         // Undo coalesce idle timer (settings-only, no menu item)
         Editor.CoalesceTimerMs = _settings.CoalesceTimerMs;
+        Editor.ExpandSelectionMode = _settings.ExpandSelectionMode;
 
         UpdateStatusBarVisibility();
     }
@@ -1270,6 +1272,9 @@ public partial class MainWindow : Window {
                     break;
                 case "CoalesceTimerMs":
                     Editor.CoalesceTimerMs = _settings.CoalesceTimerMs;
+                    break;
+                case "ExpandSelectionMode":
+                    Editor.ExpandSelectionMode = _settings.ExpandSelectionMode;
                     break;
                 case "OuterThumbScrollRateMultiplier":
                     ScrollBar.OuterScrollRateMultiplier = _settings.OuterThumbScrollRateMultiplier;

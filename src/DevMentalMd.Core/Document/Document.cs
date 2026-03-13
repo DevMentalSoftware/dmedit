@@ -216,49 +216,211 @@ public sealed class Document {
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Selects the word under the caret. A "word" is a contiguous run of
-    /// letters, digits, or underscores. If the caret is on whitespace or
-    /// punctuation, selects that contiguous run instead.
+    /// Expands the current selection outward to whitespace boundaries within
+    /// the current line. No-op if the selection already contains whitespace
+    /// or spans multiple lines. When collapsed (caret only), expands around
+    /// the caret position.
     /// </summary>
     public void SelectWord() {
-        var caret = Selection.Caret;
         var len = _table.Length;
         if (len == 0) {
             return;
         }
 
-        // Inspect the character at the caret (or just before if at end)
-        var inspectOfs = Math.Min(caret, len - 1);
+        var (lineStart, lineEnd) = GetLineContentRange(Selection.Start);
 
-        // Read a window around the caret for boundary detection
-        var windowStart = Math.Max(0L, inspectOfs - 512);
-        var windowEnd = Math.Min(len, inspectOfs + 512);
-        var windowLen = (int)(windowEnd - windowStart);
-        var text = _table.GetText(windowStart, windowLen);
-        var posInWindow = (int)(inspectOfs - windowStart);
+        // If selection spans multiple lines, treat as containing whitespace → no-op.
+        if (!Selection.IsEmpty && Selection.End > lineEnd) {
+            return;
+        }
 
-        var ch = text[posInWindow];
-        Func<char, bool> classify = IsWordChar(ch)
-            ? IsWordChar
-            : char.IsWhiteSpace(ch)
-                ? char.IsWhiteSpace
-                : c => !IsWordChar(c) && !char.IsWhiteSpace(c);
+        // Get the line text (content only, no line ending).
+        var lineLen = (int)(lineEnd - lineStart);
+        if (lineLen == 0) {
+            return;
+        }
+        var lineText = _table.GetText(lineStart, lineLen);
 
-        // Scan left
-        var left = posInWindow;
-        while (left > 0 && classify(text[left - 1])) {
+        var selStartInLine = (int)(Selection.Start - lineStart);
+        var selEndInLine = (int)(Selection.End - lineStart);
+
+        // If selection contains whitespace → no-op.
+        for (var i = selStartInLine; i < selEndInLine; i++) {
+            if (char.IsWhiteSpace(lineText[i])) {
+                return;
+            }
+        }
+
+        // Expand backward from selection start to whitespace or line start.
+        var left = selStartInLine;
+        while (left > 0 && !char.IsWhiteSpace(lineText[left - 1])) {
             left--;
         }
 
-        // Scan right
-        var right = posInWindow;
-        while (right < windowLen - 1 && classify(text[right + 1])) {
+        // Expand forward from selection end to whitespace or line end.
+        var right = selEndInLine;
+        while (right < lineLen && !char.IsWhiteSpace(lineText[right])) {
             right++;
         }
 
-        var wordStart = windowStart + left;
-        var wordEnd = windowStart + right + 1;
-        Selection = new Selection(wordStart, wordEnd);
+        Selection = new Selection(lineStart + left, lineStart + right);
+    }
+
+    /// <summary>
+    /// Selects the content of the line containing the caret (excluding the
+    /// line ending). Used for triple-click.
+    /// </summary>
+    public void SelectLine() {
+        if (_table.Length == 0) {
+            return;
+        }
+        var (lineStart, lineEnd) = GetLineContentRange(Selection.Caret);
+        Selection = new Selection(lineStart, lineEnd);
+    }
+
+    /// <summary>
+    /// Expands the selection outward through progressively broader levels.
+    /// The levels depend on the <paramref name="mode"/>:
+    /// <list type="bullet">
+    ///   <item><see cref="ExpandSelectionMode.SubwordFirst"/>: subword → whitespace → line → document</item>
+    ///   <item><see cref="ExpandSelectionMode.Word"/>: whitespace → line → document</item>
+    /// </list>
+    /// Each invocation detects the current level by inspecting selection boundaries
+    /// and advances to the next level.
+    /// </summary>
+    public void ExpandSelection(ExpandSelectionMode mode) {
+        var len = _table.Length;
+        if (len == 0) {
+            return;
+        }
+
+        // Already the entire document?
+        if (Selection.Start == 0 && Selection.End == len) {
+            return;
+        }
+
+        var (lineStart, lineEnd) = GetLineContentRange(Selection.Start);
+
+        // If selection spans beyond this line → expand to entire document.
+        if (!Selection.IsEmpty && Selection.End > lineEnd) {
+            Selection = new Selection(0L, len);
+            return;
+        }
+
+        // Already the entire line?
+        if (Selection.Start == lineStart && Selection.End == lineEnd) {
+            Selection = new Selection(0L, len);
+            return;
+        }
+
+        var lineLen = (int)(lineEnd - lineStart);
+        var lineText = lineLen > 0 ? _table.GetText(lineStart, lineLen) : "";
+        var selStartInLine = (int)(Selection.Start - lineStart);
+        var selEndInLine = (int)(Selection.End - lineStart);
+
+        // Compute whitespace-bounded range.
+        var wsLeft = selStartInLine;
+        while (wsLeft > 0 && !char.IsWhiteSpace(lineText[wsLeft - 1])) {
+            wsLeft--;
+        }
+        var wsRight = selEndInLine;
+        while (wsRight < lineLen && !char.IsWhiteSpace(lineText[wsRight])) {
+            wsRight++;
+        }
+
+        var atWhitespaceBoundary = selStartInLine == wsLeft && selEndInLine == wsRight;
+
+        if (mode == ExpandSelectionMode.SubwordFirst && !atWhitespaceBoundary) {
+            // Try subword expansion, constrained within the whitespace-bounded word.
+            var subLeft = selStartInLine;
+            if (subLeft > wsLeft) {
+                subLeft--;
+                while (subLeft > wsLeft && !IsSubwordBoundary(lineText, subLeft)) {
+                    subLeft--;
+                }
+            }
+            var subRight = selEndInLine;
+            if (subRight < wsRight) {
+                subRight++;
+                while (subRight < wsRight && !IsSubwordBoundary(lineText, subRight)) {
+                    subRight++;
+                }
+            }
+
+            var expanded = subLeft != selStartInLine || subRight != selEndInLine;
+            var alreadyAtWhitespace = subLeft == wsLeft && subRight == wsRight;
+            if (expanded && !alreadyAtWhitespace) {
+                Selection = new Selection(lineStart + subLeft, lineStart + subRight);
+                return;
+            }
+        }
+
+        // Whitespace boundary level.
+        if (!atWhitespaceBoundary) {
+            Selection = new Selection(lineStart + wsLeft, lineStart + wsRight);
+            return;
+        }
+
+        // Line level.
+        Selection = new Selection(lineStart, lineEnd);
+    }
+
+    /// <summary>
+    /// Returns (lineStart, lineEnd) where lineEnd is the offset of the first
+    /// line-ending character (or document length). This gives the "content"
+    /// range of the line excluding \r\n / \n / \r.
+    /// </summary>
+    private (long lineStart, long lineEnd) GetLineContentRange(long ofs) {
+        var line = _table.LineFromOfs(Math.Min(ofs, _table.Length));
+        var lineStart = _table.LineStartOfs(line);
+        long lineEnd;
+        if (line + 1 < _table.LineCount) {
+            var nextLineStart = _table.LineStartOfs(line + 1);
+            // Strip trailing \r\n, \n, or \r from the end.
+            lineEnd = nextLineStart;
+            if (lineEnd > lineStart) {
+                var tail = _table.GetText(Math.Max(lineStart, lineEnd - 2), (int)Math.Min(2, lineEnd - lineStart));
+                if (tail.EndsWith("\r\n")) {
+                    lineEnd -= 2;
+                } else if (tail.EndsWith("\n") || tail.EndsWith("\r")) {
+                    lineEnd -= 1;
+                }
+            }
+        } else {
+            lineEnd = _table.Length;
+        }
+        return (lineStart, lineEnd);
+    }
+
+    /// <summary>
+    /// Returns true if position <paramref name="i"/> in the text is a subword
+    /// boundary: camelCase transitions, underscore, digit/letter transitions,
+    /// or non-alphanumeric characters.
+    /// </summary>
+    private static bool IsSubwordBoundary(string text, int i) {
+        if (i <= 0 || i >= text.Length) {
+            return false;
+        }
+        var prev = text[i - 1];
+        var curr = text[i];
+
+        // Non-alphanumeric on either side is always a boundary.
+        if (!char.IsLetterOrDigit(prev) || !char.IsLetterOrDigit(curr)) {
+            return true;
+        }
+        // lowercase → Uppercase  (e.g. "camelCase" → boundary before 'C')
+        if (char.IsLower(prev) && char.IsUpper(curr)) {
+            return true;
+        }
+        // Uppercase → Uppercase+lowercase  (e.g. "HTMLParser" → boundary before 'P')
+        if (char.IsUpper(prev) && char.IsUpper(curr) && i + 1 < text.Length && char.IsLower(text[i + 1])) {
+            return true;
+        }
+        // digit ↔ letter transition
+        if (char.IsDigit(prev) != char.IsDigit(curr)) {
+            return true;
+        }
+        return false;
     }
 
     /// <summary>

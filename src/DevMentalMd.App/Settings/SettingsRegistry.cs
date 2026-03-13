@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using DevMentalMd.App.Services;
+using DevMentalMd.Core.Documents;
 
 namespace DevMentalMd.App.Settings;
 
@@ -35,6 +36,11 @@ public static class SettingsRegistry {
         new("CoalesceTimerMs", "Undo Coalesce Timer (ms)",
             "Idle time in milliseconds before consecutive edits are committed as a single undo entry. Minimum 100.",
             "Editor", SettingKind.Int, 1000, Min: 100, Max: 10000),
+
+        new("ExpandSelectionMode", "Expand Selection Mode",
+            "Controls how Expand Selection grows the selection. " +
+            "'SubwordFirst' starts at camelCase/underscore boundaries; 'Word' starts at whitespace boundaries.",
+            "Editor", SettingKind.Enum, ExpandSelectionMode.SubwordFirst, EnumType: typeof(ExpandSelectionMode)),
 
         // -- Advanced --
         new("RecentFileCount", "Recent File Count",

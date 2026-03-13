@@ -101,21 +101,23 @@ public class DocumentTests {
     }
 
     [Fact]
-    public void SelectWord_OnWhitespace_SelectsWhitespaceRun() {
+    public void SelectWord_OnWhitespace_NoOp() {
         var doc = MakeDoc("hello   world");
         doc.Selection = Selection.Collapsed(6); // in the spaces
         doc.SelectWord();
-        Assert.Equal(5L, doc.Selection.Start);
-        Assert.Equal(8L, doc.Selection.End);
+        // Caret on whitespace: expansion stops immediately (no non-whitespace to reach).
+        Assert.Equal(6L, doc.Selection.Start);
+        Assert.Equal(6L, doc.Selection.End);
     }
 
     [Fact]
-    public void SelectWord_OnPunctuation_SelectsPunctuationRun() {
+    public void SelectWord_OnPunctuation_ExpandsToWhitespaceBoundary() {
         var doc = MakeDoc("foo...bar");
         doc.Selection = Selection.Collapsed(4); // in "..."
         doc.SelectWord();
-        Assert.Equal(3L, doc.Selection.Start);
-        Assert.Equal(6L, doc.Selection.End);
+        // No whitespace in "foo...bar" — selects the entire line content.
+        Assert.Equal(0L, doc.Selection.Start);
+        Assert.Equal(9L, doc.Selection.End);
     }
 
     [Fact]

@@ -146,6 +146,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
     }
 
+    /// <summary>Controls the hierarchy of levels used by Expand Selection.</summary>
+    public ExpandSelectionMode ExpandSelectionMode { get; set; } = ExpandSelectionMode.SubwordFirst;
+
     /// <summary>Whether line numbers are displayed in a gutter on the left.</summary>
     public bool ShowLineNumbers {
         get => _showLineNumbers;
@@ -1113,6 +1116,17 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         ResetCaretBlink();
     }
 
+    public void PerformExpandSelection() {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        FlushCompound();
+        doc.ExpandSelection(ExpandSelectionMode);
+        InvalidateVisual();
+        ResetCaretBlink();
+    }
+
     public void PerformDeleteLine() {
         var doc = Document;
         if (doc == null) {
@@ -1271,6 +1285,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
             case Commands.CommandIds.EditSelectWord:
                 PerformSelectWord();
+                return true;
+
+            case Commands.CommandIds.EditExpandSelection:
+                PerformExpandSelection();
                 return true;
 
             case Commands.CommandIds.EditDeleteLine:
@@ -1975,10 +1993,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         _preferredCaretX = -1;
         FlushCompound();
 
-        // Force caret visible (pause blinking) while any button is held.
-        _caretVisible = true;
+        // Hide caret and pause blinking while processing the press.
+        _caretVisible = false;
         _caretTimer.Stop();
-        InvalidateVisual();
         var props = e.GetCurrentPoint(this).Properties;
         if (props.IsMiddleButtonPressed) {
             _middleDrag = true;
@@ -2004,6 +2021,25 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // Left-click: place caret or extend selection (with Shift).
         // Right-click: place caret only (no Shift-extend, no drag-select).
         if (isLeft) {
+            var clickCount = e.ClickCount;
+            if (clickCount == 3) {
+                // Triple-click: select entire line.
+                doc.Selection = Selection.Collapsed(ofs);
+                doc.SelectLine();
+                e.Handled = true;
+                InvalidateVisual();
+                ResetCaretBlink();
+                return;
+            }
+            if (clickCount == 2) {
+                // Double-click: select word at click position.
+                doc.Selection = Selection.Collapsed(ofs);
+                doc.SelectWord();
+                e.Handled = true;
+                InvalidateVisual();
+                ResetCaretBlink();
+                return;
+            }
             var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
             doc.Selection = shift
                 ? doc.Selection.ExtendTo(ofs)
