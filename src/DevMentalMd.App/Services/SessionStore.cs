@@ -142,7 +142,7 @@ public static class SessionStore {
     /// Loads the session manifest and restores tabs. Returns null if no
     /// session exists or the manifest is corrupt.
     /// </summary>
-    public static (List<RestoredTab> Tabs, int ActiveTabIndex)? Load() {
+    public static async Task<(List<RestoredTab> Tabs, int ActiveTabIndex)?> LoadAsync() {
         try {
             if (!File.Exists(ManifestPath)) {
                 return null;
@@ -155,7 +155,7 @@ public static class SessionStore {
 
             var restored = new List<RestoredTab>(manifest.Tabs.Count);
             foreach (var entry in manifest.Tabs) {
-                restored.Add(RestoreTab(entry));
+                restored.Add(await RestoreTabAsync(entry));
             }
             return (restored, manifest.ActiveTabIndex);
         } catch {
@@ -163,7 +163,7 @@ public static class SessionStore {
         }
     }
 
-    private static RestoredTab RestoreTab(TabEntry entry) {
+    private static async Task<RestoredTab> RestoreTabAsync(TabEntry entry) {
         FileConflict? conflict = null;
         Document doc;
 
@@ -188,10 +188,10 @@ public static class SessionStore {
                     };
                     // Load the current disk version as the base.
                     // Edits from the session won't be replayed (they'd be garbled).
-                    doc = LoadDocumentFromDisk(entry.FilePath);
+                    doc = await LoadDocumentFromDiskAsync(entry.FilePath);
                 } else {
                     // SHA-1 match — safe to load and replay edits.
-                    doc = LoadDocumentFromDisk(entry.FilePath);
+                    doc = await LoadDocumentFromDiskAsync(entry.FilePath);
                     ReplayEdits(doc, entry);
                 }
             }
@@ -223,9 +223,10 @@ public static class SessionStore {
         return new RestoredTab { Tab = tab, Conflict = conflict };
     }
 
-    private static Document LoadDocumentFromDisk(string path) {
+    private static async Task<Document> LoadDocumentFromDiskAsync(string path) {
         try {
-            var result = FileLoader.Load(path);
+            var result = await FileLoader.LoadAsync(path);
+            await result.Loaded;
             return result.Document;
         } catch {
             return new Document();

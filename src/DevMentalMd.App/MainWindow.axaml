@@ -146,12 +146,24 @@
                                FontSize="11"
                                Padding="6,6,6,6"
                                Text="" />
+					<StackPanel HorizontalAlignment="Right"
+				            Orientation="Horizontal">
 					<TextBlock x:Name="StatusRight"
-                               HorizontalAlignment="Right"
-                               FontFamily="Cascadia Code, Consolas, Courier New"
-                               FontSize="11"
-                               Padding="6,6,6,6"
-                               Text="" />
+					           FontFamily="Cascadia Code, Consolas, Courier New"
+					           FontSize="11"
+					           Padding="6,6,0,6"
+					           Text="" />
+					<TextBlock x:Name="StatusLineEnding"
+					           FontFamily="Cascadia Code, Consolas, Courier New"
+					           FontSize="11"
+					           Padding="0,6,0,6"
+					           Text="" />
+					<TextBlock x:Name="StatusRightSuffix"
+					           FontFamily="Cascadia Code, Consolas, Courier New"
+					           FontSize="11"
+					           Padding="0,6,6,6"
+					           Text="" />
+				</StackPanel>
 				</Grid>
 			</StackPanel>
 		</Border>

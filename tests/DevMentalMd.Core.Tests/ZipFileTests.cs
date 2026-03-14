@@ -9,8 +9,12 @@ namespace DevMentalMd.Core.Tests;
 /// </summary>
 public class ZipFileTests : IDisposable {
     private readonly List<string> _tempFiles = [];
+    private readonly List<IDisposable> _disposables = [];
 
     public void Dispose() {
+        foreach (var d in _disposables) {
+            try { d.Dispose(); } catch { }
+        }
         foreach (var path in _tempFiles) {
             try { File.Delete(path); } catch { /* best-effort cleanup */ }
         }
@@ -20,6 +24,14 @@ public class ZipFileTests : IDisposable {
         var path = Path.Combine(Path.GetTempPath(), $"devmentalmd_test_{Guid.NewGuid():N}{ext}");
         _tempFiles.Add(path);
         return path;
+    }
+
+    /// <summary>Loads a file and waits for background scan to complete.</summary>
+    private async Task<LoadResult> LoadAndWaitAsync(string path) {
+        var result = await FileLoader.LoadAsync(path);
+        await result.Loaded;
+        _disposables.Add(result.Document.Table.Buffer);
+        return result;
     }
 
     private static string CreateSingleEntryZip(string zipPath, string entryName, string content) {
@@ -75,16 +87,16 @@ public class ZipFileTests : IDisposable {
     }
 
     // -----------------------------------------------------------------
-    // Load / LoadAsync — single-entry zip
+    // LoadAsync — single-entry zip
     // -----------------------------------------------------------------
 
     [Fact]
-    public void Load_SingleEntryZip_ReturnsContent() {
+    public async Task LoadAsync_SingleEntryZip_ReturnsContent() {
         var path = TempPath();
         var content = "# Hello from zip\n\nThis is the inner file.\n";
         CreateSingleEntryZip(path, "readme.md", content);
 
-        var result = FileLoader.Load(path);
+        var result = await LoadAndWaitAsync(path);
 
         Assert.True(result.WasZipped);
         Assert.Equal("readme.md", result.InnerEntryName);
@@ -94,12 +106,12 @@ public class ZipFileTests : IDisposable {
     }
 
     [Fact]
-    public async Task LoadAsync_SingleEntryZip_ReturnsContent() {
+    public async Task LoadAsync_SingleEntryZip_ReturnsContentAsync() {
         var path = TempPath();
         var content = "Line 1\nLine 2\nLine 3\n";
         CreateSingleEntryZip(path, "data.txt", content);
 
-        var result = await FileLoader.LoadAsync(path);
+        var result = await LoadAndWaitAsync(path);
 
         Assert.True(result.WasZipped);
         Assert.Equal("data.txt", result.InnerEntryName);
@@ -107,7 +119,7 @@ public class ZipFileTests : IDisposable {
     }
 
     [Fact]
-    public void Load_SingleEntryZip_MultiLineContent() {
+    public async Task LoadAsync_SingleEntryZip_MultiLineContent() {
         var path = TempPath();
         var sb = new StringBuilder();
         for (var i = 0; i < 100; i++) {
@@ -116,24 +128,24 @@ public class ZipFileTests : IDisposable {
         var content = sb.ToString();
         CreateSingleEntryZip(path, "lines.txt", content);
 
-        var result = FileLoader.Load(path);
+        var result = await LoadAndWaitAsync(path);
 
         Assert.True(result.WasZipped);
         Assert.Equal(content, result.Document.Table.GetText());
     }
 
     // -----------------------------------------------------------------
-    // Load — multi-entry zip (should fail)
+    // LoadAsync — multi-entry zip (should fail)
     // -----------------------------------------------------------------
 
     [Fact]
-    public void Load_MultiEntryZip_Throws() {
+    public async Task LoadAsync_MultiEntryZip_Throws() {
         var path = TempPath();
         CreateMultiEntryZip(path,
             ("file1.txt", "content1"),
             ("file2.txt", "content2"));
 
-        Assert.Throws<IOException>(() => FileLoader.Load(path));
+        await Assert.ThrowsAsync<IOException>(() => FileLoader.LoadAsync(path));
     }
 
     [Fact]
@@ -150,16 +162,16 @@ public class ZipFileTests : IDisposable {
     }
 
     // -----------------------------------------------------------------
-    // Load — plain text (non-zip)
+    // LoadAsync — plain text (non-zip)
     // -----------------------------------------------------------------
 
     [Fact]
-    public void Load_PlainText_ReturnsNotZipped() {
+    public async Task LoadAsync_PlainText_ReturnsNotZipped() {
         var path = TempPath(".txt");
         var content = "Hello, world!\n";
         File.WriteAllText(path, content, Encoding.UTF8);
 
-        var result = FileLoader.Load(path);
+        var result = await LoadAndWaitAsync(path);
 
         Assert.False(result.WasZipped);
         Assert.Null(result.InnerEntryName);
@@ -167,12 +179,12 @@ public class ZipFileTests : IDisposable {
     }
 
     [Fact]
-    public async Task LoadAsync_PlainText_ReturnsNotZipped() {
+    public async Task LoadAsync_PlainText_ReturnsNotZippedAsync() {
         var path = TempPath(".txt");
         var content = "Hello async!\n";
         File.WriteAllText(path, content, Encoding.UTF8);
 
-        var result = await FileLoader.LoadAsync(path);
+        var result = await LoadAndWaitAsync(path);
 
         Assert.False(result.WasZipped);
         Assert.Null(result.InnerEntryName);
@@ -184,11 +196,11 @@ public class ZipFileTests : IDisposable {
     // -----------------------------------------------------------------
 
     [Fact]
-    public void Load_ZipDisplayName_ContainsArrowAndEntryName() {
+    public async Task LoadAsync_ZipDisplayName_ContainsArrowAndEntryName() {
         var path = TempPath();
         CreateSingleEntryZip(path, "model.xml", "<root/>");
 
-        var result = FileLoader.Load(path);
+        var result = await LoadAndWaitAsync(path);
 
         var fileName = Path.GetFileName(path);
         Assert.StartsWith(fileName, result.DisplayName);
@@ -196,11 +208,11 @@ public class ZipFileTests : IDisposable {
     }
 
     [Fact]
-    public void Load_PlainTextDisplayName_IsFileName() {
+    public async Task LoadAsync_PlainTextDisplayName_IsFileName() {
         var path = TempPath(".md");
         File.WriteAllText(path, "test", Encoding.UTF8);
 
-        var result = FileLoader.Load(path);
+        var result = await LoadAndWaitAsync(path);
 
         Assert.Equal(Path.GetFileName(path), result.DisplayName);
     }

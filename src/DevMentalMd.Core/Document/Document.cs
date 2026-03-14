@@ -34,6 +34,12 @@ public sealed class Document {
     public EditHistory History => _history;
     public Selection Selection { get; set; } = Selection.Collapsed(0L);
 
+    /// <summary>
+    /// The detected (or assigned) line ending style for this document.
+    /// Defaults to the platform default for new documents.
+    /// </summary>
+    public LineEndingInfo LineEndingInfo { get; set; } = LineEndingInfo.PlatformDefault;
+
     public bool CanUndo => _history.CanUndo;
     public bool CanRedo => _history.CanRedo;
 
@@ -454,6 +460,47 @@ public sealed class Document {
 
         // Preserve selection over the transformed text
         Selection = new Selection(start, start + transformed.Length);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    // -------------------------------------------------------------------------
+    // Line ending conversion
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Converts all line endings in the document to the specified style.
+    /// Replaces the entire document content in a single compound edit.
+    /// </summary>
+    public void ConvertLineEndings(LineEnding target) {
+        var text = _table.GetText();
+        var nl = target switch {
+            LineEnding.LF => "\n",
+            LineEnding.CRLF => "\r\n",
+            LineEnding.CR => "\r",
+            _ => "\n",
+        };
+
+        // Normalize all line endings to LF first, then replace with target.
+        var normalized = text.Replace("\r\n", "\n").Replace("\r", "\n");
+        if (nl != "\n") {
+            normalized = normalized.Replace("\n", nl);
+        }
+
+        if (normalized == text) {
+            // Already in the target format — just update the info.
+            LineEndingInfo = new LineEndingInfo(target, false);
+            return;
+        }
+
+        var savedCaret = Selection.Caret;
+        _history.BeginCompound();
+        _history.Push(new DeleteEdit(0, text), _table, Selection);
+        _history.Push(new InsertEdit(0, normalized), _table, Selection);
+        _history.EndCompound();
+
+        // Approximate caret position in the new content.
+        Selection = Selection.Collapsed(Math.Min(savedCaret, _table.Length));
+        LineEndingInfo = new LineEndingInfo(target, false);
         Changed?.Invoke(this, EventArgs.Empty);
     }
 

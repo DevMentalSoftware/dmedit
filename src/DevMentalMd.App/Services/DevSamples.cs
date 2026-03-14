@@ -16,7 +16,9 @@ public sealed record ProceduralSample(
     /// The buffer generates content on demand — no large allocation occurs.
     /// </summary>
     public Document CreateDocument() =>
-        new(new PieceTable(new ProceduralBuffer(LineCount, Generator)));
+        new(new PieceTable(new ProceduralBuffer(LineCount, Generator))) {
+            LineEndingInfo = new LineEndingInfo(LineEnding.LF, false)
+        };
 }
 
 /// <summary>

@@ -48,6 +48,9 @@ public static class CommandIds {
     public const string EditExpandSelection       = "Edit.ExpandSelection";
     public const string EditSelectAllOccurrences = "Edit.SelectAllOccurrences";
     public const string EditColumnSelect         = "Edit.ColumnSelect";
+    public const string EditLineEndingLF         = "Edit.LineEndingLF";
+    public const string EditLineEndingCRLF       = "Edit.LineEndingCRLF";
+    public const string EditLineEndingCR         = "Edit.LineEndingCR";
 
     // -----------------------------------------------------------------
     // Find

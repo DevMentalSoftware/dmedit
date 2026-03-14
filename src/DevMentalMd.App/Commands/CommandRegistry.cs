@@ -50,6 +50,9 @@ public static class CommandRegistry {
         new(CommandIds.EditExpandSelection, "Expand Selection"),
         new(CommandIds.EditSelectAllOccurrences, "Select All Occurrences"),
         new(CommandIds.EditColumnSelect, "Column Select"),
+        new(CommandIds.EditLineEndingLF, "Convert Line Endings to LF"),
+        new(CommandIds.EditLineEndingCRLF, "Convert Line Endings to CRLF"),
+        new(CommandIds.EditLineEndingCR, "Convert Line Endings to CR"),
 
         // -- Find --
         new(CommandIds.FindFind, "Find"),

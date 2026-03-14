@@ -127,7 +127,11 @@ public partial class MainWindow : Window {
             }
         };
 
-        if (!TryRestoreSession()) {
+        InitSessionAsync();
+    }
+
+    private async void InitSessionAsync() {
+        if (!await TryRestoreSessionAsync()) {
             if (_settings.DevMode) {
                 LoadManual();
             } else {
@@ -861,6 +865,8 @@ public partial class MainWindow : Window {
         StatsBarIO.Foreground = theme.StatusBarForeground;
         StatusLeft.Foreground = theme.StatusBarForeground;
         StatusRight.Foreground = theme.StatusBarForeground;
+        StatusLineEnding.Foreground = theme.StatusBarForeground;
+        StatusRightSuffix.Foreground = theme.StatusBarForeground;
     }
 
     // -------------------------------------------------------------------------
@@ -1018,11 +1024,16 @@ public partial class MainWindow : Window {
         if (StatsBarIO.Text != ioText) StatsBarIO.Text = ioText;
     }
 
+    private static readonly Avalonia.Media.IBrush MixedLineEndingBrush =
+        new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(0xE0, 0x40, 0x40));
+
     private void UpdateStatusBar() {
         // -- Permanent status bar (always visible) --
         var doc = Editor.Document;
         if (doc == null) {
             if (StatusRight.Text != "Ln 1 Ch 1") StatusRight.Text = "Ln 1 Ch 1";
+            if (StatusLineEnding.Text != "") StatusLineEnding.Text = "";
+            if (StatusRightSuffix.Text != "") StatusRightSuffix.Text = "";
             if (_chordFirst == null && StatusLeft.Text != "") StatusLeft.Text = "";
         } else {
             var table = doc.Table;
@@ -1054,9 +1065,25 @@ public partial class MainWindow : Window {
                 right = $"Ln {lnText} Ch {chText}";
             }
 
-            var suffix = stillLoading ? " | loading\u2026" : " | UTF-8 | LF | Spaces";
-            right += $" | {lcText} lines{suffix}";
-            if (StatusRight.Text != right) StatusRight.Text = right;
+            if (stillLoading) {
+                right += $" | {lcText} lines | loading\u2026";
+                if (StatusRight.Text != right) StatusRight.Text = right;
+                if (StatusLineEnding.Text != "") StatusLineEnding.Text = "";
+                if (StatusRightSuffix.Text != "") StatusRightSuffix.Text = "";
+            } else {
+                right += $" | {lcText} lines | UTF-8 | ";
+                if (StatusRight.Text != right) StatusRight.Text = right;
+
+                var lei = doc.LineEndingInfo;
+                var leLabel = lei.Label;
+                if (StatusLineEnding.Text != leLabel) StatusLineEnding.Text = leLabel;
+
+                var leBrush = lei.IsMixed ? MixedLineEndingBrush : _theme.StatusBarForeground;
+                if (StatusLineEnding.Foreground != leBrush) StatusLineEnding.Foreground = leBrush;
+
+                const string sfx = " | Spaces";
+                if (StatusRightSuffix.Text != sfx) StatusRightSuffix.Text = sfx;
+            }
         }
     }
 
@@ -1082,11 +1109,11 @@ public partial class MainWindow : Window {
         SwitchToTab(tab);
     }
 
-    private void LoadManual() {
+    private async void LoadManual() {
         var dir = AppDomain.CurrentDomain.BaseDirectory;
         var path = Path.Combine(dir, "manual.md");
         if (File.Exists(path)) {
-            var result = FileLoader.Load(path);
+            var result = await FileLoader.LoadAsync(path);
             var tab = new TabState(result.Document, path, "manual.md") {
                 LoadResult = result,
             };
@@ -1596,8 +1623,8 @@ public partial class MainWindow : Window {
     /// Attempts to restore the previous session. Returns true if at least one
     /// tab was restored; false if no session exists.
     /// </summary>
-    private bool TryRestoreSession() {
-        var session = SessionStore.Load();
+    private async Task<bool> TryRestoreSessionAsync() {
+        var session = await SessionStore.LoadAsync();
         if (session is null || session.Value.Tabs.Count == 0) {
             return false;
         }
@@ -1654,7 +1681,9 @@ public partial class MainWindow : Window {
                         var sha1 = FileLoader.ComputeSha1File(newPath);
                         if (sha1 == conflict.ExpectedSha1) {
                             // Match — reload and replay edits.
-                            var doc = FileLoader.Load(newPath).Document;
+                            var loadResult = await FileLoader.LoadAsync(newPath);
+                            await loadResult.Loaded;
+                            var doc = loadResult.Document;
                             var entry = new SessionStore.TabEntry {
                                 Id = rt.Tab.Id,
                                 SavePointDepth = rt.Tab.Document.History.SavePointDepth,

@@ -236,16 +236,19 @@ public class LargeDocumentTests {
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void FileLoader_SaveLoad_RoundTrip() {
+    public async Task FileLoader_SaveLoad_RoundTrip() {
         var path = Path.Combine(Path.GetTempPath(), $"devmentalmd_test_{Guid.NewGuid():N}.md");
+        LoadResult? result = null;
         try {
             var original = "# Hello\n\nThis is a test.\n";
             File.WriteAllText(path, original, Encoding.UTF8);
 
-            var result = FileLoader.Load(path);
+            result = await FileLoader.LoadAsync(path);
+            await result.Loaded;
             var loaded = result.Document.Table.GetText();
             Assert.Equal(original, loaded);
         } finally {
+            result?.Document.Table.Buffer.Dispose();
             if (File.Exists(path)) {
                 File.Delete(path);
             }

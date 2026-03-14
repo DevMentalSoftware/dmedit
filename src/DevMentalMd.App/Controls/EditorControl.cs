@@ -1318,7 +1318,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             case Commands.CommandIds.EditNewline:
                 FlushCompound();
                 _editSw.Restart();
-                doc.Insert("\n");
+                doc.Insert(doc.LineEndingInfo.NewlineString);
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
                 ScrollCaretIntoView();
@@ -1524,6 +1524,22 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 PerformIndent();
                 return true;
 
+            case Commands.CommandIds.EditLineEndingLF:
+                FlushCompound();
+                doc.ConvertLineEndings(Core.Documents.LineEnding.LF);
+                InvalidateLayout();
+                return true;
+            case Commands.CommandIds.EditLineEndingCRLF:
+                FlushCompound();
+                doc.ConvertLineEndings(Core.Documents.LineEnding.CRLF);
+                InvalidateLayout();
+                return true;
+            case Commands.CommandIds.EditLineEndingCR:
+                FlushCompound();
+                doc.ConvertLineEndings(Core.Documents.LineEnding.CR);
+                InvalidateLayout();
+                return true;
+
             // -- Scroll without moving caret --
             case Commands.CommandIds.NavScrollLineUp:
                 FlushCompound();
@@ -1691,16 +1707,17 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var doc = Document;
         if (doc == null) return;
         FlushCompound();
+        var nl = doc.LineEndingInfo.NewlineString;
         var lineIdx = doc.Table.LineFromOfs(doc.Selection.Caret);
         if (lineIdx + 1 < doc.Table.LineCount) {
             var nextLineStart = doc.Table.LineStartOfs(lineIdx + 1);
             doc.Selection = Selection.Collapsed(nextLineStart);
-            doc.Insert("\n");
+            doc.Insert(nl);
             doc.Selection = Selection.Collapsed(nextLineStart);
         } else {
             // Last line — append newline at end
             doc.Selection = Selection.Collapsed(doc.Table.Length);
-            doc.Insert("\n");
+            doc.Insert(nl);
         }
         ScrollCaretIntoView();
         InvalidateLayout();
@@ -1711,9 +1728,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var doc = Document;
         if (doc == null) return;
         FlushCompound();
+        var nl = doc.LineEndingInfo.NewlineString;
         var lineStart = doc.Table.LineStartOfs(doc.Table.LineFromOfs(doc.Selection.Caret));
         doc.Selection = Selection.Collapsed(lineStart);
-        doc.Insert("\n");
+        doc.Insert(nl);
         doc.Selection = Selection.Collapsed(lineStart);
         ScrollCaretIntoView();
         InvalidateLayout();
@@ -1724,6 +1742,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var doc = Document;
         if (doc == null) return;
         FlushCompound();
+        var nl = doc.LineEndingInfo.NewlineString;
         var table = doc.Table;
         var caret = doc.Selection.Caret;
         var lineIdx = table.LineFromOfs(caret);
@@ -1738,14 +1757,15 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (lineEnd == table.Length && (lineText.Length == 0 || lineText[^1] != '\n')) {
             doc.BeginCompound();
             doc.Selection = Selection.Collapsed(table.Length);
-            doc.Insert("\n" + lineText);
+            doc.Insert(nl + lineText);
             doc.EndCompound();
         } else {
             doc.Selection = Selection.Collapsed(lineEnd);
             doc.Insert(lineText);
         }
         // Place caret on the duplicated line at the same column offset.
-        var newLineStart = lineEnd + (lineText.Length > 0 && lineText[^1] != '\n' ? 1 : 0);
+        var nlLen = nl.Length;
+        var newLineStart = lineEnd + (lineText.Length > 0 && lineText[^1] != '\n' ? nlLen : 0);
         doc.Selection = Selection.Collapsed(Math.Min(newLineStart + caretCol, table.Length));
         ScrollCaretIntoView();
         InvalidateLayout();

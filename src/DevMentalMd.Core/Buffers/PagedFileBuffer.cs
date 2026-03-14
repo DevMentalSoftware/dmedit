@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text;
+using DevMentalMd.Core.Documents;
 
 namespace DevMentalMd.Core.Buffers;
 
@@ -75,7 +77,19 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     private long _lineCount;              // accessed via Interlocked
     private volatile int _longestLine;
     private int _lineSampleCount;
-    private long _lastLineStart; 
+    private long _lastLineStart;
+
+    // -----------------------------------------------------------------
+    // Line ending counters (accumulated during scan)
+    // -----------------------------------------------------------------
+
+    private int _lfCount;
+    private int _crlfCount;
+    private int _crCount;
+
+    /// <inheritdoc />
+    public LineEndingInfo DetectedLineEnding =>
+        LineEndingInfo.FromCounts(_lfCount, _crlfCount, _crCount);
 
     // -----------------------------------------------------------------
     // File access + scan state
@@ -90,6 +104,8 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     private volatile int _scanFrontier;   // highest page index scanned so far
     private readonly object _lock = new();
     private readonly CancellationTokenSource _cts = new();
+    private readonly ManualResetEventSlim _loadedEvent = new(false);
+    private string? _sha1;                // computed during scan, available after _done
 
     // -----------------------------------------------------------------
     // Events
@@ -100,6 +116,12 @@ public sealed class PagedFileBuffer : IProgressBuffer {
 
     /// <summary>Fired once when the initial scan finishes.</summary>
     public event Action? LoadComplete;
+
+    /// <summary>
+    /// SHA-1 hash of the raw file bytes, computed during the background scan.
+    /// Available (non-null) only after <see cref="LoadComplete"/> fires.
+    /// </summary>
+    public string? Sha1 => _sha1;
 
     // -----------------------------------------------------------------
     // Construction
@@ -315,6 +337,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     public void Dispose() {
         _cts.Cancel();
         _cts.Dispose();
+        _loadedEvent.Dispose();
         _fs?.Dispose();
         _fs = null;
         // Release all page data.
@@ -356,9 +379,23 @@ public sealed class PagedFileBuffer : IProgressBuffer {
             using var scanFs = new FileStream(_path, FileMode.Open, FileAccess.Read,
                 FileShare.Read, PageSizeBytes, FileOptions.SequentialScan);
 
-            // Detect BOM.
+            // Detect BOM (may advance scanFs past the BOM bytes).
             _encoding = DetectEncoding(scanFs);
             var decoder = _encoding.GetDecoder();
+
+            // Incremental SHA-1: hash raw bytes as we scan.
+            // If BOM detection skipped bytes, hash them first so the hash
+            // covers the entire file from byte 0.
+            using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+            if (scanFs.Position > 0) {
+                var bomLen = (int)scanFs.Position;
+                var savedPos = scanFs.Position;
+                scanFs.Position = 0;
+                var bomBytes = new byte[bomLen];
+                scanFs.ReadExactly(bomBytes, 0, bomLen);
+                hasher.AppendData(bomBytes, 0, bomLen);
+                scanFs.Position = savedPos;
+            }
 
             var byteBuf = new byte[PageSizeBytes];
             var charBuf = new char[PageSizeBytes]; // worst case: 1 char per byte
@@ -374,6 +411,8 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                 if (bytesRead == 0) {
                     break;
                 }
+
+                hasher.AppendData(byteBuf, 0, bytesRead);
 
                 var isLastChunk = scanFs.Position >= _byteLen;
 
@@ -420,11 +459,13 @@ public sealed class PagedFileBuffer : IProgressBuffer {
 
             // Handle trailing bare \r.
             if (prevWasCr) {
+                _crCount++;
                 currentLine++;
                 Interlocked.Exchange(ref _lineCount, currentLine);
             }
 
             Interlocked.Exchange(ref _totalChars, cumulativeChars);
+            _sha1 = Convert.ToHexStringLower(hasher.GetHashAndReset());
             _done = true;
             LoadComplete?.Invoke();
         } catch (OperationCanceledException) {
@@ -432,9 +473,15 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         } catch {
             _done = true;
         } finally {
+            _loadedEvent.Set();
             linkedCts.Dispose();
         }
     }
+
+    /// <summary>
+    /// Blocks the calling thread until the background scan finishes.
+    /// </summary>
+    public void WaitUntilLoaded() => _loadedEvent.Wait();
 
     // -----------------------------------------------------------------
     // Newline scanning (builds sampled line index)
@@ -448,15 +495,22 @@ public sealed class PagedFileBuffer : IProgressBuffer {
             if (ch == '\n') {
                 if (prevWasCr) {
                     // \r\n — already counted the line at the \r
+                    _crlfCount++;
                     prevWasCr = false;
                     continue;
                 }
+                _lfCount++;
                 currentLine++;
                 Interlocked.Exchange(ref _lineCount, currentLine + 1); // +1 because line 0 always exists
                 long charOffset = charBase + i + 1;
                 CheckLongestLine(charOffset);
                 RecordLineSample(currentLine, charOffset);
             } else if (ch == '\r') {
+                // Don't count as CR yet — might be \r\n. If prevWasCr was
+                // set from a previous char, that one was a bare \r.
+                if (prevWasCr) {
+                    _crCount++;
+                }
                 currentLine++;
                 Interlocked.Exchange(ref _lineCount, currentLine + 1);
                 long charOffset = charBase + i + 1;
@@ -464,6 +518,9 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                 RecordLineSample(currentLine, charBase + i + 1);
                 prevWasCr = true;
             } else {
+                if (prevWasCr) {
+                    _crCount++;
+                }
                 prevWasCr = false;
             }
         }

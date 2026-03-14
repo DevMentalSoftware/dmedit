@@ -1,4 +1,5 @@
 using System.Text;
+using DevMentalMd.Core.Documents;
 
 namespace DevMentalMd.Core.Buffers;
 
@@ -29,8 +30,18 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
     private volatile int _lineCount;    // number of valid entries in _lineStarts
     private bool _prevWasCr;         // \r at end of previous chunk (background thread only)
 
+    // Line ending counters (accumulated during scan)
+    private int _lfCount;
+    private int _crlfCount;
+    private int _crCount;
+
+    /// <inheritdoc />
+    public LineEndingInfo DetectedLineEnding =>
+        LineEndingInfo.FromCounts(_lfCount, _crlfCount, _crCount);
+
     private readonly object _lock = new();
     private readonly CancellationTokenSource _cts = new();
+    private readonly ManualResetEventSlim _loadedEvent = new(false);
     private readonly string? _path;
     private readonly long _estimatedLen;
     private readonly Stream? _externalStream;
@@ -122,9 +133,15 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
         _data.AsSpan((int)offset, len).CopyTo(destination);
     }
 
+    /// <summary>
+    /// Blocks the calling thread until loading finishes.
+    /// </summary>
+    public void WaitUntilLoaded() => _loadedEvent.Wait();
+
     public void Dispose() {
         _cts.Cancel();
         _cts.Dispose();
+        _loadedEvent.Dispose();
         _owner?.Dispose();
         _data = null; // allow GC
     }
@@ -197,6 +214,7 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
 
             // Finalize: handle trailing bare \r.
             if (_prevWasCr) {
+                _crCount++;
                 AppendLineStart(_loadedLen);
             }
 
@@ -209,6 +227,7 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
             // On any I/O error, mark as done with whatever we have.
             _done = true;
         } finally {
+            _loadedEvent.Set();
             ownedStream?.Dispose();
             linkedCts.Dispose();
         }
@@ -314,10 +333,12 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
             _prevWasCr = false;
             if (data[start] == '\n') {
                 // \r\n crossing chunk boundary.
+                _crlfCount++;
                 AppendLineStart(start + 1);
                 scanStart = start + 1;
             } else {
                 // Bare \r at end of previous chunk.
+                _crCount++;
                 AppendLineStart(start);
             }
         }
@@ -325,14 +346,22 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
         for (var i = scanStart; i < end; i++) {
             var ch = data[i];
             if (ch == '\n') {
+                _lfCount++;
                 AppendLineStart(i + 1);
             } else if (ch == '\r') {
                 if (i + 1 < end) {
                     if (data[i + 1] != '\n') {
                         // Bare \r.
+                        _crCount++;
                         AppendLineStart(i + 1);
                     }
-                    // else \r\n within chunk — let the \n branch handle it.
+                    // else \r\n within chunk — let the \n branch handle it
+                    // BUT we need to count it and skip the \n.
+                    else {
+                        _crlfCount++;
+                        AppendLineStart(i + 2);
+                        i++; // skip the \n
+                    }
                 } else {
                     // \r at end of chunk — defer.
                     _prevWasCr = true;
