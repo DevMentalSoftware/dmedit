@@ -307,7 +307,8 @@ public partial class MainWindow : Window {
         }
         // File-backed — save directly.
         var sha1 = await SaveToAsync(tab.FilePath);
-        if (sha1 is not null) tab.BaseSha1 = sha1;
+        if (sha1 is null) return false;
+        tab.BaseSha1 = sha1;
         tab.Document.MarkSavePoint();
         tab.IsDirty = false;
         PushRecentFile(tab.FilePath);
@@ -663,7 +664,8 @@ public partial class MainWindow : Window {
         foreach (var tab in _tabs) {
             if (tab.FilePath != null && tab.IsDirty) {
                 var sha1 = await SaveToAsync(tab.FilePath);
-                if (sha1 is not null) tab.BaseSha1 = sha1;
+                if (sha1 is null) continue;
+                tab.BaseSha1 = sha1;
                 tab.Document.MarkSavePoint();
                 tab.IsDirty = false;
                 PushRecentFile(tab.FilePath);
@@ -1180,7 +1182,8 @@ public partial class MainWindow : Window {
             return;
         }
         var sha1 = await SaveToAsync(_activeTab.FilePath);
-        if (sha1 is not null) _activeTab.BaseSha1 = sha1;
+        if (sha1 is null) return;
+        _activeTab.BaseSha1 = sha1;
         _activeTab.Document.MarkSavePoint();
         _activeTab.IsDirty = false;
         PushRecentFile(_activeTab.FilePath);
@@ -1334,7 +1337,8 @@ public partial class MainWindow : Window {
 
         UpdateLastFileDialogDir(path);
         var sha1 = await SaveToAsync(path);
-        if (sha1 is not null) _activeTab.BaseSha1 = sha1;
+        if (sha1 is null) return;
+        _activeTab.BaseSha1 = sha1;
         _activeTab.Document.MarkSavePoint();
         _activeTab.FilePath = path;
         _activeTab.DisplayName = Path.GetFileName(path);
@@ -1347,11 +1351,16 @@ public partial class MainWindow : Window {
         if (Editor.Document is null) {
             return null;
         }
-        var sw = Stopwatch.StartNew();
-        var sha1 = await FileSaver.SaveAsync(Editor.Document, path);
-        sw.Stop();
-        Editor.PerfStats.SaveTimeMs = sw.Elapsed.TotalMilliseconds;
-        return sha1;
+        try {
+            var sw = Stopwatch.StartNew();
+            var sha1 = await FileSaver.SaveAsync(Editor.Document, path);
+            sw.Stop();
+            Editor.PerfStats.SaveTimeMs = sw.Elapsed.TotalMilliseconds;
+            return sha1;
+        } catch (IOException ex) {
+            StatusLeft.Text = $"Save failed: {ex.Message}";
+            return null;
+        }
     }
 
     /// <summary>

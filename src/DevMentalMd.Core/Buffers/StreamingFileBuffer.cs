@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using DevMentalMd.Core.Documents;
 
@@ -34,6 +35,14 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
     private int _lfCount;
     private int _crlfCount;
     private int _crCount;
+
+    private string? _sha1;
+
+    /// <summary>
+    /// SHA-1 hash of the decompressed stream bytes (lowercase hex).
+    /// Available after <see cref="LoadComplete"/> fires; <c>null</c> before.
+    /// </summary>
+    public string? Sha1 => _sha1;
 
     /// <inheritdoc />
     public LineEndingInfo DetectedLineEnding =>
@@ -175,11 +184,13 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
                 stream = _externalStream!;
             }
 
+            using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
             var (decoder, prefetched) = DetectEncodingAndCreateDecoder(stream);
             var byteBuf = new byte[ChunkSize];
 
             // If BOM detection consumed bytes on a non-seekable stream, decode them first.
             if (prefetched is { Length: > 0 }) {
+                hasher.AppendData(prefetched, 0, prefetched.Length);
                 DecodeChunk(decoder, prefetched, prefetched.Length, isLastChunk: false);
             }
 
@@ -191,6 +202,8 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
                 if (bytesRead == 0) {
                     break;
                 }
+
+                hasher.AppendData(byteBuf, 0, bytesRead);
 
                 // For file streams we know the total byte length; for arbitrary streams
                 // we detect end-of-stream when the next Read returns 0.
@@ -218,6 +231,7 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
                 AppendLineStart(_loadedLen);
             }
 
+            _sha1 = Convert.ToHexStringLower(hasher.GetHashAndReset());
             _done = true;
             LoadComplete?.Invoke();
         } catch (OperationCanceledException) {

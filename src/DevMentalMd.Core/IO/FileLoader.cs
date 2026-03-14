@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text;
 using DevMentalMd.Core.Buffers;
 using DevMentalMd.Core.Documents;
@@ -18,11 +17,11 @@ public sealed record LoadResult(Document Document, string DisplayName, bool WasZ
     public string? InnerEntryName { get; init; }
 
     /// <summary>
-    /// SHA-1 hash of the raw file bytes at load time (hex, lowercase).
+    /// SHA-1 hash of the raw content bytes at load time (hex, lowercase).
     /// Used for session persistence to detect external modifications.
-    /// For non-zip files this is computed during the background scan and
-    /// becomes available after <see cref="Loaded"/> completes; for zip files
-    /// it is computed up front (the outer archive is typically small).
+    /// Computed during the background scan and becomes available after
+    /// <see cref="Loaded"/> completes. For zip files, this is the hash of
+    /// the decompressed entry bytes, not the outer archive.
     /// <c>null</c> for untitled documents or while still loading.
     /// </summary>
     public string? BaseSha1 { get; set; }
@@ -97,20 +96,6 @@ public static class FileLoader {
     }
 
     // -----------------------------------------------------------------
-    // SHA-1 hashing (still needed for zip outer file)
-    // -----------------------------------------------------------------
-
-    /// <summary>
-    /// Computes the SHA-1 hash of a file on disk. Returns lowercase hex.
-    /// Used by session restore to verify base-file identity.
-    /// </summary>
-    internal static string ComputeSha1File(string path) {
-        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var hash = SHA1.HashData(fs);
-        return Convert.ToHexStringLower(hash);
-    }
-
-    // -----------------------------------------------------------------
     // Zip support
     // -----------------------------------------------------------------
 
@@ -128,7 +113,7 @@ public static class FileLoader {
     }
 
     private static (StreamingFileBuffer buf, Document doc, LoadResult result) OpenZipEntry(
-        string path, string sha1) {
+        string path) {
 
         var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         ZipArchive? zip = null;
@@ -153,8 +138,7 @@ public static class FileLoader {
 
             var doc = new Document(new PieceTable(buf));
             var result = new LoadResult(doc, displayName, WasZipped: true) {
-                InnerEntryName = entry.Name,
-                BaseSha1 = sha1
+                InnerEntryName = entry.Name
             };
 
             zip = null; // ownership transferred to StreamingFileBuffer
@@ -166,14 +150,14 @@ public static class FileLoader {
     }
 
     private static LoadResult LoadZip(string path, CancellationToken ct) {
-        var sha1 = ComputeSha1File(path);
-        var (buf, doc, result) = OpenZipEntry(path, sha1);
+        var (buf, doc, result) = OpenZipEntry(path);
 
         var tcs = new TaskCompletionSource();
         result = result with { Loaded = tcs.Task };
 
         buf.LoadComplete += () => {
             doc.LineEndingInfo = buf.DetectedLineEnding;
+            result.BaseSha1 = buf.Sha1;
             tcs.TrySetResult();
         };
 
