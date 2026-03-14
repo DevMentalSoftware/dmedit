@@ -33,6 +33,7 @@
     "Edit.DeleteWordRight": "Ctrl+Delete",
     "Edit.DuplicateLine": "",
     "Edit.Indent": "",
+    "Edit.Outdent": "Shift+Tab",
     "Edit.ExpandSelection": "",
     "Edit.SelectAllOccurrences": "",
     "Edit.ColumnSelect": "",

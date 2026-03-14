@@ -1532,6 +1532,11 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 PerformIndent();
                 return true;
 
+            case Commands.CommandIds.EditOutdent:
+                FlushCompound();
+                PerformOutdent();
+                return true;
+
             case Commands.CommandIds.EditLineEndingLF:
                 FlushCompound();
                 doc.ConvertLineEndings(Core.Documents.LineEnding.LF);
@@ -1915,14 +1920,68 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 }
             }
         } else {
-            // Multi-line: set each line's indent to match the previous line's level.
+            // Multi-line: set each line's indent to one level more than the
+            // line above the selection. This is the smart indent interpretation
+            // for documents without block structure awareness.
+            var refDepth = FindPrevIndent(table, startLine, tabSize);
+            var targetDepth = refDepth + tabSize;
             doc.BeginCompound();
             for (var line = startLine; line <= endLine; line++) {
                 var lineText = table.GetLine(line);
-                var prevDepth = FindPrevIndent(table, line, tabSize);
-                SetLineIndent(doc, table, line, lineText, prevDepth, style, tabSize);
+                SetLineIndent(doc, table, line, lineText, targetDepth, style, tabSize);
             }
             doc.EndCompound();
+            var rangeStart = table.LineStartOfs(startLine);
+            var rangeEnd = endLine + 1 < table.LineCount
+                ? table.LineStartOfs(endLine + 1)
+                : table.Length;
+            doc.Selection = new Selection(rangeStart, rangeEnd);
+        }
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    /// <summary>
+    /// Removes one indent level from the current line or all selected lines.
+    /// </summary>
+    private void PerformOutdent() {
+        var doc = Document;
+        if (doc == null) return;
+        var table = doc.Table;
+        var sel = doc.Selection;
+        var style = doc.IndentInfo.Dominant;
+        const int tabSize = 4;
+
+        var startLine = table.LineFromOfs(sel.Start);
+        var endLine = table.LineFromOfs(Math.Max(sel.Start, sel.End - 1));
+
+        doc.BeginCompound();
+        for (var line = startLine; line <= endLine; line++) {
+            var lineText = table.GetLine(line);
+            var currentDepth = MeasureIndent(lineText, tabSize);
+            if (currentDepth <= 0) continue;
+            var targetDepth = Math.Max(0, currentDepth - tabSize);
+            var newIndent = BuildIndent(targetDepth, style, tabSize);
+            var wsLen = LeadingWhitespaceLength(lineText);
+            var lineStart = table.LineStartOfs(line);
+            if (newIndent.Length == 0) {
+                doc.Selection = new Selection(lineStart, lineStart + wsLen);
+                doc.DeleteSelection();
+            } else {
+                doc.Selection = new Selection(lineStart, lineStart + wsLen);
+                doc.Insert(newIndent);
+            }
+        }
+        doc.EndCompound();
+
+        if (startLine == endLine) {
+            // Single line: place caret at end of new indentation.
+            var newText = table.GetLine(startLine);
+            var newWs = LeadingWhitespaceLength(newText);
+            doc.Selection = Selection.Collapsed(table.LineStartOfs(startLine) + newWs);
+        } else {
+            // Re-select the full line range.
             var rangeStart = table.LineStartOfs(startLine);
             var rangeEnd = endLine + 1 < table.LineCount
                 ? table.LineStartOfs(endLine + 1)
