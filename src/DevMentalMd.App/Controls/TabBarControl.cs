@@ -143,6 +143,7 @@ public sealed class TabBarControl : Control {
     public event Action? OverflowClicked;
     public event Action<int>? CloseTabsToRightClicked;
     public event Action<int>? CloseOtherTabsClicked;
+    public event Action? CloseAllTabsClicked;
     public event Action<int, int>? TabReordered; // (fromIndex, toIndex)
     public event Action? DragAreaDoubleClicked;
     public event Action<int>? ConflictDiscardClicked;
@@ -1120,6 +1121,10 @@ public sealed class TabBarControl : Control {
         var closeOthers = new MenuItem { Header = "Close _Other Tabs" };
         closeOthers.Click += (_, _) => CloseOtherTabsClicked?.Invoke(tabIndex);
         menu.Items.Add(closeOthers);
+
+        var closeAll = new MenuItem { Header = "Close _All Tabs" };
+        closeAll.Click += (_, _) => CloseAllTabsClicked?.Invoke();
+        menu.Items.Add(closeAll);
 
         menu.PlacementTarget = this;
         menu.Placement = PlacementMode.Pointer;

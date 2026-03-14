@@ -368,6 +368,7 @@ public partial class MainWindow : Window {
         TabBar.OverflowClicked += ShowOverflowMenu;
         TabBar.CloseTabsToRightClicked += idx => _ = CloseTabsToRightAsync(idx);
         TabBar.CloseOtherTabsClicked += idx => _ = CloseOtherTabsAsync(idx);
+        TabBar.CloseAllTabsClicked += () => _ = CloseAllTabsAsync();
         TabBar.TabReordered += OnTabReordered;
         TabBar.DragAreaPressed += () => {
             // BeginMoveDrag is called from within a PointerPressed handler,
