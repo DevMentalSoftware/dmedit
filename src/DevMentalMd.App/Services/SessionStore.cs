@@ -96,13 +96,42 @@ public static class SessionStore {
                     continue;
                 }
 
-                // Serialize edit history for dirty tabs (or tabs with undo/redo).
+                // Persist only edits above the save point — the saved file
+                // on disk is the correct base for replay on next restore.
+                // Pre-save undo history is not recoverable across sessions.
+                var savePointDepth = tab.Document.History.SavePointDepth;
                 var undoEntries = tab.Document.History.GetUndoEntries();
                 var redoEntries = tab.Document.History.GetRedoEntries();
-                if (undoEntries.Count > 0 || redoEntries.Count > 0) {
-                    var editsJson = EditSerializer.Serialize(undoEntries, redoEntries);
-                    var editsPath = Path.Combine(SessionDir, $"{tab.Id}.edits.json");
+
+                IReadOnlyList<EditHistory.HistoryEntry> persistUndo;
+                IReadOnlyList<EditHistory.HistoryEntry> persistRedo;
+
+                if (savePointDepth > 0 && undoEntries.Count >= savePointDepth) {
+                    // Common case: trim pre-save edits, keep only unsaved changes.
+                    persistUndo = undoEntries.Skip(savePointDepth).ToList();
+                    persistRedo = redoEntries;
+                    entry.SavePointDepth = 0;
+                } else if (savePointDepth > 0 && undoEntries.Count < savePointDepth) {
+                    // Rare: user undid past the save point. Can't represent
+                    // as a delta from the disk file — drop edit history.
+                    // Document will open in the saved (disk) state.
+                    persistUndo = Array.Empty<EditHistory.HistoryEntry>();
+                    persistRedo = Array.Empty<EditHistory.HistoryEntry>();
+                    entry.SavePointDepth = 0;
+                    entry.IsDirty = false;
+                } else {
+                    // Never saved (savePointDepth == 0): full history starts
+                    // from the original base (disk file or empty for untitled).
+                    persistUndo = undoEntries;
+                    persistRedo = redoEntries;
+                }
+
+                var editsPath = Path.Combine(SessionDir, $"{tab.Id}.edits.json");
+                if (persistUndo.Count > 0 || persistRedo.Count > 0) {
+                    var editsJson = EditSerializer.Serialize(persistUndo, persistRedo);
                     File.WriteAllText(editsPath, editsJson);
+                } else if (File.Exists(editsPath)) {
+                    File.Delete(editsPath);
                 }
             }
 

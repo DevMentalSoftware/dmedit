@@ -306,7 +306,8 @@ public partial class MainWindow : Window {
             return true;
         }
         // File-backed — save directly.
-        await SaveToAsync(tab.FilePath);
+        var sha1 = await SaveToAsync(tab.FilePath);
+        if (sha1 is not null) tab.BaseSha1 = sha1;
         tab.Document.MarkSavePoint();
         tab.IsDirty = false;
         PushRecentFile(tab.FilePath);
@@ -657,11 +658,12 @@ public partial class MainWindow : Window {
         _wrapLinesGlyph!.Opacity = wrap ? 1.0 : 0.0;
     }
 
-    private void SaveAll() {
+    private async void SaveAll() {
         // Save All: save every tab that has a file path and is dirty.
         foreach (var tab in _tabs) {
             if (tab.FilePath != null && tab.IsDirty) {
-                _ = SaveToAsync(tab.FilePath);
+                var sha1 = await SaveToAsync(tab.FilePath);
+                if (sha1 is not null) tab.BaseSha1 = sha1;
                 tab.Document.MarkSavePoint();
                 tab.IsDirty = false;
                 PushRecentFile(tab.FilePath);
@@ -1177,7 +1179,8 @@ public partial class MainWindow : Window {
             await SaveAsAsync();
             return;
         }
-        await SaveToAsync(_activeTab.FilePath);
+        var sha1 = await SaveToAsync(_activeTab.FilePath);
+        if (sha1 is not null) _activeTab.BaseSha1 = sha1;
         _activeTab.Document.MarkSavePoint();
         _activeTab.IsDirty = false;
         PushRecentFile(_activeTab.FilePath);
@@ -1330,7 +1333,8 @@ public partial class MainWindow : Window {
         }
 
         UpdateLastFileDialogDir(path);
-        await SaveToAsync(path);
+        var sha1 = await SaveToAsync(path);
+        if (sha1 is not null) _activeTab.BaseSha1 = sha1;
         _activeTab.Document.MarkSavePoint();
         _activeTab.FilePath = path;
         _activeTab.DisplayName = Path.GetFileName(path);
@@ -1339,14 +1343,15 @@ public partial class MainWindow : Window {
         UpdateTabBar();
     }
 
-    private async Task SaveToAsync(string path) {
+    private async Task<string?> SaveToAsync(string path) {
         if (Editor.Document is null) {
-            return;
+            return null;
         }
         var sw = Stopwatch.StartNew();
-        await FileSaver.SaveAsync(Editor.Document, path);
+        var sha1 = await FileSaver.SaveAsync(Editor.Document, path);
         sw.Stop();
         Editor.PerfStats.SaveTimeMs = sw.Elapsed.TotalMilliseconds;
+        return sha1;
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using DevMentalMd.Core.Buffers;
 using DevMentalMd.Core.Documents;
@@ -6,6 +7,8 @@ namespace DevMentalMd.Core.IO;
 
 /// <summary>
 /// Saves a <see cref="Document"/> to a file as UTF-8.
+/// Returns the SHA-1 hash (lowercase hex) of the written bytes so the caller
+/// can update <c>BaseSha1</c> without a second read pass.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,32 +27,36 @@ public static class FileSaver {
 
     /// <summary>
     /// Asynchronously saves <paramref name="doc"/> to <paramref name="path"/> as UTF-8.
+    /// Returns the SHA-1 hash (lowercase hex) of the written file.
     /// </summary>
-    public static async Task SaveAsync(Document doc, string path, CancellationToken ct = default) {
-        await Task.Run(() => Save(doc, path, ct), ct);
+    public static async Task<string> SaveAsync(Document doc, string path, CancellationToken ct = default) {
+        return await Task.Run(() => Save(doc, path, ct), ct);
     }
 
     /// <summary>
     /// Synchronously saves <paramref name="doc"/> to <paramref name="path"/> as UTF-8.
+    /// Returns the SHA-1 hash (lowercase hex) of the written file.
     /// </summary>
-    public static void Save(Document doc, string path, CancellationToken ct = default) {
+    public static string Save(Document doc, string path, CancellationToken ct = default) {
         var table = doc.Table;
 
         // Fast path: unedited buffer-backed document — read straight from the buffer.
         // This is thread-safe (IBuffer reads don't mutate state) and avoids the
         // per-chunk allocation in PieceTable.VisitPieces for WholeBufSentinel pieces.
         if (table.IsOriginalContent && table.Buffer is { LengthIsKnown: true } buf) {
-            SaveFromBuffer(buf, path, ct);
-            return;
+            return SaveFromBuffer(buf, path, ct);
         }
 
         // General path: stream through the piece-table.
-        SaveFromPieceTable(table, path, ct);
+        return SaveFromPieceTable(table, path, ct);
     }
 
-    private static void SaveFromBuffer(IBuffer buf, string path, CancellationToken ct) {
-        using var writer = new StreamWriter(path, append: false, Encoding.UTF8, bufferSize: WriteChunk);
+    private static string SaveFromBuffer(IBuffer buf, string path, CancellationToken ct) {
+        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+        var encoder = Encoding.UTF8.GetEncoder();
         var charBuf = new char[WriteChunk];
+        var byteBuf = new byte[Encoding.UTF8.GetMaxByteCount(WriteChunk)];
         var len = buf.Length;
         var pos = 0L;
 
@@ -57,14 +64,22 @@ public static class FileSaver {
             ct.ThrowIfCancellationRequested();
             var take = (int)Math.Min(WriteChunk, len - pos);
             buf.CopyTo(pos, charBuf.AsSpan(0, take), take);
-            writer.Write(charBuf, 0, take);
+            var flush = pos + take >= len;
+            var byteCount = encoder.GetBytes(charBuf.AsSpan(0, take), byteBuf, flush);
+            hasher.AppendData(byteBuf, 0, byteCount);
+            fs.Write(byteBuf, 0, byteCount);
             pos += take;
         }
+
+        return Convert.ToHexStringLower(hasher.GetHashAndReset());
     }
 
-    private static void SaveFromPieceTable(PieceTable table, string path, CancellationToken ct) {
-        using var writer = new StreamWriter(path, append: false, Encoding.UTF8, bufferSize: WriteChunk);
+    private static string SaveFromPieceTable(PieceTable table, string path, CancellationToken ct) {
+        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+        var encoder = Encoding.UTF8.GetEncoder();
         var charBuf = new char[WriteChunk];
+        var byteBuf = new byte[Encoding.UTF8.GetMaxByteCount(WriteChunk)];
         var len = table.Length;
         var pos = 0L;
 
@@ -76,8 +91,13 @@ public static class FileSaver {
                 span.CopyTo(charBuf.AsSpan(filled));
                 filled += span.Length;
             });
-            writer.Write(charBuf, 0, take);
+            var flush = pos + take >= len;
+            var byteCount = encoder.GetBytes(charBuf.AsSpan(0, take), byteBuf, flush);
+            hasher.AppendData(byteBuf, 0, byteCount);
+            fs.Write(byteBuf, 0, byteCount);
             pos += take;
         }
+
+        return Convert.ToHexStringLower(hasher.GetHashAndReset());
     }
 }
