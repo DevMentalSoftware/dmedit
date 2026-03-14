@@ -1135,18 +1135,22 @@ public partial class MainWindow : Window {
         var dir = AppDomain.CurrentDomain.BaseDirectory;
         var path = Path.Combine(dir, "manual.md");
         if (File.Exists(path)) {
-            var result = await FileLoader.LoadAsync(path);
-            var tab = new TabState(result.Document, path, "manual.md") {
-                LoadResult = result,
-                IsLoading = true,
-            };
-            AddTab(tab);
-            SwitchToTab(tab);
-            WireFileLoadCompletion(tab);
-        } else {
-            var tab = AddTab(TabState.CreateUntitled(_tabs));
-            SwitchToTab(tab);
+            try {
+                var result = await FileLoader.LoadAsync(path);
+                var tab = new TabState(result.Document, path, "manual.md") {
+                    LoadResult = result,
+                    IsLoading = true,
+                };
+                AddTab(tab);
+                SwitchToTab(tab);
+                WireFileLoadCompletion(tab);
+                return;
+            } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+                // Fall through to untitled tab.
+            }
         }
+        var fallback = AddTab(TabState.CreateUntitled(_tabs));
+        SwitchToTab(fallback);
     }
 
     private async void OnOpen(object? sender, RoutedEventArgs e) {
@@ -1254,9 +1258,15 @@ public partial class MainWindow : Window {
             return;
         }
 
-        var sw = Stopwatch.StartNew();
-        var result = await FileLoader.LoadAsync(path);
+        LoadResult result;
+        try {
+            result = await FileLoader.LoadAsync(path);
+        } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+            StatusLeft.Text = $"Open failed: {ex.Message}";
+            return;
+        }
 
+        var sw = Stopwatch.StartNew();
         var tab = new TabState(result.Document, path, result.DisplayName) {
             LoadResult = result,
             IsLoading = true,
@@ -1357,7 +1367,7 @@ public partial class MainWindow : Window {
             sw.Stop();
             Editor.PerfStats.SaveTimeMs = sw.Elapsed.TotalMilliseconds;
             return sha1;
-        } catch (IOException ex) {
+        } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
             StatusLeft.Text = $"Save failed: {ex.Message}";
             return null;
         }
@@ -1806,8 +1816,14 @@ public partial class MainWindow : Window {
         if (newPath is null || !File.Exists(newPath)) return;
 
         // Load the located file and compare SHA-1.
-        var loadResult = await FileLoader.LoadAsync(newPath);
-        await loadResult.Loaded;
+        LoadResult loadResult;
+        try {
+            loadResult = await FileLoader.LoadAsync(newPath);
+            await loadResult.Loaded;
+        } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+            StatusLeft.Text = $"Open failed: {ex.Message}";
+            return;
+        }
         var sha1 = loadResult.BaseSha1;
 
         if (sha1 == conflict.ExpectedSha1) {

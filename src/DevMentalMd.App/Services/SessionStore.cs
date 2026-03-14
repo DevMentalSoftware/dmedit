@@ -204,9 +204,19 @@ public static class SessionStore {
                 doc = new Document();
             } else {
                 // Start loading — returns immediately, scan runs on background thread.
-                loadResult = FileLoader.LoadAsync(entry.FilePath).GetAwaiter().GetResult();
-                doc = loadResult.Document;
-                isLoading = true;
+                try {
+                    loadResult = FileLoader.LoadAsync(entry.FilePath).GetAwaiter().GetResult();
+                    doc = loadResult.Document;
+                    isLoading = true;
+                } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+                    // Treat like a missing file — show conflict so the user can relocate.
+                    conflict = new FileConflict {
+                        Kind = FileConflictKind.Missing,
+                        FilePath = entry.FilePath,
+                        ExpectedSha1 = entry.BaseSha1,
+                    };
+                    doc = new Document();
+                }
             }
         } else {
             // Untitled tab — replay edits from empty, no loading needed.
