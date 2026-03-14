@@ -1073,7 +1073,7 @@ public partial class MainWindow : Window {
         var encFlyout = new Avalonia.Controls.MenuFlyout();
         foreach (var enc in new[] { "UTF-8", "UTF-8 with BOM", "UTF-16 LE", "UTF-16 BE",
                                      "Windows-1252", "ASCII" }) {
-            var item = new MenuItem { Header = enc == "UTF-8" ? "\u2022 " + enc : "  " + enc };
+            var item = new MenuItem { Header = enc };
             item.IsEnabled = enc == "UTF-8"; // current encoding only
             encFlyout.Items.Add(item);
         }
@@ -1093,8 +1093,7 @@ public partial class MainWindow : Window {
                 ("LF", Core.Documents.LineEnding.LF),
                 ("CRLF", Core.Documents.LineEnding.CRLF),
                 ("CR", Core.Documents.LineEnding.CR) }) {
-                var prefix = lei.Dominant == le && !lei.IsMixed ? "\u2022 " : "  ";
-                var item = new MenuItem { Header = prefix + label };
+                var item = new MenuItem { Header = label };
                 var target = le;
                 item.Click += (_, _) => {
                     Editor.ExecuteCommand(target switch {
@@ -1115,15 +1114,9 @@ public partial class MainWindow : Window {
             if (doc == null) return;
             var ii = doc.IndentInfo;
             var flyout = new Avalonia.Controls.MenuFlyout();
-            var spItem = new MenuItem {
-                Header = (ii.Dominant == IndentStyle.Spaces && !ii.IsMixed ? "\u2022 " : "  ") +
-                         "Convert Indentation to Spaces"
-            };
+            var spItem = new MenuItem { Header = "Convert Indentation to Spaces" };
             spItem.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditIndentToSpaces);
-            var tabItem = new MenuItem {
-                Header = (ii.Dominant == IndentStyle.Tabs && !ii.IsMixed ? "\u2022 " : "  ") +
-                         "Convert Indentation to Tabs"
-            };
+            var tabItem = new MenuItem { Header = "Convert Indentation to Tabs" };
             tabItem.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditIndentToTabs);
             flyout.Items.Add(spItem);
             flyout.Items.Add(tabItem);

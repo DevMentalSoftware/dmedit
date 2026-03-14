@@ -235,7 +235,6 @@ public partial class KeyboardSettingsSection : UserControl {
             BorderThickness = new Thickness(3, 0, 0, 0),
             BorderBrush = isModified ? _theme.SettingsAccent : Brushes.Transparent,
             Background = Brushes.Transparent,
-            Cursor = new Cursor(StandardCursorType.Hand),
             Tag = cmd.Id,
         };
 

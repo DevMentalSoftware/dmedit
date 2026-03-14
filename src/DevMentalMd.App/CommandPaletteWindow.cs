@@ -202,7 +202,6 @@ public class CommandPaletteWindow : Window {
             Padding = new Thickness(8, 5, 8, 5),
             Background = Brushes.Transparent,
             CornerRadius = new CornerRadius(3),
-            Cursor = new Cursor(StandardCursorType.Hand),
             Tag = cmd.Id,
         };
 
