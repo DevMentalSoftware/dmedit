@@ -1528,7 +1528,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 return true;
 
             case Commands.CommandIds.EditIndent:
-                Coalesce("indent");
+                FlushCompound();
                 PerformIndent();
                 return true;
 
@@ -1791,31 +1791,138 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         ResetCaretBlink();
     }
 
+    /// <summary>
+    /// Measures the indentation depth of a line in canonical units.
+    /// Tabs count as <paramref name="tabSize"/> spaces each.
+    /// </summary>
+    private static int MeasureIndent(string lineText, int tabSize) {
+        var depth = 0;
+        foreach (var ch in lineText) {
+            if (ch == ' ') depth++;
+            else if (ch == '\t') depth += tabSize;
+            else break;
+        }
+        return depth;
+    }
+
+    /// <summary>
+    /// Builds the indentation string for a given depth using the document's
+    /// dominant indent style.
+    /// </summary>
+    private static string BuildIndent(int depth, Core.Documents.IndentStyle style, int tabSize) {
+        if (depth <= 0) return string.Empty;
+        if (style == Core.Documents.IndentStyle.Tabs) {
+            var tabs = depth / tabSize;
+            var spaces = depth % tabSize;
+            return new string('\t', tabs) + (spaces > 0 ? new string(' ', spaces) : "");
+        }
+        return new string(' ', depth);
+    }
+
+    /// <summary>
+    /// Returns the number of leading whitespace characters in the line text.
+    /// </summary>
+    private static int LeadingWhitespaceLength(string lineText) {
+        var i = 0;
+        while (i < lineText.Length && (lineText[i] == ' ' || lineText[i] == '\t')) i++;
+        return i;
+    }
+
+    /// <summary>
+    /// Finds the indentation depth (in spaces) of the nearest non-empty line
+    /// above <paramref name="lineIdx"/>.
+    /// </summary>
+    private static int FindPrevIndent(Core.Documents.PieceTable table, long lineIdx, int tabSize) {
+        for (var i = lineIdx - 1; i >= 0; i--) {
+            var text = table.GetLine(i);
+            if (!string.IsNullOrWhiteSpace(text))
+                return MeasureIndent(text, tabSize);
+        }
+        return 0;
+    }
+
+    /// <summary>
+    /// Replaces the leading whitespace of a single line to achieve
+    /// <paramref name="targetDepth"/>. No-op if already at that depth.
+    /// </summary>
+    private static void SetLineIndent(
+        Core.Documents.Document doc, Core.Documents.PieceTable table,
+        long lineIdx, string lineText, int targetDepth,
+        Core.Documents.IndentStyle style, int tabSize) {
+        var currentDepth = MeasureIndent(lineText, tabSize);
+        if (targetDepth == currentDepth) return;
+        var newIndent = BuildIndent(targetDepth, style, tabSize);
+        var wsLen = LeadingWhitespaceLength(lineText);
+        var lineStart = table.LineStartOfs(lineIdx);
+        if (wsLen > 0 && newIndent.Length == 0) {
+            doc.Selection = new Selection(lineStart, lineStart + wsLen);
+            doc.DeleteSelection();
+        } else if (wsLen > 0) {
+            doc.Selection = new Selection(lineStart, lineStart + wsLen);
+            doc.Insert(newIndent);
+        } else {
+            doc.Selection = Selection.Collapsed(lineStart);
+            doc.Insert(newIndent);
+        }
+    }
+
     private void PerformIndent() {
         var doc = Document;
         if (doc == null) return;
         var table = doc.Table;
         var sel = doc.Selection;
+        var style = doc.IndentInfo.Dominant;
+        const int tabSize = 4;
 
-        // If selection spans multiple lines, indent each line.
         var startLine = table.LineFromOfs(sel.Start);
         var endLine = table.LineFromOfs(Math.Max(sel.Start, sel.End - 1));
+
         if (sel.IsEmpty || startLine == endLine) {
-            // Single-line or no selection: just insert 4 spaces at caret.
-            _editSw.Restart();
-            doc.Insert("    ");
-            _editSw.Stop();
-            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+            // Single line: stateless smart indent.
+            // Candidates: {prevDepth - tabSize, prevDepth, prevDepth + tabSize},
+            // clamped to >= 0, deduplicated, sorted ascending.
+            // Current depth picks the next candidate up; wraps to smallest.
+            var lineText = table.GetLine(startLine);
+            var currentDepth = MeasureIndent(lineText, tabSize);
+            var prevDepth = FindPrevIndent(table, startLine, tabSize);
+
+            var candidates = new SortedSet<int> {
+                Math.Max(0, prevDepth - tabSize),
+                prevDepth,
+                prevDepth + tabSize,
+            };
+            var sorted = candidates.ToList();
+
+            // Pick the next candidate strictly above currentDepth; wrap to first.
+            var targetDepth = sorted.FirstOrDefault(d => d > currentDepth, sorted[0]);
+
+            if (targetDepth != currentDepth) {
+                var newIndent = BuildIndent(targetDepth, style, tabSize);
+                var wsLen = LeadingWhitespaceLength(lineText);
+                var lineStart = table.LineStartOfs(startLine);
+                if (wsLen > 0 && newIndent.Length == 0) {
+                    // Removing all indentation: just delete the whitespace.
+                    doc.Selection = new Selection(lineStart, lineStart + wsLen);
+                    doc.DeleteSelection();
+                } else if (wsLen > 0) {
+                    // Replacing existing whitespace with different whitespace.
+                    doc.Selection = new Selection(lineStart, lineStart + wsLen);
+                    doc.Insert(newIndent);
+                } else {
+                    // Adding indentation to an unindented line.
+                    doc.Selection = Selection.Collapsed(lineStart);
+                    doc.Insert(newIndent);
+                }
+            }
         } else {
-            // Multi-line selection: prepend 4 spaces to each line.
+            // Multi-line: set each line's indent to match the previous line's level.
             doc.BeginCompound();
             for (var line = startLine; line <= endLine; line++) {
-                var ofs = table.LineStartOfs(line);
-                doc.Selection = Selection.Collapsed(ofs);
-                doc.Insert("    ");
+                var lineText = table.GetLine(line);
+                var prevDepth = FindPrevIndent(table, line, tabSize);
+                SetLineIndent(doc, table, line, lineText, prevDepth, style, tabSize);
             }
             doc.EndCompound();
-            // Select the full indented line range so the user can indent again.
             var rangeStart = table.LineStartOfs(startLine);
             var rangeEnd = endLine + 1 < table.LineCount
                 ? table.LineStartOfs(endLine + 1)
