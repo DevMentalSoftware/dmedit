@@ -87,6 +87,7 @@ public static class FileLoader {
 
         paged.LoadComplete += () => {
             doc.LineEndingInfo = paged.DetectedLineEnding;
+            doc.IndentInfo = paged.DetectedIndent;
             result.BaseSha1 = paged.Sha1;
             tcs.TrySetResult();
         };
@@ -157,6 +158,7 @@ public static class FileLoader {
 
         buf.LoadComplete += () => {
             doc.LineEndingInfo = buf.DetectedLineEnding;
+            doc.IndentInfo = buf.DetectedIndent;
             result.BaseSha1 = buf.Sha1;
             tcs.TrySetResult();
         };

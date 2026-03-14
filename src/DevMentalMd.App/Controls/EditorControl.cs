@@ -1548,6 +1548,17 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 InvalidateLayout();
                 return true;
 
+            case Commands.CommandIds.EditIndentToSpaces:
+                FlushCompound();
+                doc.ConvertIndentation(Core.Documents.IndentStyle.Spaces);
+                InvalidateLayout();
+                return true;
+            case Commands.CommandIds.EditIndentToTabs:
+                FlushCompound();
+                doc.ConvertIndentation(Core.Documents.IndentStyle.Tabs);
+                InvalidateLayout();
+                return true;
+
             // -- Scroll without moving caret --
             case Commands.CommandIds.NavScrollLineUp:
                 FlushCompound();
@@ -1850,6 +1861,21 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var hitX = _preferredCaretX >= 0 ? _preferredCaretX : 0;
         var localNew = _layoutEngine.HitTest(new Point(hitX, targetY), layout);
         return layout.ViewportBase + localNew;
+    }
+
+    /// <summary>
+    /// Moves the caret to the given offset and scrolls it into view.
+    /// Used by GoTo Line and similar external navigation features.
+    /// </summary>
+    public void GoToPosition(long offset) {
+        var doc = Document;
+        if (doc == null) return;
+        offset = Math.Clamp(offset, 0, doc.Table.Length);
+        doc.Selection = Core.Documents.Selection.Collapsed(offset);
+        ScrollCaretIntoView();
+        InvalidateVisual();
+        ResetCaretBlink();
+        Focus();
     }
 
     /// <summary>

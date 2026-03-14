@@ -51,6 +51,8 @@ public static class CommandIds {
     public const string EditLineEndingLF         = "Edit.LineEndingLF";
     public const string EditLineEndingCRLF       = "Edit.LineEndingCRLF";
     public const string EditLineEndingCR         = "Edit.LineEndingCR";
+    public const string EditIndentToSpaces       = "Edit.IndentToSpaces";
+    public const string EditIndentToTabs         = "Edit.IndentToTabs";
 
     // -----------------------------------------------------------------
     // Find

@@ -39,6 +39,8 @@
     "Edit.LineEndingLF": "",
     "Edit.LineEndingCRLF": "",
     "Edit.LineEndingCR": "",
+    "Edit.IndentToSpaces": "",
+    "Edit.IndentToTabs": "",
     "Find.Find": "",
     "Find.Replace": "",
     "Find.FindNext": "",

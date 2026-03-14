@@ -147,23 +147,51 @@
                                Padding="6,6,6,6"
                                Text="" />
 					<StackPanel HorizontalAlignment="Right"
-				            Orientation="Horizontal">
-					<TextBlock x:Name="StatusRight"
-					           FontFamily="Cascadia Code, Consolas, Courier New"
-					           FontSize="11"
-					           Padding="6,6,0,6"
-					           Text="" />
-					<TextBlock x:Name="StatusLineEnding"
-					           FontFamily="Cascadia Code, Consolas, Courier New"
-					           FontSize="11"
-					           Padding="0,6,0,6"
-					           Text="" />
-					<TextBlock x:Name="StatusRightSuffix"
-					           FontFamily="Cascadia Code, Consolas, Courier New"
-					           FontSize="11"
-					           Padding="0,6,6,6"
-					           Text="" />
-				</StackPanel>
+					            Orientation="Horizontal">
+						<Border x:Name="BtnLineCol" Background="Transparent" Cursor="Hand">
+							<TextBlock x:Name="StatusLineCol"
+							           FontFamily="Cascadia Code, Consolas, Courier New"
+							           FontSize="11"
+							           Padding="6,6,6,6"
+							           Text="" />
+						</Border>
+						<TextBlock x:Name="StatusSep1"
+						           FontFamily="Cascadia Code, Consolas, Courier New"
+						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<TextBlock x:Name="StatusLineCount"
+						           FontFamily="Cascadia Code, Consolas, Courier New"
+						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<TextBlock x:Name="StatusSep2"
+						           FontFamily="Cascadia Code, Consolas, Courier New"
+						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<Border x:Name="BtnEncoding" Background="Transparent" Cursor="Hand">
+							<TextBlock x:Name="StatusEncoding"
+							           FontFamily="Cascadia Code, Consolas, Courier New"
+							           FontSize="11"
+							           Padding="6,6,6,6"
+							           Text="" />
+						</Border>
+						<TextBlock x:Name="StatusSep3"
+						           FontFamily="Cascadia Code, Consolas, Courier New"
+						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<Border x:Name="BtnLineEnding" Background="Transparent" Cursor="Hand">
+							<TextBlock x:Name="StatusLineEnding"
+							           FontFamily="Cascadia Code, Consolas, Courier New"
+							           FontSize="11"
+							           Padding="6,6,6,6"
+							           Text="" />
+						</Border>
+						<TextBlock x:Name="StatusSep4"
+						           FontFamily="Cascadia Code, Consolas, Courier New"
+						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<Border x:Name="BtnIndent" Background="Transparent" Cursor="Hand">
+							<TextBlock x:Name="StatusIndent"
+							           FontFamily="Cascadia Code, Consolas, Courier New"
+							           FontSize="11"
+							           Padding="6,6,6,6"
+							           Text="" />
+						</Border>
+					</StackPanel>
 				</Grid>
 			</StackPanel>
 		</Border>

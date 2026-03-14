@@ -40,6 +40,12 @@ public sealed class Document {
     /// </summary>
     public LineEndingInfo LineEndingInfo { get; set; } = LineEndingInfo.PlatformDefault;
 
+    /// <summary>
+    /// Detected indentation style. Set during file loading.
+    /// Defaults to spaces for new documents.
+    /// </summary>
+    public IndentInfo IndentInfo { get; set; } = IndentInfo.Default;
+
     public bool CanUndo => _history.CanUndo;
     public bool CanRedo => _history.CanRedo;
 
@@ -501,6 +507,86 @@ public sealed class Document {
         // Approximate caret position in the new content.
         Selection = Selection.Collapsed(Math.Min(savedCaret, _table.Length));
         LineEndingInfo = new LineEndingInfo(target, false);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Converts all leading indentation in the document between tabs and spaces.
+    /// Replaces the entire document content in a single compound edit.
+    /// </summary>
+    public void ConvertIndentation(IndentStyle target, int tabSize = 4) {
+        var text = _table.GetText();
+        var sb = new System.Text.StringBuilder(text.Length);
+        var spaces = new string(' ', tabSize);
+
+        var i = 0;
+        while (i < text.Length) {
+            // At line start: convert leading whitespace.
+            var lineStart = i;
+            while (i < text.Length && (text[i] == ' ' || text[i] == '\t')) {
+                i++;
+            }
+
+            if (i > lineStart) {
+                var leading = text.AsSpan(lineStart, i - lineStart);
+                if (target == IndentStyle.Spaces) {
+                    // Tabs → spaces
+                    foreach (var ch in leading) {
+                        if (ch == '\t') {
+                            sb.Append(spaces);
+                        } else {
+                            sb.Append(ch);
+                        }
+                    }
+                } else {
+                    // Spaces → tabs: expand tabs first, then convert groups
+                    var expandedSpaces = 0;
+                    foreach (var ch in leading) {
+                        if (ch == '\t') {
+                            expandedSpaces += tabSize;
+                        } else {
+                            expandedSpaces++;
+                        }
+                    }
+                    var wholeTabs = expandedSpaces / tabSize;
+                    var remainSpaces = expandedSpaces % tabSize;
+                    sb.Append('\t', wholeTabs);
+                    sb.Append(' ', remainSpaces);
+                }
+            }
+
+            // Copy rest of line (non-leading content + line ending).
+            while (i < text.Length) {
+                var ch = text[i];
+                sb.Append(ch);
+                i++;
+                if (ch == '\n') {
+                    break;
+                }
+                if (ch == '\r') {
+                    if (i < text.Length && text[i] == '\n') {
+                        sb.Append('\n');
+                        i++;
+                    }
+                    break;
+                }
+            }
+        }
+
+        var result = sb.ToString();
+        if (result == text) {
+            IndentInfo = new IndentInfo(target, false);
+            return;
+        }
+
+        var savedCaret = Selection.Caret;
+        _history.BeginCompound();
+        _history.Push(new DeleteEdit(0, text), _table, Selection);
+        _history.Push(new InsertEdit(0, result), _table, Selection);
+        _history.EndCompound();
+
+        Selection = Selection.Collapsed(Math.Min(savedCaret, _table.Length));
+        IndentInfo = new IndentInfo(target, false);
         Changed?.Invoke(this, EventArgs.Empty);
     }
 

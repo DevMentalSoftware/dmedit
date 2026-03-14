@@ -92,11 +92,23 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         LineEndingInfo.FromCounts(_lfCount, _crlfCount, _crCount);
 
     // -----------------------------------------------------------------
+    // Indentation counters (accumulated during scan)
+    // -----------------------------------------------------------------
+
+    private int _spaceIndentCount;
+    private int _tabIndentCount;
+    private bool _atLineStart = true; // first line starts at col 0
+
+    public IndentInfo DetectedIndent =>
+        IndentInfo.FromCounts(_spaceIndentCount, _tabIndentCount);
+
+    // -----------------------------------------------------------------
     // File access + scan state
     // -----------------------------------------------------------------
 
     private readonly string _path;
-    private FileStream? _fs;              // kept open for on-demand page re-reads
+    // _fs removed — page re-reads now open/close a fresh FileStream each time
+    // to avoid holding a file lock for the entire session.
     private Encoding _encoding = null!;   // detected from BOM during scan
     private readonly long _byteLen;
     private long _totalChars;              // accessed via Interlocked
@@ -338,8 +350,6 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         _cts.Cancel();
         _cts.Dispose();
         _loadedEvent.Dispose();
-        _fs?.Dispose();
-        _fs = null;
         // Release all page data.
         lock (_lock) {
             for (var i = 0; i < _pageData.Length; i++) {
@@ -367,15 +377,9 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         try {
             var ct = linkedCts.Token;
 
-            // Open _fs for on-demand page loads (LoadPageFromDisk uses seek + read).
-            // Use RandomAccess since on-demand reads jump to arbitrary page offsets.
-            _fs = new FileStream(_path, FileMode.Open, FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete, PageSizeBytes, FileOptions.RandomAccess);
-
-            // Open a *separate* stream for the sequential scan. This avoids a race
-            // condition where LoadPageFromDisk seeks _fs to a previous page while
-            // the scan is reading forward — the seek corrupts the scan position and
-            // causes ScanWorker to re-read data, double-counting newlines.
+            // Open a stream for the sequential scan. On-demand page re-reads
+            // (LoadPageFromDisk) open their own short-lived streams, so there's
+            // no shared file handle and no seek race.
             using var scanFs = new FileStream(_path, FileMode.Open, FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete, PageSizeBytes, FileOptions.SequentialScan);
 
@@ -497,6 +501,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                     // \r\n — already counted the line at the \r
                     _crlfCount++;
                     prevWasCr = false;
+                    _atLineStart = true;
                     continue;
                 }
                 _lfCount++;
@@ -505,6 +510,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                 long charOffset = charBase + i + 1;
                 CheckLongestLine(charOffset);
                 RecordLineSample(currentLine, charOffset);
+                _atLineStart = true;
             } else if (ch == '\r') {
                 // Don't count as CR yet — might be \r\n. If prevWasCr was
                 // set from a previous char, that one was a bare \r.
@@ -517,11 +523,22 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                 CheckLongestLine(charOffset);
                 RecordLineSample(currentLine, charBase + i + 1);
                 prevWasCr = true;
+                _atLineStart = true;
             } else {
                 if (prevWasCr) {
                     _crCount++;
                 }
                 prevWasCr = false;
+
+                // Track indentation style: check first char of each line.
+                if (_atLineStart) {
+                    if (ch == ' ') {
+                        _spaceIndentCount++;
+                    } else if (ch == '\t') {
+                        _tabIndentCount++;
+                    }
+                    _atLineStart = false;
+                }
             }
         }
     }
@@ -610,18 +627,20 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     /// Loads a page from disk, decodes it, and stores it in the cache.
     /// </summary>
     private char[]? LoadPageFromDisk(int pageIdx) {
-        if (pageIdx >= _pageCount || _fs == null) {
+        if (pageIdx >= _pageCount) {
             return null;
         }
 
         var page = _pages[pageIdx];
         var byteBuf = new byte[page.ByteCount];
 
-        // Read from disk (need lock for FileStream seek+read atomicity).
+        // Open a short-lived stream for this page read. No persistent file
+        // lock means saves and external tools aren't blocked.
         int bytesRead;
-        lock (_fs) {
-            _fs.Seek(page.ByteOffset, SeekOrigin.Begin);
-            bytesRead = _fs.Read(byteBuf, 0, page.ByteCount);
+        using (var fs = new FileStream(_path, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete, page.ByteCount, FileOptions.RandomAccess)) {
+            fs.Seek(page.ByteOffset, SeekOrigin.Begin);
+            bytesRead = fs.Read(byteBuf, 0, page.ByteCount);
         }
 
         if (bytesRead == 0) {

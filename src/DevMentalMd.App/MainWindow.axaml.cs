@@ -100,6 +100,7 @@ public partial class MainWindow : Window {
         WireThemeSettings();
         WireTabBar();
         WireStatsBar();
+        WireStatusBarButtons();
         WireFindBar();
         WireWindowState();
         SyncMenuGestures();
@@ -616,8 +617,11 @@ public partial class MainWindow : Window {
                 }
                 return true;
 
-            // -- Stubs (not yet implemented) --
             case CommandIds.NavGoToLine:
+                OpenGoToLine();
+                return true;
+
+            // -- Stubs (not yet implemented) --
             case CommandIds.EditSelectAllOccurrences:
             case CommandIds.EditColumnSelect:
                 return true;
@@ -885,9 +889,15 @@ public partial class MainWindow : Window {
         StatsBar.Foreground = theme.StatusBarForeground;
         StatsBarIO.Foreground = theme.StatusBarForeground;
         StatusLeft.Foreground = theme.StatusBarForeground;
-        StatusRight.Foreground = theme.StatusBarForeground;
+        StatusLineCol.Foreground = theme.StatusBarForeground;
+        StatusSep1.Foreground = theme.StatusBarForeground;
+        StatusLineCount.Foreground = theme.StatusBarForeground;
+        StatusSep2.Foreground = theme.StatusBarForeground;
+        StatusEncoding.Foreground = theme.StatusBarForeground;
+        StatusSep3.Foreground = theme.StatusBarForeground;
         StatusLineEnding.Foreground = theme.StatusBarForeground;
-        StatusRightSuffix.Foreground = theme.StatusBarForeground;
+        StatusSep4.Foreground = theme.StatusBarForeground;
+        StatusIndent.Foreground = theme.StatusBarForeground;
     }
 
     // -------------------------------------------------------------------------
@@ -1045,6 +1055,82 @@ public partial class MainWindow : Window {
         if (StatsBarIO.Text != ioText) StatsBarIO.Text = ioText;
     }
 
+    private void WireStatusBarButtons() {
+        // Hover highlight (same pattern as GearButton).
+        void WireHover(Border btn) {
+            btn.PointerEntered += (_, _) => btn.Background = _theme.TabInactiveHoverBg;
+            btn.PointerExited += (_, _) => btn.Background = Brushes.Transparent;
+        }
+        WireHover(BtnLineCol);
+        WireHover(BtnEncoding);
+        WireHover(BtnLineEnding);
+        WireHover(BtnIndent);
+
+        // -- Line/Col → GoTo Line --
+        BtnLineCol.PointerPressed += (_, _) => OpenGoToLine();
+
+        // -- Encoding → flyout (UI only, no conversion yet) --
+        var encFlyout = new Avalonia.Controls.MenuFlyout();
+        foreach (var enc in new[] { "UTF-8", "UTF-8 with BOM", "UTF-16 LE", "UTF-16 BE",
+                                     "Windows-1252", "ASCII" }) {
+            var item = new MenuItem { Header = enc == "UTF-8" ? "\u2022 " + enc : "  " + enc };
+            item.IsEnabled = enc == "UTF-8"; // current encoding only
+            encFlyout.Items.Add(item);
+        }
+        BtnEncoding.PointerPressed += (_, e) => {
+            e.Handled = true;
+            encFlyout.ShowAt(BtnEncoding);
+        };
+
+        // -- Line ending → flyout --
+        BtnLineEnding.PointerPressed += (_, e) => {
+            e.Handled = true;
+            var doc = Editor.Document;
+            if (doc == null) return;
+            var lei = doc.LineEndingInfo;
+            var flyout = new Avalonia.Controls.MenuFlyout();
+            foreach (var (label, le) in new[] {
+                ("LF", Core.Documents.LineEnding.LF),
+                ("CRLF", Core.Documents.LineEnding.CRLF),
+                ("CR", Core.Documents.LineEnding.CR) }) {
+                var prefix = lei.Dominant == le && !lei.IsMixed ? "\u2022 " : "  ";
+                var item = new MenuItem { Header = prefix + label };
+                var target = le;
+                item.Click += (_, _) => {
+                    Editor.ExecuteCommand(target switch {
+                        Core.Documents.LineEnding.LF => CommandIds.EditLineEndingLF,
+                        Core.Documents.LineEnding.CRLF => CommandIds.EditLineEndingCRLF,
+                        _ => CommandIds.EditLineEndingCR,
+                    });
+                };
+                flyout.Items.Add(item);
+            }
+            flyout.ShowAt(BtnLineEnding);
+        };
+
+        // -- Indent → flyout --
+        BtnIndent.PointerPressed += (_, e) => {
+            e.Handled = true;
+            var doc = Editor.Document;
+            if (doc == null) return;
+            var ii = doc.IndentInfo;
+            var flyout = new Avalonia.Controls.MenuFlyout();
+            var spItem = new MenuItem {
+                Header = (ii.Dominant == IndentStyle.Spaces && !ii.IsMixed ? "\u2022 " : "  ") +
+                         "Convert Indentation to Spaces"
+            };
+            spItem.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditIndentToSpaces);
+            var tabItem = new MenuItem {
+                Header = (ii.Dominant == IndentStyle.Tabs && !ii.IsMixed ? "\u2022 " : "  ") +
+                         "Convert Indentation to Tabs"
+            };
+            tabItem.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditIndentToTabs);
+            flyout.Items.Add(spItem);
+            flyout.Items.Add(tabItem);
+            flyout.ShowAt(BtnIndent);
+        };
+    }
+
     private static readonly Avalonia.Media.IBrush MixedLineEndingBrush =
         new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(0xE0, 0x40, 0x40));
 
@@ -1052,10 +1138,16 @@ public partial class MainWindow : Window {
         // -- Permanent status bar (always visible) --
         var doc = Editor.Document;
         if (doc == null) {
-            if (StatusRight.Text != "Ln 1 Ch 1") StatusRight.Text = "Ln 1 Ch 1";
-            if (StatusLineEnding.Text != "") StatusLineEnding.Text = "";
-            if (StatusRightSuffix.Text != "") StatusRightSuffix.Text = "";
-            if (_chordFirst == null && StatusLeft.Text != "") StatusLeft.Text = "";
+            SetText(StatusLineCol, "Ln 1 Ch 1");
+            SetText(StatusSep1, "");
+            SetText(StatusLineCount, "");
+            SetText(StatusSep2, "");
+            SetText(StatusEncoding, "");
+            SetText(StatusSep3, "");
+            SetText(StatusLineEnding, "");
+            SetText(StatusSep4, "");
+            SetText(StatusIndent, "");
+            if (_chordFirst == null) SetText(StatusLeft, "");
         } else {
             var table = doc.Table;
             var stillLoading = table.Buffer is { LengthIsKnown: false };
@@ -1065,7 +1157,7 @@ public partial class MainWindow : Window {
             var lcText = lineCount >= 0 ? $"{lineCount:N0}" : "\u2014";
             var lcWidth = lcText.Length;
 
-            var right = "";
+            var lineCol = "";
             // During loading, line-start lookups can fail (pages not in memory).
             if (!stillLoading) {
                 var caret = Math.Min(doc.Selection.Caret, table.Length);
@@ -1074,38 +1166,56 @@ public partial class MainWindow : Window {
                 var col = caret - lineStart + 1;
                 var line = lineIdx + 1;
 
-                // Pad Ln to the width of the line-count string so the field
-                // doesn't jitter as the caret moves.  Use the longest line in
-                // the document to size the Ch field (grows during loading then
-                // stabilises).  Falls back to lcWidth for huge documents where
-                // the line index isn't built.
                 var lnText = $"{line:N0}".PadLeft(lcWidth);
                 var maxLineLen = table.MaxLineLength;
                 var chWidth = maxLineLen > 0 ? $"{maxLineLen:N0}".Length : lcWidth;
                 var chText = $"{col:N0}".PadLeft(chWidth);
-                right = $"Ln {lnText} Ch {chText}";
+                lineCol = $"Ln {lnText} Ch {chText}";
             }
 
+            SetText(StatusLineCol, lineCol);
+
             if (stillLoading) {
-                right += $" | {lcText} lines | loading\u2026";
-                if (StatusRight.Text != right) StatusRight.Text = right;
-                if (StatusLineEnding.Text != "") StatusLineEnding.Text = "";
-                if (StatusRightSuffix.Text != "") StatusRightSuffix.Text = "";
+                SetText(StatusSep1, " | ");
+                SetText(StatusLineCount, $"{lcText} lines");
+                SetText(StatusSep2, " | ");
+                SetText(StatusEncoding, "loading\u2026");
+                SetText(StatusSep3, "");
+                SetText(StatusLineEnding, "");
+                SetText(StatusSep4, "");
+                SetText(StatusIndent, "");
             } else {
-                right += $" | {lcText} lines | UTF-8 | ";
-                if (StatusRight.Text != right) StatusRight.Text = right;
+                SetText(StatusSep1, " | ");
+                SetText(StatusLineCount, $"{lcText} lines");
+                SetText(StatusSep2, " | ");
+                SetText(StatusEncoding, "UTF-8");
+                SetText(StatusSep3, " | ");
 
                 var lei = doc.LineEndingInfo;
-                var leLabel = lei.Label;
-                if (StatusLineEnding.Text != leLabel) StatusLineEnding.Text = leLabel;
+                SetText(StatusLineEnding, lei.Label);
 
                 var leBrush = lei.IsMixed ? MixedLineEndingBrush : _theme.StatusBarForeground;
                 if (StatusLineEnding.Foreground != leBrush) StatusLineEnding.Foreground = leBrush;
 
-                const string sfx = " | Spaces";
-                if (StatusRightSuffix.Text != sfx) StatusRightSuffix.Text = sfx;
+                // Tooltip for mixed line endings showing counts.
+                if (lei.IsMixed) {
+                    var parts = new List<string>();
+                    if (lei.LfCount > 0) parts.Add($"{lei.LfCount:N0} LF");
+                    if (lei.CrlfCount > 0) parts.Add($"{lei.CrlfCount:N0} CRLF");
+                    if (lei.CrCount > 0) parts.Add($"{lei.CrCount:N0} CR");
+                    ToolTip.SetTip(BtnLineEnding, $"Mixed: {string.Join(", ", parts)}");
+                } else {
+                    ToolTip.SetTip(BtnLineEnding, null);
+                }
+
+                SetText(StatusSep4, " | ");
+                SetText(StatusIndent, doc.IndentInfo.Label);
             }
         }
+    }
+
+    private static void SetText(TextBlock tb, string text) {
+        if (tb.Text != text) tb.Text = text;
     }
 
     // -------------------------------------------------------------------------
@@ -1535,6 +1645,39 @@ public partial class MainWindow : Window {
                     Editor.ExecuteCommand(cmdId);
                 }
             }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Go to Line
+    // -------------------------------------------------------------------------
+
+    private async void OpenGoToLine() {
+        var doc = _activeTab is not { IsSettings: true } ? Editor.Document : null;
+        long currentLine = 1;
+        if (doc != null) {
+            var table = doc.Table;
+            var caret = Math.Min(doc.Selection.Caret, table.Length);
+            currentLine = table.LineFromOfs(caret) + 1;
+        }
+
+        var dialog = new GoToLineWindow(_theme, currentLine);
+        await dialog.ShowDialog(this);
+
+        if (dialog.TargetLine is { } targetLine && doc != null) {
+            var table = doc.Table;
+            var lineIdx = Math.Clamp(targetLine - 1, 0, table.LineCount - 1);
+            var lineStart = table.LineStartOfs(lineIdx);
+            var pos = lineStart;
+            if (dialog.TargetCol is { } targetCol) {
+                // Clamp column to line length.
+                var nextLineStart = lineIdx + 1 < table.LineCount
+                    ? table.LineStartOfs(lineIdx + 1)
+                    : table.Length;
+                var lineLen = nextLineStart - lineStart;
+                pos = lineStart + Math.Clamp(targetCol - 1, 0, lineLen);
+            }
+            Editor.GoToPosition(pos);
         }
     }
 

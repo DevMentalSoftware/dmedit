@@ -36,6 +36,11 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
     private int _crlfCount;
     private int _crCount;
 
+    // Indentation counters (accumulated during scan)
+    private int _spaceIndentCount;
+    private int _tabIndentCount;
+    private bool _atLineStart = true;
+
     private string? _sha1;
 
     /// <summary>
@@ -47,6 +52,9 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
     /// <inheritdoc />
     public LineEndingInfo DetectedLineEnding =>
         LineEndingInfo.FromCounts(_lfCount, _crlfCount, _crCount);
+
+    public IndentInfo DetectedIndent =>
+        IndentInfo.FromCounts(_spaceIndentCount, _tabIndentCount);
 
     private readonly object _lock = new();
     private readonly CancellationTokenSource _cts = new();
@@ -350,10 +358,12 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
                 _crlfCount++;
                 AppendLineStart(start + 1);
                 scanStart = start + 1;
+                _atLineStart = true;
             } else {
                 // Bare \r at end of previous chunk.
                 _crCount++;
                 AppendLineStart(start);
+                _atLineStart = true;
             }
         }
 
@@ -362,12 +372,14 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
             if (ch == '\n') {
                 _lfCount++;
                 AppendLineStart(i + 1);
+                _atLineStart = true;
             } else if (ch == '\r') {
                 if (i + 1 < end) {
                     if (data[i + 1] != '\n') {
                         // Bare \r.
                         _crCount++;
                         AppendLineStart(i + 1);
+                        _atLineStart = true;
                     }
                     // else \r\n within chunk — let the \n branch handle it
                     // BUT we need to count it and skip the \n.
@@ -375,11 +387,20 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
                         _crlfCount++;
                         AppendLineStart(i + 2);
                         i++; // skip the \n
+                        _atLineStart = true;
                     }
                 } else {
                     // \r at end of chunk — defer.
                     _prevWasCr = true;
                 }
+            } else if (_atLineStart) {
+                // Track indentation style: check first char of each line.
+                if (ch == ' ') {
+                    _spaceIndentCount++;
+                } else if (ch == '\t') {
+                    _tabIndentCount++;
+                }
+                _atLineStart = false;
             }
         }
     }

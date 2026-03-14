@@ -17,7 +17,8 @@ public enum LineEnding {
 /// <summary>
 /// Result of detecting line endings in a text buffer.
 /// </summary>
-public readonly record struct LineEndingInfo(LineEnding Dominant, bool IsMixed) {
+public readonly record struct LineEndingInfo(LineEnding Dominant, bool IsMixed,
+    int LfCount = 0, int CrlfCount = 0, int CrCount = 0) {
     /// <summary>Display label for the status bar (e.g. "LF", "CRLF", "CR").</summary>
     public string Label => Dominant switch {
         LineEnding.LF => "LF",
@@ -112,6 +113,6 @@ public readonly record struct LineEndingInfo(LineEnding Dominant, bool IsMixed) 
 
         // Mixed = more than one style present.
         var styles = (lf > 0 ? 1 : 0) + (crlf > 0 ? 1 : 0) + (cr > 0 ? 1 : 0);
-        return new LineEndingInfo(dominant, styles > 1);
+        return new LineEndingInfo(dominant, styles > 1, lf, crlf, cr);
     }
 }

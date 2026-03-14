@@ -19,15 +19,21 @@ small one — it is the primary way a fresh session recovers context.
 | [05-features](design-journal/05-features.md) | 2026-03-02 – 2026-03-04 | Feature backlog, editing commands, status bar, line numbers, tab bar |
 | [06-settings](design-journal/06-settings.md) | 2026-03-05 | Edit coalescing undo, settings document tab |
 | [07-commands](design-journal/07-commands.md) | 2026-03-06 – 2026-03-07 | Command registry, key binding profiles, 21 new commands, command palette |
+| [08-status-bar](design-journal/08-status-bar.md) | 2026-03-14 | Interactive status bar buttons, indent detection, GoTo Line, file locking fix, file watching notes |
 
 ---
 
 ## Current State
 
-**Test baseline: 342** (266 Core + 21 Rendering + 55 App)
+**Test baseline: 375** (292 Core + 21 Rendering + 62 App)
 
 ### Recently completed
 
+- **Interactive Status Bar** (2026-03-14) — four clickable segments (Ln/Ch, Encoding,
+  Line Ending, Indent) with hover highlights and flyout menus. Indent detection added
+  to buffer scan loops. GoTo Line dialog. Encoding menu scaffold (UI only). File locking
+  fix: removed persistent `_fs` from PagedFileBuffer. See
+  [08-status-bar](design-journal/08-status-bar.md).
 - **Command Palette** (2026-03-07) — F1, modal dialog with text filter, arrow-key nav,
   Enter to execute. Row colors from editor theme. Hidden from: Newline, Tab, Backspace,
   Delete. See [07-commands](design-journal/07-commands.md).
@@ -89,7 +95,7 @@ with consistent, logical hover/focus effects.
 
 - Block model / WYSIWYG editor is fully designed and partially implemented but not wired
   into the running editor (see [02-document-model](design-journal/02-document-model.md))
-- Find/Replace, GoToLine, SelectAllOccurrences, ColumnSelect are registered stub commands
+- Find/Replace, SelectAllOccurrences, ColumnSelect are registered stub commands
 - Windows 11 Mica transparency researched but not implemented (see
   [05-features](design-journal/05-features.md))
 - Smart Tab, ExpandWord, Wrap options, toolbar, Undo/Redo toolbar buttons not yet

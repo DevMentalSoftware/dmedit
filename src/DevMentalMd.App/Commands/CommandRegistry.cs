@@ -53,6 +53,8 @@ public static class CommandRegistry {
         new(CommandIds.EditLineEndingLF, "Convert Line Endings to LF"),
         new(CommandIds.EditLineEndingCRLF, "Convert Line Endings to CRLF"),
         new(CommandIds.EditLineEndingCR, "Convert Line Endings to CR"),
+        new(CommandIds.EditIndentToSpaces, "Convert Indentation to Spaces"),
+        new(CommandIds.EditIndentToTabs, "Convert Indentation to Tabs"),
 
         // -- Find --
         new(CommandIds.FindFind, "Find"),

@@ -52,7 +52,7 @@ public static class FileSaver {
     }
 
     private static string SaveFromBuffer(IBuffer buf, string path, CancellationToken ct) {
-        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
         using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
         var encoder = Encoding.UTF8.GetEncoder();
         var charBuf = new char[WriteChunk];
@@ -75,7 +75,7 @@ public static class FileSaver {
     }
 
     private static string SaveFromPieceTable(PieceTable table, string path, CancellationToken ct) {
-        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
         using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
         var encoder = Encoding.UTF8.GetEncoder();
         var charBuf = new char[WriteChunk];
