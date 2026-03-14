@@ -255,7 +255,6 @@ public static class SessionStore {
 
         // SHA-1 is now available from the completed scan.
         var currentSha1 = tab.LoadResult.BaseSha1;
-        tab.BaseSha1 = currentSha1 ?? entry.BaseSha1;
         tab.Document.LineEndingInfo = tab.LoadResult.Document.LineEndingInfo;
 
         if (entry.BaseSha1 is not null && currentSha1 != entry.BaseSha1) {
@@ -265,9 +264,13 @@ public static class SessionStore {
                 ExpectedSha1 = entry.BaseSha1,
                 ActualSha1 = currentSha1,
             };
+            // Keep the original BaseSha1 so the conflict persists across
+            // restarts until the user explicitly resolves it.
+            tab.BaseSha1 = entry.BaseSha1;
             // Disk version is already loaded; don't replay edits.
         } else {
             // SHA-1 match — safe to replay edits.
+            tab.BaseSha1 = currentSha1 ?? entry.BaseSha1;
             ReplayEdits(tab.Document, entry);
         }
 

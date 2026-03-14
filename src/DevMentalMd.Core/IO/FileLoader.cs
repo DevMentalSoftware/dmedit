@@ -104,7 +104,7 @@ public static class FileLoader {
     /// magic bytes (<c>50 4B 03 04</c>).
     /// </summary>
     internal static bool IsZipFile(string path) {
-        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         Span<byte> magic = stackalloc byte[4];
         var read = fs.Read(magic);
         return read >= 4
@@ -115,7 +115,7 @@ public static class FileLoader {
     private static (StreamingFileBuffer buf, Document doc, LoadResult result) OpenZipEntry(
         string path) {
 
-        var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         ZipArchive? zip = null;
         try {
             zip = new ZipArchive(fs, ZipArchiveMode.Read, leaveOpen: false);

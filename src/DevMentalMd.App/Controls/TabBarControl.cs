@@ -973,8 +973,8 @@ public sealed class TabBarControl : Control {
             if (zone == HitZone.ErrorIcon && idx >= 0 && idx < _tabs.Count
                 && _tabs[idx].Conflict is { } c) {
                 var tip = c.Kind == SessionStore.FileConflictKind.Missing
-                    ? $"File not found: {c.FilePath}\nRight-click for options"
-                    : $"File changed on disk \u2014 session edits may not apply\nRight-click for options";
+                    ? $"File not found: {c.FilePath}.\nClick for options."
+                    : $"File changed on disk.\nClick for options.";
                 ToolTip.SetTip(this, tip);
                 ToolTip.SetIsOpen(this, true);
             } else if (zone is HitZone.Tab or HitZone.CloseButton

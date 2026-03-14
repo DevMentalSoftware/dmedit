@@ -7,7 +7,7 @@ namespace DevMentalMd.Core.Buffers;
 /// <summary>
 /// An <see cref="IBuffer"/> that keeps only a bounded number of decoded text pages
 /// in memory, re-reading and re-decoding from disk on demand. The raw file stays on
-/// disk and is locked against external writes (<see cref="FileShare.Read"/>).
+/// disk and is reopened on demand (external writes are not blocked).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -96,7 +96,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     // -----------------------------------------------------------------
 
     private readonly string _path;
-    private FileStream? _fs;              // kept open for re-reads; locked FileShare.Read
+    private FileStream? _fs;              // kept open for on-demand page re-reads
     private Encoding _encoding = null!;   // detected from BOM during scan
     private readonly long _byteLen;
     private long _totalChars;              // accessed via Interlocked
@@ -370,14 +370,14 @@ public sealed class PagedFileBuffer : IProgressBuffer {
             // Open _fs for on-demand page loads (LoadPageFromDisk uses seek + read).
             // Use RandomAccess since on-demand reads jump to arbitrary page offsets.
             _fs = new FileStream(_path, FileMode.Open, FileAccess.Read,
-                FileShare.Read, PageSizeBytes, FileOptions.RandomAccess);
+                FileShare.ReadWrite | FileShare.Delete, PageSizeBytes, FileOptions.RandomAccess);
 
             // Open a *separate* stream for the sequential scan. This avoids a race
             // condition where LoadPageFromDisk seeks _fs to a previous page while
             // the scan is reading forward — the seek corrupts the scan position and
             // causes ScanWorker to re-read data, double-counting newlines.
             using var scanFs = new FileStream(_path, FileMode.Open, FileAccess.Read,
-                FileShare.Read, PageSizeBytes, FileOptions.SequentialScan);
+                FileShare.ReadWrite | FileShare.Delete, PageSizeBytes, FileOptions.SequentialScan);
 
             // Detect BOM (may advance scanFs past the BOM bytes).
             _encoding = DetectEncoding(scanFs);

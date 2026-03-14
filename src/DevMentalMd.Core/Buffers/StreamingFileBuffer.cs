@@ -178,7 +178,7 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
             Stream stream;
             if (_path is not null) {
                 ownedStream = new FileStream(_path, FileMode.Open, FileAccess.Read,
-                    FileShare.Read, ChunkSize, FileOptions.SequentialScan);
+                    FileShare.ReadWrite | FileShare.Delete, ChunkSize, FileOptions.SequentialScan);
                 stream = ownedStream;
             } else {
                 stream = _externalStream!;
