@@ -1134,9 +1134,11 @@ public partial class MainWindow : Window {
             var result = await FileLoader.LoadAsync(path);
             var tab = new TabState(result.Document, path, "manual.md") {
                 LoadResult = result,
+                IsLoading = true,
             };
             AddTab(tab);
             SwitchToTab(tab);
+            WireFileLoadCompletion(tab);
         } else {
             var tab = AddTab(TabState.CreateUntitled(_tabs));
             SwitchToTab(tab);
@@ -1251,11 +1253,12 @@ public partial class MainWindow : Window {
 
         var tab = new TabState(result.Document, path, result.DisplayName) {
             LoadResult = result,
-            BaseSha1 = result.BaseSha1,
+            IsLoading = true,
         };
         AddTab(tab);
         SwitchToTab(tab);
         WireStreamingProgress(sw, tab);
+        WireFileLoadCompletion(tab);
 
         PushRecentFile(path);
     }
@@ -1399,16 +1402,22 @@ public partial class MainWindow : Window {
             Editor.PerfStats.FirstChunkTimeMs = 0;
             Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
 
+            // Throttle: only one post queued at a time so we don't
+            // saturate the dispatcher and starve the spinner timer.
+            var layoutPending = 0;
             buf.ProgressChanged += () => {
-                Dispatcher.UIThread.Post(() => {
-                    if (_activeTab != tab) return;
-                    if (!firstChunkCaptured) {
-                        firstChunkCaptured = true;
-                        Editor.PerfStats.FirstChunkTimeMs = sw.Elapsed.TotalMilliseconds;
-                    }
-                    Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
-                    Editor.InvalidateLayout();
-                }, DispatcherPriority.Background);
+                if (Interlocked.CompareExchange(ref layoutPending, 1, 0) == 0) {
+                    Dispatcher.UIThread.Post(() => {
+                        Interlocked.Exchange(ref layoutPending, 0);
+                        if (_activeTab != tab) return;
+                        if (!firstChunkCaptured) {
+                            firstChunkCaptured = true;
+                            Editor.PerfStats.FirstChunkTimeMs = sw.Elapsed.TotalMilliseconds;
+                        }
+                        Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+                        Editor.InvalidateLayout();
+                    }, DispatcherPriority.Background);
+                }
             };
 
             buf.LoadComplete += () => {
@@ -1713,6 +1722,41 @@ public partial class MainWindow : Window {
                 // Conflict detection + edit replay (Loaded already completed).
                 SessionStore.FinishLoad(tab, entry);
 
+                UpdateTabBar();
+                if (_activeTab == tab) {
+                    Editor.IsInputBlocked = false;
+                    Editor.InvalidateLayout();
+                }
+            });
+        });
+    }
+
+    /// <summary>
+    /// Wires load completion for a file opened via File > Open, recent
+    /// files, drag-drop, or the manual. Awaits the background scan, then
+    /// populates BaseSha1 / LineEndingInfo and finishes loading on the
+    /// UI thread.
+    /// </summary>
+    private void WireFileLoadCompletion(TabState tab) {
+        _ = Task.Run(async () => {
+            try {
+                if (tab.LoadResult is not null) {
+                    await tab.LoadResult.Loaded;
+                }
+            } catch {
+                // Scan failed — tab stays in base state.
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() => {
+                // Tab may have been closed while loading.
+                if (!_tabs.Contains(tab)) return;
+
+                if (tab.LoadResult is not null) {
+                    tab.BaseSha1 = tab.LoadResult.BaseSha1;
+                    tab.Document.LineEndingInfo = tab.LoadResult.Document.LineEndingInfo;
+                }
+
+                tab.FinishLoading();
                 UpdateTabBar();
                 if (_activeTab == tab) {
                     Editor.IsInputBlocked = false;
