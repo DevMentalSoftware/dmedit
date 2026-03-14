@@ -104,7 +104,7 @@ public static class FileLoader {
     /// Computes the SHA-1 hash of a file on disk. Returns lowercase hex.
     /// Used by session restore to verify base-file identity.
     /// </summary>
-    public static string ComputeSha1File(string path) {
+    internal static string ComputeSha1File(string path) {
         using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         var hash = SHA1.HashData(fs);
         return Convert.ToHexStringLower(hash);

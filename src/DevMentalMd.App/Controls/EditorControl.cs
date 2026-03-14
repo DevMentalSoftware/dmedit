@@ -81,6 +81,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         set => SetValue(CaretBrushProperty, value);
     }
 
+    /// <summary>
+    /// When true, the editor ignores text input, keyboard commands, and
+    /// mouse editing. Set while the tab's file is still loading.
+    /// </summary>
+    public bool IsInputBlocked { get; set; }
+
     // -------------------------------------------------------------------------
     // Private state
     // -------------------------------------------------------------------------
@@ -1193,6 +1199,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     protected override void OnTextInput(TextInputEventArgs e) {
         base.OnTextInput(e);
+        if (IsInputBlocked) { e.Handled = true; return; }
         var doc = Document;
         if (doc == null || string.IsNullOrEmpty(e.Text)) {
             return;
@@ -1233,6 +1240,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// resolving a key gesture to a command ID via KeyBindingService.
     /// </summary>
     public bool ExecuteCommand(string commandId) {
+        if (IsInputBlocked) return false;
         var doc = Document;
         if (doc == null) return false;
 
@@ -2010,13 +2018,20 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     protected override void OnPointerPressed(PointerPressedEventArgs e) {
         base.OnPointerPressed(e);
+        var props = e.GetCurrentPoint(this).Properties;
+
+        // Allow middle-click scroll while loading, block everything else.
+        if (IsInputBlocked && !props.IsMiddleButtonPressed) {
+            e.Handled = true;
+            return;
+        }
+
         _preferredCaretX = -1;
         FlushCompound();
 
         // Hide caret and pause blinking while processing the press.
         _caretVisible = false;
         _caretTimer.Stop();
-        var props = e.GetCurrentPoint(this).Properties;
         if (props.IsMiddleButtonPressed) {
             _middleDrag = true;
             _middleDragStartY = e.GetPosition(this).Y;
@@ -2117,6 +2132,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     protected override void OnGotFocus(GotFocusEventArgs e) {
         base.OnGotFocus(e);
+        if (IsInputBlocked) return; // no caret until loaded
         ResetCaretBlink();
     }
 

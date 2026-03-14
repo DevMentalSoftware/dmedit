@@ -29,6 +29,9 @@ static class IconGlyphs {
     public const string ArrowRight   = "\uF181";  // →  ic_fluent_arrow_right_20_regular
     public const string Dirty        = "\uF660";  // ●  ic_fluent_record_16_regular
 
+    // Conflict / error indicators
+    public const string ErrorCircle  = "\uF4A0";  // TODO: placeholder — pick a better error/warning glyph
+
     // Window chrome glyphs (Linux custom title bar)
     public const string Minimize     = "\uEBD0";  // ─  ic_fluent_subtract_20_regular
     public const string Maximize     = "\uE7EB";  // □  ic_fluent_maximize_20_regular

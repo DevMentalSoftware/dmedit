@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -170,7 +171,20 @@ public partial class MainWindow : Window {
 
         if (!isSettings) {
             Editor.Document = tab.Document;
+            Editor.IsInputBlocked = tab.IsLoading;
             Editor.RestoreScrollState(tab);
+
+            // When a loading tab finishes, unblock the editor if it's
+            // still the active tab. One-shot — fires once per load.
+            if (tab.IsLoading) {
+                tab.LoadCompleted += () => {
+                    if (_activeTab == tab) {
+                        Editor.IsInputBlocked = false;
+                        Editor.ResetCaretBlink();
+                        Editor.InvalidateLayout();
+                    }
+                };
+            }
         }
         // Show find bar only if this tab owns it.
         FindBar.IsVisible = (tab == _findBarTab);
@@ -372,6 +386,10 @@ public partial class MainWindow : Window {
                 : WindowState.Maximized;
         };
         TabBar.ChromeCloseClicked += () => Close();
+
+        // Conflict resolution (session restore error icon)
+        TabBar.ConflictLocateClicked += idx => _ = HandleConflictLocateAsync(idx);
+        TabBar.ConflictDiscardClicked += HandleConflictDiscard;
     }
 
     private void ShowOverflowMenu() {
@@ -1624,18 +1642,21 @@ public partial class MainWindow : Window {
     /// tab was restored; false if no session exists.
     /// </summary>
     private async Task<bool> TryRestoreSessionAsync() {
-        var session = await SessionStore.LoadAsync();
-        if (session is null || session.Value.Tabs.Count == 0) {
+        var session = await SessionStore.LoadManifestAsync();
+        if (session is null || session.Value.Entries.Count == 0) {
             return false;
         }
 
-        var (restoredTabs, activeIdx) = session.Value;
-        var conflicts = new List<SessionStore.RestoredTab>();
+        var (entries, activeIdx) = session.Value;
 
-        foreach (var rt in restoredTabs) {
-            var tab = AddTab(rt.Tab);
-            if (rt.Conflict is not null) {
-                conflicts.Add(rt);
+        // Phase 1: create all tabs instantly from the manifest.
+        // File-backed tabs start background scans but don't wait.
+        var loadingPairs = new List<(TabState tab, SessionStore.TabEntry entry)>();
+        foreach (var entry in entries) {
+            var tab = SessionStore.CreateTabFromEntry(entry);
+            AddTab(tab);
+            if (tab.IsLoading) {
+                loadingPairs.Add((tab, entry));
             }
         }
 
@@ -1643,105 +1664,153 @@ public partial class MainWindow : Window {
         var idx = Math.Clamp(activeIdx, 0, _tabs.Count - 1);
         SwitchToTab(_tabs[idx]);
 
-        // Show conflict dialogs after the window is fully loaded.
-        if (conflicts.Count > 0) {
-            Opened += async (_, _) => {
-                foreach (var rt in conflicts) {
-                    await ShowFileConflictDialogAsync(rt);
-                }
-            };
+        // Phase 2: finish loading each file asynchronously.
+        // All scans run concurrently; smaller files naturally complete first.
+        foreach (var (tab, entry) in loadingPairs) {
+            WireLoadCompletion(tab, entry);
         }
 
         return true;
     }
 
     /// <summary>
-    /// Shows a conflict dialog for a session-restored tab and handles the
-    /// user's choice.
+    /// Wires streaming progress for a session-restored tab and launches
+    /// the async completion (conflict detection + edit replay) as
+    /// fire-and-forget. The tab's spinner clears when loading finishes.
     /// </summary>
-    private async Task ShowFileConflictDialogAsync(SessionStore.RestoredTab rt) {
-        var conflict = rt.Conflict!;
-        var dialog = new FileConflictDialog(conflict);
-        await dialog.ShowDialog(this);
-
-        switch (dialog.Choice) {
-            case FileConflictChoice.LocateFile: {
-                // Let the user browse for the file.
-                var startDir = await GetStartLocationAsync();
-                var picked = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions {
-                    Title = "Locate File",
-                    AllowMultiple = false,
-                    FileTypeFilter = FileTypeFilters,
-                    SuggestedStartLocation = startDir,
-                });
-                if (picked.Count > 0) {
-                    var newPath = picked[0].TryGetLocalPath();
-                    if (newPath is not null && File.Exists(newPath)) {
-                        // Re-check SHA-1 against the located file.
-                        var sha1 = FileLoader.ComputeSha1File(newPath);
-                        if (sha1 == conflict.ExpectedSha1) {
-                            // Match — reload and replay edits.
-                            var loadResult = await FileLoader.LoadAsync(newPath);
-                            await loadResult.Loaded;
-                            var doc = loadResult.Document;
-                            var entry = new SessionStore.TabEntry {
-                                Id = rt.Tab.Id,
-                                SavePointDepth = rt.Tab.Document.History.SavePointDepth,
-                            };
-                            // Replay edits onto the fresh document.
-                            doc.History.RestoreEntries(
-                                doc.Table,
-                                rt.Tab.Document.History.GetUndoEntries(),
-                                rt.Tab.Document.History.GetRedoEntries(),
-                                rt.Tab.Document.History.SavePointDepth);
-                            doc.Selection = rt.Tab.Document.Selection;
-                            // Replace tab in-place.
-                            var idx = _tabs.IndexOf(rt.Tab);
-                            if (idx >= 0) {
-                                var newTab = new TabState(doc, newPath, Path.GetFileName(newPath)) {
-                                    Id = rt.Tab.Id,
-                                    BaseSha1 = sha1,
-                                    IsDirty = rt.Tab.IsDirty,
-                                    ScrollOffsetY = rt.Tab.ScrollOffsetY,
-                                    WinTopLine = rt.Tab.WinTopLine,
-                                    WinScrollOffset = rt.Tab.WinScrollOffset,
-                                    WinRenderOffsetY = rt.Tab.WinRenderOffsetY,
-                                    WinFirstLineHeight = rt.Tab.WinFirstLineHeight,
-                                };
-                                _tabs[idx] = newTab;
-                                newTab.Document.Changed += (_, _) => OnTabDocumentChanged(newTab);
-                                if (_activeTab == rt.Tab) {
-                                    SwitchToTab(newTab);
-                                }
-                                UpdateTabBar();
-                            }
-                        } else {
-                            // SHA-1 mismatch — the located file is different.
-                            // Re-show as a "changed" conflict.
-                            var changedConflict = new SessionStore.RestoredTab {
-                                Tab = rt.Tab,
-                                Conflict = new SessionStore.FileConflict {
-                                    Kind = SessionStore.FileConflictKind.Changed,
-                                    FilePath = newPath,
-                                    ExpectedSha1 = conflict.ExpectedSha1,
-                                    ActualSha1 = sha1,
-                                },
-                            };
-                            await ShowFileConflictDialogAsync(changedConflict);
+    private void WireLoadCompletion(TabState tab, SessionStore.TabEntry entry) {
+        // Wire streaming progress so the active tab re-layouts incrementally.
+        // Throttle: only one post is queued at a time so we don't saturate
+        // the dispatcher and starve the spinner timer.
+        if (tab.Document.Table.Buffer is IProgressBuffer buf) {
+            var layoutPending = 0;
+            buf.ProgressChanged += () => {
+                if (Interlocked.CompareExchange(ref layoutPending, 1, 0) == 0) {
+                    Dispatcher.UIThread.Post(() => {
+                        Interlocked.Exchange(ref layoutPending, 0);
+                        if (_activeTab == tab) {
+                            Editor.InvalidateLayout();
                         }
-                    }
+                    }, DispatcherPriority.Background);
                 }
-                break;
+            };
+        }
+
+        // Fire-and-forget: await the scan, then finish on the UI thread.
+        _ = Task.Run(async () => {
+            try {
+                if (tab.LoadResult is not null) {
+                    await tab.LoadResult.Loaded;
+                }
+            } catch {
+                // Scan failed — handled below on UI thread.
             }
-            case FileConflictChoice.LoadDiskVersion:
-                // The tab already has the disk version loaded (SessionStore did this).
-                // Just clear the edit history since the edits are based on old content.
-                rt.Tab.IsDirty = false;
+
+            await Dispatcher.UIThread.InvokeAsync(() => {
+                // Tab may have been closed while loading.
+                if (!_tabs.Contains(tab)) return;
+
+                // Conflict detection + edit replay (Loaded already completed).
+                SessionStore.FinishLoad(tab, entry);
+
                 UpdateTabBar();
-                break;
-            case FileConflictChoice.Discard:
-                CloseTabDirect(rt.Tab);
-                break;
+                if (_activeTab == tab) {
+                    Editor.IsInputBlocked = false;
+                    Editor.InvalidateLayout();
+                }
+            });
+        });
+    }
+
+    // -----------------------------------------------------------------
+    // Conflict resolution (error icon on tab)
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Handles the "Locate File" action from the conflict context menu.
+    /// Opens a file picker, verifies SHA-1, and replaces the tab on match.
+    /// </summary>
+    private async Task HandleConflictLocateAsync(int tabIndex) {
+        if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
+        var tab = _tabs[tabIndex];
+        var conflict = tab.Conflict;
+        if (conflict is null) return;
+
+        var startDir = await GetStartLocationAsync();
+        var picked = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions {
+            Title = "Locate File",
+            AllowMultiple = false,
+            FileTypeFilter = FileTypeFilters,
+            SuggestedStartLocation = startDir,
+        });
+        if (picked.Count == 0) return;
+        var newPath = picked[0].TryGetLocalPath();
+        if (newPath is null || !File.Exists(newPath)) return;
+
+        // Load the located file and compare SHA-1.
+        var loadResult = await FileLoader.LoadAsync(newPath);
+        await loadResult.Loaded;
+        var sha1 = loadResult.BaseSha1;
+
+        if (sha1 == conflict.ExpectedSha1) {
+            // Match — replay edits onto the fresh document.
+            var doc = loadResult.Document;
+            doc.History.RestoreEntries(
+                doc.Table,
+                tab.Document.History.GetUndoEntries(),
+                tab.Document.History.GetRedoEntries(),
+                tab.Document.History.SavePointDepth);
+            doc.Selection = tab.Document.Selection;
+
+            // Replace tab in-place.
+            var idx = _tabs.IndexOf(tab);
+            if (idx >= 0) {
+                var newTab = new TabState(doc, newPath, Path.GetFileName(newPath)) {
+                    Id = tab.Id,
+                    BaseSha1 = sha1,
+                    IsDirty = tab.IsDirty,
+                    ScrollOffsetY = tab.ScrollOffsetY,
+                    WinTopLine = tab.WinTopLine,
+                    WinScrollOffset = tab.WinScrollOffset,
+                    WinRenderOffsetY = tab.WinRenderOffsetY,
+                    WinFirstLineHeight = tab.WinFirstLineHeight,
+                };
+                _tabs[idx] = newTab;
+                newTab.Document.Changed += (_, _) => OnTabDocumentChanged(newTab);
+                if (_activeTab == tab) {
+                    SwitchToTab(newTab);
+                }
+                UpdateTabBar();
+            }
+        } else {
+            // SHA-1 mismatch — update the conflict to reflect "changed".
+            tab.Conflict = new SessionStore.FileConflict {
+                Kind = SessionStore.FileConflictKind.Changed,
+                FilePath = newPath,
+                ExpectedSha1 = conflict.ExpectedSha1,
+                ActualSha1 = sha1,
+            };
+            UpdateTabBar();
+        }
+    }
+
+    /// <summary>
+    /// Handles the "Discard" action from the conflict context menu.
+    /// For missing files: closes the tab. For changed files: clears the
+    /// conflict flag and accepts the disk version.
+    /// </summary>
+    private void HandleConflictDiscard(int tabIndex) {
+        if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
+        var tab = _tabs[tabIndex];
+        if (tab.Conflict is null) return;
+
+        if (tab.Conflict.Kind == SessionStore.FileConflictKind.Missing) {
+            CloseTabDirect(tab);
+        } else {
+            // Changed — the tab already has the disk version loaded.
+            tab.Conflict = null;
+            tab.IsDirty = false;
+            UpdateTabBar();
         }
     }
 

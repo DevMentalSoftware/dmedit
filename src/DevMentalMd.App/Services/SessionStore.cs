@@ -89,6 +89,13 @@ public static class SessionStore {
                 manifest.Tabs.Add(entry);
                 referencedIds.Add(tab.Id);
 
+                // Skip edit serialization for tabs still loading — edits
+                // haven't been replayed yet, so the previous session's
+                // edit file (if any) is still valid.
+                if (tab.IsLoading) {
+                    continue;
+                }
+
                 // Serialize edit history for dirty tabs (or tabs with undo/redo).
                 var undoEntries = tab.Document.History.GetUndoEntries();
                 var redoEntries = tab.Document.History.GetRedoEntries();
@@ -113,21 +120,8 @@ public static class SessionStore {
     }
 
     // -----------------------------------------------------------------
-    // Load
+    // Load — two-phase restore
     // -----------------------------------------------------------------
-
-    /// <summary>
-    /// Result of restoring a single tab from the session.
-    /// </summary>
-    public sealed class RestoredTab {
-        public required TabState Tab { get; init; }
-
-        /// <summary>
-        /// Non-null when the base file is missing or its SHA-1 doesn't match.
-        /// The UI should show a conflict dialog for this tab.
-        /// </summary>
-        public FileConflict? Conflict { get; init; }
-    }
 
     public enum FileConflictKind { Missing, Changed }
 
@@ -139,98 +133,114 @@ public static class SessionStore {
     }
 
     /// <summary>
-    /// Loads the session manifest and restores tabs. Returns null if no
-    /// session exists or the manifest is corrupt.
+    /// Phase 1: reads the manifest only (no file I/O). Returns the tab
+    /// entries and active index, or null if no session exists.
     /// </summary>
-    public static async Task<(List<RestoredTab> Tabs, int ActiveTabIndex)?> LoadAsync() {
+    public static Task<(List<TabEntry> Entries, int ActiveTabIndex)?> LoadManifestAsync() {
         try {
             if (!File.Exists(ManifestPath)) {
-                return null;
+                return Task.FromResult<(List<TabEntry>, int)?>(null);
             }
             var json = File.ReadAllText(ManifestPath);
             var manifest = JsonSerializer.Deserialize<SessionManifest>(json, JsonOpts);
             if (manifest is null || manifest.Tabs.Count == 0) {
-                return null;
+                return Task.FromResult<(List<TabEntry>, int)?>(null);
             }
-
-            var restored = new List<RestoredTab>(manifest.Tabs.Count);
-            foreach (var entry in manifest.Tabs) {
-                restored.Add(await RestoreTabAsync(entry));
-            }
-            return (restored, manifest.ActiveTabIndex);
+            return Task.FromResult<(List<TabEntry>, int)?>((manifest.Tabs, manifest.ActiveTabIndex));
         } catch {
-            return null;
+            return Task.FromResult<(List<TabEntry>, int)?>(null);
         }
     }
 
-    private static async Task<RestoredTab> RestoreTabAsync(TabEntry entry) {
-        FileConflict? conflict = null;
+    /// <summary>
+    /// Phase 2a: creates a <see cref="TabState"/> from a manifest entry.
+    /// For file-backed tabs that exist on disk, the background scan starts
+    /// immediately but the method returns without waiting for it to finish.
+    /// The tab's <see cref="TabState.IsLoading"/> is <c>true</c> until
+    /// <see cref="FinishLoadAsync"/> completes.
+    /// </summary>
+    public static TabState CreateTabFromEntry(TabEntry entry) {
         Document doc;
+        FileConflict? conflict = null;
+        var isLoading = false;
+        LoadResult? loadResult = null;
 
         if (entry.FilePath is not null) {
-            // File-backed tab.
             if (!File.Exists(entry.FilePath)) {
                 conflict = new FileConflict {
                     Kind = FileConflictKind.Missing,
                     FilePath = entry.FilePath,
                     ExpectedSha1 = entry.BaseSha1,
                 };
-                // Create empty doc as placeholder; the UI will handle the conflict.
                 doc = new Document();
             } else {
-                var currentSha1 = FileLoader.ComputeSha1File(entry.FilePath);
-                if (entry.BaseSha1 is not null && currentSha1 != entry.BaseSha1) {
-                    conflict = new FileConflict {
-                        Kind = FileConflictKind.Changed,
-                        FilePath = entry.FilePath,
-                        ExpectedSha1 = entry.BaseSha1,
-                        ActualSha1 = currentSha1,
-                    };
-                    // Load the current disk version as the base.
-                    // Edits from the session won't be replayed (they'd be garbled).
-                    doc = await LoadDocumentFromDiskAsync(entry.FilePath);
-                } else {
-                    // SHA-1 match — safe to load and replay edits.
-                    doc = await LoadDocumentFromDiskAsync(entry.FilePath);
-                    ReplayEdits(doc, entry);
-                }
+                // Start loading — returns immediately, scan runs on background thread.
+                loadResult = FileLoader.LoadAsync(entry.FilePath).GetAwaiter().GetResult();
+                doc = loadResult.Document;
+                isLoading = true;
             }
         } else {
-            // Untitled tab — replay edits from empty.
+            // Untitled tab — replay edits from empty, no loading needed.
             doc = new Document();
             ReplayEdits(doc, entry);
+            RestoreSelection(doc, entry);
         }
 
-        // Restore selection, clamped to the document's actual length.
-        // The saved caret may be out of bounds if the base file changed,
-        // was missing, or edit replay failed/altered the expected length.
-        var len = doc.Table.Length;
-        doc.Selection = new Selection(
-            Math.Clamp(entry.CaretAnchor, 0, len),
-            Math.Clamp(entry.CaretActive, 0, len));
-
-        var tab = new TabState(doc, entry.FilePath, entry.DisplayName) {
+        return new TabState(doc, entry.FilePath, entry.DisplayName) {
             Id = entry.Id,
             BaseSha1 = entry.BaseSha1,
             IsDirty = entry.IsDirty,
+            Conflict = conflict,
+            IsLoading = isLoading,
+            LoadResult = loadResult,
             ScrollOffsetY = entry.ScrollOffsetY,
             WinTopLine = entry.WinTopLine,
             WinScrollOffset = entry.WinScrollOffset,
             WinRenderOffsetY = entry.WinRenderOffsetY,
             WinFirstLineHeight = entry.WinFirstLineHeight,
         };
-
-        return new RestoredTab { Tab = tab, Conflict = conflict };
     }
 
-    private static async Task<Document> LoadDocumentFromDiskAsync(string path) {
-        try {
-            var result = await FileLoader.LoadAsync(path);
-            await result.Loaded;
-            return result.Document;
-        } catch {
-            return new Document();
+    /// <summary>
+    /// Phase 2b: performs conflict detection and edit replay after the
+    /// file scan has completed. Must be called on the UI thread (edit
+    /// replay mutates the document) and only after
+    /// <c>tab.LoadResult.Loaded</c> has finished. Calls
+    /// <see cref="TabState.FinishLoading"/> when done.
+    /// </summary>
+    public static void FinishLoad(TabState tab, TabEntry entry) {
+        if (tab.LoadResult is null) {
+            tab.FinishLoading();
+            return;
         }
+
+        // SHA-1 is now available from the completed scan.
+        var currentSha1 = tab.LoadResult.BaseSha1;
+        tab.BaseSha1 = currentSha1 ?? entry.BaseSha1;
+        tab.Document.LineEndingInfo = tab.LoadResult.Document.LineEndingInfo;
+
+        if (entry.BaseSha1 is not null && currentSha1 != entry.BaseSha1) {
+            tab.Conflict = new FileConflict {
+                Kind = FileConflictKind.Changed,
+                FilePath = entry.FilePath!,
+                ExpectedSha1 = entry.BaseSha1,
+                ActualSha1 = currentSha1,
+            };
+            // Disk version is already loaded; don't replay edits.
+        } else {
+            // SHA-1 match — safe to replay edits.
+            ReplayEdits(tab.Document, entry);
+        }
+
+        RestoreSelection(tab.Document, entry);
+        tab.FinishLoading();
+    }
+
+    private static void RestoreSelection(Document doc, TabEntry entry) {
+        var len = doc.Table.Length;
+        doc.Selection = new Selection(
+            Math.Clamp(entry.CaretAnchor, 0, len),
+            Math.Clamp(entry.CaretActive, 0, len));
     }
 
     private static void ReplayEdits(Document doc, TabEntry entry) {

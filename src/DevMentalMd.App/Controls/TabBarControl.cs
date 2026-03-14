@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using DevMentalMd.App.Services;
 
 namespace DevMentalMd.App.Controls;
@@ -109,7 +110,7 @@ public sealed class TabBarControl : Control {
     private double _contentStartX; // x after icon
 
     private enum HitZone {
-        None, Tab, CloseButton, PlusButton, OverflowButton, DragArea,
+        None, Tab, CloseButton, ErrorIcon, PlusButton, OverflowButton, DragArea,
         ChromeMinimize, ChromeMaximize, ChromeClose,
     }
     private HitZone _hoverZone = HitZone.None;
@@ -127,6 +128,10 @@ public sealed class TabBarControl : Control {
     private bool _isDragging;
     private const double DragThreshold = 6; // pixels before drag starts
 
+    // Loading spinner animation
+    private DispatcherTimer? _spinnerTimer;
+    private int _spinnerFrame; // 0–7 (45° per step)
+
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
@@ -140,6 +145,8 @@ public sealed class TabBarControl : Control {
     public event Action<int>? CloseOtherTabsClicked;
     public event Action<int, int>? TabReordered; // (fromIndex, toIndex)
     public event Action? DragAreaDoubleClicked;
+    public event Action<int>? ConflictLocateClicked;
+    public event Action<int>? ConflictDiscardClicked;
 
     // Custom chrome (Linux only)
     public event Action? MinimizeClicked;
@@ -188,7 +195,26 @@ public sealed class TabBarControl : Control {
         _tabs = tabs;
         _activeTab = active;
         ComputeTabLayout();
+        UpdateSpinnerTimer();
         InvalidateVisual();
+    }
+
+    private void UpdateSpinnerTimer() {
+        var anyLoading = false;
+        for (var i = 0; i < _tabs.Count; i++) {
+            if (_tabs[i].IsLoading) { anyLoading = true; break; }
+        }
+        if (anyLoading && _spinnerTimer is null) {
+            _spinnerTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+            _spinnerTimer.Tick += (_, _) => {
+                _spinnerFrame = (_spinnerFrame + 1) & 7;
+                InvalidateVisual();
+            };
+            _spinnerTimer.Start();
+        } else if (!anyLoading && _spinnerTimer is not null) {
+            _spinnerTimer.Stop();
+            _spinnerTimer = null;
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -428,11 +454,19 @@ public sealed class TabBarControl : Control {
             var tabX = _tabXPositions[i];
             var tabW = _tabWidths[i];
             if (x >= tabX && x < tabX + tabW && y >= TabTopMargin) {
-                // Check close button area (right side of tab)
+                // Check close/error/spinner area (right side of tab)
                 var closeX = tabX + tabW - CloseButtonSize - TabPaddingRight;
                 var closeY = TabTopMargin + (TabHeight - CloseButtonSize) / 2;
                 if (x >= closeX && x < closeX + CloseButtonSize
                     && y >= closeY && y < closeY + CloseButtonSize) {
+                    // Loading spinner → close on hover so tab is always closable
+                    if (_tabs[i].IsLoading) {
+                        return (HitZone.CloseButton, i);
+                    }
+                    // Error icon takes precedence — always visible when conflict exists
+                    if (_tabs[i].Conflict is not null) {
+                        return (HitZone.ErrorIcon, i);
+                    }
                     // Show close on active tab or hovered tab
                     if (_tabs[i] == _activeTab || _hoverTabIndex == i) {
                         return (HitZone.CloseButton, i);
@@ -615,8 +649,9 @@ public sealed class TabBarControl : Control {
         var textY = TabTopMargin + (TabHeight - ft.Height) / 2;
         ctx.DrawText(ft, new Point(labelX, textY));
 
-        // Close button: on hover, or dirty dot when tab has unsaved changes
-        if (isHovered || _tabs[index].IsDirty) {
+        // Close button: on hover, dirty dot, error icon, or loading spinner
+        if (isHovered || _tabs[index].IsDirty || _tabs[index].Conflict is not null
+            || _tabs[index].IsLoading) {
             DrawCloseButton(ctx, index);
         }
     }
@@ -724,13 +759,62 @@ public sealed class TabBarControl : Control {
         var closeX = x + tabW - CloseButtonSize - TabPaddingRight;
         var closeY = TabTopMargin + (TabHeight - CloseButtonSize) / 2;
         var isHoveringClose = _hoverZone == HitZone.CloseButton && _hoverTabIndex == index;
+        var isHoveringError = _hoverZone == HitZone.ErrorIcon && _hoverTabIndex == index;
         var isDirty = _tabs[index].IsDirty;
+
+        // Loading spinner takes highest precedence.
+        if (_tabs[index].IsLoading) {
+            if (isHoveringClose) {
+                // Hover over spinner area → show close button instead.
+                DrawIconButton(ctx, closeX, closeY, CloseButtonSize, CloseButtonSize,
+                    true, _theme.TabCloseHoverBg, IconGlyphs.Close, _theme.TabCloseForeground);
+            } else {
+                DrawLoadingSpinner(ctx,
+                    closeX + CloseButtonSize / 2,
+                    closeY + CloseButtonSize / 2, 5);
+            }
+            return;
+        }
+
+        // Conflict error icon takes precedence over dirty/close.
+        if (_tabs[index].Conflict is not null) {
+            DrawIconButton(ctx, closeX, closeY, CloseButtonSize, CloseButtonSize,
+                isHoveringError, _theme.TabCloseHoverBg,
+                IconGlyphs.ErrorCircle, _theme.TabErrorIconForeground);
+            return;
+        }
 
         // Show dirty dot when the tab has unsaved changes and the
         // close button is not being hovered; otherwise show the X.
         var glyph = isDirty && !isHoveringClose ? IconGlyphs.Dirty : IconGlyphs.Close;
         DrawIconButton(ctx, closeX, closeY, CloseButtonSize, CloseButtonSize,
             isHoveringClose, _theme.TabCloseHoverBg, glyph, _theme.TabCloseForeground);
+    }
+
+    /// <summary>
+    /// Draws a small rotating arc (indeterminate progress spinner).
+    /// </summary>
+    private void DrawLoadingSpinner(DrawingContext ctx, double cx, double cy, double radius) {
+        var startAngle = _spinnerFrame * 45.0;
+        var sweepAngle = 270.0;
+        var pen = new Pen(_theme.TabCloseForeground, 1.5);
+
+        var geo = new StreamGeometry();
+        using (var sgc = geo.Open()) {
+            var startRad = startAngle * Math.PI / 180.0;
+            var endRad = (startAngle + sweepAngle) * Math.PI / 180.0;
+
+            var sx = cx + radius * Math.Cos(startRad);
+            var sy = cy + radius * Math.Sin(startRad);
+            var ex = cx + radius * Math.Cos(endRad);
+            var ey = cy + radius * Math.Sin(endRad);
+
+            sgc.BeginFigure(new Point(sx, sy), false);
+            sgc.ArcTo(new Point(ex, ey), new Size(radius, radius),
+                0, sweepAngle > 180, SweepDirection.Clockwise);
+            sgc.EndFigure(false);
+        }
+        ctx.DrawGeometry(null, pen, geo);
     }
 
     private void DrawPlusButton(DrawingContext ctx, double x) {
@@ -885,8 +969,15 @@ public sealed class TabBarControl : Control {
                 ? Cursor.Default
                 : new Cursor(StandardCursorType.Arrow);
 
-            // Show file path tooltip when hovering over a tab
-            if (zone is HitZone.Tab or HitZone.CloseButton
+            // Show tooltip: conflict message on error icon, file path on tab
+            if (zone == HitZone.ErrorIcon && idx >= 0 && idx < _tabs.Count
+                && _tabs[idx].Conflict is { } c) {
+                var tip = c.Kind == SessionStore.FileConflictKind.Missing
+                    ? $"File not found: {c.FilePath}\nRight-click for options"
+                    : $"File changed on disk \u2014 session edits may not apply\nRight-click for options";
+                ToolTip.SetTip(this, tip);
+                ToolTip.SetIsOpen(this, true);
+            } else if (zone is HitZone.Tab or HitZone.CloseButton
                 && idx >= 0 && idx < _tabs.Count
                 && _tabs[idx].FilePath != null) {
                 UiHelpers.SetPathToolTip(this, _tabs[idx].FilePath);
@@ -954,7 +1045,8 @@ public sealed class TabBarControl : Control {
         var (zone, idx) = HitTest(pt);
 
         // Right-click context menu on tabs
-        if (props.IsRightButtonPressed && zone is HitZone.Tab or HitZone.CloseButton
+        if (props.IsRightButtonPressed
+            && zone is HitZone.Tab or HitZone.CloseButton or HitZone.ErrorIcon
             && idx >= 0 && idx < _tabs.Count) {
             ShowTabContextMenu(idx, pt);
             e.Handled = true;
@@ -971,6 +1063,11 @@ public sealed class TabBarControl : Control {
                 _dragStartPoint = pt;
                 _isDragging = false;
                 TabClicked?.Invoke(idx);
+                e.Handled = true;
+                break;
+            case HitZone.ErrorIcon:
+                // Clicking the error icon opens the conflict resolution menu.
+                ShowConflictMenu(idx, pt);
                 e.Handled = true;
                 break;
             case HitZone.CloseButton:
@@ -1011,6 +1108,12 @@ public sealed class TabBarControl : Control {
     private void ShowTabContextMenu(int tabIndex, Point position) {
         var menu = new ContextMenu();
 
+        // Conflict resolution items at the top, if applicable.
+        if (tabIndex >= 0 && tabIndex < _tabs.Count && _tabs[tabIndex].Conflict is { } conflict) {
+            AddConflictMenuItems(menu, tabIndex, conflict);
+            menu.Items.Add(new Separator());
+        }
+
         var closeRight = new MenuItem { Header = "Close Tabs to the _Right" };
         closeRight.Click += (_, _) => CloseTabsToRightClicked?.Invoke(tabIndex);
         menu.Items.Add(closeRight);
@@ -1022,5 +1125,38 @@ public sealed class TabBarControl : Control {
         menu.PlacementTarget = this;
         menu.Placement = PlacementMode.Pointer;
         menu.Open(this);
+    }
+
+    private void ShowConflictMenu(int tabIndex, Point position) {
+        if (tabIndex < 0 || tabIndex >= _tabs.Count
+            || _tabs[tabIndex].Conflict is not { } conflict) return;
+
+        var menu = new ContextMenu();
+        AddConflictMenuItems(menu, tabIndex, conflict);
+
+        menu.PlacementTarget = this;
+        menu.Placement = PlacementMode.Pointer;
+        menu.Open(this);
+    }
+
+    private void AddConflictMenuItems(ContextMenu menu, int tabIndex,
+        SessionStore.FileConflict conflict) {
+        if (conflict.Kind == SessionStore.FileConflictKind.Missing) {
+            var locate = new MenuItem { Header = "Locate File\u2026" };
+            locate.Click += (_, _) => ConflictLocateClicked?.Invoke(tabIndex);
+            menu.Items.Add(locate);
+
+            var discard = new MenuItem { Header = "Discard Unsaved Edits" };
+            discard.Click += (_, _) => ConflictDiscardClicked?.Invoke(tabIndex);
+            menu.Items.Add(discard);
+        } else {
+            var keep = new MenuItem { Header = "Keep Disk Version (discard edits)" };
+            keep.Click += (_, _) => ConflictDiscardClicked?.Invoke(tabIndex);
+            menu.Items.Add(keep);
+
+            var locate = new MenuItem { Header = "Locate Original File\u2026" };
+            locate.Click += (_, _) => ConflictLocateClicked?.Invoke(tabIndex);
+            menu.Items.Add(locate);
+        }
     }
 }

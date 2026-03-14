@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using DevMentalMd.App.Services;
 using DevMentalMd.Core.Documents;
 using DevMentalMd.Core.IO;
 
@@ -30,6 +31,24 @@ public sealed class TabState {
     /// </summary>
     public string? BaseSha1 { get; set; }
 
+    /// <summary>
+    /// Non-null when the base file was missing or changed at session restore.
+    /// The tab bar draws an error icon and offers resolution via context menu.
+    /// </summary>
+    public SessionStore.FileConflict? Conflict { get; set; }
+
+    /// <summary>
+    /// True while the file's background scan is still in progress.
+    /// The tab bar shows a spinner and the editor blocks input.
+    /// </summary>
+    public bool IsLoading { get; set; }
+
+    /// <summary>
+    /// Fires on the UI thread when loading finishes and the tab becomes
+    /// interactive (conflict detection and edit replay are complete).
+    /// </summary>
+    public event Action? LoadCompleted;
+
     // Scroll / windowed-layout state, saved when leaving the tab so
     // returning does not produce a visual jump.
     public double ScrollOffsetY { get; set; }
@@ -37,6 +56,12 @@ public sealed class TabState {
     public double WinScrollOffset { get; set; }
     public double WinRenderOffsetY { get; set; }
     public double WinFirstLineHeight { get; set; }
+
+    /// <summary>Marks loading complete and fires <see cref="LoadCompleted"/>.</summary>
+    public void FinishLoading() {
+        IsLoading = false;
+        LoadCompleted?.Invoke();
+    }
 
     public TabState(Document document, string? filePath, string displayName) {
         Document = document;
