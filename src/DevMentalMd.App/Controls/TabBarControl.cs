@@ -145,7 +145,6 @@ public sealed class TabBarControl : Control {
     public event Action<int>? CloseOtherTabsClicked;
     public event Action<int, int>? TabReordered; // (fromIndex, toIndex)
     public event Action? DragAreaDoubleClicked;
-    public event Action<int>? ConflictLocateClicked;
     public event Action<int>? ConflictDiscardClicked;
 
     // Custom chrome (Linux only)
@@ -1142,10 +1141,6 @@ public sealed class TabBarControl : Control {
     private void AddConflictMenuItems(ContextMenu menu, int tabIndex,
         SessionStore.FileConflict conflict) {
         if (conflict.Kind == SessionStore.FileConflictKind.Missing) {
-            var locate = new MenuItem { Header = "Locate File\u2026" };
-            locate.Click += (_, _) => ConflictLocateClicked?.Invoke(tabIndex);
-            menu.Items.Add(locate);
-
             var discard = new MenuItem { Header = "Discard Unsaved Edits" };
             discard.Click += (_, _) => ConflictDiscardClicked?.Invoke(tabIndex);
             menu.Items.Add(discard);
@@ -1153,10 +1148,6 @@ public sealed class TabBarControl : Control {
             var keep = new MenuItem { Header = "Keep Disk Version (discard edits)" };
             keep.Click += (_, _) => ConflictDiscardClicked?.Invoke(tabIndex);
             menu.Items.Add(keep);
-
-            var locate = new MenuItem { Header = "Locate Original File\u2026" };
-            locate.Click += (_, _) => ConflictLocateClicked?.Invoke(tabIndex);
-            menu.Items.Add(locate);
         }
     }
 }

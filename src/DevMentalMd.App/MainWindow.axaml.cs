@@ -390,7 +390,6 @@ public partial class MainWindow : Window {
         TabBar.ChromeCloseClicked += () => Close();
 
         // Conflict resolution (session restore error icon)
-        TabBar.ConflictLocateClicked += idx => _ = HandleConflictLocateAsync(idx);
         TabBar.ConflictDiscardClicked += HandleConflictDiscard;
     }
 
@@ -1793,80 +1792,6 @@ public partial class MainWindow : Window {
     // -----------------------------------------------------------------
     // Conflict resolution (error icon on tab)
     // -----------------------------------------------------------------
-
-    /// <summary>
-    /// Handles the "Locate File" action from the conflict context menu.
-    /// Opens a file picker, verifies SHA-1, and replaces the tab on match.
-    /// </summary>
-    private async Task HandleConflictLocateAsync(int tabIndex) {
-        if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
-        var tab = _tabs[tabIndex];
-        var conflict = tab.Conflict;
-        if (conflict is null) return;
-
-        var startDir = await GetStartLocationAsync();
-        var picked = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions {
-            Title = "Locate File",
-            AllowMultiple = false,
-            FileTypeFilter = FileTypeFilters,
-            SuggestedStartLocation = startDir,
-        });
-        if (picked.Count == 0) return;
-        var newPath = picked[0].TryGetLocalPath();
-        if (newPath is null || !File.Exists(newPath)) return;
-
-        // Load the located file and compare SHA-1.
-        LoadResult loadResult;
-        try {
-            loadResult = await FileLoader.LoadAsync(newPath);
-            await loadResult.Loaded;
-        } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-            StatusLeft.Text = $"Open failed: {ex.Message}";
-            return;
-        }
-        var sha1 = loadResult.BaseSha1;
-
-        if (sha1 == conflict.ExpectedSha1) {
-            // Match — replay edits onto the fresh document.
-            var doc = loadResult.Document;
-            doc.History.RestoreEntries(
-                doc.Table,
-                tab.Document.History.GetUndoEntries(),
-                tab.Document.History.GetRedoEntries(),
-                tab.Document.History.SavePointDepth);
-            doc.Selection = tab.Document.Selection;
-
-            // Replace tab in-place.
-            var idx = _tabs.IndexOf(tab);
-            if (idx >= 0) {
-                var newTab = new TabState(doc, newPath, Path.GetFileName(newPath)) {
-                    Id = tab.Id,
-                    BaseSha1 = sha1,
-                    IsDirty = tab.IsDirty,
-                    ScrollOffsetY = tab.ScrollOffsetY,
-                    WinTopLine = tab.WinTopLine,
-                    WinScrollOffset = tab.WinScrollOffset,
-                    WinRenderOffsetY = tab.WinRenderOffsetY,
-                    WinFirstLineHeight = tab.WinFirstLineHeight,
-                };
-                _tabs[idx] = newTab;
-                newTab.Document.Changed += (_, _) => OnTabDocumentChanged(newTab);
-                if (_activeTab == tab) {
-                    SwitchToTab(newTab);
-                }
-                UpdateTabBar();
-            }
-        } else {
-            // SHA-1 mismatch — update the conflict to reflect "changed".
-            tab.Conflict = new SessionStore.FileConflict {
-                Kind = SessionStore.FileConflictKind.Changed,
-                FilePath = newPath,
-                ExpectedSha1 = conflict.ExpectedSha1,
-                ActualSha1 = sha1,
-            };
-            UpdateTabBar();
-        }
-    }
 
     /// <summary>
     /// Handles the "Discard" action from the conflict context menu.
