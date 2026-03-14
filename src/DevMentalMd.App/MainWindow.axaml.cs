@@ -1069,17 +1069,26 @@ public partial class MainWindow : Window {
         // -- Line/Col → GoTo Line --
         BtnLineCol.PointerPressed += (_, _) => OpenGoToLine();
 
-        // -- Encoding → flyout (UI only, no conversion yet) --
-        var encFlyout = new Avalonia.Controls.MenuFlyout();
-        foreach (var enc in new[] { "UTF-8", "UTF-8 with BOM", "UTF-16 LE", "UTF-16 BE",
-                                     "Windows-1252", "ASCII" }) {
-            var item = new MenuItem { Header = enc };
-            item.IsEnabled = enc == "UTF-8"; // current encoding only
-            encFlyout.Items.Add(item);
-        }
+        // -- Encoding → flyout --
         BtnEncoding.PointerPressed += (_, e) => {
             e.Handled = true;
-            encFlyout.ShowAt(BtnEncoding);
+            var doc = Editor.Document;
+            if (doc == null) return;
+            var flyout = new Avalonia.Controls.MenuFlyout();
+            foreach (var (label, cmdId) in new[] {
+                ("UTF-8", Commands.CommandIds.EditEncodingUtf8),
+                ("UTF-8 with BOM", Commands.CommandIds.EditEncodingUtf8Bom),
+                ("UTF-16 LE", Commands.CommandIds.EditEncodingUtf16Le),
+                ("UTF-16 BE", Commands.CommandIds.EditEncodingUtf16Be),
+                ("Windows-1252", Commands.CommandIds.EditEncodingWin1252),
+                ("ASCII", Commands.CommandIds.EditEncodingAscii),
+            }) {
+                var item = new MenuItem { Header = label };
+                var cmd = cmdId;
+                item.Click += (_, _) => Editor.ExecuteCommand(cmd);
+                flyout.Items.Add(item);
+            }
+            flyout.ShowAt(BtnEncoding);
         };
 
         // -- Line ending → flyout --
@@ -1181,7 +1190,7 @@ public partial class MainWindow : Window {
                 SetText(StatusSep1, " | ");
                 SetText(StatusLineCount, $"{lcText} lines");
                 SetText(StatusSep2, " | ");
-                SetText(StatusEncoding, "UTF-8");
+                SetText(StatusEncoding, doc.EncodingInfo.Label);
                 SetText(StatusSep3, " | ");
 
                 var lei = doc.LineEndingInfo;

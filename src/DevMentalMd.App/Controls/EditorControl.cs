@@ -1564,6 +1564,26 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 InvalidateLayout();
                 return true;
 
+            // -- Encoding (save-time only, no content conversion) --
+            case Commands.CommandIds.EditEncodingUtf8:
+                doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf8);
+                return true;
+            case Commands.CommandIds.EditEncodingUtf8Bom:
+                doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf8Bom);
+                return true;
+            case Commands.CommandIds.EditEncodingUtf16Le:
+                doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf16Le);
+                return true;
+            case Commands.CommandIds.EditEncodingUtf16Be:
+                doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf16Be);
+                return true;
+            case Commands.CommandIds.EditEncodingWin1252:
+                doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Windows1252);
+                return true;
+            case Commands.CommandIds.EditEncodingAscii:
+                doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Ascii);
+                return true;
+
             // -- Scroll without moving caret --
             case Commands.CommandIds.NavScrollLineUp:
                 FlushCompound();

@@ -54,6 +54,12 @@ public static class CommandIds {
     public const string EditLineEndingCR         = "Edit.LineEndingCR";
     public const string EditIndentToSpaces       = "Edit.IndentToSpaces";
     public const string EditIndentToTabs         = "Edit.IndentToTabs";
+    public const string EditEncodingUtf8         = "Edit.EncodingUtf8";
+    public const string EditEncodingUtf8Bom      = "Edit.EncodingUtf8Bom";
+    public const string EditEncodingUtf16Le      = "Edit.EncodingUtf16Le";
+    public const string EditEncodingUtf16Be      = "Edit.EncodingUtf16Be";
+    public const string EditEncodingWin1252      = "Edit.EncodingWin1252";
+    public const string EditEncodingAscii        = "Edit.EncodingAscii";
 
     // -----------------------------------------------------------------
     // Find

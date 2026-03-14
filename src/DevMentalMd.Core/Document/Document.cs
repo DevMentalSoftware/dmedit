@@ -46,6 +46,12 @@ public sealed class Document {
     /// </summary>
     public IndentInfo IndentInfo { get; set; } = IndentInfo.Default;
 
+    /// <summary>
+    /// Detected (or user-assigned) file encoding. Determines how the document
+    /// is written on the next save. Defaults to UTF-8 (no BOM) for new documents.
+    /// </summary>
+    public EncodingInfo EncodingInfo { get; set; } = EncodingInfo.Default;
+
     public bool CanUndo => _history.CanUndo;
     public bool CanRedo => _history.CanRedo;
 

@@ -56,6 +56,12 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
     public IndentInfo DetectedIndent =>
         IndentInfo.FromCounts(_spaceIndentCount, _tabIndentCount);
 
+    private Encoding _detectedEncoding = Encoding.UTF8;
+    private bool _hadBom;
+
+    public Documents.EncodingInfo DetectedEncoding =>
+        Documents.EncodingInfo.FromDetection(_detectedEncoding, _hadBom);
+
     private readonly object _lock = new();
     private readonly CancellationTokenSource _cts = new();
     private readonly ManualResetEventSlim _loadedEvent = new(false);
@@ -193,7 +199,9 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
             }
 
             using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
-            var (decoder, prefetched) = DetectEncodingAndCreateDecoder(stream);
+            var (decoder, prefetched, detEnc, detBom) = DetectEncodingAndCreateDecoder(stream);
+            _detectedEncoding = detEnc;
+            _hadBom = detBom;
             var byteBuf = new byte[ChunkSize];
 
             // If BOM detection consumed bytes on a non-seekable stream, decode them first.
@@ -296,45 +304,45 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
     /// Returns the appropriate decoder and any bytes that were consumed but not part
     /// of a BOM (for non-seekable streams where we can't rewind).
     /// </summary>
-    private static (Decoder decoder, byte[]? prefetched) DetectEncodingAndCreateDecoder(Stream stream) {
+    private static (Decoder decoder, byte[]? prefetched, Encoding encoding, bool hadBom) DetectEncodingAndCreateDecoder(Stream stream) {
         var bom = new byte[3];
         var bomRead = stream.Read(bom, 0, 3);
 
         if (bomRead >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF) {
             // UTF-8 BOM — consumed, continue reading as UTF-8.
-            return (Encoding.UTF8.GetDecoder(), null);
+            return (Encoding.UTF8.GetDecoder(), null, Encoding.UTF8, true);
         }
         if (bomRead >= 2 && bom[0] == 0xFF && bom[1] == 0xFE) {
             // UTF-16 LE BOM.
             if (stream.CanSeek) {
                 stream.Position = 2;
-                return (Encoding.Unicode.GetDecoder(), null);
+                return (Encoding.Unicode.GetDecoder(), null, Encoding.Unicode, true);
             }
             // Non-seekable: the 3rd byte (if read) is data, not BOM.
             return bomRead > 2
-                ? (Encoding.Unicode.GetDecoder(), [bom[2]])
-                : (Encoding.Unicode.GetDecoder(), null);
+                ? (Encoding.Unicode.GetDecoder(), [bom[2]], Encoding.Unicode, true)
+                : (Encoding.Unicode.GetDecoder(), null, Encoding.Unicode, true);
         }
         if (bomRead >= 2 && bom[0] == 0xFE && bom[1] == 0xFF) {
             // UTF-16 BE BOM.
             if (stream.CanSeek) {
                 stream.Position = 2;
-                return (Encoding.BigEndianUnicode.GetDecoder(), null);
+                return (Encoding.BigEndianUnicode.GetDecoder(), null, Encoding.BigEndianUnicode, true);
             }
             return bomRead > 2
-                ? (Encoding.BigEndianUnicode.GetDecoder(), [bom[2]])
-                : (Encoding.BigEndianUnicode.GetDecoder(), null);
+                ? (Encoding.BigEndianUnicode.GetDecoder(), [bom[2]], Encoding.BigEndianUnicode, true)
+                : (Encoding.BigEndianUnicode.GetDecoder(), null, Encoding.BigEndianUnicode, true);
         }
 
         // No BOM — rewind if possible; otherwise return consumed bytes as prefetched data.
         if (stream.CanSeek) {
             stream.Position = 0;
-            return (Encoding.UTF8.GetDecoder(), null);
+            return (Encoding.UTF8.GetDecoder(), null, Encoding.UTF8, false);
         }
         // Non-seekable: return the consumed bytes so the caller can decode them.
         return bomRead > 0
-            ? (Encoding.UTF8.GetDecoder(), bom[..bomRead])
-            : (Encoding.UTF8.GetDecoder(), null);
+            ? (Encoding.UTF8.GetDecoder(), bom[..bomRead], Encoding.UTF8, false)
+            : (Encoding.UTF8.GetDecoder(), null, Encoding.UTF8, false);
     }
 
     // -----------------------------------------------------------------

@@ -11,4 +11,8 @@
     <InternalsVisibleTo Include="DevMentalMd.Core.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.5" />
+  </ItemGroup>
+
 </Project>

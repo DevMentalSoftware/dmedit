@@ -56,6 +56,12 @@ public static class CommandRegistry {
         new(CommandIds.EditLineEndingCR, "Convert Line Endings to CR"),
         new(CommandIds.EditIndentToSpaces, "Convert Indentation to Spaces"),
         new(CommandIds.EditIndentToTabs, "Convert Indentation to Tabs"),
+        new(CommandIds.EditEncodingUtf8, "Set Encoding to UTF-8"),
+        new(CommandIds.EditEncodingUtf8Bom, "Set Encoding to UTF-8 with BOM"),
+        new(CommandIds.EditEncodingUtf16Le, "Set Encoding to UTF-16 LE"),
+        new(CommandIds.EditEncodingUtf16Be, "Set Encoding to UTF-16 BE"),
+        new(CommandIds.EditEncodingWin1252, "Set Encoding to Windows-1252"),
+        new(CommandIds.EditEncodingAscii, "Set Encoding to ASCII"),
 
         // -- Find --
         new(CommandIds.FindFind, "Find"),

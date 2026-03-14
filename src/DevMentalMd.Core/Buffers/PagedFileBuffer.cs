@@ -102,6 +102,9 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     public IndentInfo DetectedIndent =>
         IndentInfo.FromCounts(_spaceIndentCount, _tabIndentCount);
 
+    public Documents.EncodingInfo DetectedEncoding =>
+        Documents.EncodingInfo.FromDetection(_encoding, _hadBom);
+
     // -----------------------------------------------------------------
     // File access + scan state
     // -----------------------------------------------------------------
@@ -110,6 +113,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     // _fs removed — page re-reads now open/close a fresh FileStream each time
     // to avoid holding a file lock for the entire session.
     private Encoding _encoding = null!;   // detected from BOM during scan
+    private bool _hadBom;                  // whether a BOM was present
     private readonly long _byteLen;
     private long _totalChars;              // accessed via Interlocked
     private volatile bool _done;
@@ -384,7 +388,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                 FileShare.ReadWrite | FileShare.Delete, PageSizeBytes, FileOptions.SequentialScan);
 
             // Detect BOM (may advance scanFs past the BOM bytes).
-            _encoding = DetectEncoding(scanFs);
+            (_encoding, _hadBom) = DetectEncodingWithBom(scanFs);
             var decoder = _encoding.GetDecoder();
 
             // Incremental SHA-1: hash raw bytes as we scan.
@@ -718,25 +722,25 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     /// <summary>
     /// Reads up to 3 bytes to detect a BOM. Rewinds the stream after detection.
     /// </summary>
-    private static Encoding DetectEncoding(FileStream fs) {
+    private (Encoding encoding, bool hadBom) DetectEncodingWithBom(FileStream fs) {
         var bom = new byte[3];
         var bomRead = fs.Read(bom, 0, 3);
 
         if (bomRead >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF) {
             // UTF-8 BOM — consumed, continue reading.
-            return Encoding.UTF8;
+            return (Encoding.UTF8, true);
         }
         if (bomRead >= 2 && bom[0] == 0xFF && bom[1] == 0xFE) {
             fs.Position = 2; // UTF-16 LE BOM
-            return Encoding.Unicode;
+            return (Encoding.Unicode, true);
         }
         if (bomRead >= 2 && bom[0] == 0xFE && bom[1] == 0xFF) {
             fs.Position = 2; // UTF-16 BE BOM
-            return Encoding.BigEndianUnicode;
+            return (Encoding.BigEndianUnicode, true);
         }
 
         // No BOM — rewind and assume UTF-8.
         fs.Position = 0;
-        return Encoding.UTF8;
+        return (Encoding.UTF8, false);
     }
 }
