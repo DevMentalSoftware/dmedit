@@ -66,9 +66,9 @@ public sealed class EditorTheme {
 
     // -- Status bar --
     public IBrush StatusBarBackground { get; init; } =
-        new SolidColorBrush(Color.FromRgb(0xF9, 0xF9, 0xF9));
+        new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
     public IBrush StatusBarBorder { get; init; } =
-        new SolidColorBrush(Color.FromRgb(0xDA, 0xDA, 0xDA));
+        new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
     public IBrush StatusBarForeground { get; init; } =
         new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
 
@@ -160,8 +160,8 @@ public sealed class EditorTheme {
         //ChromeCloseButtonForeground = new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xC8)),
 
         // Status bar
-        StatusBarBackground = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x25)),
-        StatusBarBorder = new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x3E)),
+        StatusBarBackground = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
+        StatusBarBorder = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
         StatusBarForeground = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90)),
 
         // Scrollbar
