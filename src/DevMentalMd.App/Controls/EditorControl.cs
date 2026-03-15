@@ -125,6 +125,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         set => _coalesceTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(100, value));
     }
 
+    // Search state (shared across Find Bar, incremental search, Find Word/Selection)
+    private string _lastSearchTerm = "";
+
+    // Incremental search state
+    private bool _inIncrementalSearch;
+    private string _isearchString = "";
+    private bool _isearchFailed;
+
     /// <summary>Optional reference to the scrollbar for middle-drag visual feedback.</summary>
     public DualZoneScrollBar? ScrollBar { get; set; }
 
@@ -1284,6 +1292,11 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     protected override void OnTextInput(TextInputEventArgs e) {
         base.OnTextInput(e);
         if (IsInputBlocked) { e.Handled = true; return; }
+        if (_inIncrementalSearch) {
+            HandleIncrementalSearchChar(e.Text ?? "");
+            e.Handled = true;
+            return;
+        }
         var doc = Document;
         if (doc == null || string.IsNullOrEmpty(e.Text)) {
             return;
@@ -2600,5 +2613,243 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         InvalidateMeasure();
         InvalidateVisual();
         ScrollChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // -------------------------------------------------------------------------
+    // Search — shared state
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// The most recent successful search term. Shared across Find Bar,
+    /// incremental search, and Find Word/Selection. Used by Find Next / Find Previous.
+    /// </summary>
+    public string LastSearchTerm {
+        get => _lastSearchTerm;
+        set => _lastSearchTerm = value ?? "";
+    }
+
+    /// <summary>
+    /// Selects the next occurrence of <see cref="LastSearchTerm"/> after the
+    /// current selection (or caret), wrapping around if needed.
+    /// Returns true if a match was found.
+    /// </summary>
+    public bool FindNext() {
+        var doc = Document;
+        if (doc == null || _lastSearchTerm.Length == 0) {
+            return false;
+        }
+        var table = doc.Table;
+        var sel = doc.Selection;
+        // Start searching one character past the start of the current selection
+        // so we advance past the current match.
+        var searchFrom = sel.IsEmpty ? sel.Caret : sel.Start + 1;
+        if (searchFrom >= table.Length) {
+            searchFrom = 0;
+        }
+        var found = FindInDocument(table, _lastSearchTerm, searchFrom);
+        if (found < 0) {
+            return false;
+        }
+        doc.Selection = new Selection(found, found + _lastSearchTerm.Length);
+        ScrollCaretIntoView();
+        InvalidateVisual();
+        return true;
+    }
+
+    /// <summary>
+    /// Selects the previous occurrence of <see cref="LastSearchTerm"/> before
+    /// the current selection (or caret), wrapping around if needed.
+    /// Returns true if a match was found.
+    /// </summary>
+    public bool FindPrevious() {
+        var doc = Document;
+        if (doc == null || _lastSearchTerm.Length == 0) {
+            return false;
+        }
+        var table = doc.Table;
+        var sel = doc.Selection;
+        var searchBefore = sel.IsEmpty ? sel.Caret : sel.Start;
+        var found = FindInDocumentBackward(table, _lastSearchTerm, searchBefore);
+        if (found < 0) {
+            return false;
+        }
+        doc.Selection = new Selection(found, found + _lastSearchTerm.Length);
+        ScrollCaretIntoView();
+        InvalidateVisual();
+        return true;
+    }
+
+    /// <summary>
+    /// Uses the current selection (or selects the word at the caret if collapsed)
+    /// as the search term, then finds the next occurrence.
+    /// </summary>
+    public bool FindNextSelection() {
+        var doc = Document;
+        if (doc == null) {
+            return false;
+        }
+        if (doc.Selection.IsEmpty) {
+            doc.SelectWord();
+            if (doc.Selection.IsEmpty) {
+                return false;
+            }
+        }
+        _lastSearchTerm = doc.GetSelectedText();
+        return FindNext();
+    }
+
+    /// <summary>
+    /// Uses the current selection (or selects the word at the caret if collapsed)
+    /// as the search term, then finds the previous occurrence.
+    /// </summary>
+    public bool FindPreviousSelection() {
+        var doc = Document;
+        if (doc == null) {
+            return false;
+        }
+        if (doc.Selection.IsEmpty) {
+            doc.SelectWord();
+            if (doc.Selection.IsEmpty) {
+                return false;
+            }
+        }
+        _lastSearchTerm = doc.GetSelectedText();
+        return FindPrevious();
+    }
+
+    // -------------------------------------------------------------------------
+    // Incremental search
+    // -------------------------------------------------------------------------
+
+    public bool InIncrementalSearch => _inIncrementalSearch;
+    public string IncrementalSearchText => _isearchString;
+    public bool IncrementalSearchFailed => _isearchFailed;
+
+    /// <summary>Raised when incremental search state changes (for status bar updates).</summary>
+    public event EventHandler? IncrementalSearchChanged;
+
+    public void StartIncrementalSearch() {
+        _inIncrementalSearch = true;
+        _isearchString = "";
+        _isearchFailed = false;
+        IncrementalSearchChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void ExitIncrementalSearch() {
+        if (!_inIncrementalSearch) {
+            return;
+        }
+        _inIncrementalSearch = false;
+        IncrementalSearchChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void HandleIncrementalSearchChar(string text) {
+        if (_isearchFailed || string.IsNullOrEmpty(text)) {
+            return;
+        }
+
+        _isearchString += text;
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+
+        var table = doc.Table;
+        var sel = doc.Selection;
+
+        // Try 1: extend current selection in-place if the next char(s) match.
+        if (!sel.IsEmpty) {
+            var endOfSel = sel.End;
+            if (endOfSel + text.Length <= table.Length) {
+                var nextChars = table.GetText(endOfSel, text.Length);
+                if (nextChars.Equals(text, StringComparison.OrdinalIgnoreCase)) {
+                    doc.Selection = new Selection(sel.Start, endOfSel + text.Length);
+                    _lastSearchTerm = _isearchString;
+                    ScrollCaretIntoView();
+                    InvalidateVisual();
+                    IncrementalSearchChanged?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+            }
+        }
+
+        // Try 2: search the document for the full accumulated string.
+        var searchFrom = sel.IsEmpty ? sel.Caret : sel.Start;
+        var found = FindInDocument(table, _isearchString, searchFrom);
+        if (found >= 0) {
+            doc.Selection = new Selection(found, found + _isearchString.Length);
+            _lastSearchTerm = _isearchString;
+            ScrollCaretIntoView();
+            InvalidateVisual();
+        } else {
+            _isearchFailed = true;
+        }
+        IncrementalSearchChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static long FindInDocument(PieceTable table, string needle, long fromOfs) {
+        var docLen = table.Length;
+        if (needle.Length == 0 || docLen == 0) {
+            return -1;
+        }
+
+        // Search from fromOfs to end of document.
+        var hit = SearchRange(table, needle, fromOfs, docLen);
+        if (hit >= 0) {
+            return hit;
+        }
+
+        // Wrap around: search from 0 to fromOfs + needle.Length - 1.
+        var wrapEnd = Math.Min(fromOfs + needle.Length - 1, docLen);
+        if (wrapEnd > 0) {
+            hit = SearchRange(table, needle, 0, wrapEnd);
+            if (hit >= 0) {
+                return hit;
+            }
+        }
+
+        return -1;
+    }
+
+    private static long SearchRange(PieceTable table, string needle, long start, long end) {
+        // Read the range as a string and use IndexOf.
+        var rangeLen = (int)(end - start);
+        if (rangeLen < needle.Length) {
+            return -1;
+        }
+        var text = table.GetText(start, rangeLen);
+        var idx = text.IndexOf(needle, StringComparison.OrdinalIgnoreCase);
+        return idx >= 0 ? start + idx : -1;
+    }
+
+    /// <summary>
+    /// Searches backward for <paramref name="needle"/> before <paramref name="beforeOfs"/>,
+    /// wrapping around to the end of the document if needed.
+    /// </summary>
+    private static long FindInDocumentBackward(PieceTable table, string needle, long beforeOfs) {
+        var docLen = table.Length;
+        if (needle.Length == 0 || docLen == 0) {
+            return -1;
+        }
+
+        // Search from 0 to beforeOfs (find the last occurrence in that range).
+        var hit = SearchRangeLast(table, needle, 0, beforeOfs);
+        if (hit >= 0) {
+            return hit;
+        }
+
+        // Wrap around: search from beforeOfs to end of document (last occurrence).
+        hit = SearchRangeLast(table, needle, beforeOfs, docLen);
+        return hit;
+    }
+
+    private static long SearchRangeLast(PieceTable table, string needle, long start, long end) {
+        var rangeLen = (int)(end - start);
+        if (rangeLen < needle.Length) {
+            return -1;
+        }
+        var text = table.GetText(start, rangeLen);
+        var idx = text.LastIndexOf(needle, StringComparison.OrdinalIgnoreCase);
+        return idx >= 0 ? start + idx : -1;
     }
 }

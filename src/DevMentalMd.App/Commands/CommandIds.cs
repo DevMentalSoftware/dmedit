@@ -71,7 +71,8 @@ public static class CommandIds {
     public const string FindReplace           = "Find.Replace";
     public const string FindFindNext          = "Find.FindNext";
     public const string FindFindPrevious      = "Find.FindPrevious";
-    public const string FindFindWordOrSel     = "Find.FindWordOrSelection";
+    public const string FindNextSelection      = "Find.FindNextSelection";
+    public const string FindPreviousSelection  = "Find.FindPreviousSelection";
     public const string FindIncrementalSearch = "Find.IncrementalSearch";
 
     // -----------------------------------------------------------------

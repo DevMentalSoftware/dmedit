@@ -82,7 +82,6 @@
 						<MenuItem Header="Find _Next" x:Name="MenuFindNext" />
 						<MenuItem Header="Find _Previous" x:Name="MenuFindPrevious" />
 						<Separator />
-						<MenuItem Header="Find _Word or Selection" x:Name="MenuFindWordOrSel" />
 						<MenuItem Header="_Incremental Search" x:Name="MenuIncrementalSearch" />
 						<Separator />
 						<MenuItem Header="_Go to Line" x:Name="MenuGoToLine" />

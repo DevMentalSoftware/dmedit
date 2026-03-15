@@ -175,6 +175,7 @@ public partial class MainWindow : Window {
     private void SwitchToTab(TabState tab) {
         if (_activeTab == tab) return;
         CancelChord();
+        Editor.ExitIncrementalSearch();
         // Flush any pending compound edit and save scroll state on the outgoing tab.
         if (_activeTab != null && !_activeTab.IsSettings) {
             Editor.FlushCompound();
@@ -501,6 +502,23 @@ public partial class MainWindow : Window {
             return;
         }
 
+        // Incremental search mode: intercept keys before normal dispatch.
+        if (Editor.InIncrementalSearch) {
+            if (e.Key == Key.Escape) {
+                Editor.ExitIncrementalSearch();
+                e.Handled = true;
+                return;
+            }
+            if (HasCommandModifier(e) || IsNonTextKey(e.Key)) {
+                // Exit isearch, then fall through to process the key normally.
+                Editor.ExitIncrementalSearch();
+            } else {
+                // Plain character key — return without handling so that
+                // OnTextInput fires and our interception there picks it up.
+                return;
+            }
+        }
+
         // Chord: waiting for the second key of a two-keystroke chord?
         if (_chordFirst != null) {
             _chordTimer.Stop();
@@ -546,6 +564,28 @@ public partial class MainWindow : Window {
         _chordTimer.Stop();
         _chordFirst = null;
         StatusLeft.Text = "";
+    }
+
+    private static bool HasCommandModifier(KeyEventArgs e) =>
+        (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Alt)) != 0;
+
+    private static bool IsNonTextKey(Key key) => key is
+        Key.Left or Key.Right or Key.Up or Key.Down
+        or Key.Home or Key.End or Key.PageUp or Key.PageDown
+        or Key.Delete or Key.Back or Key.Insert or Key.Tab or Key.Enter or Key.Return
+        or Key.F1 or Key.F2 or Key.F3 or Key.F4 or Key.F5 or Key.F6
+        or Key.F7 or Key.F8 or Key.F9 or Key.F10 or Key.F11 or Key.F12
+        or Key.CapsLock or Key.NumLock or Key.Scroll or Key.PrintScreen
+        or Key.Pause or Key.Apps or Key.Sleep;
+
+    private void UpdateIncrementalSearchStatus() {
+        if (Editor.InIncrementalSearch) {
+            StatusLeft.Text = Editor.IncrementalSearchFailed
+                ? $"Incremental Search: {Editor.IncrementalSearchText} (not found)"
+                : $"Incremental Search: {Editor.IncrementalSearchText}";
+        } else {
+            StatusLeft.Text = "";
+        }
     }
 
     private bool ExecuteWindowCommand(string commandId) {
@@ -623,24 +663,25 @@ public partial class MainWindow : Window {
 
             // -- Find --
             case CommandIds.FindFind:
-            case CommandIds.FindIncrementalSearch:
                 OpenFindBar(replaceMode: false);
+                return true;
+            case CommandIds.FindIncrementalSearch:
+                Editor.StartIncrementalSearch();
                 return true;
             case CommandIds.FindReplace:
                 OpenFindBar(replaceMode: true);
                 return true;
             case CommandIds.FindFindNext:
-                if (!FindBar.IsVisible) {
-                    OpenFindBar(replaceMode: false);
-                }
+                Editor.FindNext();
                 return true;
             case CommandIds.FindFindPrevious:
-                if (!FindBar.IsVisible) {
-                    OpenFindBar(replaceMode: false);
-                }
+                Editor.FindPrevious();
                 return true;
-            case CommandIds.FindFindWordOrSel:
-                OpenFindBarWithSelection();
+            case CommandIds.FindNextSelection:
+                Editor.FindNextSelection();
+                return true;
+            case CommandIds.FindPreviousSelection:
+                Editor.FindPreviousSelection();
                 return true;
 
             // -- Focus --
@@ -759,7 +800,6 @@ public partial class MainWindow : Window {
         SetMenuGesture(MenuReplace, CommandIds.FindReplace);
         SetMenuGesture(MenuFindNext, CommandIds.FindFindNext);
         SetMenuGesture(MenuFindPrevious, CommandIds.FindFindPrevious);
-        SetMenuGesture(MenuFindWordOrSel, CommandIds.FindFindWordOrSel);
         SetMenuGesture(MenuIncrementalSearch, CommandIds.FindIncrementalSearch);
         SetMenuGesture(MenuGoToLine, CommandIds.NavGoToLine);
         SetMenuGesture(MenuLineNumbers, CommandIds.ViewLineNumbers);
@@ -954,6 +994,9 @@ public partial class MainWindow : Window {
         // Editor → ScrollBar: push scroll state whenever it changes
         Editor.ScrollChanged += (_, _) => SyncScrollBarFromEditor();
 
+        // Incremental search → status bar
+        Editor.IncrementalSearchChanged += (_, _) => UpdateIncrementalSearchStatus();
+
         // ScrollBar → Editor: update scroll offset when user drags/clicks scrollbar
         ScrollBar.ScrollRequested += newValue => {
             Editor.ScrollValue = newValue;
@@ -1032,7 +1075,6 @@ public partial class MainWindow : Window {
         MenuReplace.Click += (_, _) => ExecuteWindowCommand(CommandIds.FindReplace);
         MenuFindNext.Click += (_, _) => ExecuteWindowCommand(CommandIds.FindFindNext);
         MenuFindPrevious.Click += (_, _) => ExecuteWindowCommand(CommandIds.FindFindPrevious);
-        MenuFindWordOrSel.Click += (_, _) => ExecuteWindowCommand(CommandIds.FindFindWordOrSel);
         MenuIncrementalSearch.Click += (_, _) => ExecuteWindowCommand(CommandIds.FindIncrementalSearch);
         MenuGoToLine.Click += (_, _) => ExecuteWindowCommand(CommandIds.NavGoToLine);
         MenuCommandPalette.Click += (_, _) => OpenCommandPalette();
@@ -1867,14 +1909,6 @@ public partial class MainWindow : Window {
         }
     }
 
-    private void OpenFindBarWithSelection() {
-        var doc = _activeTab is not { IsSettings: true } ? Editor.Document : null;
-        if (doc != null && !doc.Selection.IsEmpty) {
-            FindBar.SetSearchTerm(doc.GetSelectedText());
-        }
-        OpenFindBar(replaceMode: false);
-    }
-
     private void CloseFindBar() {
         _findBarTab = null;
         // Persist width for next session.
@@ -1900,11 +1934,22 @@ public partial class MainWindow : Window {
         // by AppSettings.PushRecentTerm update the same list).
         SyncFindBarHistory();
 
-        // Push search/replace terms into history when a find/replace is executed.
-        FindBar.FindRequested += _ => {
-            _settings.PushRecentFindTerm(FindBar.SearchTerm);
+        // Push search/replace terms into history when a find/replace is executed,
+        // and update the shared LastSearchTerm so Find Next/Prev work after
+        // closing the bar.
+        FindBar.FindRequested += forward => {
+            var term = FindBar.SearchTerm;
+            _settings.PushRecentFindTerm(term);
             SyncFindBarHistory();
             _settings.ScheduleSave();
+            if (term.Length > 0) {
+                Editor.LastSearchTerm = term;
+                if (forward) {
+                    Editor.FindNext();
+                } else {
+                    Editor.FindPrevious();
+                }
+            }
         };
         FindBar.ReplaceRequested += _ => {
             _settings.PushRecentReplaceTerm(FindBar.ReplaceTerm);
@@ -1915,6 +1960,15 @@ public partial class MainWindow : Window {
             _settings.PushRecentReplaceTerm(FindBar.ReplaceTerm);
             SyncFindBarHistory();
             _settings.ScheduleSave();
+        };
+
+        // Live search as the user types in the search box.
+        FindBar.SearchTermChanged += () => {
+            var term = FindBar.SearchTerm;
+            if (term.Length > 0) {
+                Editor.LastSearchTerm = term;
+                Editor.FindNext();
+            }
         };
 
         // Restore persisted width.

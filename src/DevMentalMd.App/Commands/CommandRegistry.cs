@@ -71,7 +71,8 @@ public static class CommandRegistry {
         new(CommandIds.FindReplace, "Replace"),
         new(CommandIds.FindFindNext, "Find Next"),
         new(CommandIds.FindFindPrevious, "Find Previous"),
-        new(CommandIds.FindFindWordOrSel, "Find Word or Selection"),
+        new(CommandIds.FindNextSelection, "Find Next Selection"),
+        new(CommandIds.FindPreviousSelection, "Find Previous Selection"),
         new(CommandIds.FindIncrementalSearch, "Incremental Search"),
 
         // -- View --
