@@ -146,7 +146,7 @@ public sealed class TabBarControl : Control {
     public event Action? CloseAllTabsClicked;
     public event Action<int, int>? TabReordered; // (fromIndex, toIndex)
     public event Action? DragAreaDoubleClicked;
-    public event Action<int>? ConflictDiscardClicked;
+    public event Action<int, FileConflictChoice>? ConflictResolutionClicked;
 
     // Custom chrome (Linux only)
     public event Action? MinimizeClicked;
@@ -463,8 +463,9 @@ public sealed class TabBarControl : Control {
                     if (_tabs[i].IsLoading) {
                         return (HitZone.CloseButton, i);
                     }
-                    // Error icon takes precedence — always visible when conflict exists
-                    if (_tabs[i].Conflict is not null) {
+                    // Error icon takes precedence — only shown when the tab is
+                    // dirty (clean tabs auto-reload on activation, no icon needed).
+                    if (_tabs[i].Conflict is not null && _tabs[i].IsDirty) {
                         return (HitZone.ErrorIcon, i);
                     }
                     // Show close on active tab or hovered tab
@@ -650,8 +651,7 @@ public sealed class TabBarControl : Control {
         ctx.DrawText(ft, new Point(labelX, textY));
 
         // Close button: on hover, dirty dot, error icon, or loading spinner
-        if (isHovered || _tabs[index].IsDirty || _tabs[index].Conflict is not null
-            || _tabs[index].IsLoading) {
+        if (isHovered || _tabs[index].IsDirty || _tabs[index].IsLoading) {
             DrawCloseButton(ctx, index);
         }
     }
@@ -776,8 +776,9 @@ public sealed class TabBarControl : Control {
             return;
         }
 
-        // Conflict error icon takes precedence over dirty/close.
-        if (_tabs[index].Conflict is not null) {
+        // Conflict error icon — only shown when the tab has unsaved edits.
+        // Clean tabs with conflicts auto-reload when activated; no icon needed.
+        if (_tabs[index].Conflict is not null && _tabs[index].IsDirty) {
             DrawIconButton(ctx, closeX, closeY, CloseButtonSize, CloseButtonSize,
                 isHoveringError, _theme.TabCloseHoverBg,
                 IconGlyphs.ErrorCircle, _theme.TabErrorIconForeground);
@@ -971,8 +972,8 @@ public sealed class TabBarControl : Control {
 
             // Show tooltip: conflict message on error icon, file path on tab
             if (zone == HitZone.ErrorIcon && idx >= 0 && idx < _tabs.Count
-                && _tabs[idx].Conflict is { } c) {
-                var tip = c.Kind == SessionStore.FileConflictKind.Missing
+                && _tabs[idx].Conflict is { } c && _tabs[idx].IsDirty) {
+                var tip = c.Kind == FileConflictKind.Missing
                     ? $"File not found: {c.FilePath}.\nClick for options."
                     : $"File changed on disk.\nClick for options.";
                 ToolTip.SetTip(this, tip);
@@ -1144,15 +1145,27 @@ public sealed class TabBarControl : Control {
     }
 
     private void AddConflictMenuItems(ContextMenu menu, int tabIndex,
-        SessionStore.FileConflict conflict) {
-        if (conflict.Kind == SessionStore.FileConflictKind.Missing) {
-            var discard = new MenuItem { Header = "Discard Unsaved Edits" };
-            discard.Click += (_, _) => ConflictDiscardClicked?.Invoke(tabIndex);
+        FileConflict conflict) {
+        if (conflict.Kind == FileConflictKind.Missing) {
+            var discard = new MenuItem { Header = "Close Tab" };
+            discard.Click += (_, _) =>
+                ConflictResolutionClicked?.Invoke(tabIndex, FileConflictChoice.Discard);
             menu.Items.Add(discard);
         } else {
-            var keep = new MenuItem { Header = "Keep Disk Version (discard edits)" };
-            keep.Click += (_, _) => ConflictDiscardClicked?.Invoke(tabIndex);
-            menu.Items.Add(keep);
+            var loadDisk = new MenuItem { Header = "Load Disk Version" };
+            loadDisk.Click += (_, _) =>
+                ConflictResolutionClicked?.Invoke(tabIndex, FileConflictChoice.LoadDiskVersion);
+            menu.Items.Add(loadDisk);
+
+            var keepMine = new MenuItem { Header = "Keep My Version" };
+            keepMine.Click += (_, _) =>
+                ConflictResolutionClicked?.Invoke(tabIndex, FileConflictChoice.KeepMyVersion);
+            menu.Items.Add(keepMine);
+
+            var discard = new MenuItem { Header = "Close Tab" };
+            discard.Click += (_, _) =>
+                ConflictResolutionClicked?.Invoke(tabIndex, FileConflictChoice.Discard);
+            menu.Items.Add(discard);
         }
     }
 }

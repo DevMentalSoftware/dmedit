@@ -152,15 +152,6 @@ public static class SessionStore {
     // Load — two-phase restore
     // -----------------------------------------------------------------
 
-    public enum FileConflictKind { Missing, Changed }
-
-    public sealed class FileConflict {
-        public required FileConflictKind Kind { get; init; }
-        public required string FilePath { get; init; }
-        public required string? ExpectedSha1 { get; init; }
-        public string? ActualSha1 { get; init; }
-    }
-
     /// <summary>
     /// Phase 1: reads the manifest only (no file I/O). Returns the tab
     /// entries and active index, or null if no session exists.
@@ -258,15 +249,23 @@ public static class SessionStore {
         tab.Document.LineEndingInfo = tab.LoadResult.Document.LineEndingInfo;
 
         if (entry.BaseSha1 is not null && currentSha1 != entry.BaseSha1) {
-            tab.Conflict = new FileConflict {
-                Kind = FileConflictKind.Changed,
-                FilePath = entry.FilePath!,
-                ExpectedSha1 = entry.BaseSha1,
-                ActualSha1 = currentSha1,
-            };
-            // Keep the original BaseSha1 so the conflict persists across
-            // restarts until the user explicitly resolves it.
-            tab.BaseSha1 = entry.BaseSha1;
+            if (!entry.IsDirty) {
+                // No unsaved edits — silently accept the disk version.
+                tab.BaseSha1 = currentSha1 ?? entry.BaseSha1;
+            } else {
+                // Unsaved edits exist — flag the conflict so the user
+                // can decide whether to keep their edits or load the
+                // disk version.
+                tab.Conflict = new FileConflict {
+                    Kind = FileConflictKind.Changed,
+                    FilePath = entry.FilePath!,
+                    ExpectedSha1 = entry.BaseSha1,
+                    ActualSha1 = currentSha1,
+                };
+                // Keep the original BaseSha1 so the conflict persists
+                // across restarts until the user explicitly resolves it.
+                tab.BaseSha1 = entry.BaseSha1;
+            }
             // Disk version is already loaded; don't replay edits.
         } else {
             // SHA-1 match — safe to replay edits.

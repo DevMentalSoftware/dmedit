@@ -7,34 +7,37 @@ using Avalonia.Media;
 namespace DevMentalMd.App;
 
 /// <summary>
-/// The user's chosen resolution for a file conflict during session restore.
+/// The user's chosen resolution for a file conflict.
 /// </summary>
 public enum FileConflictChoice {
-    /// <summary>Load the current disk version (discard session edits).</summary>
+    /// <summary>Load the current disk version (discard edits).</summary>
     LoadDiskVersion,
     /// <summary>Locate the file via a file dialog (for missing files).</summary>
     LocateFile,
+    /// <summary>Keep the editor's version, ignoring the disk change.</summary>
+    KeepMyVersion,
     /// <summary>Close the tab (discard everything).</summary>
     Discard,
 }
 
 /// <summary>
-/// Modal dialog shown when a session-restored tab's base file is missing
-/// or has been modified externally since the last session.
+/// Modal dialog shown when a tab's base file is missing or has been
+/// modified externally. Used both during session restore and at runtime
+/// when the file watcher detects changes.
 /// </summary>
 public class FileConflictDialog : Window {
     public FileConflictChoice Choice { get; private set; } = FileConflictChoice.Discard;
 
-    public FileConflictDialog(Services.SessionStore.FileConflict conflict) {
-        Title = "Session Recovery";
+    public FileConflictDialog(Services.FileConflict conflict) {
+        var isMissing = conflict.Kind == Services.FileConflictKind.Missing;
+
+        Title = isMissing ? "File Not Found" : "File Changed";
         Width = 520;
         MinHeight = 180;
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         SystemDecorations = SystemDecorations.Full;
-
-        var isMissing = conflict.Kind == Services.SessionStore.FileConflictKind.Missing;
 
         var heading = new TextBlock {
             Text = isMissing ? "File Not Found" : "File Changed Externally",
@@ -45,8 +48,8 @@ public class FileConflictDialog : Window {
 
         var message = new TextBlock {
             Text = isMissing
-                ? $"The file no longer exists on disk:\n\n{conflict.FilePath}\n\nThe session contains unsaved changes based on this file."
-                : $"The file has been modified outside the editor since your last session:\n\n{conflict.FilePath}\n\nThe session contains unsaved changes based on the previous version.",
+                ? $"The file no longer exists on disk:\n\n{conflict.FilePath}"
+                : $"The file has been modified outside the editor:\n\n{conflict.FilePath}",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 16),
         };
@@ -71,9 +74,16 @@ public class FileConflictDialog : Window {
                 Close();
             };
             buttonPanel.Children.Add(loadDiskBtn);
+
+            var keepBtn = new Button { Content = "Keep My Version" };
+            keepBtn.Click += (_, _) => {
+                Choice = FileConflictChoice.KeepMyVersion;
+                Close();
+            };
+            buttonPanel.Children.Add(keepBtn);
         }
 
-        var discardBtn = new Button { Content = "Discard and Close Tab" };
+        var discardBtn = new Button { Content = "Close Tab" };
         discardBtn.Click += (_, _) => {
             Choice = FileConflictChoice.Discard;
             Close();

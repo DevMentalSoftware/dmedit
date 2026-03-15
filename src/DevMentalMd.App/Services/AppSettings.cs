@@ -114,6 +114,13 @@ public sealed class AppSettings {
     /// </summary>
     public IndentStyle DefaultIndentStyle { get; set; } = IndentStyle.Spaces;
 
+    /// <summary>
+    /// When true, files modified on disk are automatically reloaded if the
+    /// tab has no unsaved edits. Dirty tabs still show the conflict icon.
+    /// Default: false.
+    /// </summary>
+    public bool AutoReloadExternalChanges { get; set; }
+
     // -----------------------------------------------------------------
     // Theme
     // -----------------------------------------------------------------

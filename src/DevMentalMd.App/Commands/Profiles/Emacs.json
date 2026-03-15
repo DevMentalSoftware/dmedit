@@ -10,6 +10,7 @@
     "File.CloseAll": "",
     "File.Exit": "Ctrl+X, Ctrl+C",
     "File.RevertFile": "",
+    "File.ReloadFile": "",
     "Edit.Undo": "Ctrl+Z",
     "Edit.Redo": "Ctrl+Shift+Z",
     "Edit.Cut": "Ctrl+W",

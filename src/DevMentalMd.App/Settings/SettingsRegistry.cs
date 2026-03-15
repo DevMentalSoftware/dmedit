@@ -41,6 +41,10 @@ public static class SettingsRegistry {
             "Idle time in milliseconds before consecutive edits are committed as a single undo entry. Minimum 100.",
             "Editor", SettingKind.Int, 1000, Min: 100, Max: 10000),
 
+        new("AutoReloadExternalChanges", "Auto-Reload External Changes",
+            "When enabled, files modified externally are automatically reloaded if the tab has no unsaved edits.",
+            "Editor", SettingKind.Bool, false),
+
         new("ExpandSelectionMode", "Expand Selection Mode",
             "Controls how Expand Selection grows the selection. " +
             "'SubwordFirst' starts at camelCase/underscore boundaries; 'Word' starts at whitespace boundaries.",

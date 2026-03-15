@@ -45,6 +45,7 @@ public partial class MainWindow : Window {
     private EditorTheme _theme = EditorTheme.Light;
     private bool _windowStateReady;
     private TabState? _settingsTab;
+    private readonly FileWatcherService _watcher = new();
     private TextBlock? _lineNumGlyph;
     private TextBlock? _statusBarGlyph;
     private TextBlock? _wrapLinesGlyph;
@@ -104,6 +105,7 @@ public partial class MainWindow : Window {
         WireStatusBarButtons();
         WireFindBar();
         WireWindowState();
+        WireFileWatcher();
         SyncMenuGestures();
 
         // Clicking on empty menu bar space should fully dismiss any open menu,
@@ -117,7 +119,14 @@ public partial class MainWindow : Window {
 
         // Window activation tracking for tab bar (active/inactive styling).
         // No focus stealing — focus stays wherever the user left it.
-        Activated += (_, _) => TabBar.IsWindowActive = true;
+        Activated += (_, _) => {
+            TabBar.IsWindowActive = true;
+            // Recheck the active tab's file on window activation in case
+            // FSW missed events (e.g. network drives).
+            if (_activeTab is not null) {
+                _watcher.Recheck(_activeTab);
+            }
+        };
         Deactivated += (_, _) => {
             TabBar.IsWindowActive = false;
             CancelChord();
@@ -196,6 +205,12 @@ public partial class MainWindow : Window {
         // Show find bar only if this tab owns it.
         FindBar.IsVisible = (tab == _findBarTab);
         UpdateTabBar();
+
+        // If the tab has a conflict but no unsaved edits, silently
+        // reload the disk version now that the user is looking at it.
+        if (tab.Conflict is { Kind: FileConflictKind.Changed } && !tab.IsDirty) {
+            _ = ReloadFileInPlaceAsync(tab);
+        }
     }
 
     /// <summary>
@@ -203,6 +218,7 @@ public partial class MainWindow : Window {
     /// for user-facing close operations on dirty tabs.
     /// </summary>
     private void CloseTabDirect(TabState tab) {
+        _watcher.Unwatch(tab);
         if (tab.IsSettings) {
             _settingsTab = null;
             SettingsPanel.ResetState();
@@ -316,6 +332,7 @@ public partial class MainWindow : Window {
         var sha1 = await SaveToAsync(tab.FilePath);
         if (sha1 is null) return false;
         tab.BaseSha1 = sha1;
+        SnapshotFileStats(tab);
         tab.Document.MarkSavePoint();
         tab.IsDirty = false;
         PushRecentFile(tab.FilePath);
@@ -398,7 +415,7 @@ public partial class MainWindow : Window {
         TabBar.ChromeCloseClicked += () => Close();
 
         // Conflict resolution (session restore error icon)
-        TabBar.ConflictDiscardClicked += HandleConflictDiscard;
+        TabBar.ConflictResolutionClicked += HandleConflictResolution;
     }
 
     private void ShowOverflowMenu() {
@@ -593,9 +610,12 @@ public partial class MainWindow : Window {
                 OpenCommandPalette();
                 return true;
 
-            // -- File: Revert --
+            // -- File: Revert / Reload --
             case CommandIds.FileRevertFile:
                 _ = RevertFileAsync();
+                return true;
+            case CommandIds.FileReloadFile:
+                _ = ReloadFileAsync(_activeTab);
                 return true;
 
             // -- Find --
@@ -687,6 +707,7 @@ public partial class MainWindow : Window {
                 var sha1 = await SaveToAsync(tab.FilePath);
                 if (sha1 is null) continue;
                 tab.BaseSha1 = sha1;
+                SnapshotFileStats(tab);
                 tab.Document.MarkSavePoint();
                 tab.IsDirty = false;
                 PushRecentFile(tab.FilePath);
@@ -1325,6 +1346,7 @@ public partial class MainWindow : Window {
         var sha1 = await SaveToAsync(_activeTab.FilePath);
         if (sha1 is null) return;
         _activeTab.BaseSha1 = sha1;
+        SnapshotFileStats(_activeTab);
         _activeTab.Document.MarkSavePoint();
         _activeTab.IsDirty = false;
         PushRecentFile(_activeTab.FilePath);
@@ -1483,6 +1505,7 @@ public partial class MainWindow : Window {
         }
 
         UpdateLastFileDialogDir(path);
+        _watcher.Unwatch(_activeTab); // Old path no longer relevant.
         var sha1 = await SaveToAsync(path);
         if (sha1 is null) return;
         _activeTab.BaseSha1 = sha1;
@@ -1490,8 +1513,26 @@ public partial class MainWindow : Window {
         _activeTab.FilePath = path;
         _activeTab.DisplayName = Path.GetFileName(path);
         _activeTab.IsDirty = false;
+        SnapshotFileStats(_activeTab);
+        _watcher.Watch(_activeTab); // Watch the new path.
         PushRecentFile(path);
         UpdateTabBar();
+    }
+
+    /// <summary>
+    /// Snapshots the file's last-write time and size on
+    /// <paramref name="tab"/> so the file watcher can cheaply detect
+    /// external modifications without recomputing SHA-1.
+    /// </summary>
+    private static void SnapshotFileStats(TabState tab) {
+        if (tab.FilePath is null) return;
+        try {
+            var info = new FileInfo(tab.FilePath);
+            tab.BaseLastWriteTimeUtc = info.LastWriteTimeUtc;
+            tab.BaseFileSize = info.Length;
+        } catch {
+            // File may not exist yet (untitled) — leave defaults.
+        }
     }
 
     private async Task<string?> SaveToAsync(string path) {
@@ -1544,6 +1585,96 @@ public partial class MainWindow : Window {
         var idx = _tabs.IndexOf(_activeTab);
         _tabs.Remove(_activeTab);
         await OpenFileInTabAsync(path);
+    }
+
+    /// <summary>
+    /// Reloads a tab's file from disk. If the tab has unsaved edits, shows
+    /// the conflict dialog. Called by File.ReloadFile command, conflict
+    /// resolution, and auto-reload on file change detection.
+    /// </summary>
+    private async Task ReloadFileAsync(TabState? tab) {
+        if (tab?.FilePath is not { } path) return;
+        if (!File.Exists(path)) return;
+
+        // If the tab has unsaved edits, let the user decide.
+        if (tab.IsDirty) {
+            var conflict = tab.Conflict ?? new Services.FileConflict {
+                Kind = Services.FileConflictKind.Changed,
+                FilePath = path,
+                ExpectedSha1 = tab.BaseSha1,
+            };
+            var dlg = new FileConflictDialog(conflict);
+            await dlg.ShowDialog(this);
+            switch (dlg.Choice) {
+                case FileConflictChoice.KeepMyVersion:
+                    tab.Conflict = null;
+                    UpdateTabBar();
+                    return;
+                case FileConflictChoice.Discard:
+                    CloseTabDirect(tab);
+                    return;
+                case FileConflictChoice.LoadDiskVersion:
+                    break; // Fall through to reload below.
+                default:
+                    return;
+            }
+        }
+
+        // Reload: replace the tab in-place.
+        await ReloadFileInPlaceAsync(tab);
+    }
+
+    /// <summary>
+    /// Reloads a tab's file from disk without removing/re-adding the tab
+    /// in the tab bar, producing a smooth visual transition. The old tab
+    /// is replaced at the same index with a new tab backed by the fresh
+    /// file content.
+    /// </summary>
+    private async Task ReloadFileInPlaceAsync(TabState tab) {
+        if (tab.FilePath is not { } path) return;
+        if (!File.Exists(path)) return;
+
+        _watcher.Unwatch(tab);
+
+        LoadResult result;
+        try {
+            result = await FileLoader.LoadAsync(path);
+        } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+            StatusLeft.Text = $"Reload failed: {ex.Message}";
+            return;
+        }
+
+        var idx = _tabs.IndexOf(tab);
+        if (idx < 0) return;
+
+        var sw = Stopwatch.StartNew();
+        var newTab = new TabState(result.Document, path, result.DisplayName) {
+            LoadResult = result,
+            IsLoading = true,
+            // Preserve scroll position — caret/scroll are clamped
+            // by RestoreScrollState and the layout engine.
+            ScrollOffsetY = tab.ScrollOffsetY,
+            WinTopLine = tab.WinTopLine,
+            WinScrollOffset = tab.WinScrollOffset,
+            WinRenderOffsetY = tab.WinRenderOffsetY,
+            WinFirstLineHeight = tab.WinFirstLineHeight,
+        };
+
+        // Replace in-place so the tab bar doesn't flicker.
+        _tabs[idx] = newTab;
+        if (_activeTab == tab) {
+            _activeTab = newTab;
+            Editor.Document = newTab.Document;
+            Editor.IsInputBlocked = true;
+            Editor.RestoreScrollState(newTab);
+        }
+        if (_findBarTab == tab) {
+            _findBarTab = newTab;
+        }
+        UpdateTabBar();
+
+        WireStreamingProgress(sw, newTab);
+        WireFileLoadCompletion(newTab);
     }
 
     // -------------------------------------------------------------------------
@@ -1923,6 +2054,9 @@ public partial class MainWindow : Window {
                 // Conflict detection + edit replay (Loaded already completed).
                 SessionStore.FinishLoad(tab, entry);
 
+                SnapshotFileStats(tab);
+                _watcher.Watch(tab);
+
                 UpdateTabBar();
                 if (_activeTab == tab) {
                     Editor.IsInputBlocked = false;
@@ -1957,6 +2091,9 @@ public partial class MainWindow : Window {
                     tab.Document.LineEndingInfo = tab.LoadResult.Document.LineEndingInfo;
                 }
 
+                SnapshotFileStats(tab);
+                _watcher.Watch(tab);
+
                 tab.FinishLoading();
                 UpdateTabBar();
                 if (_activeTab == tab) {
@@ -1968,26 +2105,67 @@ public partial class MainWindow : Window {
     }
 
     // -----------------------------------------------------------------
+    // File watching
+    // -----------------------------------------------------------------
+
+    private void WireFileWatcher() {
+        _watcher.FileChanged += OnFileChanged;
+    }
+
+    /// <summary>
+    /// Called on the UI thread when the file watcher detects an external
+    /// change. For non-active tabs, just sets a conflict flag — the
+    /// actual reload is deferred until the tab becomes active (see
+    /// <see cref="SwitchToTab"/>). For the active tab with no unsaved
+    /// edits, reloads immediately when AutoReload is enabled.
+    /// </summary>
+    private void OnFileChanged(TabState tab, FileChangeKind kind) {
+        if (!_tabs.Contains(tab)) return;
+        if (tab.Conflict is not null) return; // Already flagged.
+
+        // Active, clean, modified tab with auto-reload: reload in-place
+        // without ever showing a conflict icon.
+        if (tab == _activeTab
+            && kind == FileChangeKind.Modified
+            && !tab.IsDirty
+            && _settings.AutoReloadExternalChanges) {
+            _ = ReloadFileInPlaceAsync(tab);
+            return;
+        }
+
+        tab.Conflict = new FileConflict {
+            Kind = kind == FileChangeKind.Deleted
+                ? FileConflictKind.Missing
+                : FileConflictKind.Changed,
+            FilePath = tab.FilePath!,
+            ExpectedSha1 = tab.BaseSha1,
+        };
+        UpdateTabBar();
+    }
+
+    // -----------------------------------------------------------------
     // Conflict resolution (error icon on tab)
     // -----------------------------------------------------------------
 
     /// <summary>
-    /// Handles the "Discard" action from the conflict context menu.
-    /// For missing files: closes the tab. For changed files: clears the
-    /// conflict flag and accepts the disk version.
+    /// Handles a conflict resolution choice from the tab bar context menu.
     /// </summary>
-    private void HandleConflictDiscard(int tabIndex) {
+    private void HandleConflictResolution(int tabIndex, FileConflictChoice choice) {
         if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
         var tab = _tabs[tabIndex];
         if (tab.Conflict is null) return;
 
-        if (tab.Conflict.Kind == SessionStore.FileConflictKind.Missing) {
-            CloseTabDirect(tab);
-        } else {
-            // Changed — the tab already has the disk version loaded.
-            tab.Conflict = null;
-            tab.IsDirty = false;
-            UpdateTabBar();
+        switch (choice) {
+            case FileConflictChoice.LoadDiskVersion:
+                _ = ReloadFileAsync(tab);
+                break;
+            case FileConflictChoice.KeepMyVersion:
+                tab.Conflict = null;
+                UpdateTabBar();
+                break;
+            case FileConflictChoice.Discard:
+                CloseTabDirect(tab);
+                break;
         }
     }
 
@@ -2016,6 +2194,7 @@ public partial class MainWindow : Window {
     }
 
     protected override void OnClosing(WindowClosingEventArgs e) {
+        _watcher.Dispose();
         SaveSession();
         base.OnClosing(e);
     }

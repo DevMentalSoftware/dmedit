@@ -56,7 +56,7 @@ public sealed class RecentFilesStore {
     /// (not a UNC share or mapped network drive). Unknown or inaccessible
     /// drives are treated as non-local to err on the side of keeping them.
     /// </summary>
-    private static bool IsLocalPath(string path) {
+    internal static bool IsLocalPath(string path) {
         // Long-path UNC: \\?\UNC\server\share\... — network.
         if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)) {
             return false;

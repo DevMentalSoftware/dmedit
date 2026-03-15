@@ -32,10 +32,22 @@ public sealed class TabState {
     public string? BaseSha1 { get; set; }
 
     /// <summary>
+    /// Last-write time of the file when loaded or saved. Used by the file
+    /// watcher for cheap change detection (paired with <see cref="BaseFileSize"/>).
+    /// </summary>
+    public DateTime BaseLastWriteTimeUtc { get; set; }
+
+    /// <summary>
+    /// File size in bytes when loaded or saved. Used with
+    /// <see cref="BaseLastWriteTimeUtc"/> for cheap change detection.
+    /// </summary>
+    public long BaseFileSize { get; set; }
+
+    /// <summary>
     /// Non-null when the base file was missing or changed at session restore.
     /// The tab bar draws an error icon and offers resolution via context menu.
     /// </summary>
-    public SessionStore.FileConflict? Conflict { get; set; }
+    public FileConflict? Conflict { get; set; }
 
     /// <summary>
     /// True while the file's background scan is still in progress.

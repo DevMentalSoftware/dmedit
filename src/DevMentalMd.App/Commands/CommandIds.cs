@@ -18,6 +18,7 @@ public static class CommandIds {
     public const string FileCloseAll = "File.CloseAll";
     public const string FileExit       = "File.Exit";
     public const string FileRevertFile = "File.RevertFile";
+    public const string FileReloadFile = "File.ReloadFile";
 
     // -----------------------------------------------------------------
     // Edit
