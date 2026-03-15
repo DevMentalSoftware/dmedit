@@ -1614,9 +1614,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 PerformDuplicateLine();
                 return true;
 
+            case Commands.CommandIds.EditSmartIndent:
+                FlushCompound();
+                PerformSmartIndent();
+                return true;
+
             case Commands.CommandIds.EditIndent:
                 FlushCompound();
-                PerformIndent();
+                PerformSimpleIndent();
                 return true;
 
             case Commands.CommandIds.EditOutdent:
@@ -1978,7 +1983,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
     }
 
-    private void PerformIndent() {
+    private void PerformSmartIndent() {
         var doc = Document;
         if (doc == null) return;
         var table = doc.Table;
@@ -2044,6 +2049,42 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 : table.Length;
             doc.Selection = new Selection(rangeStart, rangeEnd);
         }
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    /// <summary>
+    /// Adds one indent level to the current line or all selected lines.
+    /// </summary>
+    private void PerformSimpleIndent() {
+        var doc = Document;
+        if (doc == null) return;
+        var table = doc.Table;
+        var sel = doc.Selection;
+        var style = doc.IndentInfo.Dominant;
+        var tabSize = _indentWidth;
+
+        var startLine = table.LineFromOfs(sel.Start);
+        var endLine = table.LineFromOfs(Math.Max(sel.Start, sel.End - 1));
+
+        doc.BeginCompound();
+        for (var line = startLine; line <= endLine; line++) {
+            var lineText = table.GetLine(line);
+            var currentDepth = MeasureIndent(lineText, tabSize);
+            var targetDepth = currentDepth + tabSize;
+            SetLineIndent(doc, table, line, lineText, targetDepth, style, tabSize);
+        }
+        doc.EndCompound();
+
+        if (!sel.IsEmpty && startLine != endLine) {
+            var rangeStart = table.LineStartOfs(startLine);
+            var rangeEnd = endLine + 1 < table.LineCount
+                ? table.LineStartOfs(endLine + 1)
+                : table.Length;
+            doc.Selection = new Selection(rangeStart, rangeEnd);
+        }
+
         ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();

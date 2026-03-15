@@ -45,6 +45,7 @@ public static class CommandIds {
     public const string EditDeleteWordLeft       = "Edit.DeleteWordLeft";
     public const string EditDeleteWordRight      = "Edit.DeleteWordRight";
     public const string EditDuplicateLine        = "Edit.DuplicateLine";
+    public const string EditSmartIndent           = "Edit.SmartIndent";
     public const string EditIndent               = "Edit.Indent";
     public const string EditOutdent              = "Edit.Outdent";
     public const string EditExpandSelection       = "Edit.ExpandSelection";

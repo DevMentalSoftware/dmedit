@@ -33,6 +33,10 @@ public static class SettingsRegistry {
             "Scrollbar", SettingKind.Double, 2.0, Min: 0.1, Max: 20.0),
 
         // -- Editor --
+        new("IndentWidth", "Indent Width",
+            "Number of columns per indent level. Controls tab display width and the number of spaces inserted when indenting.",
+            "Editor", SettingKind.Int, 4, Min: 1, Max: 16),
+
         new("CoalesceTimerMs", "Undo Coalesce Timer (ms)",
             "Idle time in milliseconds before consecutive edits are committed as a single undo entry. Minimum 100.",
             "Editor", SettingKind.Int, 1000, Min: 100, Max: 10000),

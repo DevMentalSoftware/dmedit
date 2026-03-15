@@ -62,7 +62,7 @@
 						<Separator />
 						<MenuItem Header="Delete Word Le_ft" x:Name="MenuDeleteWordLeft" />
 						<MenuItem Header="Delete Word Ri_ght" x:Name="MenuDeleteWordRight" />
-						<MenuItem Header="In_dent" x:Name="MenuIndent" />
+						<MenuItem Header="Smart In_dent" x:Name="MenuIndent" />
 						<Separator />
 						<MenuItem Header="Transform Case" x:Name="MenuTransformCase">
 							<MenuItem Header="_Upper Case" x:Name="MenuCaseUpper" />

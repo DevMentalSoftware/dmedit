@@ -728,7 +728,7 @@ public partial class MainWindow : Window {
         SetMenuGesture(MenuDuplicateLine, CommandIds.EditDuplicateLine);
         SetMenuGesture(MenuDeleteWordLeft, CommandIds.EditDeleteWordLeft);
         SetMenuGesture(MenuDeleteWordRight, CommandIds.EditDeleteWordRight);
-        SetMenuGesture(MenuIndent, CommandIds.EditIndent);
+        SetMenuGesture(MenuIndent, CommandIds.EditSmartIndent);
         SetMenuGesture(MenuSelectAllOccurrences, CommandIds.EditSelectAllOccurrences);
         SetMenuGesture(MenuColumnSelect, CommandIds.EditColumnSelect);
         SetMenuGesture(MenuFind, CommandIds.FindFind);
@@ -815,7 +815,7 @@ public partial class MainWindow : Window {
         MenuDuplicateLine.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditDuplicateLine);
         MenuDeleteWordLeft.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditDeleteWordLeft);
         MenuDeleteWordRight.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditDeleteWordRight);
-        MenuIndent.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditIndent);
+        MenuIndent.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditSmartIndent);
         MenuSelectAllOccurrences.Click += (_, _) => ExecuteWindowCommand(CommandIds.EditSelectAllOccurrences);
         MenuColumnSelect.Click += (_, _) => ExecuteWindowCommand(CommandIds.EditColumnSelect);
     }

@@ -47,6 +47,7 @@ public static class CommandRegistry {
         new(CommandIds.EditDeleteWordLeft, "Delete Word Left"),
         new(CommandIds.EditDeleteWordRight, "Delete Word Right"),
         new(CommandIds.EditDuplicateLine, "Duplicate Line"),
+        new(CommandIds.EditSmartIndent, "Smart Indent"),
         new(CommandIds.EditIndent, "Indent"),
         new(CommandIds.EditOutdent, "Outdent"),
         new(CommandIds.EditExpandSelection, "Expand Selection"),

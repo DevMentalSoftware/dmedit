@@ -25,4 +25,8 @@ Thickness(left, top, right, bottom)
 * Ctrl+F3 should not pull up the FindBar or change the Find Bar text. It should immediately jump to the next occurrence of the current word.
 * Ctrl+I should likewise not pull up the FindBar. Instead it should intercept all keys as if there is a hidden text box, and as each letter is typed should immediately jump to the matching word or expand the current match if the next letter matches. 
 * Command Palette should not put the category after each command. Instead organize by category like we did in the keyboard settings. In fact this is almost a duplicate of the keyboard settings command list and search box, but with enter key or double click of a command actually running the command. 
+* Add Paste Plain Text option. 
+* Add support for pasting formatted text in variety of formats. (html, markdown, rtf) These may attempt to translate the pasted content into our internal Block Document format, which may lose many options from something like html, but will be 1->1 for markdown.
+* 
+
 
