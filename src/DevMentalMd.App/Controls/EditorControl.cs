@@ -2723,6 +2723,100 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     }
 
     // -------------------------------------------------------------------------
+    // Replace
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Replaces the current selection (if it matches the search term) with
+    /// <paramref name="replacement"/>, then advances to the next match.
+    /// Returns true if a replacement was made.
+    /// </summary>
+    public bool ReplaceCurrent(string replacement, bool matchCase = false,
+                               bool wholeWord = false, SearchMode mode = SearchMode.Normal) {
+        var doc = Document;
+        if (doc == null || _lastSearchTerm.Length == 0) {
+            return false;
+        }
+        // Only replace if the current selection matches the search term.
+        if (doc.Selection.IsEmpty) {
+            // No selection — try to find the next match first.
+            FindNext(matchCase, wholeWord, mode);
+            return false;
+        }
+        var selectedText = doc.GetSelectedText();
+        var opts = new SearchOptions(_lastSearchTerm, matchCase, wholeWord, mode);
+        if (!IsSelectionMatch(selectedText, opts)) {
+            // Selection doesn't match — find next match instead.
+            FindNext(matchCase, wholeWord, mode);
+            return false;
+        }
+        FlushCompound();
+        doc.Insert(replacement);
+        ScrollCaretIntoView();
+        InvalidateVisual();
+        // Advance to next match.
+        FindNext(matchCase, wholeWord, mode);
+        return true;
+    }
+
+    /// <summary>
+    /// Replaces all occurrences of the current search term with
+    /// <paramref name="replacement"/>.  Returns the number of replacements made.
+    /// </summary>
+    public int ReplaceAll(string replacement, bool matchCase = false,
+                          bool wholeWord = false, SearchMode mode = SearchMode.Normal) {
+        var doc = Document;
+        if (doc == null || _lastSearchTerm.Length == 0) {
+            return 0;
+        }
+        var table = doc.Table;
+        var opts = new SearchOptions(_lastSearchTerm, matchCase, wholeWord, mode);
+        int count = 0;
+        FlushCompound();
+        doc.BeginCompound();
+        try {
+            // Search from start, replacing forward.  After each replacement the
+            // document shifts, so we continue searching from the end of the
+            // inserted replacement text.
+            long searchFrom = 0;
+            while (searchFrom <= table.Length) {
+                var found = SearchRange(table, opts, searchFrom, table.Length);
+                if (found < 0) {
+                    break;
+                }
+                var matchLen = opts.MatchLength(table, found);
+                doc.Selection = new Selection(found, found + matchLen);
+                doc.Insert(replacement);
+                count++;
+                searchFrom = found + replacement.Length;
+                if (matchLen == 0) {
+                    // Zero-length regex match — advance past it to avoid infinite loop.
+                    searchFrom++;
+                }
+            }
+        } finally {
+            doc.EndCompound();
+        }
+        if (count > 0) {
+            ScrollCaretIntoView();
+            InvalidateVisual();
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Checks whether <paramref name="text"/> matches the search pattern.
+    /// For plain/wildcard/regex modes the check varies.
+    /// </summary>
+    private static bool IsSelectionMatch(string text, SearchOptions opts) {
+        if (opts.CompiledRegex != null) {
+            var m = opts.CompiledRegex.Match(text);
+            return m.Success && m.Index == 0 && m.Length == text.Length;
+        }
+        return string.Equals(text, opts.Needle, opts.Comparison);
+    }
+
+    // -------------------------------------------------------------------------
     // Incremental search
     // -------------------------------------------------------------------------
 

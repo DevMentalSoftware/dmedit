@@ -1962,6 +1962,32 @@ public partial class MainWindow : Window {
             }
         };
 
+        // Replace current match.
+        FindBar.ReplaceRequested += replaceTerm => {
+            var searchTerm = FindBar.SearchTerm;
+            if (searchTerm.Length == 0) return;
+            _settings.PushRecentFindTerm(searchTerm);
+            _settings.PushRecentReplaceTerm(replaceTerm);
+            SyncFindBarHistory();
+            _settings.ScheduleSave();
+            Editor.LastSearchTerm = searchTerm;
+            Editor.ReplaceCurrent(replaceTerm, FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode);
+        };
+
+        // Replace all matches.
+        FindBar.ReplaceAllRequested += () => {
+            var searchTerm = FindBar.SearchTerm;
+            var replaceTerm = FindBar.ReplaceTerm;
+            if (searchTerm.Length == 0) return;
+            _settings.PushRecentFindTerm(searchTerm);
+            _settings.PushRecentReplaceTerm(replaceTerm);
+            SyncFindBarHistory();
+            _settings.ScheduleSave();
+            Editor.LastSearchTerm = searchTerm;
+            var count = Editor.ReplaceAll(replaceTerm, FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode);
+            FindBar.SetMatchInfo(0, count);
+        };
+
         // Restore persisted width.
         if (_settings.FindBarWidth is > 0 and var w) {
             FindBar.Width = w;
