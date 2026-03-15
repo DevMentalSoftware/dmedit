@@ -11,10 +11,23 @@
 - Conflict warnings when bindings overlap
 - FindShortcut search to quickly locate commands by name
 
+### Search & Find
+- Incremental Search (Ctrl+I) — modal character-by-character search that
+  progressively narrows matches as you type, with in-place selection expansion
+  when the next character matches
+- Find Next / Find Previous (F3 / Shift+F3) — step through matches from the
+  Find Bar, incremental search, or Find Next Selection
+- Find Next Selection / Find Previous Selection (Ctrl+F3 / Ctrl+Shift+F3) —
+  select the word at the caret (or use existing selection) and jump to the
+  next/previous occurrence
+- Find Bar live search — results update as you type in the search box
+- Shared last-search-term across Find Bar, incremental search, and
+  Find Next Selection so F3 always continues from any search source
+
 ### Commands & Editing
-- 21 new editor commands: Find stubs, Delete Word Left/Right, Insert Line
-  Above/Below, Duplicate Line, Indent/Outdent, Scroll Line Up/Down, Zoom
-  In/Out/Reset, Revert File
+- 21 new editor commands: Delete Word Left/Right, Insert Line Above/Below,
+  Duplicate Line, Indent/Outdent, Scroll Line Up/Down, Zoom In/Out/Reset,
+  Revert File
 - Command Palette (F1) with text filter, arrow-key navigation, Enter to execute
 - SmartIndent — automatic indentation on Enter, including multiline support
 - Show Whitespace toggle
@@ -42,6 +55,8 @@
 - Recent files: auto-prune missing local files, preserve network paths, saved
   files added to recent list
 - CloseAll context menu on tabs
+- Reload File command with progress spinner during reload
+- External file conflict handling with auto-reload option
 
 ### I/O & Infrastructure
 - Additional charset/encoding support beyond UTF-8

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -2633,7 +2634,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// current selection (or caret), wrapping around if needed.
     /// Returns true if a match was found.
     /// </summary>
-    public bool FindNext() {
+    public bool FindNext(bool matchCase = false, bool wholeWord = false,
+                         SearchMode mode = SearchMode.Normal) {
         var doc = Document;
         if (doc == null || _lastSearchTerm.Length == 0) {
             return false;
@@ -2646,11 +2648,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (searchFrom >= table.Length) {
             searchFrom = 0;
         }
-        var found = FindInDocument(table, _lastSearchTerm, searchFrom);
+        var opts = new SearchOptions(_lastSearchTerm, matchCase, wholeWord, mode);
+        var found = FindInDocument(table, opts, searchFrom);
         if (found < 0) {
             return false;
         }
-        doc.Selection = new Selection(found, found + _lastSearchTerm.Length);
+        doc.Selection = new Selection(found, found + opts.MatchLength(table, found));
         ScrollCaretIntoView();
         InvalidateVisual();
         return true;
@@ -2661,7 +2664,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// the current selection (or caret), wrapping around if needed.
     /// Returns true if a match was found.
     /// </summary>
-    public bool FindPrevious() {
+    public bool FindPrevious(bool matchCase = false, bool wholeWord = false,
+                             SearchMode mode = SearchMode.Normal) {
         var doc = Document;
         if (doc == null || _lastSearchTerm.Length == 0) {
             return false;
@@ -2669,11 +2673,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var table = doc.Table;
         var sel = doc.Selection;
         var searchBefore = sel.IsEmpty ? sel.Caret : sel.Start;
-        var found = FindInDocumentBackward(table, _lastSearchTerm, searchBefore);
+        var opts = new SearchOptions(_lastSearchTerm, matchCase, wholeWord, mode);
+        var found = FindInDocumentBackward(table, opts, searchBefore);
         if (found < 0) {
             return false;
         }
-        doc.Selection = new Selection(found, found + _lastSearchTerm.Length);
+        doc.Selection = new Selection(found, found + opts.MatchLength(table, found));
         ScrollCaretIntoView();
         InvalidateVisual();
         return true;
@@ -2787,22 +2792,98 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         IncrementalSearchChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private static long FindInDocument(PieceTable table, string needle, long fromOfs) {
+    // -----------------------------------------------------------------
+    // Search options
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Encapsulates search parameters so helpers don't need many arguments.
+    /// </summary>
+    private readonly struct SearchOptions {
+        public readonly string Needle;
+        public readonly bool MatchCase;
+        public readonly bool WholeWord;
+        public readonly SearchMode Mode;
+        public readonly Regex? CompiledRegex;
+
+        public SearchOptions(string needle, bool matchCase, bool wholeWord, SearchMode mode) {
+            Needle = needle;
+            MatchCase = matchCase;
+            WholeWord = wholeWord;
+            Mode = mode;
+            CompiledRegex = mode switch {
+                SearchMode.Regex => BuildRegex(needle, matchCase, wholeWord),
+                SearchMode.Wildcard => BuildRegex(WildcardToRegex(needle), matchCase, wholeWord),
+                _ => wholeWord ? BuildRegex(Regex.Escape(needle), matchCase, wholeWord) : null,
+            };
+        }
+
+        public StringComparison Comparison =>
+            MatchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+
+        /// <summary>Returns the length of the match at <paramref name="pos"/>.</summary>
+        public int MatchLength(PieceTable table, long pos) {
+            if (CompiledRegex == null) {
+                return Needle.Length;
+            }
+            // For regex matches we need to re-match at the position to get length.
+            var remaining = (int)Math.Min(table.Length - pos, Needle.Length * 4 + 256);
+            var text = table.GetText(pos, remaining);
+            var m = CompiledRegex.Match(text);
+            return m.Success && m.Index == 0 ? m.Length : Needle.Length;
+        }
+
+        private static Regex? BuildRegex(string pattern, bool matchCase, bool wholeWord) {
+            if (wholeWord) {
+                pattern = @"\b" + pattern + @"\b";
+            }
+            var opts = RegexOptions.CultureInvariant;
+            if (!matchCase) {
+                opts |= RegexOptions.IgnoreCase;
+            }
+            try {
+                return new Regex(pattern, opts);
+            } catch {
+                return null; // invalid regex — fall back to no matches
+            }
+        }
+
+        private static string WildcardToRegex(string wildcard) {
+            // * → .*, ? → ., everything else escaped
+            var sb = new System.Text.StringBuilder(wildcard.Length * 2);
+            foreach (var ch in wildcard) {
+                sb.Append(ch switch {
+                    '*' => ".*",
+                    '?' => ".",
+                    _ => Regex.Escape(ch.ToString()),
+                });
+            }
+            return sb.ToString();
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Forward search
+    // -----------------------------------------------------------------
+
+    private static long FindInDocument(PieceTable table, string needle, long fromOfs) =>
+        FindInDocument(table, new SearchOptions(needle, false, false, SearchMode.Normal), fromOfs);
+
+    private static long FindInDocument(PieceTable table, SearchOptions opts, long fromOfs) {
         var docLen = table.Length;
-        if (needle.Length == 0 || docLen == 0) {
+        if (opts.Needle.Length == 0 || docLen == 0) {
             return -1;
         }
 
-        // Search from fromOfs to end of document.
-        var hit = SearchRange(table, needle, fromOfs, docLen);
+        var hit = SearchRange(table, opts, fromOfs, docLen);
         if (hit >= 0) {
             return hit;
         }
 
-        // Wrap around: search from 0 to fromOfs + needle.Length - 1.
-        var wrapEnd = Math.Min(fromOfs + needle.Length - 1, docLen);
+        // Wrap around.
+        var wrapEnd = Math.Min(fromOfs + opts.Needle.Length - 1, docLen);
         if (wrapEnd > 0) {
-            hit = SearchRange(table, needle, 0, wrapEnd);
+            hit = SearchRange(table, opts, 0, wrapEnd);
             if (hit >= 0) {
                 return hit;
             }
@@ -2811,45 +2892,55 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         return -1;
     }
 
-    private static long SearchRange(PieceTable table, string needle, long start, long end) {
-        // Read the range as a string and use IndexOf.
+    private static long SearchRange(PieceTable table, SearchOptions opts, long start, long end) {
         var rangeLen = (int)(end - start);
-        if (rangeLen < needle.Length) {
+        if (rangeLen < opts.Needle.Length) {
             return -1;
         }
         var text = table.GetText(start, rangeLen);
-        var idx = text.IndexOf(needle, StringComparison.OrdinalIgnoreCase);
+        if (opts.CompiledRegex != null) {
+            var m = opts.CompiledRegex.Match(text);
+            return m.Success ? start + m.Index : -1;
+        }
+        var idx = text.IndexOf(opts.Needle, opts.Comparison);
         return idx >= 0 ? start + idx : -1;
     }
 
-    /// <summary>
-    /// Searches backward for <paramref name="needle"/> before <paramref name="beforeOfs"/>,
-    /// wrapping around to the end of the document if needed.
-    /// </summary>
-    private static long FindInDocumentBackward(PieceTable table, string needle, long beforeOfs) {
+    // -----------------------------------------------------------------
+    // Backward search
+    // -----------------------------------------------------------------
+
+    private static long FindInDocumentBackward(PieceTable table, SearchOptions opts, long beforeOfs) {
         var docLen = table.Length;
-        if (needle.Length == 0 || docLen == 0) {
+        if (opts.Needle.Length == 0 || docLen == 0) {
             return -1;
         }
 
-        // Search from 0 to beforeOfs (find the last occurrence in that range).
-        var hit = SearchRangeLast(table, needle, 0, beforeOfs);
+        var hit = SearchRangeLast(table, opts, 0, beforeOfs);
         if (hit >= 0) {
             return hit;
         }
 
-        // Wrap around: search from beforeOfs to end of document (last occurrence).
-        hit = SearchRangeLast(table, needle, beforeOfs, docLen);
+        // Wrap around.
+        hit = SearchRangeLast(table, opts, beforeOfs, docLen);
         return hit;
     }
 
-    private static long SearchRangeLast(PieceTable table, string needle, long start, long end) {
+    private static long SearchRangeLast(PieceTable table, SearchOptions opts, long start, long end) {
         var rangeLen = (int)(end - start);
-        if (rangeLen < needle.Length) {
+        if (rangeLen < opts.Needle.Length) {
             return -1;
         }
         var text = table.GetText(start, rangeLen);
-        var idx = text.LastIndexOf(needle, StringComparison.OrdinalIgnoreCase);
+        if (opts.CompiledRegex != null) {
+            // Find last regex match by iterating all matches.
+            Match? last = null;
+            foreach (Match m in opts.CompiledRegex.Matches(text)) {
+                last = m;
+            }
+            return last != null ? start + last.Index : -1;
+        }
+        var idx = text.LastIndexOf(opts.Needle, opts.Comparison);
         return idx >= 0 ? start + idx : -1;
     }
 }

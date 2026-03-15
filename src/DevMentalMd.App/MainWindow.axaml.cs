@@ -28,9 +28,9 @@ using DevMentalMd.Core.IO;
 namespace DevMentalMd.App;
 
 public partial class MainWindow : Window {
-    
+
     private const int FLASH_RELOAD_DURATION_MS = 1000 / 3;
-    
+
     private static readonly FilePickerFileType[] FileTypeFilters = [
         new("Text files") { Patterns = ["*.txt", "*.log", "*.md", "*.*"] },
         new("Markdown") { Patterns = ["*.md", "*.markdown"] },
@@ -554,9 +554,14 @@ public partial class MainWindow : Window {
 
         if (ExecuteWindowCommand(commandId)) {
             e.Handled = true;
-        } else if (_activeTab is not { IsSettings: true }
-                   && Editor.ExecuteCommand(commandId)) {
-            e.Handled = true;
+        } else if (!FindBar.IsVisible || !FindBar.IsKeyboardFocusWithin) {
+            // Only dispatch editor commands when the FindBar doesn't have
+            // keyboard focus — otherwise keys like Enter and Escape would
+            // be consumed by the editor instead of the FindBar.
+            if (_activeTab is not { IsSettings: true }
+                && Editor.ExecuteCommand(commandId)) {
+                e.Handled = true;
+            }
         }
     }
 
@@ -1901,12 +1906,20 @@ public partial class MainWindow : Window {
         FindBar.IsReplaceMode = replaceMode;
         FindBar.IsVisible = true;
         FindBar.ResetState();
-        // When already open and re-invoked, focus the appropriate box.
-        if (replaceMode) {
-            FindBar.FocusReplaceBox();
-        } else {
-            FindBar.FocusSearchBox();
+
+        // Initialize the search box with the current selection if any.
+        var doc = _activeTab is not { IsSettings: true } ? Editor.Document : null;
+        if (doc != null && !doc.Selection.IsEmpty) {
+            FindBar.SetSearchTerm(doc.GetSelectedText());
         }
+
+        // Focus must be deferred: the key event that triggered this command
+        // is still being processed, and Avalonia will restore focus to the
+        // previously-focused control after the event completes.  Posting at
+        // Input priority ensures our focus request runs after that.
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => {
+            FindBar.FocusSearchBox();
+        }, Avalonia.Threading.DispatcherPriority.Input);
     }
 
     private void CloseFindBar() {
@@ -1930,44 +1943,22 @@ public partial class MainWindow : Window {
         };
         FindBar.ApplyTheme(_theme);
 
-        // Provide history lists from settings (shared reference — mutations
-        // by AppSettings.PushRecentTerm update the same list).
+        // Provide history lists from settings.
         SyncFindBarHistory();
 
-        // Push search/replace terms into history when a find/replace is executed,
-        // and update the shared LastSearchTerm so Find Next/Prev work after
-        // closing the bar.
+        // Find requested: Enter / Shift+Enter or direction button.
         FindBar.FindRequested += forward => {
             var term = FindBar.SearchTerm;
-            _settings.PushRecentFindTerm(term);
-            SyncFindBarHistory();
-            _settings.ScheduleSave();
             if (term.Length > 0) {
+                _settings.PushRecentFindTerm(term);
+                SyncFindBarHistory();
+                _settings.ScheduleSave();
                 Editor.LastSearchTerm = term;
                 if (forward) {
-                    Editor.FindNext();
+                    Editor.FindNext(FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode);
                 } else {
-                    Editor.FindPrevious();
+                    Editor.FindPrevious(FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode);
                 }
-            }
-        };
-        FindBar.ReplaceRequested += _ => {
-            _settings.PushRecentReplaceTerm(FindBar.ReplaceTerm);
-            SyncFindBarHistory();
-            _settings.ScheduleSave();
-        };
-        FindBar.ReplaceAllRequested += () => {
-            _settings.PushRecentReplaceTerm(FindBar.ReplaceTerm);
-            SyncFindBarHistory();
-            _settings.ScheduleSave();
-        };
-
-        // Live search as the user types in the search box.
-        FindBar.SearchTermChanged += () => {
-            var term = FindBar.SearchTerm;
-            if (term.Length > 0) {
-                Editor.LastSearchTerm = term;
-                Editor.FindNext();
             }
         };
 

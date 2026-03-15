@@ -42,9 +42,7 @@ public partial class FindBarControl : UserControl {
         get => _isReplaceMode;
         set {
             _isReplaceMode = value;
-            ReplaceBox.IsVisible = value;
-            ReplaceButtons.IsVisible = value;
-            UpdateExpandGlyph();
+            ApplyReplaceMode();
         }
     }
 
@@ -88,9 +86,7 @@ public partial class FindBarControl : UserControl {
 
         ExpandBtn.Click += (_, _) => {
             _isReplaceMode = !_isReplaceMode;
-            ReplaceBox.IsVisible = _isReplaceMode;
-            ReplaceButtons.IsVisible = _isReplaceMode;
-            UpdateExpandGlyph();
+            ApplyReplaceMode();
         };
 
         // Search text changed → raise event
@@ -129,13 +125,10 @@ public partial class FindBarControl : UserControl {
     }
 
     public void FocusSearchBox() {
-        SearchBox.Focus();
-        SearchBox.InnerTextBox?.SelectAll();
-    }
-
-    public void FocusReplaceBox() {
-        ReplaceBox.Focus();
-        ReplaceBox.InnerTextBox?.SelectAll();
+        if (SearchBox.InnerTextBox is { } tb) {
+            tb.Focus();
+            tb.SelectAll();
+        }
     }
 
     public void SetSearchTerm(string text) {
@@ -186,6 +179,15 @@ public partial class FindBarControl : UserControl {
     private void SetDirection(bool forward) {
         _lastForward = forward;
         DirectionGlyph.Text = _lastForward ? IconGlyphs.ArrowRight : IconGlyphs.ArrowLeft;
+    }
+
+    private void ApplyReplaceMode() {
+        ReplaceBox.IsVisible = _isReplaceMode;
+        ReplaceBox.IsTabStop = _isReplaceMode;
+        ReplaceButtons.IsVisible = _isReplaceMode;
+        ReplaceBtn.IsTabStop = _isReplaceMode;
+        ReplaceAllBtn.IsTabStop = _isReplaceMode;
+        UpdateExpandGlyph();
     }
 
     private void UpdateExpandGlyph() {

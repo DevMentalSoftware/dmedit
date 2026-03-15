@@ -28,7 +28,8 @@
                 ClipToBounds="True"
                 Padding="0,2,6,6">
             <Grid ColumnDefinitions="Auto,Auto,*,Auto,8,Auto"
-                  RowDefinitions="Auto,Auto,Auto">
+                  RowDefinitions="Auto,Auto,Auto"
+                  KeyboardNavigation.TabNavigation="Cycle">
 
                 <!-- Col 0: Resize grip (left edge) -->
                 <Border x:Name="ResizeGrip"
@@ -42,6 +43,7 @@
                         VerticalAlignment="Center"
                         Width="24" Height="24" Padding="0"
                         Margin="0,0,4,0"
+                        TabIndex="8"
                         ToolTip.Tip="Toggle Replace">
                     <TextBlock x:Name="ExpandGlyph"
                                Text="&#xF2B1;"
@@ -56,6 +58,7 @@
                       ColumnDefinitions="*,Auto" Margin="0,0,4,0">
                     <controls:DMEditableCombo x:Name="SearchBox"
                                               Grid.ColumnSpan="2"
+                                              TabIndex="0"
                                               Watermark="Find..." />
                     <TextBlock x:Name="MatchCount"
                                Grid.Column="1"
@@ -71,7 +74,8 @@
                             Orientation="Horizontal" Spacing="2">
                     <Button x:Name="FindDirectionBtn"
                             Height="24" Width="24" Padding="0"
-                            ToolTip.Tip="Find in current direction (Enter)">
+                            IsTabStop="False"
+                            ToolTip.Tip="Find in current direction">
                         <TextBlock x:Name="DirectionGlyph"
                                    Text="&#xF181;"
                                    FontFamily="{DynamicResource ControlButtonIconFont}"
@@ -81,6 +85,7 @@
                     </Button>
                     <Button x:Name="FindMenuBtn"
                             Height="24" Width="24" Padding="0"
+                            IsTabStop="False"
                             ToolTip.Tip="Find options">
                         <TextBlock Text="&#xF2A1;"
                                    FontFamily="{DynamicResource ControlButtonIconFont}"
@@ -97,9 +102,11 @@
                             IsVisible="False">
                     <Button x:Name="ReplaceBtn"
                             Content="Replace" Height="24"
+                            TabIndex="2" IsTabStop="False"
                             ToolTip.Tip="Replace current match" />
                     <Button x:Name="ReplaceAllBtn"
                             Content="Replace All" Height="24"
+                            TabIndex="3" IsTabStop="False"
                             ToolTip.Tip="Replace all matches" />
                 </StackPanel>
 
@@ -108,6 +115,7 @@
                         Grid.Column="5" Grid.Row="0"
                         ToolTip.Tip="Close (Escape)"
                         Width="24" Height="24" Padding="0"
+                        IsTabStop="False"
                         VerticalContentAlignment="Center">
                     <TextBlock Text="&#xF369;"
                                FontFamily="{DynamicResource ControlButtonIconFont}"
@@ -119,6 +127,7 @@
                 <!-- Row 1, Col 2: ReplaceBox -->
                 <controls:DMEditableCombo x:Name="ReplaceBox"
                                           Grid.Column="2" Grid.Row="1"
+                                          TabIndex="1" IsTabStop="False"
                                           Watermark="Replace..."
                                           Margin="0,2,4,0"
                                           IsVisible="False" />
@@ -129,12 +138,14 @@
                     <ToggleButton x:Name="MatchCaseBtn"
                                   DockPanel.Dock="Left"
                                   Content="Abc" Height="24"
+                                  TabIndex="4"
                                   ToolTip.Tip="Match Case" />
                     <ToggleButton x:Name="WholeWordBtn"
                                   DockPanel.Dock="Left"
                                   Content="w" Height="24"
                                   Width="24"
                                   Margin="4,0,0,0"
+                                  TabIndex="5"
                                   ToolTip.Tip="Match Whole Word" />
                     <Border DockPanel.Dock="Left"
                             Width="1" Margin="8,2"
@@ -143,6 +154,7 @@
                               DockPanel.Dock="Left"
                               SelectedIndex="0"
                               MinWidth="100"
+                              TabIndex="6"
                               ToolTip.Tip="Search mode">
                         <ComboBoxItem Content="Normal" />
                         <ComboBoxItem Content="Wildcard" />
@@ -154,6 +166,7 @@
                     <ComboBox x:Name="ScopeBox"
                               SelectedIndex="0"
                               HorizontalAlignment="Stretch"
+                              TabIndex="7"
                               ToolTip.Tip="Search scope">
                         <ComboBoxItem Content="Current document" />
                         <ComboBoxItem Content="Open documents" />

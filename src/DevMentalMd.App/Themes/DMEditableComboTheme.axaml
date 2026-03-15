@@ -46,14 +46,14 @@
 					       Placement="Bottom"
 					       IsLightDismissEnabled="True"
 					       MaxHeight="200">
-						<Border Background="{DynamicResource MenuFlyoutPresenterBackground}"
+						<Border x:Name="PART_PopupBorder"
+						        Background="{DynamicResource MenuFlyoutPresenterBackground}"
 						        BorderBrush="{DynamicResource MenuFlyoutPresenterBorderBrush}"
 						        BorderThickness="1"
 						        CornerRadius="4"
 						        Padding="0">
 							<ListBox x:Name="PART_ListBox"
-							         MaxHeight="190"
-							         MinWidth="200" />
+							         MaxHeight="190" />
 						</Border>
 					</Popup>
 				</Grid>

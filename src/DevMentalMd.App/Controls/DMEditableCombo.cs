@@ -47,7 +47,7 @@ public class DMEditableCombo : TemplatedControl {
     private Button? _dropDownButton;
     private Popup? _popup;
     private ListBox? _listBox;
-    private bool _suppressAutoSuggest;
+    private Border? _popupBorder;
 
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e) {
         base.OnApplyTemplate(e);
@@ -57,6 +57,7 @@ public class DMEditableCombo : TemplatedControl {
         _dropDownButton = e.NameScope.Find<Button>("PART_DropDownButton");
         _popup = e.NameScope.Find<Popup>("PART_Popup");
         _listBox = e.NameScope.Find<ListBox>("PART_ListBox");
+        _popupBorder = e.NameScope.Find<Border>("PART_PopupBorder");
 
         if (_clearButton != null) {
             _clearButton.Click += (_, _) => {
@@ -67,7 +68,7 @@ public class DMEditableCombo : TemplatedControl {
 
         if (_dropDownButton != null) {
             _dropDownButton.Click += (_, _) => {
-                ShowPopup(filter: null);
+                ShowPopup(filter: Text);
                 InnerTextBox?.Focus();
             };
         }
@@ -92,8 +93,9 @@ public class DMEditableCombo : TemplatedControl {
 
         if (change.Property == TextProperty) {
             UpdateClearButtonVisibility();
-            if (!_suppressAutoSuggest) {
-                ShowAutoSuggest();
+            // Re-filter the popup while it's open.
+            if (_popup?.IsOpen == true) {
+                ShowPopup(filter: Text);
             }
         }
     }
@@ -130,23 +132,15 @@ public class DMEditableCombo : TemplatedControl {
 
         _listBox.ItemsSource = list;
         _listBox.SelectedIndex = -1;
+        // Match the popup width to the control's actual width.
+        if (_popupBorder != null && Bounds.Width > 0) {
+            _popupBorder.Width = Bounds.Width;
+        }
         _popup.IsOpen = true;
     }
 
-    private void ShowAutoSuggest() {
-        if (_popup == null) return;
-        var text = Text;
-        if (string.IsNullOrEmpty(text) || ItemsSource == null || ItemsSource.Count == 0) {
-            _popup.IsOpen = false;
-            return;
-        }
-        ShowPopup(text);
-    }
-
     private void ApplySelection(string value) {
-        _suppressAutoSuggest = true;
         Text = value;
-        _suppressAutoSuggest = false;
         if (_popup != null) {
             _popup.IsOpen = false;
         }
@@ -166,6 +160,18 @@ public class DMEditableCombo : TemplatedControl {
         // Escape closes popup if open; otherwise bubbles up for parent to handle.
         if (e.Key == Key.Escape && _popup?.IsOpen == true) {
             _popup.IsOpen = false;
+            e.Handled = true;
+            return;
+        }
+
+        // Up/Down arrows open the history popup when it's closed,
+        // filtered by the current text.
+        if (e.Key is Key.Down or Key.Up && _popup?.IsOpen != true) {
+            ShowPopup(filter: Text);
+            // Select the first item so Down immediately highlights a row.
+            if (_listBox is { ItemCount: > 0 }) {
+                _listBox.SelectedIndex = 0;
+            }
             e.Handled = true;
         }
     }
