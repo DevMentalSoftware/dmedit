@@ -85,6 +85,11 @@ public sealed class AppSettings {
     public bool ShowStatistics { get; set; } = true;
 
     /// <summary>
+    /// Show visible glyphs for whitespace characters (spaces, tabs, NBSP).
+    /// </summary>
+    public bool ShowWhitespace { get; set; }
+
+    /// <summary>
     /// Wrap long lines at the viewport edge. When false, lines extend beyond
     /// the visible area (horizontal scrolling planned for a future release).
     /// </summary>
@@ -96,6 +101,18 @@ public sealed class AppSettings {
     /// effect when <see cref="WrapLines"/> is true. Default: 100.
     /// </summary>
     public int WrapLinesAt { get; set; } = 100;
+
+    /// <summary>
+    /// Number of spaces per indent level. Also controls the visual width of
+    /// tab characters. Default: 4.
+    /// </summary>
+    public int IndentWidth { get; set; } = 4;
+
+    /// <summary>
+    /// Default indentation style for new/untitled documents. Files opened from
+    /// disk use the detected style instead. Default: Spaces.
+    /// </summary>
+    public IndentStyle DefaultIndentStyle { get; set; } = IndentStyle.Spaces;
 
     // -----------------------------------------------------------------
     // Theme

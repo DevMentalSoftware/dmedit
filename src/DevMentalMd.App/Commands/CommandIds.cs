@@ -27,6 +27,7 @@ public static class CommandIds {
     public const string EditCut          = "Edit.Cut";
     public const string EditCopy         = "Edit.Copy";
     public const string EditPaste        = "Edit.Paste";
+    public const string EditPasteMore    = "Edit.PasteMore";
     public const string EditDelete       = "Edit.Delete";
     public const string EditBackspace    = "Edit.Backspace";
     public const string EditSelectAll    = "Edit.SelectAll";
@@ -79,6 +80,7 @@ public static class CommandIds {
     public const string ViewWrapLines   = "View.WrapLines";
     public const string ViewZoomIn      = "View.ZoomIn";
     public const string ViewZoomOut     = "View.ZoomOut";
+    public const string ViewWhitespace = "View.Whitespace";
     public const string ViewZoomReset   = "View.ZoomReset";
 
     // -----------------------------------------------------------------

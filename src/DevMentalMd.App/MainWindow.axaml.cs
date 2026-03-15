@@ -48,6 +48,7 @@ public partial class MainWindow : Window {
     private TextBlock? _lineNumGlyph;
     private TextBlock? _statusBarGlyph;
     private TextBlock? _wrapLinesGlyph;
+    private TextBlock? _whitespaceGlyph;
 
     // Chord gesture display: cached PART_InputGestureText references.
     private readonly Dictionary<MenuItem, Control> _menuGestureParts = [];
@@ -149,6 +150,11 @@ public partial class MainWindow : Window {
 
     private TabState AddTab(TabState tab) {
         _tabs.Add(tab);
+        // New untitled documents use the default indent style from settings.
+        if (tab.FilePath == null && !tab.IsSettings) {
+            tab.Document.IndentInfo = new Core.Documents.IndentInfo(
+                _settings.DefaultIndentStyle, false);
+        }
         tab.Document.Changed += (_, _) => OnTabDocumentChanged(tab);
         UpdateTabBar();
         return tab;
@@ -560,6 +566,9 @@ public partial class MainWindow : Window {
             case CommandIds.ViewWrapLines:
                 ToggleWrapLines();
                 return true;
+            case CommandIds.ViewWhitespace:
+                ToggleWhitespace();
+                return true;
             case CommandIds.ViewZoomIn:
                 Editor.FontSize = Math.Min(Editor.FontSize + 1, 72);
                 return true;
@@ -663,6 +672,14 @@ public partial class MainWindow : Window {
         _wrapLinesGlyph!.Opacity = wrap ? 1.0 : 0.0;
     }
 
+    private void ToggleWhitespace() {
+        var show = !_settings.ShowWhitespace;
+        _settings.ShowWhitespace = show;
+        _settings.ScheduleSave();
+        Editor.ShowWhitespace = show;
+        _whitespaceGlyph!.Opacity = show ? 1.0 : 0.0;
+    }
+
     private async void SaveAll() {
         // Save All: save every tab that has a file path and is dirty.
         foreach (var tab in _tabs) {
@@ -724,6 +741,7 @@ public partial class MainWindow : Window {
         SetMenuGesture(MenuLineNumbers, CommandIds.ViewLineNumbers);
         SetMenuGesture(MenuStatusBar, CommandIds.ViewStatusBar);
         SetMenuGesture(MenuWrapLines, CommandIds.ViewWrapLines);
+        SetMenuGesture(MenuWhitespace, CommandIds.ViewWhitespace);
         SetMenuGesture(MenuZoomIn, CommandIds.ViewZoomIn);
         SetMenuGesture(MenuZoomOut, CommandIds.ViewZoomOut);
         SetMenuGesture(MenuZoomReset, CommandIds.ViewZoomReset);
@@ -964,6 +982,12 @@ public partial class MainWindow : Window {
         MenuWrapLines.Icon = _wrapLinesGlyph;
         MenuWrapLines.Click += (_, _) => ToggleWrapLines();
 
+        // Show Whitespace
+        Editor.ShowWhitespace = _settings.ShowWhitespace;
+        _whitespaceGlyph = CreateMenuCheckGlyph(_settings.ShowWhitespace);
+        MenuWhitespace.Icon = _whitespaceGlyph;
+        MenuWhitespace.Click += (_, _) => ToggleWhitespace();
+
         // Zoom
         MenuZoomIn.Click += (_, _) => ExecuteWindowCommand(CommandIds.ViewZoomIn);
         MenuZoomOut.Click += (_, _) => ExecuteWindowCommand(CommandIds.ViewZoomOut);
@@ -974,6 +998,7 @@ public partial class MainWindow : Window {
         // Undo coalesce idle timer (settings-only, no menu item)
         Editor.CoalesceTimerMs = _settings.CoalesceTimerMs;
         Editor.ExpandSelectionMode = _settings.ExpandSelectionMode;
+        Editor.IndentWidth = _settings.IndentWidth;
 
         UpdateStatusBarVisibility();
     }
@@ -1601,6 +1626,10 @@ public partial class MainWindow : Window {
                     Editor.WrapLines = _settings.WrapLines;
                     _wrapLinesGlyph!.Opacity = _settings.WrapLines ? 1.0 : 0.0;
                     break;
+                case "ShowWhitespace":
+                    Editor.ShowWhitespace = _settings.ShowWhitespace;
+                    _whitespaceGlyph!.Opacity = _settings.ShowWhitespace ? 1.0 : 0.0;
+                    break;
                 case "WrapLinesAt":
                     Editor.WrapLinesAt = _settings.WrapLinesAt;
                     break;
@@ -1616,6 +1645,9 @@ public partial class MainWindow : Window {
                     break;
                 case "OuterThumbScrollRateMultiplier":
                     ScrollBar.OuterScrollRateMultiplier = _settings.OuterThumbScrollRateMultiplier;
+                    break;
+                case "IndentWidth":
+                    Editor.IndentWidth = _settings.IndentWidth;
                     break;
                 case "DevMode":
                     UpdateStatusBarVisibility();

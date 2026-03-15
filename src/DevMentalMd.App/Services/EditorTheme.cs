@@ -25,6 +25,12 @@ public sealed class EditorTheme {
     public IPen GuideLinePen { get; init; } = new Pen(
         new SolidColorBrush(Color.FromArgb(0x10, 0x00, 0x00, 0x00)), 1);
 
+    // -- Whitespace glyphs --
+    public IBrush WhitespaceGlyphBrush { get; init; } =
+        new SolidColorBrush(Color.FromArgb(0x60, 0x80, 0x80, 0x80));
+    public IPen WhitespaceGlyphPen { get; init; } = new Pen(
+        new SolidColorBrush(Color.FromArgb(0x60, 0x80, 0x80, 0x80)), 1);
+
     // -- Tab bar --
     public IBrush TabBarBackground { get; init; } =
         new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
@@ -130,6 +136,11 @@ public sealed class EditorTheme {
         // Column guide
         GuideLinePen = new Pen(
             new SolidColorBrush(Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)), 1),
+
+        // Whitespace glyphs
+        WhitespaceGlyphBrush = new SolidColorBrush(Color.FromArgb(0x50, 0x60, 0x60, 0x60)),
+        WhitespaceGlyphPen = new Pen(
+            new SolidColorBrush(Color.FromArgb(0x50, 0x60, 0x60, 0x60)), 1),
 
         // Tab bar
         TabBarBackground = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)),

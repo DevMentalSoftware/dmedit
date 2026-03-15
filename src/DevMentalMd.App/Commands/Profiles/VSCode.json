@@ -59,6 +59,7 @@
     "View.WrapLines": "Alt+Z",
     "View.ZoomIn": "",
     "View.ZoomOut": "",
+    "View.Whitespace": "",
     "View.ZoomReset": "Ctrl+D0",
     "Window.NextTab": "Ctrl+Tab",
     "Window.PrevTab": "Ctrl+Shift+Tab",

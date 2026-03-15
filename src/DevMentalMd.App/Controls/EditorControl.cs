@@ -155,6 +155,17 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// <summary>Controls the hierarchy of levels used by Expand Selection.</summary>
     public ExpandSelectionMode ExpandSelectionMode { get; set; } = ExpandSelectionMode.SubwordFirst;
 
+    /// <summary>Number of spaces per indent level. Also controls tab display width.</summary>
+    public int IndentWidth {
+        get => _indentWidth;
+        set {
+            var clamped = Math.Clamp(value, 1, 16);
+            if (_indentWidth == clamped) return;
+            _indentWidth = clamped;
+            InvalidateLayout();
+        }
+    }
+
     /// <summary>Whether line numbers are displayed in a gutter on the left.</summary>
     public bool ShowLineNumbers {
         get => _showLineNumbers;
@@ -162,6 +173,16 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             if (_showLineNumbers == value) return;
             _showLineNumbers = value;
             InvalidateLayout();
+        }
+    }
+
+    /// <summary>Whether visible whitespace glyphs are rendered for spaces, tabs, and NBSP.</summary>
+    public bool ShowWhitespace {
+        get => _showWhitespace;
+        set {
+            if (_showWhitespace == value) return;
+            _showWhitespace = value;
+            InvalidateVisual();
         }
     }
 
@@ -186,6 +207,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     // Word wrap
     private bool _wrapLines = true;
     private int _wrapLinesAt = 100;
+
+    // Indentation
+    private int _indentWidth = 4;
+
+    // Whitespace visibility
+    private bool _showWhitespace;
 
     // Line number gutter
     private bool _showLineNumbers = true;
@@ -766,6 +793,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break; // below viewport
             }
             line.Layout.Draw(context, new Point(_gutterWidth, y));
+            if (_showWhitespace) {
+                DrawWhitespace(context, layout, line, y, rh);
+            }
         }
 
         // Draw caret (hidden during any scroll-drag operation)
@@ -808,6 +838,60 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 textAlignment: TextAlignment.Right,
                 maxWidth: numW);
             tl.Draw(context, new Point(0, y));
+        }
+    }
+
+    private void DrawWhitespace(DrawingContext ctx, LayoutResult layout, LayoutLine line, double y, double rh) {
+        var table = Document?.Table;
+        if (table == null || line.CharLen == 0) return;
+
+        var docOfs = layout.ViewportBase + line.CharStart;
+        var text = table.GetText(docOfs, line.CharLen);
+        var typeface = new Typeface(FontFamily);
+
+        for (var i = 0; i < text.Length; i++) {
+            var ch = text[i];
+            if (ch != ' ' && ch != '\t' && ch != '\u00A0') continue;
+
+            var hit = line.Layout.HitTestTextPosition(i);
+            var x = _gutterWidth + hit.X;
+
+            if (ch == '\t') {
+                // Draw arrow spanning the tab's width
+                var hitNext = line.Layout.HitTestTextPosition(i + 1);
+                var x1 = _gutterWidth + hit.X;
+                var x2 = _gutterWidth + hitNext.X;
+                if (x2 <= x1) continue;
+
+                const double pad = 2;
+                const double arrowSize = 3;
+                var midY = y + rh / 2;
+                var left = x1 + pad;
+                var right = x2 - pad;
+                if (right - left < arrowSize + 1) continue;
+
+                // Horizontal line
+                ctx.DrawLine(_theme.WhitespaceGlyphPen,
+                    new Point(left, midY), new Point(right, midY));
+
+                // Arrowhead
+                ctx.DrawLine(_theme.WhitespaceGlyphPen,
+                    new Point(right - arrowSize, midY - arrowSize),
+                    new Point(right, midY));
+                ctx.DrawLine(_theme.WhitespaceGlyphPen,
+                    new Point(right - arrowSize, midY + arrowSize),
+                    new Point(right, midY));
+            } else {
+                // Space → · (U+00B7), NBSP → ␣ (U+2423)
+                var glyph = ch == ' ' ? "\u00B7" : "\u2423";
+                using var tl = new TextLayout(glyph, typeface, FontSize,
+                    _theme.WhitespaceGlyphBrush, textAlignment: TextAlignment.Left);
+                // Center the glyph in the character cell
+                var glyphW = tl.WidthIncludingTrailingWhitespace;
+                var cw = GetCharWidth();
+                var dx = (cw - glyphW) / 2;
+                tl.Draw(ctx, new Point(x + dx, y));
+            }
         }
     }
 
@@ -1337,7 +1421,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             case Commands.CommandIds.EditTab:
                 Coalesce("tab");
                 _editSw.Restart();
-                doc.Insert("    ");
+                var tabText = doc.IndentInfo.Dominant == Core.Documents.IndentStyle.Tabs
+                    ? "\t"
+                    : new string(' ', _indentWidth);
+                doc.Insert(tabText);
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
                 ScrollCaretIntoView();
@@ -1555,12 +1642,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
             case Commands.CommandIds.EditIndentToSpaces:
                 FlushCompound();
-                doc.ConvertIndentation(Core.Documents.IndentStyle.Spaces);
+                doc.ConvertIndentation(Core.Documents.IndentStyle.Spaces, _indentWidth);
                 InvalidateLayout();
                 return true;
             case Commands.CommandIds.EditIndentToTabs:
                 FlushCompound();
-                doc.ConvertIndentation(Core.Documents.IndentStyle.Tabs);
+                doc.ConvertIndentation(Core.Documents.IndentStyle.Tabs, _indentWidth);
                 InvalidateLayout();
                 return true;
 
@@ -1897,7 +1984,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var table = doc.Table;
         var sel = doc.Selection;
         var style = doc.IndentInfo.Dominant;
-        const int tabSize = 4;
+        var tabSize = _indentWidth;
 
         var startLine = table.LineFromOfs(sel.Start);
         var endLine = table.LineFromOfs(Math.Max(sel.Start, sel.End - 1));
@@ -1971,7 +2058,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var table = doc.Table;
         var sel = doc.Selection;
         var style = doc.IndentInfo.Dominant;
-        const int tabSize = 4;
+        var tabSize = _indentWidth;
 
         var startLine = table.LineFromOfs(sel.Start);
         var endLine = table.LineFromOfs(Math.Max(sel.Start, sel.End - 1));

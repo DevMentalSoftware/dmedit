@@ -29,6 +29,7 @@ public static class CommandRegistry {
         new(CommandIds.EditCut, "Cut"),
         new(CommandIds.EditCopy, "Copy"),
         new(CommandIds.EditPaste, "Paste"),
+        new(CommandIds.EditPasteMore, "PasteMore"),
         new(CommandIds.EditDelete, "Delete"),
         new(CommandIds.EditBackspace, "Backspace"),
         new(CommandIds.EditSelectAll, "Select All"),
@@ -77,6 +78,7 @@ public static class CommandRegistry {
         new(CommandIds.ViewWrapLines, "Wrap Lines"),
         new(CommandIds.ViewZoomIn, "Zoom In"),
         new(CommandIds.ViewZoomOut, "Zoom Out"),
+        new(CommandIds.ViewWhitespace, "Show Whitespace"),
         new(CommandIds.ViewZoomReset, "Zoom Reset"),
 
         // -- Window --
