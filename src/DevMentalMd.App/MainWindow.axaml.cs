@@ -28,6 +28,9 @@ using DevMentalMd.Core.IO;
 namespace DevMentalMd.App;
 
 public partial class MainWindow : Window {
+    
+    private const int FLASH_RELOAD_DURATION_MS = 1000 / 3;
+    
     private static readonly FilePickerFileType[] FileTypeFilters = [
         new("Text files") { Patterns = ["*.txt", "*.log", "*.md", "*.*"] },
         new("Markdown") { Patterns = ["*.md", "*.markdown"] },
@@ -2121,7 +2124,9 @@ public partial class MainWindow : Window {
     /// </summary>
     private void OnFileChanged(TabState tab, FileChangeKind kind) {
         if (!_tabs.Contains(tab)) return;
-        if (tab.Conflict is not null) return; // Already flagged.
+        // Dirty tabs: skip if already flagged (conflict icon is already visible).
+        // Clean tabs: allow re-entry so we can flash the spinner on each new change.
+        if (tab.Conflict is not null && tab.IsDirty) return;
 
         // Active, clean, modified tab with auto-reload: reload in-place
         // without ever showing a conflict icon.
@@ -2140,6 +2145,24 @@ public partial class MainWindow : Window {
             FilePath = tab.FilePath!,
             ExpectedSha1 = tab.BaseSha1,
         };
+
+        // Clean tab with a modified file: flash the spinner briefly and
+        // update baseline stats so the watcher can detect the next change.
+        if (!tab.IsDirty && kind == FileChangeKind.Modified) {
+            tab.FlashReloadUntil = DateTime.UtcNow.AddMilliseconds(FLASH_RELOAD_DURATION_MS);
+            SnapshotFileStats(tab);
+
+            // Schedule a precise UI-thread callback to end the flash.
+            // RequestAnimationFrame drives the animation smoothly but its
+            // tick rate is too coarse to stop on time.
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FLASH_RELOAD_DURATION_MS) };
+            timer.Tick += (_, _) => {
+                timer.Stop();
+                UpdateTabBar();
+            };
+            timer.Start();
+        }
+
         UpdateTabBar();
     }
 

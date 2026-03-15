@@ -50,6 +50,13 @@ public sealed class TabState {
     public FileConflict? Conflict { get; set; }
 
     /// <summary>
+    /// When set to a future time, the tab bar briefly shows the loading spinner
+    /// to indicate the file was modified externally. Resets naturally when the
+    /// time passes.
+    /// </summary>
+    public DateTime FlashReloadUntil { get; set; }
+
+    /// <summary>
     /// True while the file's background scan is still in progress.
     /// The tab bar shows a spinner and the editor blocks input.
     /// </summary>

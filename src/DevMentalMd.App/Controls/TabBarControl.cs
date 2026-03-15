@@ -6,7 +6,6 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Threading;
 using DevMentalMd.App.Services;
 
 namespace DevMentalMd.App.Controls;
@@ -128,9 +127,9 @@ public sealed class TabBarControl : Control {
     private bool _isDragging;
     private const double DragThreshold = 6; // pixels before drag starts
 
-    // Loading spinner animation
-    private DispatcherTimer? _spinnerTimer;
-    private int _spinnerFrame; // 0–7 (45° per step)
+    // Loading spinner animation (frame-synced via RequestAnimationFrame)
+    private bool _spinnerRunning;
+    private double _spinnerAngle; // continuous 0–360°
 
     // -------------------------------------------------------------------------
     // Events
@@ -195,25 +194,58 @@ public sealed class TabBarControl : Control {
         _tabs = tabs;
         _activeTab = active;
         ComputeTabLayout();
-        UpdateSpinnerTimer();
+        EnsureSpinnerRunning();
         InvalidateVisual();
     }
 
-    private void UpdateSpinnerTimer() {
-        var anyLoading = false;
+    /// <summary>
+    /// Degrees per second for the spinner arc rotation.
+    /// </summary>
+    private const double RELOAD_DEG_PER_SEC = 360 * 3;
+
+    private void EnsureSpinnerRunning() {
+        if (_spinnerRunning) return;
+
+        var needsAnimation = false;
         for (var i = 0; i < _tabs.Count; i++) {
-            if (_tabs[i].IsLoading) { anyLoading = true; break; }
+            if (_tabs[i].IsLoading || _tabs[i].FlashReloadUntil > DateTime.UtcNow) {
+                needsAnimation = true;
+                break;
+            }
         }
-        if (anyLoading && _spinnerTimer is null) {
-            _spinnerTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
-            _spinnerTimer.Tick += (_, _) => {
-                _spinnerFrame = (_spinnerFrame + 1) & 7;
-                InvalidateVisual();
-            };
-            _spinnerTimer.Start();
-        } else if (!anyLoading && _spinnerTimer is not null) {
-            _spinnerTimer.Stop();
-            _spinnerTimer = null;
+        if (!needsAnimation) return;
+
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        _spinnerRunning = true;
+        TimeSpan? prev = null;
+        topLevel.RequestAnimationFrame(ts => OnAnimationFrame(topLevel, ts, ref prev));
+    }
+
+    private void OnAnimationFrame(TopLevel topLevel, TimeSpan timestamp, ref TimeSpan? prev) {
+        if (prev is { } p) {
+            var dt = (timestamp - p).TotalSeconds;
+            _spinnerAngle = (_spinnerAngle + RELOAD_DEG_PER_SEC * dt) % 360.0;
+        }
+        prev = timestamp;
+
+        // Check whether any tab still needs animation.
+        var keepGoing = false;
+        for (var i = 0; i < _tabs.Count; i++) {
+            if (_tabs[i].IsLoading || _tabs[i].FlashReloadUntil > DateTime.UtcNow) {
+                keepGoing = true;
+                break;
+            }
+        }
+
+        InvalidateVisual();
+
+        if (keepGoing) {
+            var captured = prev; // ref can't be captured in lambda
+            topLevel.RequestAnimationFrame(ts => OnAnimationFrame(topLevel, ts, ref captured));
+        } else {
+            _spinnerRunning = false;
         }
     }
 
@@ -651,7 +683,8 @@ public sealed class TabBarControl : Control {
         ctx.DrawText(ft, new Point(labelX, textY));
 
         // Close button: on hover, dirty dot, error icon, or loading spinner
-        if (isHovered || _tabs[index].IsDirty || _tabs[index].IsLoading) {
+        if (isHovered || _tabs[index].IsDirty || _tabs[index].IsLoading
+            || _tabs[index].FlashReloadUntil > DateTime.UtcNow) {
             DrawCloseButton(ctx, index);
         }
     }
@@ -776,6 +809,14 @@ public sealed class TabBarControl : Control {
             return;
         }
 
+        // Brief spinner flash for background tabs with detected file changes.
+        if (_tabs[index].FlashReloadUntil > DateTime.UtcNow) {
+            DrawLoadingSpinner(ctx,
+                closeX + CloseButtonSize / 2,
+                closeY + CloseButtonSize / 2, 5);
+            return;
+        }
+
         // Conflict error icon — only shown when the tab has unsaved edits.
         // Clean tabs with conflicts auto-reload when activated; no icon needed.
         if (_tabs[index].Conflict is not null && _tabs[index].IsDirty) {
@@ -795,9 +836,10 @@ public sealed class TabBarControl : Control {
     /// <summary>
     /// Draws a small rotating arc (indeterminate progress spinner).
     /// </summary>
-    private void DrawLoadingSpinner(DrawingContext ctx, double cx, double cy, double radius) {
-        var startAngle = _spinnerFrame * 45.0;
-        var sweepAngle = 270.0;
+    private void DrawLoadingSpinner(
+        DrawingContext ctx, double cx, double cy, double radius,
+        double sweepAngle = 270.0) {
+        var startAngle = _spinnerAngle;
         var pen = new Pen(_theme.TabCloseForeground, 1.5);
 
         var geo = new StreamGeometry();
