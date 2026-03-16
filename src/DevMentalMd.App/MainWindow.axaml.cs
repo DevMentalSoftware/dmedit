@@ -565,6 +565,14 @@ public partial class MainWindow : Window {
         }
     }
 
+    protected override void OnKeyUp(KeyEventArgs e) {
+        base.OnKeyUp(e);
+        // Releasing Ctrl confirms an active PasteMore clipboard-cycling session.
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl && Editor.IsClipboardCycling) {
+            Editor.ConfirmClipboardCycle();
+        }
+    }
+
     private void CancelChord() {
         _chordTimer.Stop();
         _chordFirst = null;
@@ -656,6 +664,11 @@ public partial class MainWindow : Window {
                 return true;
             case CommandIds.WindowCommandPalette:
                 OpenCommandPalette();
+                return true;
+
+            // -- Edit: Clipboard Ring popup --
+            case CommandIds.EditClipboardRing:
+                _ = OpenClipboardRing();
                 return true;
 
             // -- File: Revert / Reload --
@@ -783,7 +796,8 @@ public partial class MainWindow : Window {
         SetMenuGesture(MenuCut, CommandIds.EditCut);
         SetMenuGesture(MenuCopy, CommandIds.EditCopy);
         SetMenuGesture(MenuPaste, CommandIds.EditPaste);
-        SetMenuGesture(MenuPasteMore, CommandIds.EditPaste); // PasteMore shares for now
+        SetMenuGesture(MenuPasteMore, CommandIds.EditPasteMore);
+        SetMenuGesture(MenuClipboardRing, CommandIds.EditClipboardRing);
         SetMenuGesture(MenuDelete, CommandIds.EditDelete);
         SetMenuGesture(MenuSelectAll, CommandIds.EditSelectAll);
         SetMenuGesture(MenuSelectWord, CommandIds.EditSelectWord);
@@ -870,6 +884,8 @@ public partial class MainWindow : Window {
         MenuCut.Click += async (_, _) => await Editor.CutAsync();
         MenuCopy.Click += async (_, _) => await Editor.CopyAsync();
         MenuPaste.Click += async (_, _) => await Editor.PasteAsync();
+        MenuPasteMore.Click += (_, _) => Editor.PasteMore();
+        MenuClipboardRing.Click += async (_, _) => await OpenClipboardRing();
         MenuDelete.Click += (_, _) => Editor.EditDelete();
         MenuSelectAll.Click += (_, _) => Editor.PerformSelectAll();
         MenuSelectWord.Click += (_, _) => Editor.PerformSelectWord();
@@ -1002,6 +1018,15 @@ public partial class MainWindow : Window {
         // Incremental search → status bar
         Editor.IncrementalSearchChanged += (_, _) => UpdateIncrementalSearchStatus();
 
+        // Clipboard ring cycling → status bar hint
+        Editor.ClipboardCycleStatusChanged += (_, _) => {
+            if (Editor.IsClipboardCycling) {
+                StatusLeft.Text = $"Clipboard ring: {Editor.ClipboardCycleIndex + 1}/{Editor._clipboardRing.Count}";
+            } else {
+                StatusLeft.Text = "";
+            }
+        };
+
         // ScrollBar → Editor: update scroll offset when user drags/clicks scrollbar
         ScrollBar.ScrollRequested += newValue => {
             Editor.ScrollValue = newValue;
@@ -1069,6 +1094,7 @@ public partial class MainWindow : Window {
 
         // Undo coalesce idle timer (settings-only, no menu item)
         Editor.CoalesceTimerMs = _settings.CoalesceTimerMs;
+        Editor._clipboardRing.MaxSize = Math.Max(1, _settings.ClipboardRingSize);
         Editor.ExpandSelectionMode = _settings.ExpandSelectionMode;
         Editor.IndentWidth = _settings.IndentWidth;
 
@@ -1861,6 +1887,20 @@ public partial class MainWindow : Window {
                     Editor.ExecuteCommand(cmdId);
                 }
             }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Clipboard Ring popup
+    // -------------------------------------------------------------------------
+
+    private async Task OpenClipboardRing() {
+        var ring = Editor._clipboardRing;
+        if (ring.Count == 0) return;
+        var dlg = new ClipboardRingWindow(ring, _theme);
+        await dlg.ShowDialog(this);
+        if (dlg.SelectedIndex >= 0) {
+            Editor.PasteFromRing(dlg.SelectedIndex);
         }
     }
 

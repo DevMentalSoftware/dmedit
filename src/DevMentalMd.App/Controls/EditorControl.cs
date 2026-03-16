@@ -100,6 +100,15 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private bool _middleDrag;
     private double _middleDragStartY;
 
+    // Clipboard ring — shared by PasteMore (inline cycling) and ClipboardRing (popup).
+    internal readonly ClipboardRing _clipboardRing = new();
+
+    // PasteMore cycling state — active while the user holds Ctrl and presses
+    // Shift+V repeatedly to cycle through ring entries.
+    private bool _isClipboardCycling;
+    private int _clipboardCycleIndex;
+    private int _cycleInsertedLength;
+
     /// <summary>
     /// Pixel X coordinate to aim for when pressing Up/Down.  Set on the first
     /// vertical move and preserved across consecutive vertical moves so the
@@ -1094,7 +1103,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (clipboard == null) {
             return;
         }
-        await clipboard.SetTextAsync(doc.GetSelectedText());
+        var text = doc.GetSelectedText();
+        await clipboard.SetTextAsync(text);
+        _clipboardRing.Push(text);
     }
 
     public async Task CutAsync() {
@@ -1107,7 +1118,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (clipboard == null) {
             return;
         }
-        await clipboard.SetTextAsync(doc.GetSelectedText());
+        var text = doc.GetSelectedText();
+        await clipboard.SetTextAsync(text);
+        _clipboardRing.Push(text);
         _editSw.Restart();
         doc.DeleteSelection();
         _editSw.Stop();
@@ -1135,6 +1148,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
         // Normalize Windows line endings to LF
         text = text.Replace("\r\n", "\n").Replace("\r", "\n");
+        _clipboardRing.Push(text);
         _preferredCaretX = -1;
         _editSw.Restart();
         doc.Insert(text);
@@ -1144,6 +1158,83 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         InvalidateLayout();
         ResetCaretBlink();
     }
+
+    /// <summary>
+    /// Pastes from the clipboard ring with inline cycling. First press pastes
+    /// the most recent entry; subsequent presses (while Ctrl is held) replace
+    /// the pasted text with the next older entry.
+    /// </summary>
+    public void PasteMore() {
+        var doc = Document;
+        if (doc == null || _clipboardRing.Count == 0) return;
+        FlushCompound();
+        if (!_isClipboardCycling) {
+            // Start a new cycling session.
+            _isClipboardCycling = true;
+            _clipboardCycleIndex = 0;
+        } else {
+            // Cycle to the next entry — undo the previous paste first.
+            _clipboardCycleIndex = (_clipboardCycleIndex + 1) % _clipboardRing.Count;
+            if (_cycleInsertedLength > 0) {
+                var caret = doc.Selection.Caret;
+                doc.Selection = new Selection(caret - _cycleInsertedLength, caret);
+                doc.DeleteSelection();
+            }
+        }
+        var text = _clipboardRing.Get(_clipboardCycleIndex);
+        if (text == null) return;
+        _preferredCaretX = -1;
+        _editSw.Restart();
+        doc.Insert(text);
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        _cycleInsertedLength = text.Length;
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+        ClipboardCycleStatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Confirms the current clipboard cycling selection. Called when the
+    /// user releases Ctrl (or performs any other action).
+    /// </summary>
+    public void ConfirmClipboardCycle() {
+        if (!_isClipboardCycling) return;
+        _isClipboardCycling = false;
+        _clipboardCycleIndex = 0;
+        _cycleInsertedLength = 0;
+        ClipboardCycleStatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Pastes a specific entry from the clipboard ring by index. Used by the
+    /// ClipboardRing popup dialog.
+    /// </summary>
+    public void PasteFromRing(int index) {
+        var doc = Document;
+        if (doc == null) return;
+        var text = _clipboardRing.Get(index);
+        if (text == null) return;
+        FlushCompound();
+        _preferredCaretX = -1;
+        _editSw.Restart();
+        doc.Insert(text);
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    /// <summary>Whether the editor is currently in a PasteMore cycling session.</summary>
+    public bool IsClipboardCycling => _isClipboardCycling;
+
+    /// <summary>Current cycling index (0-based) into the clipboard ring.</summary>
+    public int ClipboardCycleIndex => _clipboardCycleIndex;
+
+    /// <summary>Raised when clipboard cycling starts, advances, or ends.</summary>
+    public event EventHandler? ClipboardCycleStatusChanged;
 
     public void EditDelete() {
         var doc = Document;
@@ -1342,6 +1433,11 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var doc = Document;
         if (doc == null) return false;
 
+        // Any command other than PasteMore confirms (ends) an active cycling session.
+        if (_isClipboardCycling && commandId != Commands.CommandIds.EditPasteMore) {
+            ConfirmClipboardCycle();
+        }
+
         // Vertical movement keys preserve the preferred column; everything
         // else resets it so the next Up/Down captures a fresh X position.
         if (!VerticalNavCommands.Contains(commandId)) {
@@ -1383,6 +1479,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
             case Commands.CommandIds.EditPaste:
                 _ = PasteAsync();
+                return true;
+
+            case Commands.CommandIds.EditPasteMore:
+                PasteMore();
                 return true;
 
             case Commands.CommandIds.EditSelectAll:

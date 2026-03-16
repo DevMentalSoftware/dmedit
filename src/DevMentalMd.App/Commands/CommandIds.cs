@@ -29,6 +29,7 @@ public static class CommandIds {
     public const string EditCopy         = "Edit.Copy";
     public const string EditPaste        = "Edit.Paste";
     public const string EditPasteMore    = "Edit.PasteMore";
+    public const string EditClipboardRing = "Edit.ClipboardRing";
     public const string EditDelete       = "Edit.Delete";
     public const string EditBackspace    = "Edit.Backspace";
     public const string EditSelectAll    = "Edit.SelectAll";

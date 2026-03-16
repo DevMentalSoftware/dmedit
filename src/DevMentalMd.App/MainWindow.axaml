@@ -47,6 +47,7 @@
 						<MenuItem Header="_Copy" x:Name="MenuCopy" />
 						<MenuItem Header="_Paste" x:Name="MenuPaste" />
 						<MenuItem Header="Paste _More" x:Name="MenuPasteMore" />
+						<MenuItem Header="Clipboard _Ring" x:Name="MenuClipboardRing" />
 						<MenuItem Header="De_lete" x:Name="MenuDelete" />
 						<Separator />
 						<MenuItem Header="Select _All" x:Name="MenuSelectAll" />

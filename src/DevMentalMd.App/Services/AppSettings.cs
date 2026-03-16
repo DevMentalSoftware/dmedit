@@ -267,6 +267,16 @@ public sealed class AppSettings {
     public int ChordTimeoutMs { get; set; } = 3000;
 
     // -----------------------------------------------------------------
+    // Clipboard ring
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Maximum number of entries kept in the clipboard ring. Hidden setting
+    /// (not shown in the Settings UI). Default: 10.
+    /// </summary>
+    public int ClipboardRingSize { get; set; } = 10;
+
+    // -----------------------------------------------------------------
     // Load / Save
     // -----------------------------------------------------------------
 
