@@ -70,11 +70,6 @@
 							<MenuItem Header="_Lower Case" x:Name="MenuCaseLower" />
 							<MenuItem Header="_Proper Case" x:Name="MenuCaseProper" />
 						</MenuItem>
-						<Separator />
-						<MenuItem Header="Advanced">
-							<MenuItem Header="Select All _Occurrences" x:Name="MenuSelectAllOccurrences" />
-							<MenuItem Header="Co_lumn Select" x:Name="MenuColumnSelect" />
-						</MenuItem>
 					</MenuItem>
 					<MenuItem Header="_Search" x:Name="MenuSearch">
 						<MenuItem Header="_Find" x:Name="MenuFind" />

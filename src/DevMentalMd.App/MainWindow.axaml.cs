@@ -713,11 +713,6 @@ public partial class MainWindow : Window {
                 OpenGoToLine();
                 return true;
 
-            // -- Stubs (not yet implemented) --
-            case CommandIds.EditSelectAllOccurrences:
-            case CommandIds.EditColumnSelect:
-                return true;
-
             default:
                 return false;
         }
@@ -813,8 +808,6 @@ public partial class MainWindow : Window {
         SetMenuGesture(MenuDeleteWordLeft, CommandIds.EditDeleteWordLeft);
         SetMenuGesture(MenuDeleteWordRight, CommandIds.EditDeleteWordRight);
         SetMenuGesture(MenuIndent, CommandIds.EditSmartIndent);
-        SetMenuGesture(MenuSelectAllOccurrences, CommandIds.EditSelectAllOccurrences);
-        SetMenuGesture(MenuColumnSelect, CommandIds.EditColumnSelect);
         SetMenuGesture(MenuFind, CommandIds.FindFind);
         SetMenuGesture(MenuReplace, CommandIds.FindReplace);
         SetMenuGesture(MenuFindNext, CommandIds.FindFindNext);
@@ -901,8 +894,6 @@ public partial class MainWindow : Window {
         MenuDeleteWordLeft.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditDeleteWordLeft);
         MenuDeleteWordRight.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditDeleteWordRight);
         MenuIndent.Click += (_, _) => Editor.ExecuteCommand(CommandIds.EditSmartIndent);
-        MenuSelectAllOccurrences.Click += (_, _) => ExecuteWindowCommand(CommandIds.EditSelectAllOccurrences);
-        MenuColumnSelect.Click += (_, _) => ExecuteWindowCommand(CommandIds.EditColumnSelect);
     }
 
 

@@ -95,7 +95,7 @@ with consistent, logical hover/focus effects.
 
 - Block model / WYSIWYG editor is fully designed and partially implemented but not wired
   into the running editor (see [02-document-model](design-journal/02-document-model.md))
-- Find/Replace, SelectAllOccurrences, ColumnSelect are registered stub commands
+- Find/Replace is a registered stub command
 - Windows 11 Mica transparency researched but not implemented (see
   [05-features](design-journal/05-features.md))
 - Smart Tab, ExpandWord, Wrap options, toolbar, Undo/Redo toolbar buttons not yet

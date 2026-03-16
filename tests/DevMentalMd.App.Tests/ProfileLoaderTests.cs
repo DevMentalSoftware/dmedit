@@ -125,8 +125,6 @@ public class ProfileLoaderTests {
             CommandIds.EditInsertLineAbove,
             CommandIds.EditDuplicateLine,
             CommandIds.EditTab,
-            CommandIds.EditSelectAllOccurrences,
-            CommandIds.EditColumnSelect,
             CommandIds.FileRevertFile,
             CommandIds.ViewZoomIn,
             CommandIds.ViewZoomOut,
