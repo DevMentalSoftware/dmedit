@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using DevMentalMd.App.Services;
 
 namespace DevMentalMd.App;
 
@@ -28,7 +29,7 @@ public enum FileConflictChoice {
 public class FileConflictDialog : Window {
     public FileConflictChoice Choice { get; private set; } = FileConflictChoice.Discard;
 
-    public FileConflictDialog(Services.FileConflict conflict) {
+    public FileConflictDialog(Services.FileConflict conflict, EditorTheme? theme = null) {
         var isMissing = conflict.Kind == Services.FileConflictKind.Missing;
 
         Title = isMissing ? "File Not Found" : "File Changed";
@@ -94,5 +95,9 @@ public class FileConflictDialog : Window {
             Margin = new Thickness(20),
             Children = { heading, message, buttonPanel },
         };
+
+        if (theme is not null) {
+            Background = theme.TabActiveBackground;
+        }
     }
 }

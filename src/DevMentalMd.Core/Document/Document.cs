@@ -1,4 +1,5 @@
 using DevMentalMd.Core.Documents.History;
+using DevMentalMd.Core.Printing;
 
 namespace DevMentalMd.Core.Documents;
 
@@ -45,6 +46,13 @@ public sealed class Document {
     /// Defaults to spaces for new documents.
     /// </summary>
     public IndentInfo IndentInfo { get; set; } = IndentInfo.Default;
+
+    /// <summary>
+    /// Page layout settings used for printing and PDF export.
+    /// Persisted per-document so the user's last-used paper size,
+    /// orientation, and margins are remembered across print invocations.
+    /// </summary>
+    public PrintSettings PrintSettings { get; set; } = new();
 
     /// <summary>
     /// Detected (or user-assigned) file encoding. Determines how the document

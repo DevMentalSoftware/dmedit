@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
+using DevMentalMd.App.Services;
 
 namespace DevMentalMd.App;
 
@@ -50,7 +51,7 @@ public sealed class MultiSaveResult {
 public class SaveChangesDialog : Window {
     public SingleSaveResult Result { get; private set; } = new() { Choice = SaveChoice.Cancel };
 
-    public SaveChangesDialog(string displayName) {
+    public SaveChangesDialog(string displayName, EditorTheme? theme = null) {
         Title = "Save Changes";
         Width = 420;
         SizeToContent = SizeToContent.Height;
@@ -94,6 +95,10 @@ public class SaveChangesDialog : Window {
             Margin = new Thickness(20),
             Children = { message, buttonPanel },
         };
+
+        if (theme is not null) {
+            Background = theme.TabActiveBackground;
+        }
     }
 }
 
@@ -127,7 +132,8 @@ public class MultiSaveChangesDialog : Window {
     /// </param>
     public MultiSaveChangesDialog(
             IReadOnlyList<TabState> dirtyTabs,
-            Func<TabState, Task<bool>> saveCallback) {
+            Func<TabState, Task<bool>> saveCallback,
+            EditorTheme? theme = null) {
         _decisions = dirtyTabs.Select(t => new TabSaveDecision { Tab = t }).ToList();
         _saveCallback = saveCallback;
 
@@ -201,6 +207,10 @@ public class MultiSaveChangesDialog : Window {
         root.Children.Add(listScroll); // fills remaining space
 
         Content = root;
+
+        if (theme is not null) {
+            Background = theme.TabActiveBackground;
+        }
     }
 
     private Border BuildRow(int index) {

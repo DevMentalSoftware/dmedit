@@ -24,6 +24,7 @@ using DevMentalMd.App.Settings;
 using DevMentalMd.Core.Buffers;
 using DevMentalMd.Core.Documents;
 using DevMentalMd.Core.IO;
+using DevMentalMd.Core.Printing;
 
 namespace DevMentalMd.App;
 
@@ -92,6 +93,13 @@ public partial class MainWindow : Window {
         MenuCloseAll.Click += async (_, _) => await CloseAllTabsAsync();
         MenuExit.Click += (_, _) => Close();
         MenuRevertFile.Click += (_, _) => _ = RevertFileAsync();
+        MenuPrint.Click += (_, _) => _ = PrintAsync();
+        MenuSaveAsPdf.Click += (_, _) => _ = SaveAsPdfAsync();
+
+        // Print is only available on Windows when the WPF DLL is present.
+        // Hide and disable so the keyboard shortcut is also inert.
+        MenuPrint.IsVisible = WindowsPrintService.IsAvailable;
+        MenuPrint.IsEnabled = WindowsPrintService.IsAvailable;
 
         _staticMenuItemCount = MenuFile.Items.Count;
 
@@ -255,7 +263,7 @@ public partial class MainWindow : Window {
             return true;
         }
         if (tab.IsDirty) {
-            var dialog = new SaveChangesDialog(tab.DisplayName);
+            var dialog = new SaveChangesDialog(tab.DisplayName, _theme);
             await dialog.ShowDialog(this);
             switch (dialog.Result.Choice) {
                 case SaveChoice.Save:
@@ -295,7 +303,7 @@ public partial class MainWindow : Window {
 
         // Multiple dirty tabs — use the multi-tab dialog.
         // Saves happen immediately when per-row [Save] is clicked.
-        var dialog = new MultiSaveChangesDialog(dirtyTabs, SaveTabAsync);
+        var dialog = new MultiSaveChangesDialog(dirtyTabs, SaveTabAsync, _theme);
         await dialog.ShowDialog(this);
         var result = dialog.Result;
         if (result.Cancelled) {
@@ -624,6 +632,12 @@ public partial class MainWindow : Window {
                 return true;
             case CommandIds.FileCloseAll:
                 _ = CloseAllTabsAsync();
+                return true;
+            case CommandIds.FilePrint:
+                if (WindowsPrintService.IsAvailable) _ = PrintAsync();
+                return true;
+            case CommandIds.FileSaveAsPdf:
+                _ = SaveAsPdfAsync();
                 return true;
             case CommandIds.FileExit:
                 Close();
@@ -1654,6 +1668,107 @@ public partial class MainWindow : Window {
         await OpenFileInTabAsync(path);
     }
 
+    private async Task PrintAsync() {
+        if (_activeTab is null or { IsSettings: true }) return;
+        var service = WindowsPrintService.Service;
+        if (service is null) return;
+
+        var doc = _activeTab.Document;
+        var printers = service.GetPrinters();
+        if (printers.Count == 0) return;
+
+        // Build initial settings from AppSettings, falling back to defaults.
+        var initial = BuildPrintSettings();
+
+        // Determine which printer to fetch paper sizes for.
+        var savedPrinter = _settings.PrinterName is { } sp
+            ? printers.FirstOrDefault(p => p.Name == sp)
+            : null;
+        var startPrinter = savedPrinter
+            ?? printers.FirstOrDefault(p => p.IsDefault)
+            ?? printers[0];
+        var paperSizes = service.GetPaperSizes(startPrinter.Name);
+
+        var dlg = new PrintDialog(
+            printers, paperSizes, initial,
+            _settings.PrinterName, _theme, service);
+        await dlg.ShowDialog(this);
+
+        if (dlg.JobTicket is not { } ticket) return;
+
+        // Persist the chosen settings on the document.
+        doc.PrintSettings = ticket.Settings;
+
+        // Save to AppSettings for next time.
+        _settings.PrinterName = ticket.PrinterName;
+        _settings.PaperSizeName = ticket.Settings.Paper.Name;
+        _settings.PageOrientation = ticket.Settings.Orientation.ToString();
+        _settings.MarginTopInches = ticket.Settings.Margins.Top / 72.0;
+        _settings.MarginRightInches = ticket.Settings.Margins.Right / 72.0;
+        _settings.MarginBottomInches = ticket.Settings.Margins.Bottom / 72.0;
+        _settings.MarginLeftInches = ticket.Settings.Margins.Left / 72.0;
+        _settings.ScheduleSave();
+
+        await Task.Run(() => service.Print(doc, ticket));
+    }
+
+    private PrintSettings BuildPrintSettings() {
+        var settings = new PrintSettings();
+
+        // Restore orientation.
+        if (_settings.PageOrientation is { } orient
+            && Enum.TryParse<PageOrientation>(orient, out var po)) {
+            settings.Orientation = po;
+        }
+
+        // Restore margins (stored in inches, convert to points).
+        if (_settings.MarginTopInches is { } mt
+            && _settings.MarginRightInches is { } mr
+            && _settings.MarginBottomInches is { } mb
+            && _settings.MarginLeftInches is { } ml) {
+            settings.Margins = new PrintMargins(mt * 72, mr * 72, mb * 72, ml * 72);
+        }
+
+        // Restore paper size by name — the dialog matches this against the
+        // printer's real sizes; if no match, index 0 is selected as fallback.
+        if (_settings.PaperSizeName is { } paperName) {
+            settings.Paper = new PaperSizeInfo {
+                Name = paperName,
+                Width = settings.Paper.Width,
+                Height = settings.Paper.Height,
+            };
+        }
+
+        return settings;
+    }
+
+    private async Task SaveAsPdfAsync() {
+        if (_activeTab is null or { IsSettings: true }) return;
+
+        var suggestedName = Path.GetFileNameWithoutExtension(
+            _activeTab.FilePath ?? "Untitled") + ".pdf";
+
+        string? path;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
+            path = await LinuxFileDialog.SaveAsync("Save As PDF", suggestedName,
+                _activeTab.FilePath is not null ? Path.GetDirectoryName(_activeTab.FilePath) : null);
+        } else {
+            var sp = StorageProvider;
+            var result = await sp.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions {
+                Title = "Save As PDF",
+                SuggestedFileName = suggestedName,
+                FileTypeChoices = [
+                    new("PDF files") { Patterns = ["*.pdf"] },
+                ],
+            });
+            path = result?.TryGetLocalPath();
+        }
+
+        if (path is null) return;
+
+        PdfGenerator.RenderToPdf(_activeTab.Document, _activeTab.Document.PrintSettings, path);
+    }
+
     /// <summary>
     /// Reloads a tab's file from disk. If the tab has unsaved edits, shows
     /// the conflict dialog. Called by File.ReloadFile command, conflict
@@ -1670,7 +1785,7 @@ public partial class MainWindow : Window {
                 FilePath = path,
                 ExpectedSha1 = tab.BaseSha1,
             };
-            var dlg = new FileConflictDialog(conflict);
+            var dlg = new FileConflictDialog(conflict, _theme);
             await dlg.ShowDialog(this);
             switch (dlg.Choice) {
                 case FileConflictChoice.KeepMyVersion:

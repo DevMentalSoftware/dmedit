@@ -277,6 +277,31 @@ public sealed class AppSettings {
     public int ClipboardRingSize { get; set; } = 10;
 
     // -----------------------------------------------------------------
+    // Printing
+    // -----------------------------------------------------------------
+
+    /// <summary>Last-used printer name. Null = system default.</summary>
+    public string? PrinterName { get; set; }
+
+    /// <summary>Last-used paper size name (matched against available sizes on load).</summary>
+    public string? PaperSizeName { get; set; }
+
+    /// <summary>Last-used page orientation. Default: Portrait.</summary>
+    public string? PageOrientation { get; set; }
+
+    /// <summary>Last-used top margin in inches.</summary>
+    public double? MarginTopInches { get; set; }
+
+    /// <summary>Last-used right margin in inches.</summary>
+    public double? MarginRightInches { get; set; }
+
+    /// <summary>Last-used bottom margin in inches.</summary>
+    public double? MarginBottomInches { get; set; }
+
+    /// <summary>Last-used left margin in inches.</summary>
+    public double? MarginLeftInches { get; set; }
+
+    // -----------------------------------------------------------------
     // Load / Save
     // -----------------------------------------------------------------
 

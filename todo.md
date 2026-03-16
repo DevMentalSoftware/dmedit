@@ -17,5 +17,8 @@
 * The popup when closing a file with changes has the wrong background color. The system Open and Save dialogs have a different look than the reset of the app, but maybe any modal popups should try to match that look? Or we could stick with our custom look for our own non-system dialogs. I think the background should match our menu/statusbar, and the buttons should act like our other buttons.
 * Same for the Close All popup.
 * Add Toolbar buttons for Open, Save, Save All, Wrap, Cut, Copy, Paste, Find, Show Whitespace, Tail, Command Palette.
+* Add Page Setup and Print (System Dialogs or does Avalonia provide?)
+* Add a command to clear the recent files list (no menu or keystroke).
+* Make sure we can handle readonly files (Maybe just a command to toggle the file setting from within the editor, and to correctly prevent modifying until we clear the flag?)
 * 
 

@@ -11,6 +11,8 @@
     "File.Exit": "Alt+F4",
     "File.RevertFile": "",
     "File.ReloadFile": "",
+    "File.Print": "Ctrl+P",
+    "File.SaveAsPdf": "",
     "Edit.Undo": "Ctrl+Z",
     "Edit.Redo": "Ctrl+Y",
     "Edit.Cut": "Ctrl+X",

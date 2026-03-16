@@ -16,6 +16,8 @@ public static class CommandIds {
     public const string FileSaveAll  = "File.SaveAll";
     public const string FileClose    = "File.Close";
     public const string FileCloseAll = "File.CloseAll";
+    public const string FilePrint     = "File.Print";
+    public const string FileSaveAsPdf = "File.SaveAsPdf";
     public const string FileExit       = "File.Exit";
     public const string FileRevertFile = "File.RevertFile";
     public const string FileReloadFile = "File.ReloadFile";

@@ -31,8 +31,23 @@
     <PackageReference Include="Avalonia.Diagnostics" Version="11.3.12" Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>
 
+  <!-- SkiaSharp for PDF printing (transitive via Avalonia.Skia, explicit for direct use) -->
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="2.88.9" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\DevMentalMd.Core\DevMentalMd.Core.csproj" />
     <ProjectReference Include="..\DevMentalMd.Rendering\DevMentalMd.Rendering.csproj" />
   </ItemGroup>
+
+  <!-- Copy the Windows-specific print DLL beside the app after build (if present).
+       The solution builds DevMentalMd.Print.Windows independently; this target just
+       copies the output so the App can discover it at runtime via reflection.
+       No ProjectReference: net10.0 cannot reference net10.0-windows at build time. -->
+  <Target Name="CopyWindowsPrintDll" AfterTargets="Build"
+          Condition="$([MSBuild]::IsOSPlatform('Windows')) And Exists('..\DevMentalMd.Print.Windows\bin\$(Configuration)\net10.0-windows\DevMentalMd.Print.Windows.dll')">
+    <Copy SourceFiles="..\DevMentalMd.Print.Windows\bin\$(Configuration)\net10.0-windows\DevMentalMd.Print.Windows.dll"
+          DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

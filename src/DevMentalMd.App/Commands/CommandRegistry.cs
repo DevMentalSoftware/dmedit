@@ -20,6 +20,8 @@ public static class CommandRegistry {
         new(CommandIds.FileSaveAll, "Save All"),
         new(CommandIds.FileClose, "Close"),
         new(CommandIds.FileCloseAll, "Close All"),
+        new(CommandIds.FilePrint, "Print"),
+        new(CommandIds.FileSaveAsPdf, "Save As PDF"),
         new(CommandIds.FileExit, "Exit"),
         new(CommandIds.FileRevertFile, "Revert File"),
         new(CommandIds.FileReloadFile, "Reload File"),
