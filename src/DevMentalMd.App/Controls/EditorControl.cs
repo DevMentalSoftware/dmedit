@@ -153,6 +153,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         set {
             if (_wrapLines == value) return;
             _wrapLines = value;
+            // Column mode is incompatible with wrapping — exit if active.
+            if (_wrapLines && Document?.ColumnSel != null) {
+                Document.ClearColumnSelection(_indentWidth);
+            }
             InvalidateLayout();
         }
     }
@@ -1734,6 +1738,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     }
 
     private void PerformColumnSelectVertical(Document doc, int delta) {
+        if (_wrapLines) return; // Column mode disabled when wrapping is on.
         FlushCompound();
         var table = doc.Table;
         if (doc.ColumnSel is { } colSel) {
@@ -2967,7 +2972,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             }
             var alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
             var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-            if (alt) {
+            if (alt && !_wrapLines) {
                 // Alt+click: start column (block) selection.
                 var table = doc.Table;
                 var line = (int)table.LineFromOfs(ofs);
