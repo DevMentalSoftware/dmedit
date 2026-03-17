@@ -19,6 +19,35 @@ public readonly record struct ColumnSelection(int AnchorLine, int AnchorCol, int
     /// <summary>Returns a new selection with <see cref="ActiveLine"/> shifted by <paramref name="delta"/>.</summary>
     public ColumnSelection ExtendLine(int delta) => this with { ActiveLine = ActiveLine + delta };
 
+    /// <summary>Collapses to the left column edge (both Anchor and Active).</summary>
+    public ColumnSelection CollapseToLeft() => this with { AnchorCol = LeftCol, ActiveCol = LeftCol };
+
+    /// <summary>Collapses to the right column edge (both Anchor and Active).</summary>
+    public ColumnSelection CollapseToRight() => this with { AnchorCol = RightCol, ActiveCol = RightCol };
+
+    /// <summary>Shifts both AnchorCol and ActiveCol by <paramref name="delta"/>, clamped ≥ 0.</summary>
+    public ColumnSelection ShiftColumns(int delta) => this with {
+        AnchorCol = Math.Max(0, AnchorCol + delta),
+        ActiveCol = Math.Max(0, ActiveCol + delta),
+    };
+
+    /// <summary>
+    /// Shifts both AnchorLine and ActiveLine by <paramref name="delta"/>,
+    /// clamped so TopLine ≥ 0 and BottomLine ≤ <paramref name="maxLine"/>.
+    /// </summary>
+    public ColumnSelection ShiftLines(int delta, int maxLine) {
+        var clampedDelta = delta;
+        if (TopLine + clampedDelta < 0) clampedDelta = -TopLine;
+        if (BottomLine + clampedDelta > maxLine) clampedDelta = maxLine - BottomLine;
+        return this with {
+            AnchorLine = AnchorLine + clampedDelta,
+            ActiveLine = ActiveLine + clampedDelta,
+        };
+    }
+
+    /// <summary>Sets both AnchorCol and ActiveCol to <paramref name="col"/>.</summary>
+    public ColumnSelection MoveColumnsTo(int col) => this with { AnchorCol = col, ActiveCol = col };
+
     // -----------------------------------------------------------------
     // Materialization: rectangle → per-line stream selections
     // -----------------------------------------------------------------
@@ -138,6 +167,36 @@ public readonly record struct ColumnSelection(int AnchorLine, int AnchorCol, int
             }
         }
         return Math.Max(0, targetCol - endCol);
+    }
+
+    /// <summary>
+    /// Returns the tab-aware column at the end of the given line's content.
+    /// </summary>
+    public static int EndOfLineCol(PieceTable table, int line, int tabSize) {
+        var lineEnd = LineContentEnd(table, line);
+        return OfsToCol(table, lineEnd, tabSize);
+    }
+
+    /// <summary>
+    /// From a starting column on a given line, finds the column of the next
+    /// word boundary. <paramref name="direction"/> is −1 (left) or +1 (right).
+    /// </summary>
+    public static int FindWordBoundaryCol(PieceTable table, int line, int startCol, int direction, int tabSize) {
+        var lineStart = table.LineStartOfs(line);
+        var lineEnd = LineContentEnd(table, line);
+        var lineLen = (int)(lineEnd - lineStart);
+        var charIdx = ColToCharIdx(table, lineStart, lineLen, startCol, tabSize);
+        if (direction < 0) {
+            var i = charIdx - 1;
+            while (i >= 0 && char.IsWhiteSpace(table.CharAt(lineStart + i))) i--;
+            while (i >= 0 && !char.IsWhiteSpace(table.CharAt(lineStart + i))) i--;
+            return OfsToCol(table, lineStart + i + 1, tabSize);
+        } else {
+            var i = charIdx;
+            while (i < lineLen && !char.IsWhiteSpace(table.CharAt(lineStart + i))) i++;
+            while (i < lineLen && char.IsWhiteSpace(table.CharAt(lineStart + i))) i++;
+            return OfsToCol(table, lineStart + i, tabSize);
+        }
     }
 
     // -----------------------------------------------------------------

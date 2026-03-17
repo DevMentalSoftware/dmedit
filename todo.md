@@ -24,4 +24,5 @@
 * Add a feature to submit a bug report to the Help menu. 
 * Add overwrite mode (Insert key), and display this mode in the status bar. Also change the caret to be letter width and translucen when in overwrite mode.
 * There appears to be a bug in Avalonia text boxes where the caret is blinking slightly on top of a letter instead of just the right of it. 
+* Add an option for whether to subtly highlight (like selection but gray translucent) all text in the document that matches the current selection. This is something that some editors do and people might want it, though I personally hate it. 
 

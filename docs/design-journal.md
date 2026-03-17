@@ -106,3 +106,4 @@ with consistent, logical hover/focus effects.
   [05-features](design-journal/05-features.md))
 - Smart Tab, ExpandWord, Wrap options, toolbar, Undo/Redo toolbar buttons not yet
   implemented
+- Overwrite mode (Insert/Overwrite toggle) not yet implemented

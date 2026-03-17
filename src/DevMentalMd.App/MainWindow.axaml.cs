@@ -132,6 +132,13 @@ public partial class MainWindow : Window {
             MenuBar.Close();
         };
 
+        // Any mouse press while Alt is held means Alt is being used as a
+        // modifier (e.g. column selection), not for menu activation.
+        // Use tunnel routing so this fires before child controls handle the event.
+        AddHandler(PointerPressedEvent, (_, _) => {
+            if (_altPressedClean) _altPressedClean = false;
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
         // When all menus close, return focus to the editor.
         MenuBar.Closed += (_, _) => {
             if (_activeTab is not { IsSettings: true }) {
@@ -511,16 +518,16 @@ public partial class MainWindow : Window {
     // -------------------------------------------------------------------------
 
     protected override void OnKeyDown(KeyEventArgs e) {
-        base.OnKeyDown(e);
-
-        // Bare Alt: prevent menu from taking focus on keydown.
-        // Menu activation is deferred to keyup (standard Windows behavior).
-        // TODO: manually trigger access-key underline display here.
+        // Bare Alt: prevent Avalonia's built-in menu activation by marking
+        // handled BEFORE base runs. Menu activation is deferred to our
+        // OnKeyUp handler (standard Windows behavior).
         if (e.Key is Key.LeftAlt or Key.RightAlt) {
             _altPressedClean = true;
             e.Handled = true;
             return;
         }
+
+        base.OnKeyDown(e);
         // Mark Alt as consumed when used as a modifier for another key.
         if (_altPressedClean && e.KeyModifiers.HasFlag(KeyModifiers.Alt)) {
             _altPressedClean = false;
@@ -621,19 +628,34 @@ public partial class MainWindow : Window {
     }
 
     protected override void OnKeyUp(KeyEventArgs e) {
+        // Alt release: handle BEFORE base to suppress Avalonia's built-in
+        // menu activation. Only activate menu if Alt was pressed and released
+        // alone (not used as a modifier for column editing or shortcuts).
+        if (e.Key is Key.LeftAlt or Key.RightAlt) {
+            var wantMenu = _altPressedClean && Editor.Document?.ColumnSel == null;
+            _altPressedClean = false;
+            e.Handled = true;
+            if (wantMenu) {
+                MenuBar.Focus();
+            } else {
+                // Avalonia / the platform may still activate the menu bar via
+                // native Alt handling (WM_SYSKEYUP on Windows). Post a
+                // deferred focus restore to undo it.
+                Dispatcher.UIThread.Post(() => {
+                    if (MenuBar.IsKeyboardFocusWithin
+                        && _activeTab is not { IsSettings: true }) {
+                        MenuBar.Close();
+                        Editor.Focus();
+                    }
+                }, DispatcherPriority.Input);
+            }
+            return;
+        }
+
         base.OnKeyUp(e);
         // Releasing Ctrl confirms an active PasteMore clipboard-cycling session.
         if (e.Key is Key.LeftCtrl or Key.RightCtrl && Editor.IsClipboardCycling) {
             Editor.ConfirmClipboardCycle();
-        }
-        // Alt release: activate the menu only if Alt was pressed and released
-        // alone (not used as a modifier for column editing or shortcuts).
-        if (e.Key is Key.LeftAlt or Key.RightAlt) {
-            if (_altPressedClean && Editor.Document?.ColumnSel == null) {
-                MenuBar.Focus();
-            }
-            _altPressedClean = false;
-            e.Handled = true;
         }
     }
 

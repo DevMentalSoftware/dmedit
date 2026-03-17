@@ -1570,6 +1570,20 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         Commands.CommandIds.NavColumnSelectDown,
         Commands.CommandIds.NavColumnSelectLeft,
         Commands.CommandIds.NavColumnSelectRight,
+        Commands.CommandIds.NavMoveLeft,
+        Commands.CommandIds.NavMoveRight,
+        Commands.CommandIds.NavMoveUp,
+        Commands.CommandIds.NavMoveDown,
+        Commands.CommandIds.NavSelectLeft,
+        Commands.CommandIds.NavSelectRight,
+        Commands.CommandIds.NavSelectUp,
+        Commands.CommandIds.NavSelectDown,
+        Commands.CommandIds.NavMoveHome,
+        Commands.CommandIds.NavMoveEnd,
+        Commands.CommandIds.NavMoveWordLeft,
+        Commands.CommandIds.NavMoveWordRight,
+        Commands.CommandIds.NavSelectWordLeft,
+        Commands.CommandIds.NavSelectWordRight,
         Commands.CommandIds.EditBackspace,
         Commands.CommandIds.EditDelete,
         Commands.CommandIds.EditDeleteWordLeft,
@@ -1578,6 +1592,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         Commands.CommandIds.EditCopy,
         Commands.CommandIds.EditPaste,
         Commands.CommandIds.EditTab,
+        Commands.CommandIds.EditNewline,
     ];
 
     /// <summary>
@@ -1602,6 +1617,79 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             case Commands.CommandIds.NavColumnSelectRight:
                 PerformColumnSelectHorizontal(doc, +1);
                 return true;
+
+            // -- Arrow navigation inside column mode --
+
+            case Commands.CommandIds.NavMoveLeft:
+                PerformColumnMoveHorizontal(doc, -1);
+                return true;
+
+            case Commands.CommandIds.NavMoveRight:
+                PerformColumnMoveHorizontal(doc, +1);
+                return true;
+
+            case Commands.CommandIds.NavMoveUp:
+                PerformColumnMoveVertical(doc, -1);
+                return true;
+
+            case Commands.CommandIds.NavMoveDown:
+                PerformColumnMoveVertical(doc, +1);
+                return true;
+
+            case Commands.CommandIds.NavSelectLeft:
+                PerformColumnSelectHorizontal(doc, -1);
+                return true;
+
+            case Commands.CommandIds.NavSelectRight:
+                PerformColumnSelectHorizontal(doc, +1);
+                return true;
+
+            case Commands.CommandIds.NavSelectUp:
+                PerformColumnSelectVertical(doc, -1);
+                return true;
+
+            case Commands.CommandIds.NavSelectDown:
+                PerformColumnSelectVertical(doc, +1);
+                return true;
+
+            case Commands.CommandIds.NavMoveHome:
+                if (doc.ColumnSel is { } homeSel) {
+                    doc.ColumnSel = homeSel.MoveColumnsTo(0);
+                    ScrollCaretIntoView();
+                    InvalidateVisual();
+                    ResetCaretBlink();
+                }
+                return true;
+
+            case Commands.CommandIds.NavMoveEnd:
+                if (doc.ColumnSel is { } endSel) {
+                    doc.ColumnSel = endSel.MoveColumnsTo(MaxEndColumn(doc, endSel));
+                    ScrollCaretIntoView();
+                    InvalidateVisual();
+                    ResetCaretBlink();
+                }
+                return true;
+
+            case Commands.CommandIds.NavMoveWordLeft:
+                PerformColumnMoveWord(doc, -1);
+                return true;
+
+            case Commands.CommandIds.NavMoveWordRight:
+                PerformColumnMoveWord(doc, +1);
+                return true;
+
+            case Commands.CommandIds.NavSelectWordLeft:
+                PerformColumnSelectWord(doc, -1);
+                return true;
+
+            case Commands.CommandIds.NavSelectWordRight:
+                PerformColumnSelectWord(doc, +1);
+                return true;
+
+            case Commands.CommandIds.EditNewline:
+                // Exit column mode, then fall through to normal newline handling.
+                doc.ClearColumnSelection(_indentWidth);
+                return false;
 
             case Commands.CommandIds.EditBackspace:
                 FlushCompound();
@@ -1672,6 +1760,83 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         ScrollCaretIntoView();
         InvalidateVisual();
         ResetCaretBlink();
+    }
+
+    /// <summary>
+    /// Plain Left/Right in column mode: collapse selection or shift carets.
+    /// </summary>
+    private void PerformColumnMoveHorizontal(Document doc, int delta) {
+        if (doc.ColumnSel is not { } colSel) return;
+        FlushCompound();
+        if (colSel.LeftCol != colSel.RightCol) {
+            // Has selection → collapse to the edge in the movement direction.
+            doc.ColumnSel = delta < 0 ? colSel.CollapseToLeft() : colSel.CollapseToRight();
+        } else {
+            doc.ColumnSel = colSel.ShiftColumns(delta);
+        }
+        ScrollCaretIntoView();
+        InvalidateVisual();
+        ResetCaretBlink();
+    }
+
+    /// <summary>
+    /// Plain Up/Down in column mode: collapse any selection, then shift the
+    /// entire caret group by one line.
+    /// </summary>
+    private void PerformColumnMoveVertical(Document doc, int delta) {
+        if (doc.ColumnSel is not { } colSel) return;
+        FlushCompound();
+        if (colSel.LeftCol != colSel.RightCol) {
+            colSel = colSel.CollapseToLeft();
+        }
+        var maxLine = (int)doc.Table.LineCount - 1;
+        doc.ColumnSel = colSel.ShiftLines(delta, maxLine);
+        ScrollCaretIntoView();
+        InvalidateVisual();
+        ResetCaretBlink();
+    }
+
+    /// <summary>
+    /// Ctrl+Left/Right in column mode: move all carets to the next word boundary.
+    /// Uses the first caret line as the reference for computing the word delta.
+    /// </summary>
+    private void PerformColumnMoveWord(Document doc, int direction) {
+        if (doc.ColumnSel is not { } colSel) return;
+        FlushCompound();
+        // Collapse selection first if any.
+        if (colSel.LeftCol != colSel.RightCol) {
+            colSel = direction < 0 ? colSel.CollapseToLeft() : colSel.CollapseToRight();
+        }
+        var wordCol = ColumnSelection.FindWordBoundaryCol(doc.Table, colSel.TopLine, colSel.LeftCol, direction, _indentWidth);
+        doc.ColumnSel = colSel.MoveColumnsTo(wordCol);
+        ScrollCaretIntoView();
+        InvalidateVisual();
+        ResetCaretBlink();
+    }
+
+    /// <summary>
+    /// Ctrl+Shift+Left/Right in column mode: extend selection to word boundary.
+    /// </summary>
+    private void PerformColumnSelectWord(Document doc, int direction) {
+        if (doc.ColumnSel is not { } colSel) return;
+        var wordCol = ColumnSelection.FindWordBoundaryCol(doc.Table, colSel.ActiveLine, colSel.ActiveCol, direction, _indentWidth);
+        doc.ColumnSel = colSel.ExtendTo(colSel.ActiveLine, wordCol);
+        ScrollCaretIntoView();
+        InvalidateVisual();
+        ResetCaretBlink();
+    }
+
+    /// <summary>
+    /// Returns the maximum end-of-line column across all lines in the column selection.
+    /// </summary>
+    private int MaxEndColumn(Document doc, ColumnSelection colSel) {
+        var table = doc.Table;
+        var max = 0;
+        for (var line = colSel.TopLine; line <= colSel.BottomLine; line++) {
+            var endCol = ColumnSelection.EndOfLineCol(table, line, _indentWidth);
+            if (endCol > max) max = endCol;
+        }
+        return max;
     }
 
     /// <summary>
@@ -2812,6 +2977,11 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 _columnDrag = true;
                 _pointerDown = true;
                 e.Pointer.Capture(this);
+                // Force carets steady-visible (no blinking) during column
+                // drag so the user can see the anchor point, especially
+                // when dragging vertically with no horizontal extent.
+                _caretVisible = true;
+                _caretTimer.Stop();
             } else {
                 // Exit column mode on normal click.
                 if (doc.ColumnSel != null) {
@@ -2876,11 +3046,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         _columnDrag = false;
         _pointerDown = false;
         e.Pointer.Capture(null);
-        // Hide caret immediately; the blink timer will show it on its next tick.
-        _caretVisible = false;
-        _caretTimer.Stop();
-        _caretTimer.Start();
-        InvalidateVisual();
+        ResetCaretBlink();
     }
 
     protected override void OnGotFocus(GotFocusEventArgs e) {
