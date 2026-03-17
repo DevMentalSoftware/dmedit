@@ -13,7 +13,6 @@
 * Add a Tail command boolean setting. When enabled then if ReloadFile occurs \*and\* we are currently scrolled to the end of the document \*and\* the file doesn't have any unsaved edits, then automatically keep the document scrolled to the bottom to see any new content. However, if we are currently scrolled somewhere else in the document then the reload should not move the current scroll position (unless it's no longer available such as when the external change was to delete that part of the file.)
 * Add tab context menu to open the file location in Explorer (or equiv unix).
 * Add tab context menu to copy the path to the clipboard.
-* Bug. Hit Enter at end of last line and the new line is not scrolled into view, and can't see the caret. This is a return of a bug we fixed weeks ago, so not sure what changed.
 * The popup when closing a file with changes has the wrong background color. The system Open and Save dialogs have a different look than the reset of the app, but maybe any modal popups should try to match that look? Or we could stick with our custom look for our own non-system dialogs. I think the background should match our menu/statusbar, and the buttons should act like our other buttons.
 * Same for the Close All popup.
 * Add Toolbar buttons for Open, Save, Save All, Wrap, Cut, Copy, Paste, Find, Show Whitespace, Tail, Command Palette.
@@ -25,4 +24,5 @@
 * Add overwrite mode (Insert key), and display this mode in the status bar. Also change the caret to be letter width and translucen when in overwrite mode.
 * There appears to be a bug in Avalonia text boxes where the caret is blinking slightly on top of a letter instead of just the right of it. 
 * Add an option for whether to subtly highlight (like selection but gray translucent) all text in the document that matches the current selection. This is something that some editors do and people might want it, though I personally hate it. 
+* I think for simplicity we should remove the WindowedLayoutThreshold and reduce the number of different paths to go through. 
 

@@ -13,6 +13,7 @@ public sealed class PieceTable {
     private readonly IBuffer _buf;
 
     private readonly StringBuilder _addBuf = new();
+    private string? _addBufCache;
     private readonly List<Piece> _pieces = new();
 
     // Lazily-built line-start cache for post-mutation correctness.
@@ -120,6 +121,7 @@ public sealed class PieceTable {
 
         var addStart = (long)_addBuf.Length;
         _addBuf.Append(text);
+        _addBufCache = null;
         var newPiece = new Piece(BufferKind.Add, addStart, text.Length);
 
         var (pieceIdx, ofsInPiece) = FindPiece(ofs);
@@ -336,7 +338,7 @@ public sealed class PieceTable {
         // in VisitPieces/CharAt/BuildLineStarts — BufFor should never be called
         // for Original.
         ArgumentOutOfRangeException.ThrowIfNotEqual(kind, BufferKind.Add);
-        return _addBuf.ToString();
+        return _addBufCache ??= _addBuf.ToString();
     }
 
     /// <summary>

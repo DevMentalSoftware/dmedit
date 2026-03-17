@@ -225,6 +225,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private double _rowHeight;
     private double _charWidth;
     private double _renderOffsetY;
+    private double RenderOffsetY {
+        get => _renderOffsetY;
+        set => _renderOffsetY = value; // tracepoint here
+    }
     private EventHandler? _scrollInvalidated;
 
     // Word wrap
@@ -332,11 +336,6 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// <summary>Fired after each render with updated stats.</summary>
     public event Action? StatusUpdated;
 
-    /// <summary>
-    /// Documents with more logical lines than this use windowed layout —
-    /// only the visible portion of the text is laid out and rendered.
-    /// </summary>
-    private const long WindowedLayoutThreshold = 500;
 
     // -------------------------------------------------------------------------
     // Public scroll API (used by DualZoneScrollBar)
@@ -540,8 +539,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     /// <summary>
     /// Builds or retrieves the current layout.
-    /// For small documents (&lt; <see cref="WindowedLayoutThreshold"/> lines), the entire text is laid out.
-    /// For large documents, only the visible window of text is fetched and laid out.
+    /// Only the visible window of text is fetched and laid out (windowed layout).
     /// </summary>
     private LayoutResult EnsureLayout() {
         if (_layout != null) {
@@ -558,18 +556,17 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var textW = GetTextWidth(extentW);
         var lineCount = doc?.Table.LineCount ?? 0;
 
-        if (lineCount > WindowedLayoutThreshold) {
-            LayoutWindowed(doc!, lineCount, typeface, textW, extentW);
+        if (doc != null && lineCount > 0) {
+            LayoutWindowed(doc, lineCount, typeface, textW, extentW);
         } else {
-            var text = doc != null ? doc.Table.GetText() : string.Empty;
-            _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, textW);
-            _extent = new Size(extentW, _layout.TotalHeight);
-            _renderOffsetY = -_scrollOffset.Y;
+            _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, textW);
+            _extent = new Size(extentW, 0);
+            RenderOffsetY = 0;
         }
 
         _perfSw.Stop();
         PerfStats.Layout.Record(_perfSw.Elapsed.TotalMilliseconds);
-        
+
         PerfStats.ViewportLines = _layout?.Lines.Count ?? 0;
         PerfStats.ViewportRows = _layout?.TotalRows ?? 0;
         PerfStats.ScrollPercent = _extent.Height > _viewport.Height
@@ -595,13 +592,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         var lineCount = doc?.Table.LineCount ?? 0;
 
-        if (lineCount > WindowedLayoutThreshold) {
-            LayoutWindowed(doc!, lineCount, typeface, textW, extentW);
+        if (doc != null && lineCount > 0) {
+            LayoutWindowed(doc, lineCount, typeface, textW, extentW);
         } else {
-            var text = doc != null ? doc.Table.GetText() : string.Empty;
-            _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, textW);
-            _extent = new Size(extentW, _layout.TotalHeight);
-            _renderOffsetY = -_scrollOffset.Y;
+            _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, textW);
+            _extent = new Size(extentW, 0);
+            RenderOffsetY = 0;
         }
 
         RaiseScrollInvalidated();
@@ -611,7 +607,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     /// <summary>
     /// Fetches only the text visible in the current scroll viewport and lays it out.
-    /// Sets <see cref="_layout"/>, <see cref="_extent"/>, and <see cref="_renderOffsetY"/>.
+    /// Sets <see cref="_layout"/>, <see cref="_extent"/>, and <see cref="RenderOffsetY"/>.
     /// </summary>
     /// <remarks>
     /// The scroll math estimates total visual rows from character count and character width,
@@ -695,7 +691,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (startOfs < 0 || endOfs < 0) {
             _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, maxWidth, 0);
             _extent = new Size(extentWidth, totalVisualRows * rh);
-            _renderOffsetY = 0;
+            RenderOffsetY = 0;
             return;
         }
 
@@ -704,18 +700,27 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // If the underlying buffer has evicted pages for this range, kick off
         // async page loads and layout empty text.  ProgressChanged will trigger
         // a re-layout once the data arrives.
-        if (len > 0 && doc.Table.Buffer is { } buf && !buf.IsLoaded(startOfs, len)) {
+        // Only check when the document is unedited — after edits, logical
+        // offsets diverge from raw buffer offsets, making IsLoaded unreliable.
+        if (len > 0 && doc.Table.IsOriginalContent
+            && doc.Table.Buffer is { } buf && !buf.IsLoaded(startOfs, len)) {
             buf.EnsureLoaded(startOfs, len);
             _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, maxWidth, 0);
             _extent = new Size(extentWidth, totalVisualRows * rh);
-            _renderOffsetY = 0;
+            RenderOffsetY = 0;
             return;
         }
 
         var text = len > 0 ? doc.Table.GetText(startOfs, len) : string.Empty;
 
         _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, maxWidth, startOfs);
-        _extent = new Size(extentWidth, totalVisualRows * rh);
+
+        // When the layout covers the entire document, use exact height
+        // instead of the estimate — gives pixel-perfect scrolling on small files.
+        var extentHeight = (topLine == 0 && bottomLine >= lineCount)
+            ? _layout.TotalHeight
+            : totalVisualRows * rh;
+        _extent = new Size(extentWidth, extentHeight);
 
         // Compute render offset.  For small topLine changes (arrow keys, wheel)
         // use an incremental offset based on the actual cached line height so
@@ -725,36 +730,36 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         if (_winTopLine >= 0 && deltaTop == 0) {
             // topLine unchanged — pure scroll, trivially smooth.
-            _renderOffsetY = _winRenderOffsetY - (_scrollOffset.Y - _winScrollOffset);
+            RenderOffsetY = _winRenderOffsetY - (_scrollOffset.Y - _winScrollOffset);
         } else if (_winTopLine >= 0 && deltaTop == 1 && _winFirstLineHeight > 0) {
             // topLine advanced by 1.  Compensate for the departed line's
             // actual height (not avgLineHeight) to avoid a visual jump.
-            _renderOffsetY = _winRenderOffsetY
+            RenderOffsetY = _winRenderOffsetY
                 - (_scrollOffset.Y - _winScrollOffset)
                 + _winFirstLineHeight;
         } else if (_winTopLine >= 0 && deltaTop == -1 && _layout.Lines.Count > 0) {
             // topLine retreated by 1.  The new first line was prepended;
             // subtract its actual height to keep content in place.
-            _renderOffsetY = _winRenderOffsetY
+            RenderOffsetY = _winRenderOffsetY
                 - (_scrollOffset.Y - _winScrollOffset)
                 - _layout.Lines[0].HeightInRows * rh;
         } else {
             // First layout or large jump — use formula estimate.
-            _renderOffsetY = topLine * avgLineHeight - _scrollOffset.Y;
+            RenderOffsetY = topLine * avgLineHeight - _scrollOffset.Y;
         }
 
         // Safety: prevent any remaining gap at the viewport top.
-        if (_renderOffsetY > 0) {
-            _renderOffsetY = 0;
+        if (RenderOffsetY > 0) {
+            RenderOffsetY = 0;
         }
 
         // Safety: prevent gap at the viewport bottom.  If the layout has
         // enough content to fill the viewport but the render offset pushes
         // it too far above, snap it down so the content reaches the bottom.
         if (_layout.TotalHeight >= _viewport.Height) {
-            var contentBottom = _renderOffsetY + _layout.TotalHeight;
+            var contentBottom = RenderOffsetY + _layout.TotalHeight;
             if (contentBottom < _viewport.Height) {
-                _renderOffsetY = _viewport.Height - _layout.TotalHeight;
+                RenderOffsetY = _viewport.Height - _layout.TotalHeight;
             }
         }
 
@@ -763,16 +768,16 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // Only at max scroll — otherwise scrolling up from the bottom would be stuck.
         var scrollMax = _extent.Height - _viewport.Height;
         if (bottomLine >= lineCount && _scrollOffset.Y >= scrollMax - 1.0) {
-            var contentBottom = _renderOffsetY + _layout.TotalHeight;
+            var contentBottom = RenderOffsetY + _layout.TotalHeight;
             if (contentBottom > _viewport.Height) {
-                _renderOffsetY = _viewport.Height - _layout.TotalHeight;
+                RenderOffsetY = _viewport.Height - _layout.TotalHeight;
             }
         }
 
         // Cache state for next incremental frame.
         _winTopLine = topLine;
         _winScrollOffset = _scrollOffset.Y;
-        _winRenderOffsetY = _renderOffsetY;
+        _winRenderOffsetY = RenderOffsetY;
         _winFirstLineHeight = _layout.Lines.Count > 0 ? _layout.Lines[0].HeightInRows * rh : rh;
     }
 
@@ -812,7 +817,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // Draw each visible line's text
         var rh = layout.RowHeight;
         foreach (var line in layout.Lines) {
-            var y = line.Row * rh + _renderOffsetY;
+            var y = line.Row * rh + RenderOffsetY;
             if (y + line.HeightInRows * rh < 0) {
                 continue; // above viewport
             }
@@ -858,7 +863,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         for (var i = 0; i < layout.Lines.Count; i++) {
             var line = layout.Lines[i];
-            var y = line.Row * rh + _renderOffsetY;
+            var y = line.Row * rh + RenderOffsetY;
             if (y + rh < 0) continue;
             if (y > Bounds.Height) break;
 
@@ -947,7 +952,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var rh = layout.RowHeight;
         var rects = new List<Rect>();
         foreach (var line in layout.Lines) {
-            var lineY = line.Row * rh + _renderOffsetY;
+            var lineY = line.Row * rh + RenderOffsetY;
             if (lineY + line.HeightInRows * rh < 0) {
                 continue;
             }
@@ -1038,7 +1043,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             return; // caret is outside the visible window
         }
         var rect = _layoutEngine.GetCaretBounds(localCaret, layout);
-        var y = rect.Y + _renderOffsetY;
+        var y = rect.Y + RenderOffsetY;
         if (y + rect.Height < 0 || y > Bounds.Height) {
             return;
         }
@@ -1079,7 +1084,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 if (line.CharEnd <= localStart || line.CharStart >= localEnd) {
                     continue;
                 }
-                var lineY = line.Row * rh + _renderOffsetY;
+                var lineY = line.Row * rh + RenderOffsetY;
                 if (lineY + line.HeightInRows * rh < 0 || lineY > Bounds.Height) {
                     continue;
                 }
@@ -2303,7 +2308,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // Pixel-based edge detection: check whether the next row would be
         // fully visible.  This avoids rounding-dependent off-by-ones that
         // the integer screen-row check was susceptible to.
-        var caretScreenY = caretRect.Y + _renderOffsetY;
+        var caretScreenY = caretRect.Y + RenderOffsetY;
         var atTopEdge = lineDelta < 0 && caretScreenY < rh;
         var atBottomEdge = lineDelta > 0 && caretScreenY + 2 * rh > _viewport.Height;
 
@@ -2717,7 +2722,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// to preserve the caret's screen position across scroll operations.
     /// </summary>
     private int GetCaretScreenRow(Rect caretRect, double rh) {
-        return Math.Max(0, (int)Math.Round((caretRect.Y + _renderOffsetY) / rh));
+        return Math.Max(0, (int)Math.Round((caretRect.Y + RenderOffsetY) / rh));
     }
 
     /// <summary>
@@ -2725,7 +2730,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// document offset closest to (<see cref="_preferredCaretX"/>, screenRow).
     /// </summary>
     private long HitTestAtScreenRow(int screenRow, double rh, LayoutResult layout) {
-        var targetY = screenRow * rh + rh / 2 - _renderOffsetY;
+        var targetY = screenRow * rh + rh / 2 - RenderOffsetY;
         targetY = Math.Clamp(targetY, 0, Math.Max(0, layout.TotalHeight - 1));
         var hitX = _preferredCaretX >= 0 ? _preferredCaretX : 0;
         var localNew = _layoutEngine.HitTest(new Point(hitX, targetY), layout);
@@ -2764,52 +2769,52 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         var rh = GetRowHeight();
 
-        // At the document end, scroll to the exact bottom so the result
-        // matches dragging the scroll thumb to the bottom.
+        // Ensure extent height is at least lineCount * rh so that
+        // ScrollValue's clamp (to ScrollMaximum) doesn't cap us at a
+        // stale pre-edit value.  The full extent is recalculated on the
+        // next EnsureLayout, but we need a reasonable floor right now.
+        var minExtent = lineCount * rh;
+        if (minExtent > _extent.Height) {
+            _extent = new Size(_extent.Width, minExtent);
+        }
+
+        // At the document end, scroll to the bottom without a full layout
+        // rebuild — keeps newline insertion at the end O(1) instead of O(N).
         if (caret >= table.Length) {
             ScrollValue = ScrollMaximum;
             return;
         }
 
-        if (lineCount > WindowedLayoutThreshold) {
-            // Windowed layout — estimate caret Y from its logical line index.
-            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-            var textW = GetTextWidth(maxW);
-            var totalChars = table.Length;
-            long totalVisualRows;
-            if (!double.IsFinite(textW) || textW <= 0) {
-                totalVisualRows = lineCount;
-            } else {
-                var cw = GetCharWidth();
-                var charsPerRow = Math.Max(1, (int)(textW / cw));
-                totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
-            }
-            var avgRowsPerLine = Math.Max(1.0, (double)totalVisualRows / lineCount);
-            var avgLineHeight = avgRowsPerLine * rh;
-
-            var caretLine = table.LineFromOfs(caret);
-            var caretY = caretLine * avgLineHeight;
-
-            if (caretY < _scrollOffset.Y) {
-                // Caret is above viewport — scroll so caret line is at the top.
-                ScrollValue = caretY;
-            } else if (caretY + rh > _scrollOffset.Y + _viewport.Height) {
-                // Caret is below viewport — scroll so caret line is at the bottom.
-                ScrollValue = caretY + rh - _viewport.Height;
-            }
+        // Estimate caret Y from its logical line index.
+        var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+        var textW = GetTextWidth(maxW);
+        var totalChars = table.Length;
+        long totalVisualRows;
+        if (!double.IsFinite(textW) || textW <= 0) {
+            totalVisualRows = lineCount;
         } else {
-            // Full layout — use exact pixel position from the layout engine.
-            var layout = EnsureLayout();
-            var localCaret = (int)(caret - layout.ViewportBase);
-            var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout);
-            var caretTop = caretRect.Y;
-            var caretBot = caretRect.Y + caretRect.Height;
+            var cw = GetCharWidth();
+            var charsPerRow = Math.Max(1, (int)(textW / cw));
+            totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
+        }
+        var avgRowsPerLine = Math.Max(1.0, (double)totalVisualRows / lineCount);
+        var avgLineHeight = avgRowsPerLine * rh;
 
-            if (caretTop < _scrollOffset.Y) {
-                ScrollValue = caretTop;
-            } else if (caretBot > _scrollOffset.Y + _viewport.Height) {
-                ScrollValue = caretBot - _viewport.Height;
-            }
+        var caretLine = table.LineFromOfs(caret);
+        var caretY = caretLine * avgLineHeight;
+
+        if (caretY < _scrollOffset.Y) {
+            ScrollValue = caretY;
+        } else if (caretY + rh > _scrollOffset.Y + _viewport.Height) {
+            ScrollValue = caretY + rh - _viewport.Height;
+        }
+
+        // Clamp: if the scroll position exceeds the extent (e.g. after
+        // undo/delete that shortened the document), pull it back. We do
+        // this after the main logic so we don't trigger an extra layout
+        // rebuild before it's needed.
+        if (_scrollOffset.Y > ScrollMaximum) {
+            ScrollValue = ScrollMaximum;
         }
     }
 
@@ -2888,7 +2893,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// <summary>
     /// Returns the logical line index of the last fully visible line in the
     /// current layout.  A visual row is "fully visible" when its entire height
-    /// fits within the viewport after applying <see cref="_renderOffsetY"/>.
+    /// fits within the viewport after applying <see cref="RenderOffsetY"/>.
     /// </summary>
     private long FindLastVisibleLogicalLine(LayoutResult layout, PieceTable table) {
         var lines = layout.Lines;
@@ -2898,7 +2903,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         var rh = layout.RowHeight;
         for (var i = lines.Count - 1; i >= 0; i--) {
-            var screenBottom = (lines[i].Row + lines[i].HeightInRows) * rh + _renderOffsetY;
+            var screenBottom = (lines[i].Row + lines[i].HeightInRows) * rh + RenderOffsetY;
             if (screenBottom <= _viewport.Height + 0.5) {
                 return table.LineFromOfs(layout.ViewportBase + lines[i].CharStart);
             }
@@ -2944,7 +2949,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
         var layout = EnsureLayout();
         var pt = e.GetPosition(this);
-        var layoutPt = new Point(pt.X - _gutterWidth, pt.Y - _renderOffsetY);
+        var layoutPt = new Point(pt.X - _gutterWidth, pt.Y - RenderOffsetY);
         var localOfs = _layoutEngine.HitTest(layoutPt, layout);
         var ofs = layout.ViewportBase + localOfs;
         var isLeft = props.IsLeftButtonPressed;
@@ -3024,7 +3029,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
         var layout = EnsureLayout();
         var pt = e.GetPosition(this);
-        var layoutPt = new Point(pt.X - _gutterWidth, pt.Y - _renderOffsetY);
+        var layoutPt = new Point(pt.X - _gutterWidth, pt.Y - RenderOffsetY);
         var localOfs = _layoutEngine.HitTest(layoutPt, layout);
         var ofs = layout.ViewportBase + localOfs;
         if (_columnDrag && doc.ColumnSel is { } colSel) {
@@ -3092,7 +3097,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// <para/>
     /// The caret's screen Y is captured before the scroll, quantised to
     /// an integer visual row, and then restored after the scroll.
-    /// <see cref="_renderOffsetY"/> converts between layout and screen
+    /// <see cref="RenderOffsetY"/> converts between layout and screen
     /// coordinates on both sides, so the screen position is preserved
     /// even when the render offset changes between layouts.
     /// </remarks>
@@ -3127,7 +3132,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         // If the target screen row is past the layout content, back up so
         // the last document line lands at caretRow.
-        var targetY = caretRow * rh + rh / 2 - _renderOffsetY;
+        var targetY = caretRow * rh + rh / 2 - RenderOffsetY;
         if (targetY >= newLayout.TotalHeight && newLayout.Lines.Count > 0) {
             var lastLogicalLine = lineCount - 1;
             var backupTopLine = Math.Max(0, lastLogicalLine - caretRow);
