@@ -1899,30 +1899,15 @@ public partial class MainWindow : Window {
 
         // If the tab has unsaved edits, let the user decide.
         if (tab.IsDirty) {
-            var conflict = tab.Conflict ?? new Services.FileConflict {
+            tab.Conflict = tab.Conflict ?? new Services.FileConflict {
                 Kind = Services.FileConflictKind.Changed,
                 FilePath = path,
                 ExpectedSha1 = tab.BaseSha1,
             };
-            var dlg = new FileConflictDialog(conflict, _theme);
-            await dlg.ShowDialog(this);
-            switch (dlg.Choice) {
-                case FileConflictChoice.KeepMyVersion:
-                    tab.Conflict = null;
-                    UpdateTabBar();
-                    return;
-                case FileConflictChoice.Discard:
-                    CloseTabDirect(tab);
-                    return;
-                case FileConflictChoice.LoadDiskVersion:
-                    break; // Fall through to reload below.
-                default:
-                    return;
-            }
+        } else {
+            // Reload: replace the tab in-place.
+            await ReloadFileInPlaceAsync(tab);
         }
-
-        // Reload: replace the tab in-place.
-        await ReloadFileInPlaceAsync(tab);
     }
 
     /// <summary>
@@ -1961,10 +1946,7 @@ public partial class MainWindow : Window {
             WinFirstLineHeight = tab.WinFirstLineHeight,
         };
 
-        // Wire up the Changed handler (normally done by AddTab, but we're
-        // replacing in-place to avoid tab bar flicker).
-        newTab.Document.Changed += (_, _) => OnTabDocumentChanged(newTab);
-
+        // Replace in-place so the tab bar doesn't flicker.
         _tabs[idx] = newTab;
         if (_activeTab == tab) {
             _activeTab = newTab;
