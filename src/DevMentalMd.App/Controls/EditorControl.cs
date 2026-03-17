@@ -677,6 +677,13 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var visibleRows = (int)(_viewport.Height / rh) + 4;
         var bottomLine = Math.Min(lineCount, topLine + visibleRows);
 
+        // If showing the end of the document but topLine is too high to
+        // fill the viewport (e.g. after deleting a line while scrolled to
+        // the bottom), pull topLine back so the layout has enough content.
+        if (bottomLine >= lineCount && lineCount > visibleRows) {
+            topLine = Math.Min(topLine, lineCount - visibleRows);
+        }
+
         var startOfs = topLine > 0 ? doc.Table.LineStartOfs(topLine) : 0L;
         long endOfs;
         if (bottomLine >= lineCount) {
@@ -765,11 +772,13 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         // When at max scroll and the layout includes the end of the document,
         // anchor content bottom to viewport bottom so the last line is visible.
+        // When at max scroll and the layout includes the end of the document,
+        // anchor content bottom to viewport bottom so the last line is flush.
         // Only at max scroll — otherwise scrolling up from the bottom would be stuck.
         var scrollMax = _extent.Height - _viewport.Height;
         if (bottomLine >= lineCount && _scrollOffset.Y >= scrollMax - 1.0) {
             var contentBottom = RenderOffsetY + _layout.TotalHeight;
-            if (contentBottom > _viewport.Height) {
+            if (contentBottom != _viewport.Height) {
                 RenderOffsetY = _viewport.Height - _layout.TotalHeight;
             }
         }
