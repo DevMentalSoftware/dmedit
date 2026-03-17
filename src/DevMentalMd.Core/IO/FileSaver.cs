@@ -14,14 +14,19 @@ namespace DevMentalMd.Core.IO;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Fast path</b> — unedited buffer-backed documents (the common "open → save" flow):
-/// writes directly from the <see cref="IBuffer"/> in 1 MB chunks, bypassing
-/// <see cref="PieceTable"/> entirely. This avoids per-chunk allocations and is
-/// thread-safe against concurrent reads on the UI thread.
+/// Always writes to a temporary file first, then renames to the target.
+/// This prevents corruption if the process crashes mid-write and avoids
+/// the self-referential save problem where <see cref="PagedFileBuffer"/>
+/// reads from the same file being overwritten.
 /// </para>
 /// <para>
-/// <b>General path</b> — edited or string-backed documents: streams through
-/// <see cref="PieceTable.ForEachPiece"/> in 1 MB chunks.
+/// <b>Fast path</b> — unedited buffer-backed documents: writes directly
+/// from the <see cref="IBuffer"/> in 1 MB chunks, bypassing
+/// <see cref="PieceTable"/>.
+/// </para>
+/// <para>
+/// <b>General path</b> — edited or string-backed documents: streams
+/// through <see cref="PieceTable.ForEachPiece"/> in 1 MB chunks.
 /// </para>
 /// </remarks>
 public static class FileSaver {
@@ -31,30 +36,47 @@ public static class FileSaver {
     /// Asynchronously saves <paramref name="doc"/> to <paramref name="path"/>.
     /// Returns the SHA-1 hash (lowercase hex) of the written file.
     /// </summary>
-    public static async Task<string> SaveAsync(Document doc, string path, CancellationToken ct = default) {
-        return await Task.Run(() => Save(doc, path, ct), ct);
+    public static async Task<string> SaveAsync(
+            Document doc, string path,
+            bool backupOnSave = false,
+            CancellationToken ct = default) {
+        return await Task.Run(() => Save(doc, path, backupOnSave, ct), ct);
     }
 
     /// <summary>
     /// Synchronously saves <paramref name="doc"/> to <paramref name="path"/>.
+    /// Writes to a temp file then renames to prevent corruption.
     /// Returns the SHA-1 hash (lowercase hex) of the written file.
     /// </summary>
-    public static string Save(Document doc, string path, CancellationToken ct = default) {
+    public static string Save(
+            Document doc, string path,
+            bool backupOnSave = false,
+            CancellationToken ct = default) {
         var table = doc.Table;
         var encInfo = doc.EncodingInfo;
+        var tmpPath = path + ".tmp";
 
-        // Fast path: unedited buffer-backed document — read straight from the buffer.
-        // This is thread-safe (IBuffer reads don't mutate state) and avoids the
-        // per-chunk allocation in PieceTable.VisitPieces for WholeBufSentinel pieces.
-        if (table.IsOriginalContent && table.Buffer is { LengthIsKnown: true } buf) {
-            return SaveFromBuffer(buf, path, encInfo, ct);
+        try {
+            string sha1;
+            if (table.IsOriginalContent && table.Buffer is { LengthIsKnown: true } buf) {
+                sha1 = WriteToFile(buf, tmpPath, encInfo, ct);
+            } else {
+                sha1 = WriteToFile(table, tmpPath, encInfo, ct);
+            }
+
+            if (backupOnSave && File.Exists(path)) {
+                File.Copy(path, path + ".bak", overwrite: true);
+            }
+
+            File.Move(tmpPath, path, overwrite: true);
+            return sha1;
+        } catch {
+            try { File.Delete(tmpPath); } catch { /* best-effort cleanup */ }
+            throw;
         }
-
-        // General path: stream through the piece-table.
-        return SaveFromPieceTable(table, path, encInfo, ct);
     }
 
-    private static string SaveFromBuffer(IBuffer buf, string path, EncodingInfo encInfo, CancellationToken ct) {
+    private static string WriteToFile(IBuffer buf, string path, EncodingInfo encInfo, CancellationToken ct) {
         using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
         using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
 
@@ -81,7 +103,7 @@ public static class FileSaver {
         return Convert.ToHexStringLower(hasher.GetHashAndReset());
     }
 
-    private static string SaveFromPieceTable(PieceTable table, string path, EncodingInfo encInfo, CancellationToken ct) {
+    private static string WriteToFile(PieceTable table, string path, EncodingInfo encInfo, CancellationToken ct) {
         using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
         using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
 

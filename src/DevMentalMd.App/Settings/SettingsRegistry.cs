@@ -45,6 +45,10 @@ public static class SettingsRegistry {
             "When enabled, files modified externally are automatically reloaded if the tab has no unsaved edits.",
             "Editor", SettingKind.Bool, false),
 
+        new("BackupOnSave", "Backup on Save",
+            "Keep a .bak copy of the previous version when saving.",
+            "Editor", SettingKind.Bool, false),
+
         new("ExpandSelectionMode", "Expand Selection Mode",
             "Controls how Expand Selection grows the selection. " +
             "'SubwordFirst' starts at camelCase/underscore boundaries; 'Word' starts at whitespace boundaries.",

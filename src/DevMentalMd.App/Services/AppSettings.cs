@@ -121,6 +121,12 @@ public sealed class AppSettings {
     /// </summary>
     public bool AutoReloadExternalChanges { get; set; }
 
+    /// <summary>
+    /// When true, the previous version of a file is kept as a .bak file
+    /// when saving. Default: false.
+    /// </summary>
+    public bool BackupOnSave { get; set; }
+
     // -----------------------------------------------------------------
     // Theme
     // -----------------------------------------------------------------

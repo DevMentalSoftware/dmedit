@@ -29,6 +29,12 @@ small one — it is the primary way a fresh session recovers context.
 
 ### Recently completed
 
+- **Save crash handling** (2026-03-17) — crash report infrastructure writes diagnostic
+  files to the session directory when an unexpected save failure occurs. Error dialog
+  offers Save As (to try a different location) or Close Tab. SafeSave and BackupOnSave
+  settings added: SafeSave writes to a temp file then renames; BackupOnSave keeps a
+  .bak copy. Self-referential paged-file save bug identified but deferred to next session.
+
 - **Column/Block Selection** (2026-03-16) — Alt+drag or Alt+Shift+Up/Down creates a
   rectangular selection spanning multiple lines. Typing, backspace, delete, tab, copy,
   cut, paste all operate at every cursor simultaneously. Column selection is defined in
@@ -107,3 +113,6 @@ with consistent, logical hover/focus effects.
 - Smart Tab, ExpandWord, Wrap options, toolbar, Undo/Redo toolbar buttons not yet
   implemented
 - Overwrite mode (Insert/Overwrite toggle) not yet implemented
+- Self-referential paged-file save: saving an edited paged file overwrites the file that
+  PagedFileBuffer reads from (evicted pages become unrecoverable). Requires temp-file save
+  when target path matches the buffer's source path.

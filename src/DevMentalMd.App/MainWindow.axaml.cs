@@ -1721,12 +1721,32 @@ public partial class MainWindow : Window {
         }
         try {
             var sw = Stopwatch.StartNew();
-            var sha1 = await FileSaver.SaveAsync(Editor.Document, path);
+            var sha1 = await FileSaver.SaveAsync(Editor.Document, path,
+                _settings.BackupOnSave);
             sw.Stop();
             Editor.PerfStats.SaveTimeMs = sw.Elapsed.TotalMilliseconds;
             return sha1;
         } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
             StatusLeft.Text = $"Save failed: {ex.Message}";
+            return null;
+        } catch (Exception ex) {
+            // Unexpected failure — write crash report and show error dialog.
+            var reportPath = await CrashReport.WriteAsync(ex, path, Editor.Document);
+            var dialog = new SaveFailedDialog(path, ex.Message, reportPath, _theme);
+            await dialog.ShowDialog(this);
+
+            if (dialog.Result == SaveFailedChoice.SaveAs) {
+                await SaveAsAsync();
+                // If SaveAs succeeded, the tab now has a new path and is saved.
+                if (_activeTab?.FilePath is not null && !_activeTab.IsDirty) {
+                    return _activeTab.BaseSha1;
+                }
+            }
+
+            // Save As failed or user chose Close Tab — close it.
+            if (_activeTab is { } tab) {
+                CloseTabDirect(tab);
+            }
             return null;
         }
     }
