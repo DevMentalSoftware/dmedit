@@ -122,6 +122,12 @@ public static class CommandRegistry {
         new(CommandIds.NavSelectDocEnd, "Select to Document End"),
         new(CommandIds.NavSelectPageUp, "Select Page Up"),
         new(CommandIds.NavSelectPageDown, "Select Page Down"),
+
+        // -- Nav: column (block) selection --
+        new(CommandIds.NavColumnSelectUp, "Column Select Up"),
+        new(CommandIds.NavColumnSelectDown, "Column Select Down"),
+        new(CommandIds.NavColumnSelectLeft, "Column Select Left"),
+        new(CommandIds.NavColumnSelectRight, "Column Select Right"),
     ];
 
     /// <summary>

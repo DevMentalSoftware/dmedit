@@ -63,6 +63,10 @@ public partial class MainWindow : Window {
     private KeyGesture? _chordFirst;
     private readonly DispatcherTimer _chordTimer;
 
+    // Alt-menu activation: defer to KeyUp so Alt+drag / Alt+Shift+Arrow
+    // don't accidentally activate the menu bar.
+    private bool _altPressedClean;
+
     public MainWindow() {
         InitializeComponent();
         _keyBindings = new KeyBindingService(_settings);
@@ -126,6 +130,13 @@ public partial class MainWindow : Window {
                 if (src is MenuItem) return;
             }
             MenuBar.Close();
+        };
+
+        // When all menus close, return focus to the editor.
+        MenuBar.Closed += (_, _) => {
+            if (_activeTab is not { IsSettings: true }) {
+                Editor.Focus();
+            }
         };
 
         // Window activation tracking for tab bar (active/inactive styling).
@@ -502,10 +513,21 @@ public partial class MainWindow : Window {
     protected override void OnKeyDown(KeyEventArgs e) {
         base.OnKeyDown(e);
 
-        // Ignore bare modifier keys.
+        // Bare Alt: prevent menu from taking focus on keydown.
+        // Menu activation is deferred to keyup (standard Windows behavior).
+        // TODO: manually trigger access-key underline display here.
+        if (e.Key is Key.LeftAlt or Key.RightAlt) {
+            _altPressedClean = true;
+            e.Handled = true;
+            return;
+        }
+        // Mark Alt as consumed when used as a modifier for another key.
+        if (_altPressedClean && e.KeyModifiers.HasFlag(KeyModifiers.Alt)) {
+            _altPressedClean = false;
+        }
+        // Ignore other bare modifier keys.
         if (e.Key is Key.LeftShift or Key.RightShift
             or Key.LeftCtrl or Key.RightCtrl
-            or Key.LeftAlt or Key.RightAlt
             or Key.LWin or Key.RWin) {
             return;
         }
@@ -525,6 +547,25 @@ public partial class MainWindow : Window {
                 // OnTextInput fires and our interception there picks it up.
                 return;
             }
+        }
+
+        // Menu bar focused: Escape returns focus to the editor.
+        if (e.Key == Key.Escape && MenuBar.IsKeyboardFocusWithin) {
+            MenuBar.Close();
+            if (_activeTab is not { IsSettings: true }) {
+                Editor.Focus();
+            }
+            e.Handled = true;
+            return;
+        }
+
+        // Column selection mode: Escape exits back to normal editing.
+        if (e.Key == Key.Escape && Editor.Document?.ColumnSel != null) {
+            Editor.Document.ClearColumnSelection(Editor.IndentWidth);
+            Editor.InvalidateVisual();
+            Editor.ResetCaretBlink();
+            e.Handled = true;
+            return;
         }
 
         // Chord: waiting for the second key of a two-keystroke chord?
@@ -558,7 +599,13 @@ public partial class MainWindow : Window {
 
         // Normal single-key resolution.
         var commandId = _keyBindings.Resolve(e.Key, e.KeyModifiers);
-        if (commandId == null) return;
+        if (commandId == null) {
+            // Alt+letter with no bound command → try menu access keys.
+            if (e.KeyModifiers == KeyModifiers.Alt) {
+                TryOpenMenuAccessKey(e);
+            }
+            return;
+        }
 
         if (ExecuteWindowCommand(commandId)) {
             e.Handled = true;
@@ -578,6 +625,36 @@ public partial class MainWindow : Window {
         // Releasing Ctrl confirms an active PasteMore clipboard-cycling session.
         if (e.Key is Key.LeftCtrl or Key.RightCtrl && Editor.IsClipboardCycling) {
             Editor.ConfirmClipboardCycle();
+        }
+        // Alt release: activate the menu only if Alt was pressed and released
+        // alone (not used as a modifier for column editing or shortcuts).
+        if (e.Key is Key.LeftAlt or Key.RightAlt) {
+            if (_altPressedClean && Editor.Document?.ColumnSel == null) {
+                MenuBar.Focus();
+            }
+            _altPressedClean = false;
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Opens the top-level menu whose access key matches the pressed letter.
+    /// Called when Alt+letter is pressed and no command binding matches.
+    /// </summary>
+    private void TryOpenMenuAccessKey(KeyEventArgs e) {
+        var letter = e.Key.ToString();
+        if (letter.Length != 1) return;
+        foreach (var item in MenuBar.Items.OfType<MenuItem>()) {
+            if (item.Header is not string header) continue;
+            var idx = header.IndexOf('_');
+            if (idx < 0 || idx + 1 >= header.Length) continue;
+            if (char.ToUpperInvariant(header[idx + 1]) == char.ToUpperInvariant(letter[0])) {
+                item.Open();
+                item.Focus();
+                _altPressedClean = false;
+                e.Handled = true;
+                return;
+            }
         }
     }
 

@@ -464,7 +464,7 @@ public sealed class PieceTable {
         return starts;
     }
 
-    private char CharAt(long ofs) {
+    internal char CharAt(long ofs) {
         var (pieceIdx, ofsInPiece) = FindPiece(ofs);
         if (pieceIdx >= _pieces.Count) {
             throw new ArgumentOutOfRangeException(nameof(ofs));

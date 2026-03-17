@@ -97,7 +97,11 @@
     "Nav.SelectDocStart": "Ctrl+Shift+Home",
     "Nav.SelectDocEnd": "Ctrl+Shift+End",
     "Nav.SelectPageUp": "Shift+PageUp",
-    "Nav.SelectPageDown": "Shift+PageDown"
+    "Nav.SelectPageDown": "Shift+PageDown",
+    "Nav.ColumnSelectUp": "Alt+Shift+Up",
+    "Nav.ColumnSelectDown": "Alt+Shift+Down",
+    "Nav.ColumnSelectLeft": "Alt+Shift+Left",
+    "Nav.ColumnSelectRight": "Alt+Shift+Right"
   },
   "bindings2": {
     "Edit.Cut": "Shift+Delete",

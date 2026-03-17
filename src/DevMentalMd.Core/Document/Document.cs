@@ -36,6 +36,13 @@ public sealed class Document {
     public Selection Selection { get; set; } = Selection.Collapsed(0L);
 
     /// <summary>
+    /// When non-null, the editor is in column (block) selection mode.
+    /// The rectangular selection governs editing; <see cref="Selection"/>
+    /// remains set but is secondary.
+    /// </summary>
+    public ColumnSelection? ColumnSel { get; set; }
+
+    /// <summary>
     /// The detected (or assigned) line ending style for this document.
     /// Defaults to the platform default for new documents.
     /// </summary>
@@ -168,6 +175,275 @@ public sealed class Document {
         var deleted = _table.GetText(ofs, delLen);
         _history.Push(new DeleteEdit(ofs, deleted), _table, Selection);
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    // -------------------------------------------------------------------------
+    // Column (multi-cursor) edit operations
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Inserts <paramref name="text"/> at each cursor position defined by the
+    /// current <see cref="ColumnSel"/>. If the column selection has width,
+    /// the selected text on each line is replaced. Lines shorter than the
+    /// target column are padded with spaces. All edits are a single undo step.
+    /// </summary>
+    public void InsertAtCursors(string text, int tabSize) {
+        if (ColumnSel is not { } colSel || text.Length == 0) {
+            return;
+        }
+        var sels = colSel.Materialize(_table, tabSize);
+        if (sels.Count == 0) {
+            return;
+        }
+
+        _history.BeginCompound();
+
+        // Apply bottom-to-top so earlier offsets stay valid.
+        for (var i = sels.Count - 1; i >= 0; i--) {
+            var s = sels[i];
+            var line = colSel.TopLine + i;
+
+            // Pad short lines to reach the left column.
+            var pad = ColumnSelection.PaddingNeeded(_table, line, colSel.LeftCol, tabSize);
+            if (pad > 0) {
+                var lineEnd = ColumnSelection.LineContentEnd(_table, line);
+                var spaces = new string(' ', pad);
+                _history.Push(new InsertEdit(lineEnd, spaces), _table, Selection);
+                // Adjust the selection offsets for the padding we just added.
+                s = new Selection(lineEnd + pad, lineEnd + pad);
+            }
+
+            // Delete the selected range, then insert.
+            if (!s.IsEmpty) {
+                var deleted = _table.GetText(s.Start, (int)s.Len);
+                _history.Push(new DeleteEdit(s.Start, deleted), _table, Selection);
+            }
+            _history.Push(new InsertEdit(s.Start, text), _table, Selection);
+        }
+
+        _history.EndCompound();
+
+        // Update the column selection: all cursors advance by text.Length columns.
+        var newCol = colSel.LeftCol + ColumnSelection.OfsToCol(
+            _table,
+            _table.LineStartOfs(colSel.TopLine) +
+            ColumnSelection.ColToCharIdx(_table, _table.LineStartOfs(colSel.TopLine),
+                (int)(ColumnSelection.LineContentEnd(_table, colSel.TopLine) - _table.LineStartOfs(colSel.TopLine)),
+                colSel.LeftCol + text.Length, tabSize),
+            tabSize);
+        // Simpler: the new column is just LeftCol + length of inserted text (char count).
+        newCol = colSel.LeftCol + text.Length;
+        ColumnSel = new ColumnSelection(colSel.AnchorLine, newCol, colSel.ActiveLine, newCol);
+
+        // Also update stream selection to first cursor position.
+        var firstCaret = ColumnSel.Value.MaterializeCarets(_table, tabSize);
+        if (firstCaret.Count > 0) {
+            Selection = Selection.Collapsed(firstCaret[0]);
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Deletes one character before each cursor in the column selection (Backspace).
+    /// No-op if any cursor is at column 0. All edits are a single undo step.
+    /// </summary>
+    public void DeleteBackwardAtCursors(int tabSize) {
+        if (ColumnSel is not { } colSel) {
+            return;
+        }
+
+        // If the column selection has width, delete the selected text instead.
+        if (colSel.LeftCol != colSel.RightCol) {
+            DeleteColumnSelectionContent(tabSize);
+            return;
+        }
+
+        if (colSel.LeftCol <= 0) {
+            return;
+        }
+
+        var carets = colSel.MaterializeCarets(_table, tabSize);
+        if (carets.Count == 0) {
+            return;
+        }
+
+        _history.BeginCompound();
+        for (var i = carets.Count - 1; i >= 0; i--) {
+            var caret = carets[i];
+            if (caret <= 0) {
+                continue;
+            }
+            // Handle \r\n as a single unit
+            var delLen = 1;
+            if (caret >= 2 && _table.GetText(caret - 2, 2) == "\r\n") {
+                delLen = 2;
+            }
+            var deleted = _table.GetText(caret - delLen, delLen);
+            _history.Push(new DeleteEdit(caret - delLen, deleted), _table, Selection);
+        }
+        _history.EndCompound();
+
+        var newCol = Math.Max(0, colSel.ActiveCol - 1);
+        var newAnchorCol = Math.Max(0, colSel.AnchorCol - 1);
+        ColumnSel = new ColumnSelection(colSel.AnchorLine, newAnchorCol, colSel.ActiveLine, newCol);
+
+        var newCarets = ColumnSel.Value.MaterializeCarets(_table, tabSize);
+        if (newCarets.Count > 0) {
+            Selection = Selection.Collapsed(newCarets[0]);
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Deletes one character after each cursor in the column selection (Delete key).
+    /// All edits are a single undo step.
+    /// </summary>
+    public void DeleteForwardAtCursors(int tabSize) {
+        if (ColumnSel is not { } colSel) {
+            return;
+        }
+
+        // If the column selection has width, delete the selected text instead.
+        if (colSel.LeftCol != colSel.RightCol) {
+            DeleteColumnSelectionContent(tabSize);
+            return;
+        }
+
+        var carets = colSel.MaterializeCarets(_table, tabSize);
+        if (carets.Count == 0) {
+            return;
+        }
+
+        _history.BeginCompound();
+        for (var i = carets.Count - 1; i >= 0; i--) {
+            var caret = carets[i];
+            if (caret >= _table.Length) {
+                continue;
+            }
+            var delLen = 1;
+            if (caret + 1 < _table.Length && _table.GetText(caret, 2) == "\r\n") {
+                delLen = 2;
+            }
+            var deleted = _table.GetText(caret, delLen);
+            _history.Push(new DeleteEdit(caret, deleted), _table, Selection);
+        }
+        _history.EndCompound();
+
+        // Column positions don't change after forward delete.
+        var newCarets = colSel.MaterializeCarets(_table, tabSize);
+        if (newCarets.Count > 0) {
+            Selection = Selection.Collapsed(newCarets[0]);
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Deletes the content within the column selection rectangle on each line.
+    /// Collapses the column selection to zero width at the left edge.
+    /// </summary>
+    public void DeleteColumnSelectionContent(int tabSize) {
+        if (ColumnSel is not { } colSel) {
+            return;
+        }
+        var sels = colSel.Materialize(_table, tabSize);
+        if (sels.Count == 0) {
+            return;
+        }
+
+        _history.BeginCompound();
+        for (var i = sels.Count - 1; i >= 0; i--) {
+            var s = sels[i];
+            if (s.IsEmpty) {
+                continue;
+            }
+            var deleted = _table.GetText(s.Start, (int)s.Len);
+            _history.Push(new DeleteEdit(s.Start, deleted), _table, Selection);
+        }
+        _history.EndCompound();
+
+        // Collapse column selection to zero width at LeftCol.
+        ColumnSel = new ColumnSelection(colSel.AnchorLine, colSel.LeftCol, colSel.ActiveLine, colSel.LeftCol);
+
+        var newCarets = ColumnSel.Value.MaterializeCarets(_table, tabSize);
+        if (newCarets.Count > 0) {
+            Selection = Selection.Collapsed(newCarets[0]);
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Returns the text selected on each line of the column selection,
+    /// joined by the document's line ending.
+    /// </summary>
+    public string GetColumnSelectedText(int tabSize) {
+        if (ColumnSel is not { } colSel) {
+            return "";
+        }
+        var sels = colSel.Materialize(_table, tabSize);
+        if (sels.Count == 0) {
+            return "";
+        }
+        var nl = LineEndingInfo.Dominant switch {
+            LineEnding.CRLF => "\r\n",
+            LineEnding.CR => "\r",
+            _ => "\n",
+        };
+        var parts = new string[sels.Count];
+        for (var i = 0; i < sels.Count; i++) {
+            var s = sels[i];
+            parts[i] = s.IsEmpty ? "" : _table.GetText(s.Start, (int)s.Len);
+        }
+        return string.Join(nl, parts);
+    }
+
+    /// <summary>
+    /// Pastes one line from <paramref name="lines"/> at each cursor position
+    /// in the column selection. The array length must equal the column
+    /// selection's <see cref="ColumnSelection.LineCount"/>. Exits column mode.
+    /// </summary>
+    public void PasteAtCursors(string[] lines, int tabSize) {
+        if (ColumnSel is not { } colSel || lines.Length != colSel.LineCount) {
+            return;
+        }
+        var sels = colSel.Materialize(_table, tabSize);
+        _history.BeginCompound();
+        for (var i = sels.Count - 1; i >= 0; i--) {
+            var s = sels[i];
+            var line = colSel.TopLine + i;
+            var pad = ColumnSelection.PaddingNeeded(_table, line, colSel.LeftCol, tabSize);
+            if (pad > 0) {
+                var lineEnd = ColumnSelection.LineContentEnd(_table, line);
+                _history.Push(new InsertEdit(lineEnd, new string(' ', pad)), _table, Selection);
+                s = new Selection(lineEnd + pad, lineEnd + pad);
+            }
+            if (!s.IsEmpty) {
+                var deleted = _table.GetText(s.Start, (int)s.Len);
+                _history.Push(new DeleteEdit(s.Start, deleted), _table, Selection);
+            }
+            _history.Push(new InsertEdit(s.Start, lines[i]), _table, Selection);
+        }
+        _history.EndCompound();
+        ColumnSel = null;
+        Selection = Selection.Collapsed(Selection.Caret);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Exits column selection mode. Collapses the stream selection to the
+    /// caret position of the first cursor in the column rectangle.
+    /// </summary>
+    public void ClearColumnSelection(int tabSize = 4) {
+        if (ColumnSel is not { } colSel) {
+            return;
+        }
+        var carets = colSel.MaterializeCarets(_table, tabSize);
+        ColumnSel = null;
+        if (carets.Count > 0) {
+            // Place the caret at the active corner's line.
+            var activeIdx = colSel.ActiveLine - colSel.TopLine;
+            activeIdx = Math.Clamp(activeIdx, 0, carets.Count - 1);
+            Selection = Selection.Collapsed(carets[activeIdx]);
+        }
     }
 
     // -------------------------------------------------------------------------

@@ -98,6 +98,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private readonly DispatcherTimer _caretTimer;
     private bool _pointerDown;
     private bool _middleDrag;
+    private bool _columnDrag;
     private double _middleDragStartY;
 
     // Clipboard ring — shared by PasteMore (inline cycling) and ClipboardRing (popup).
@@ -796,8 +797,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
 
         // Draw selection rectangles behind text
-        if (doc != null && !doc.Selection.IsEmpty) {
-            DrawSelection(context, layout, doc.Selection);
+        if (doc != null) {
+            if (doc.ColumnSel is { } colSel) {
+                DrawColumnSelection(context, layout, colSel);
+            } else if (!doc.Selection.IsEmpty) {
+                DrawSelection(context, layout, doc.Selection);
+            }
         }
 
         // Draw each visible line's text
@@ -819,7 +824,11 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // Draw caret (hidden during any scroll-drag operation)
         var scrollDrag = ScrollBar?.IsDragging ?? false;
         if (doc != null && _caretVisible && IsFocused && !_middleDrag && !scrollDrag) {
-            DrawCaret(context, layout, doc.Selection.Caret);
+            if (doc.ColumnSel is { } colSelCarets) {
+                DrawMultiCarets(context, layout, colSelCarets);
+            } else {
+                DrawCaret(context, layout, doc.Selection.Caret);
+            }
         }
 
         _perfSw.Stop();
@@ -1033,6 +1042,69 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     }
 
     // -------------------------------------------------------------------------
+    // Column selection rendering
+    // -------------------------------------------------------------------------
+
+    private void DrawColumnSelection(DrawingContext context, LayoutResult layout, ColumnSelection colSel) {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        var table = doc.Table;
+        var sels = colSel.Materialize(table, _indentWidth);
+        var rh = layout.RowHeight;
+
+        for (var i = 0; i < sels.Count; i++) {
+            var s = sels[i];
+            if (s.IsEmpty) {
+                continue;
+            }
+            var localStart = (int)(s.Start - layout.ViewportBase);
+            var localEnd = (int)(s.End - layout.ViewportBase);
+            var totalChars = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
+            if (localEnd < 0 || localStart > totalChars) {
+                continue;
+            }
+            localStart = Math.Clamp(localStart, 0, totalChars);
+            localEnd = Math.Clamp(localEnd, 0, totalChars);
+            if (localStart == localEnd) {
+                continue;
+            }
+
+            foreach (var line in layout.Lines) {
+                if (line.CharEnd <= localStart || line.CharStart >= localEnd) {
+                    continue;
+                }
+                var lineY = line.Row * rh + _renderOffsetY;
+                if (lineY + line.HeightInRows * rh < 0 || lineY > Bounds.Height) {
+                    continue;
+                }
+                var rangeStart = Math.Max(0, localStart - line.CharStart);
+                var rangeEnd = Math.Min(line.CharLen, localEnd - line.CharStart);
+                var rangeLen = rangeEnd - rangeStart;
+                if (rangeLen <= 0) {
+                    continue;
+                }
+                foreach (var rect in line.Layout.HitTestTextRange(rangeStart, rangeLen)) {
+                    context.FillRectangle(SelectionBrush,
+                        new Rect(rect.X + _gutterWidth, lineY + rect.Y, rect.Width, rect.Height));
+                }
+            }
+        }
+    }
+
+    private void DrawMultiCarets(DrawingContext context, LayoutResult layout, ColumnSelection colSel) {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        var carets = colSel.MaterializeCarets(doc.Table, _indentWidth);
+        foreach (var caret in carets) {
+            DrawCaret(context, layout, caret);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Caret blink
     // -------------------------------------------------------------------------
 
@@ -1095,31 +1167,70 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     public async Task CopyAsync() {
         var doc = Document;
-        if (doc == null || doc.Selection.IsEmpty) {
+        if (doc == null) {
             return;
         }
         FlushCompound();
+
+        string text;
+        if (doc.ColumnSel != null) {
+            text = doc.GetColumnSelectedText(_indentWidth);
+        } else {
+            if (doc.Selection.IsEmpty) {
+                return;
+            }
+            text = doc.GetSelectedText();
+        }
+
+        if (string.IsNullOrEmpty(text)) {
+            return;
+        }
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard == null) {
             return;
         }
-        var text = doc.GetSelectedText();
         await clipboard.SetTextAsync(text);
         _clipboardRing.Push(text);
     }
 
     public async Task CutAsync() {
         var doc = Document;
-        if (doc == null || doc.Selection.IsEmpty) {
+        if (doc == null) {
             return;
         }
         FlushCompound();
-        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard == null) {
+
+        string text;
+        if (doc.ColumnSel != null) {
+            text = doc.GetColumnSelectedText(_indentWidth);
+            if (string.IsNullOrEmpty(text)) {
+                return;
+            }
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard == null) {
+                return;
+            }
+            await clipboard.SetTextAsync(text);
+            _clipboardRing.Push(text);
+            _editSw.Restart();
+            doc.DeleteColumnSelectionContent(_indentWidth);
+            _editSw.Stop();
+            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+            ScrollCaretIntoView();
+            InvalidateLayout();
+            ResetCaretBlink();
             return;
         }
-        var text = doc.GetSelectedText();
-        await clipboard.SetTextAsync(text);
+
+        if (doc.Selection.IsEmpty) {
+            return;
+        }
+        var cb = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (cb == null) {
+            return;
+        }
+        text = doc.GetSelectedText();
+        await cb.SetTextAsync(text);
         _clipboardRing.Push(text);
         _editSw.Restart();
         doc.DeleteSelection();
@@ -1150,10 +1261,23 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         text = text.Replace("\r\n", "\n").Replace("\r", "\n");
         _clipboardRing.Push(text);
         _preferredCaretX = -1;
-        _editSw.Restart();
-        doc.Insert(text);
-        _editSw.Stop();
-        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+
+        if (doc.ColumnSel is { } colSel) {
+            // Column mode paste: if clipboard lines match cursor count, paste
+            // one line per cursor. Otherwise paste full text at each cursor.
+            var lines = text.Split('\n');
+            if (lines.Length == colSel.LineCount) {
+                doc.PasteAtCursors(lines, _indentWidth);
+            } else {
+                doc.InsertAtCursors(text, _indentWidth);
+            }
+        } else {
+            _editSw.Restart();
+            doc.Insert(text);
+            _editSw.Stop();
+            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        }
+
         ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
@@ -1394,6 +1518,20 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             return;
         }
         _preferredCaretX = -1;
+
+        if (doc.ColumnSel != null) {
+            Coalesce("col-char");
+            _editSw.Restart();
+            doc.InsertAtCursors(e.Text, _indentWidth);
+            _editSw.Stop();
+            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+            e.Handled = true;
+            ScrollCaretIntoView();
+            InvalidateLayout();
+            ResetCaretBlink();
+            return;
+        }
+
         Coalesce("char");
 
         _editSw.Restart();
@@ -1424,6 +1562,119 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     ];
 
     /// <summary>
+    /// Commands that are handled specially in column mode and should NOT
+    /// cause an automatic exit from column mode.
+    /// </summary>
+    private static readonly HashSet<string> ColumnAwareCommands = [
+        Commands.CommandIds.NavColumnSelectUp,
+        Commands.CommandIds.NavColumnSelectDown,
+        Commands.CommandIds.NavColumnSelectLeft,
+        Commands.CommandIds.NavColumnSelectRight,
+        Commands.CommandIds.EditBackspace,
+        Commands.CommandIds.EditDelete,
+        Commands.CommandIds.EditDeleteWordLeft,
+        Commands.CommandIds.EditDeleteWordRight,
+        Commands.CommandIds.EditCut,
+        Commands.CommandIds.EditCopy,
+        Commands.CommandIds.EditPaste,
+        Commands.CommandIds.EditTab,
+    ];
+
+    /// <summary>
+    /// Intercepts commands that have column-mode-specific behavior.
+    /// Returns true if the command was fully handled, false to continue
+    /// normal dispatch.
+    /// </summary>
+    private bool ColumnModeIntercept(Document doc, string commandId) {
+        switch (commandId) {
+            case Commands.CommandIds.NavColumnSelectUp:
+                PerformColumnSelectVertical(doc, -1);
+                return true;
+
+            case Commands.CommandIds.NavColumnSelectDown:
+                PerformColumnSelectVertical(doc, +1);
+                return true;
+
+            case Commands.CommandIds.NavColumnSelectLeft:
+                PerformColumnSelectHorizontal(doc, -1);
+                return true;
+
+            case Commands.CommandIds.NavColumnSelectRight:
+                PerformColumnSelectHorizontal(doc, +1);
+                return true;
+
+            case Commands.CommandIds.EditBackspace:
+                FlushCompound();
+                _editSw.Restart();
+                doc.DeleteBackwardAtCursors(_indentWidth);
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                ScrollCaretIntoView();
+                InvalidateLayout();
+                ResetCaretBlink();
+                return true;
+
+            case Commands.CommandIds.EditDelete:
+                FlushCompound();
+                _editSw.Restart();
+                doc.DeleteForwardAtCursors(_indentWidth);
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                ScrollCaretIntoView();
+                InvalidateLayout();
+                ResetCaretBlink();
+                return true;
+
+            case Commands.CommandIds.EditTab: {
+                var tabText = doc.IndentInfo.Dominant == Core.Documents.IndentStyle.Tabs
+                    ? "\t"
+                    : new string(' ', _indentWidth);
+                Coalesce("col-tab");
+                _editSw.Restart();
+                doc.InsertAtCursors(tabText, _indentWidth);
+                _editSw.Stop();
+                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+                ScrollCaretIntoView();
+                InvalidateLayout();
+                ResetCaretBlink();
+                return true;
+            }
+
+            default:
+                return false;
+        }
+    }
+
+    private void PerformColumnSelectVertical(Document doc, int delta) {
+        FlushCompound();
+        var table = doc.Table;
+        if (doc.ColumnSel is { } colSel) {
+            // Already in column mode — extend by one line.
+            var newLine = Math.Clamp(colSel.ActiveLine + delta, 0, (int)table.LineCount - 1);
+            doc.ColumnSel = colSel.ExtendTo(newLine, colSel.ActiveCol);
+        } else {
+            // Enter column mode from current caret.
+            var caret = doc.Selection.Caret;
+            var line = (int)table.LineFromOfs(caret);
+            var col = ColumnSelection.OfsToCol(table, caret, _indentWidth);
+            var targetLine = Math.Clamp(line + delta, 0, (int)table.LineCount - 1);
+            doc.ColumnSel = new ColumnSelection(line, col, targetLine, col);
+        }
+        ScrollCaretIntoView();
+        InvalidateVisual();
+        ResetCaretBlink();
+    }
+
+    private void PerformColumnSelectHorizontal(Document doc, int delta) {
+        if (doc.ColumnSel is not { } colSel) return;
+        var newCol = Math.Max(0, colSel.ActiveCol + delta);
+        doc.ColumnSel = colSel.ExtendTo(colSel.ActiveLine, newCol);
+        ScrollCaretIntoView();
+        InvalidateVisual();
+        ResetCaretBlink();
+    }
+
+    /// <summary>
     /// Executes an editor-level command by ID. Returns true if the command
     /// was handled. Called by MainWindow's centralized dispatch after
     /// resolving a key gesture to a command ID via KeyBindingService.
@@ -1442,6 +1693,26 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // else resets it so the next Up/Down captures a fresh X position.
         if (!VerticalNavCommands.Contains(commandId)) {
             _preferredCaretX = -1;
+        }
+
+        // Column select up/down always works (enters or extends column mode).
+        if (commandId is Commands.CommandIds.NavColumnSelectUp
+                      or Commands.CommandIds.NavColumnSelectDown) {
+            var delta = commandId == Commands.CommandIds.NavColumnSelectUp ? -1 : +1;
+            PerformColumnSelectVertical(doc, delta);
+            return true;
+        }
+
+        // Column selection: intercept commands that operate differently in
+        // column mode, and exit column mode for everything else.
+        if (doc.ColumnSel != null) {
+            if (ColumnModeIntercept(doc, commandId)) {
+                return true;
+            }
+            // Non-column-aware commands exit column mode before proceeding.
+            if (!ColumnAwareCommands.Contains(commandId)) {
+                doc.ClearColumnSelection(_indentWidth);
+            }
         }
 
         switch (commandId) {
@@ -2529,13 +2800,33 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 ResetCaretBlink();
                 return;
             }
+            var alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
             var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-            doc.Selection = shift
-                ? doc.Selection.ExtendTo(ofs)
-                : Selection.Collapsed(ofs);
-            _pointerDown = true;
-            e.Pointer.Capture(this);
+            if (alt) {
+                // Alt+click: start column (block) selection.
+                var table = doc.Table;
+                var line = (int)table.LineFromOfs(ofs);
+                var col = ColumnSelection.OfsToCol(table, ofs, _indentWidth);
+                doc.ColumnSel = new ColumnSelection(line, col, line, col);
+                doc.Selection = Selection.Collapsed(ofs);
+                _columnDrag = true;
+                _pointerDown = true;
+                e.Pointer.Capture(this);
+            } else {
+                // Exit column mode on normal click.
+                if (doc.ColumnSel != null) {
+                    doc.ColumnSel = null;
+                }
+                doc.Selection = shift
+                    ? doc.Selection.ExtendTo(ofs)
+                    : Selection.Collapsed(ofs);
+                _pointerDown = true;
+                e.Pointer.Capture(this);
+            }
         } else {
+            if (doc.ColumnSel != null) {
+                doc.ColumnSel = null;
+            }
             doc.Selection = Selection.Collapsed(ofs);
         }
         e.Handled = true;
@@ -2561,7 +2852,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var layoutPt = new Point(pt.X - _gutterWidth, pt.Y - _renderOffsetY);
         var localOfs = _layoutEngine.HitTest(layoutPt, layout);
         var ofs = layout.ViewportBase + localOfs;
-        doc.Selection = doc.Selection.ExtendTo(ofs);
+        if (_columnDrag && doc.ColumnSel is { } colSel) {
+            var table = doc.Table;
+            var line = (int)table.LineFromOfs(ofs);
+            var col = ColumnSelection.OfsToCol(table, ofs, _indentWidth);
+            doc.ColumnSel = colSel.ExtendTo(line, col);
+        } else {
+            doc.Selection = doc.Selection.ExtendTo(ofs);
+        }
         InvalidateVisual();
     }
 
@@ -2575,6 +2873,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             ResetCaretBlink();
             return;
         }
+        _columnDrag = false;
         _pointerDown = false;
         e.Pointer.Capture(null);
         // Hide caret immediately; the blink timer will show it on its next tick.

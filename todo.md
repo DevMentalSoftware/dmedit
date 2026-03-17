@@ -20,5 +20,8 @@
 * Add Page Setup and Print (System Dialogs or does Avalonia provide?)
 * Add a command to clear the recent files list (no menu or keystroke).
 * Make sure we can handle readonly files (Maybe just a command to toggle the file setting from within the editor, and to correctly prevent modifying until we clear the flag?)
-* 
+* Remove the feature to show manual.md at startup, and instead add it to a Help menu, along with an About menu that load about.md which we will create to show minimal info about the current version. Also make these documents read-only. 
+* Add a feature to submit a bug report to the Help menu. 
+* Add overwrite mode (Insert key), and display this mode in the status bar. Also change the caret to be letter width and translucen when in overwrite mode.
+* There appears to be a bug in Avalonia text boxes where the caret is blinking slightly on top of a letter instead of just the right of it. 
 

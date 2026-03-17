@@ -25,9 +25,15 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 375** (292 Core + 21 Rendering + 62 App)
+**Test baseline: 399** (316 Core + 21 Rendering + 62 App)
 
 ### Recently completed
+
+- **Column/Block Selection** (2026-03-16) — Alt+drag or Alt+Shift+Up/Down creates a
+  rectangular selection spanning multiple lines. Typing, backspace, delete, tab, copy,
+  cut, paste all operate at every cursor simultaneously. Column selection is defined in
+  logical-line/column space with tab-aware column math. Undo reverts all per-line edits
+  as one step. Escape or any non-column navigation command exits column mode.
 
 - **Interactive Status Bar** (2026-03-14) — four clickable segments (Ln/Ch, Encoding,
   Line Ending, Indent) with hover highlights and flyout menus. Indent detection added

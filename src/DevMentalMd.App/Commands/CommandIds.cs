@@ -130,4 +130,12 @@ public static class CommandIds {
     public const string NavSelectDocEnd    = "Nav.SelectDocEnd";
     public const string NavSelectPageUp    = "Nav.SelectPageUp";
     public const string NavSelectPageDown  = "Nav.SelectPageDown";
+
+    // -----------------------------------------------------------------
+    // Navigation — column (block) selection
+    // -----------------------------------------------------------------
+    public const string NavColumnSelectUp    = "Nav.ColumnSelectUp";
+    public const string NavColumnSelectDown  = "Nav.ColumnSelectDown";
+    public const string NavColumnSelectLeft  = "Nav.ColumnSelectLeft";
+    public const string NavColumnSelectRight = "Nav.ColumnSelectRight";
 }
