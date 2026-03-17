@@ -1961,7 +1961,10 @@ public partial class MainWindow : Window {
             WinFirstLineHeight = tab.WinFirstLineHeight,
         };
 
-        // Replace in-place so the tab bar doesn't flicker.
+        // Wire up the Changed handler (normally done by AddTab, but we're
+        // replacing in-place to avoid tab bar flicker).
+        newTab.Document.Changed += (_, _) => OnTabDocumentChanged(newTab);
+
         _tabs[idx] = newTab;
         if (_activeTab == tab) {
             _activeTab = newTab;
@@ -2516,7 +2519,8 @@ public partial class MainWindow : Window {
 
         switch (choice) {
             case FileConflictChoice.LoadDiskVersion:
-                _ = ReloadFileAsync(tab);
+                // User already confirmed — skip the dirty check in ReloadFileAsync.
+                _ = ReloadFileInPlaceAsync(tab);
                 break;
             case FileConflictChoice.KeepMyVersion:
                 tab.Conflict = null;

@@ -138,4 +138,86 @@ public class EditHistorySerializationTests {
         Assert.Equal("hello", restored.Table.GetText());
         Assert.False(restored.CanUndo);
     }
+
+    // -----------------------------------------------------------------
+    // IsAtSavePoint + compound edits
+    // -----------------------------------------------------------------
+
+    [Fact]
+    public void IsAtSavePoint_ReturnsFalse_DuringOpenCompoundEdit() {
+        // Simulates the coalescing path: BeginCompound → Insert → check dirty.
+        var doc = new Document("hello");
+        doc.MarkSavePoint();
+        Assert.True(doc.IsAtSavePoint);
+
+        // Open a compound (as Coalesce does before each keystroke group).
+        doc.BeginCompound();
+
+        // Insert while compound is open — edit goes into the compound list.
+        doc.Selection = Selection.Collapsed(5);
+        doc.Insert(" world");
+
+        // The document must NOT be at the save point: there are pending edits.
+        Assert.False(doc.IsAtSavePoint);
+
+        // Close the compound — edits commit to the undo stack.
+        doc.EndCompound();
+        Assert.False(doc.IsAtSavePoint);
+    }
+
+    [Fact]
+    public void IsAtSavePoint_ReturnsTrue_AfterCompoundUndone() {
+        var doc = new Document("hello");
+        doc.MarkSavePoint();
+
+        doc.BeginCompound();
+        doc.Selection = Selection.Collapsed(5);
+        doc.Insert(" world");
+        doc.EndCompound();
+
+        Assert.False(doc.IsAtSavePoint);
+
+        doc.Undo();
+        Assert.True(doc.IsAtSavePoint);
+        Assert.Equal("hello", doc.Table.GetText());
+    }
+
+    [Fact]
+    public void IsAtSavePoint_ReturnsTrue_WhenEmptyCompoundOpened() {
+        // Opening a compound without pushing any edits should not
+        // change the save-point status.
+        var doc = new Document("hello");
+        doc.MarkSavePoint();
+
+        doc.BeginCompound();
+        Assert.True(doc.IsAtSavePoint);
+
+        doc.EndCompound();
+        Assert.True(doc.IsAtSavePoint);
+    }
+
+    [Fact]
+    public void ChangedEvent_FiresDuringCompound_AllowsDirtyTracking() {
+        // Verifies that Document.Changed fires inside an open compound,
+        // and that IsAtSavePoint is false at that point — this is the
+        // exact pattern the UI uses to track dirty state.
+        var doc = new Document("hello");
+        doc.MarkSavePoint();
+
+        bool changedFired = false;
+        bool wasDirtyAtChange = false;
+
+        doc.Changed += (_, _) => {
+            changedFired = true;
+            wasDirtyAtChange = !doc.IsAtSavePoint;
+        };
+
+        doc.BeginCompound();
+        doc.Selection = Selection.Collapsed(5);
+        doc.Insert("!");
+        doc.EndCompound();
+
+        Assert.True(changedFired);
+        Assert.True(wasDirtyAtChange);
+    }
 }
