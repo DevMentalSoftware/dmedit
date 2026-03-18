@@ -103,6 +103,10 @@
 						<MenuItem Header="Scroll Line _Up" x:Name="MenuScrollLineUp" />
 						<MenuItem Header="Scroll Line _Down" x:Name="MenuScrollLineDown" />
 					</MenuItem>
+					<MenuItem Header="_Help" x:Name="MenuHelp">
+						<MenuItem Header="_Manual" x:Name="MenuManual" />
+						<MenuItem Header="_About" x:Name="MenuAbout" />
+					</MenuItem>
 				</Menu>
 				<Border x:Name="GearButton" Grid.Column="1"
 						Background="Transparent"
@@ -185,6 +189,16 @@
 						           FontSize="11" Padding="0,6,0,6" Text="" />
 						<Border x:Name="BtnIndent" Background="Transparent">
 							<TextBlock x:Name="StatusIndent"
+							           FontFamily="Cascadia Code, Consolas, Courier New"
+							           FontSize="11"
+							           Padding="6,6,6,6"
+							           Text="" />
+						</Border>
+						<TextBlock x:Name="StatusSep5"
+						           FontFamily="Cascadia Code, Consolas, Courier New"
+						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<Border x:Name="BtnReadOnly" Background="Transparent">
+							<TextBlock x:Name="StatusReadOnly"
 							           FontFamily="Cascadia Code, Consolas, Courier New"
 							           FontSize="11"
 							           Padding="6,6,6,6"

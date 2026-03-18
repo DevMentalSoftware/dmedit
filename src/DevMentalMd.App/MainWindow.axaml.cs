@@ -105,6 +105,9 @@ public partial class MainWindow : Window {
         MenuPrint.IsVisible = WindowsPrintService.IsAvailable;
         MenuPrint.IsEnabled = WindowsPrintService.IsAvailable;
 
+        MenuManual.Click += (_, _) => OpenHelpDocumentAsync("manual.md", "Manual");
+        MenuAbout.Click += (_, _) => OpenHelpDocumentAsync("about.md", "About");
+
         _staticMenuItemCount = MenuFile.Items.Count;
 
         PruneRecentFiles();
@@ -173,12 +176,8 @@ public partial class MainWindow : Window {
 
     private async void InitSessionAsync() {
         if (!await TryRestoreSessionAsync()) {
-            if (_settings.DevMode) {
-                LoadManual();
-            } else {
-                var tab = AddTab(TabState.CreateUntitled(_tabs));
-                SwitchToTab(tab);
-            }
+            var tab = AddTab(TabState.CreateUntitled(_tabs));
+            SwitchToTab(tab);
         }
     }
 
@@ -873,7 +872,7 @@ public partial class MainWindow : Window {
     private async void SaveAll() {
         // Save All: save every tab that has a file path and is dirty.
         foreach (var tab in _tabs) {
-            if (tab.FilePath != null && tab.IsDirty) {
+            if (tab.FilePath != null && tab.IsDirty && !tab.IsReadOnly) {
                 var sha1 = await SaveToAsync(tab.FilePath);
                 if (sha1 is null) continue;
                 tab.BaseSha1 = sha1;
@@ -1084,7 +1083,7 @@ public partial class MainWindow : Window {
         // Menu / toolbar bar — background on the outer border so the
         // entire bar (menus, toolbar buttons, gear icon) is uniform.
         MenuBarBorder.Background = theme.TabActiveBackground;
-        MenuBarBorder.BorderBrush = theme.TabBarBackground;
+        MenuBarBorder.BorderBrush = theme.TabActiveBackground;
         MenuBar.Background = Brushes.Transparent;
         GearGlyph.Text = IconGlyphs.Settings;
         GearGlyph.FontFamily = IconGlyphs.Family;
@@ -1292,9 +1291,20 @@ public partial class MainWindow : Window {
         WireHover(BtnEncoding);
         WireHover(BtnLineEnding);
         WireHover(BtnIndent);
+        WireHover(BtnReadOnly);
 
         // -- Line/Col → GoTo Line --
         BtnLineCol.PointerPressed += (_, _) => OpenGoToLine();
+
+        // -- Read Only → click to clear --
+        BtnReadOnly.PointerPressed += (_, e) => {
+            e.Handled = true;
+            if (_activeTab is { IsReadOnly: true }) {
+                _activeTab.IsReadOnly = false;
+                UpdateStatusBar();
+                UpdateTabBar();
+            }
+        };
 
         // -- Encoding → flyout --
         BtnEncoding.PointerPressed += (_, e) => {
@@ -1376,6 +1386,8 @@ public partial class MainWindow : Window {
             SetText(StatusLineEnding, "");
             SetText(StatusSep4, "");
             SetText(StatusIndent, "");
+            SetText(StatusSep5, "");
+            SetText(StatusReadOnly, "");
             if (_chordFirst == null) SetText(StatusLeft, "");
         } else {
             var table = doc.Table;
@@ -1405,20 +1417,20 @@ public partial class MainWindow : Window {
             SetText(StatusLineCol, lineCol);
 
             if (stillLoading) {
-                SetText(StatusSep1, " | ");
+                SetText(StatusSep1, "|");
                 SetText(StatusLineCount, $"{lcText} lines");
-                SetText(StatusSep2, " | ");
+                SetText(StatusSep2, "|");
                 SetText(StatusEncoding, "loading\u2026");
                 SetText(StatusSep3, "");
                 SetText(StatusLineEnding, "");
                 SetText(StatusSep4, "");
                 SetText(StatusIndent, "");
             } else {
-                SetText(StatusSep1, " | ");
+                SetText(StatusSep1, "|");
                 SetText(StatusLineCount, $"{lcText} lines");
-                SetText(StatusSep2, " | ");
+                SetText(StatusSep2, "|");
                 SetText(StatusEncoding, doc.EncodingInfo.Label);
-                SetText(StatusSep3, " | ");
+                SetText(StatusSep3, "|");
 
                 var lei = doc.LineEndingInfo;
                 SetText(StatusLineEnding, lei.Label);
@@ -1437,9 +1449,13 @@ public partial class MainWindow : Window {
                     ToolTip.SetTip(BtnLineEnding, null);
                 }
 
-                SetText(StatusSep4, " | ");
+                SetText(StatusSep4, "|");
                 SetText(StatusIndent, doc.IndentInfo.Label);
             }
+
+            var isRo = _activeTab is { IsReadOnly: true };
+            SetText(StatusSep5, isRo ? "|" : "");
+            SetText(StatusReadOnly, isRo ? "RO" : "");
         }
     }
 
@@ -1469,26 +1485,41 @@ public partial class MainWindow : Window {
         SwitchToTab(tab);
     }
 
-    private async void LoadManual() {
+    /// <summary>
+    /// Opens a bundled help document (e.g. manual.md, about.md) in a read-only tab.
+    /// If already open, switches to the existing tab.
+    /// </summary>
+    private async void OpenHelpDocumentAsync(string filename, string displayName) {
         var dir = AppDomain.CurrentDomain.BaseDirectory;
-        var path = Path.Combine(dir, "manual.md");
-        if (File.Exists(path)) {
-            try {
-                var result = await FileLoader.LoadAsync(path);
-                var tab = new TabState(result.Document, path, "manual.md") {
-                    LoadResult = result,
-                    IsLoading = true,
-                };
-                AddTab(tab);
-                SwitchToTab(tab);
-                WireFileLoadCompletion(tab);
-                return;
-            } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-                // Fall through to untitled tab.
-            }
+        var path = Path.Combine(dir, filename);
+
+        // Switch to existing tab if already open.
+        var existing = _tabs.FirstOrDefault(t =>
+            string.Equals(t.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        if (existing != null) {
+            SwitchToTab(existing);
+            return;
         }
-        var fallback = AddTab(TabState.CreateUntitled(_tabs));
-        SwitchToTab(fallback);
+
+        if (!File.Exists(path)) {
+            StatusLeft.Text = $"Help file not found: {filename}";
+            return;
+        }
+
+        try {
+            var result = await FileLoader.LoadAsync(path);
+            var tab = new TabState(result.Document, path, displayName) {
+                LoadResult = result,
+                IsLoading = true,
+                IsReadOnly = true,
+            };
+            AddTab(tab);
+            SwitchToTab(tab);
+            WireFileLoadCompletion(tab);
+            TryCloseEmptyUntitled(tab);
+        } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+            StatusLeft.Text = $"Open failed: {ex.Message}";
+        }
     }
 
     private async void OnOpen(object? sender, RoutedEventArgs e) {
@@ -1517,7 +1548,7 @@ public partial class MainWindow : Window {
     }
 
     private async void OnSave(object? sender, RoutedEventArgs e) {
-        if (_activeTab == null || _activeTab.IsSettings) return;
+        if (_activeTab == null || _activeTab.IsSettings || _activeTab.IsReadOnly) return;
         Editor.FlushCompound();
         if (_activeTab.FilePath is null) {
             await SaveAsAsync();
@@ -1606,9 +1637,15 @@ public partial class MainWindow : Window {
         }
 
         var sw = Stopwatch.StartNew();
+        bool ro = false;
+        try {
+            ro = (File.GetAttributes(path) & ~FileAttributes.ReadOnly) > 0;
+        } catch {
+        }
         var tab = new TabState(result.Document, path, result.DisplayName) {
             LoadResult = result,
             IsLoading = true,
+            IsReadOnly = ro
         };
         AddTab(tab);
         SwitchToTab(tab);
@@ -1616,6 +1653,7 @@ public partial class MainWindow : Window {
         WireFileLoadCompletion(tab);
 
         PushRecentFile(path);
+        TryCloseEmptyUntitled(tab);
     }
 
     private void OpenDevSample(ProceduralSample sample) {
@@ -1627,6 +1665,21 @@ public partial class MainWindow : Window {
         AddTab(tab);
         SwitchToTab(tab);
         Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
+        TryCloseEmptyUntitled(tab);
+    }
+
+    /// <summary>
+    /// If the only other tab is an empty, unmodified untitled document,
+    /// close it silently. Called after opening a file or help document
+    /// so the startup placeholder tab doesn't linger.
+    /// </summary>
+    private void TryCloseEmptyUntitled(TabState exclude) {
+        if (_tabs.Count != 2) return;
+        var other = _tabs[0] == exclude ? _tabs[1] : _tabs[0];
+        if (other.FilePath == null && !other.IsDirty && !other.IsSettings
+            && other.Document.Table.Length == 0) {
+            CloseTabDirect(other);
+        }
     }
 
     /// <summary>

@@ -22,6 +22,7 @@ public sealed class TabState {
     public string DisplayName { get; set; }
     public LoadResult? LoadResult { get; set; }
     public bool IsDirty { get; set; }
+    public bool IsReadOnly { get; set; }
     public bool IsSettings { get; init; }
 
     /// <summary>

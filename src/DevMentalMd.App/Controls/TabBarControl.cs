@@ -458,7 +458,10 @@ public sealed class TabBarControl : Control {
         }
     }
 
-    private string GetTabLabel(int index) => _tabs[index].DisplayName;
+    private string GetTabLabel(int index) {
+        var tab = _tabs[index];
+        return tab.IsReadOnly ? $"\U0001F512 {tab.DisplayName}" : tab.DisplayName;
+    }
 
     // -------------------------------------------------------------------------
     // Hit testing

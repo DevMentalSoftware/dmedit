@@ -18,6 +18,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="manual.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="about.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Commands\Profiles\*.json" />
