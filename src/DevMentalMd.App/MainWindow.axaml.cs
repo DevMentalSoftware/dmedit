@@ -1084,11 +1084,7 @@ public partial class MainWindow : Window {
         // entire bar (menus, toolbar buttons, gear icon) is uniform.
         MenuBarBorder.Background = theme.TabActiveBackground;
         MenuBarBorder.BorderBrush = theme.TabActiveBackground;
-        MenuBar.Background = Brushes.Transparent;
-        GearGlyph.Text = IconGlyphs.Settings;
-        GearGlyph.FontFamily = IconGlyphs.Family;
         GearGlyph.Foreground = theme.TabPlusForeground;
-        GearButton.Background = Brushes.Transparent;
 
         // Status bar
         StatusBar.Background = theme.StatusBarBackground;
@@ -2074,9 +2070,7 @@ public partial class MainWindow : Window {
     private void WireSettingsPanel() {
         SettingsPanel.Initialize(_settings, _keyBindings);
         SettingsPanel.KeyBindingChanged += () => SyncMenuGestures();
-        GearButton.PointerPressed += (_, _) => OpenSettings();
-        GearButton.PointerEntered += (_, _) => GearButton.Background = _theme.TabInactiveHoverBg;
-        GearButton.PointerExited += (_, _) => GearButton.Background = Brushes.Transparent;
+        GearButton.Click += (_, _) => OpenSettings();
 
         SettingsPanel.SettingChanged += key => {
             // Push setting changes to the editor and menu state.

@@ -83,6 +83,8 @@
 				<ResourceInclude Source="avares://dmedit/Themes/DMTextBoxTheme.axaml" />
 				<ResourceInclude Source="avares://dmedit/Themes/DMEditableComboTheme.axaml" />
 				<ResourceInclude Source="avares://dmedit/Themes/GridSplitterTheme.axaml" />
+				<ResourceInclude Source="avares://dmedit/Themes/MenuItemTheme.axaml" />
+				<ResourceInclude Source="avares://dmedit/Themes/MenuTheme.axaml" />
 			</ResourceDictionary.MergedDictionaries>
 		</ResourceDictionary>
 	</Application.Resources>
