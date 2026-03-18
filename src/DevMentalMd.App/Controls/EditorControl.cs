@@ -579,6 +579,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     protected override Size MeasureOverride(Size availableSize) {
         _layout?.Dispose();
         _layout = null;
+        _perfSw.Restart();
 
         var doc = Document;
         var typeface = new Typeface(FontFamily);
@@ -599,6 +600,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
         }
+
+        _perfSw.Stop();
+        PerfStats.Layout.Record(_perfSw.Elapsed.TotalMilliseconds);
 
         RaiseScrollInvalidated();
         ScrollChanged?.Invoke(this, EventArgs.Empty);
@@ -1232,9 +1236,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             _clipboardRing.Push(text);
             _editSw.Restart();
             doc.DeleteColumnSelectionContent(_indentWidth);
+            ScrollCaretIntoView();
             _editSw.Stop();
             PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-            ScrollCaretIntoView();
             InvalidateLayout();
             ResetCaretBlink();
             return;
@@ -1252,9 +1256,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         _clipboardRing.Push(text);
         _editSw.Restart();
         doc.DeleteSelection();
+        ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-        ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -1280,6 +1284,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         _clipboardRing.Push(text);
         _preferredCaretX = -1;
 
+        _editSw.Restart();
         if (doc.ColumnSel is { } colSel) {
             // Column mode paste: if clipboard lines match cursor count, paste
             // one line per cursor. Otherwise paste full text at each cursor.
@@ -1290,13 +1295,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 doc.InsertAtCursors(text, _indentWidth);
             }
         } else {
-            _editSw.Restart();
             doc.Insert(text);
-            _editSw.Stop();
-            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         }
-
         ScrollCaretIntoView();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -1328,10 +1332,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         _preferredCaretX = -1;
         _editSw.Restart();
         doc.Insert(text);
+        ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         _cycleInsertedLength = text.Length;
-        ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
         ClipboardCycleStatusChanged?.Invoke(this, EventArgs.Empty);
@@ -1362,9 +1366,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         _preferredCaretX = -1;
         _editSw.Restart();
         doc.Insert(text);
+        ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-        ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -1390,9 +1394,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         } else {
             doc.DeleteForward();
         }
+        ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-        ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -1405,9 +1409,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         FlushCompound();
         _editSw.Restart();
         doc.Undo();
+        ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-        ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -1420,9 +1424,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         FlushCompound();
         _editSw.Restart();
         doc.Redo();
+        ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-        ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -1467,9 +1471,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         Coalesce("delete-line");
         _editSw.Restart();
         doc.DeleteLine();
+        ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-        ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -1482,9 +1486,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         Coalesce("move-line-up");
         _editSw.Restart();
         doc.MoveLineUp();
+        ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-        ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -1497,9 +1501,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         Coalesce("move-line-down");
         _editSw.Restart();
         doc.MoveLineDown();
+        ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-        ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -1512,9 +1516,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         FlushCompound();
         _editSw.Restart();
         doc.TransformCase(transform);
+        ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-        ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -1541,10 +1545,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             Coalesce("col-char");
             _editSw.Restart();
             doc.InsertAtCursors(e.Text, _indentWidth);
+            ScrollCaretIntoView();
             _editSw.Stop();
             PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
             e.Handled = true;
-            ScrollCaretIntoView();
             InvalidateLayout();
             ResetCaretBlink();
             return;
@@ -1554,10 +1558,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         _editSw.Restart();
         doc.Insert(e.Text);
+        ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         e.Handled = true;
-        ScrollCaretIntoView();
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -1713,9 +1717,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 FlushCompound();
                 _editSw.Restart();
                 doc.DeleteBackwardAtCursors(_indentWidth);
+                ScrollCaretIntoView();
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 return true;
@@ -1724,9 +1728,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 FlushCompound();
                 _editSw.Restart();
                 doc.DeleteForwardAtCursors(_indentWidth);
+                ScrollCaretIntoView();
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 return true;
@@ -1738,9 +1742,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 Coalesce("col-tab");
                 _editSw.Restart();
                 doc.InsertAtCursors(tabText, _indentWidth);
+                ScrollCaretIntoView();
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 return true;
@@ -1905,9 +1909,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 Coalesce("backspace");
                 _editSw.Restart();
                 doc.DeleteBackward();
+                ScrollCaretIntoView();
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 return true;
@@ -1980,9 +1984,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 FlushCompound();
                 _editSw.Restart();
                 doc.Insert(doc.LineEndingInfo.NewlineString);
+                ScrollCaretIntoView();
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 return true;
@@ -1994,9 +1998,9 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                     ? "\t"
                     : new string(' ', _indentWidth);
                 doc.Insert(tabText);
+                ScrollCaretIntoView();
                 _editSw.Stop();
                 PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                ScrollCaretIntoView();
                 InvalidateLayout();
                 ResetCaretBlink();
                 return true;
@@ -2412,6 +2416,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var doc = Document;
         if (doc == null) return;
         FlushCompound();
+        _editSw.Restart();
         var nl = doc.LineEndingInfo.NewlineString;
         var lineIdx = doc.Table.LineFromOfs(doc.Selection.Caret);
         if (lineIdx + 1 < doc.Table.LineCount) {
@@ -2425,6 +2430,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             doc.Insert(nl);
         }
         ScrollCaretIntoView();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -2433,12 +2440,15 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var doc = Document;
         if (doc == null) return;
         FlushCompound();
+        _editSw.Restart();
         var nl = doc.LineEndingInfo.NewlineString;
         var lineStart = doc.Table.LineStartOfs(doc.Table.LineFromOfs(doc.Selection.Caret));
         doc.Selection = Selection.Collapsed(lineStart);
         doc.Insert(nl);
         doc.Selection = Selection.Collapsed(lineStart);
         ScrollCaretIntoView();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -2447,6 +2457,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var doc = Document;
         if (doc == null) return;
         FlushCompound();
+        _editSw.Restart();
         var nl = doc.LineEndingInfo.NewlineString;
         var table = doc.Table;
         var caret = doc.Selection.Caret;
@@ -2473,6 +2484,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         var newLineStart = lineEnd + (lineText.Length > 0 && lineText[^1] != '\n' ? nlLen : 0);
         doc.Selection = Selection.Collapsed(Math.Min(newLineStart + caretCol, table.Length));
         ScrollCaretIntoView();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -2555,6 +2568,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private void PerformSmartIndent() {
         var doc = Document;
         if (doc == null) return;
+        _editSw.Restart();
         var table = doc.Table;
         var sel = doc.Selection;
         var style = doc.IndentInfo.Dominant;
@@ -2619,6 +2633,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             doc.Selection = new Selection(rangeStart, rangeEnd);
         }
         ScrollCaretIntoView();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -2629,6 +2645,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private void PerformSimpleIndent() {
         var doc = Document;
         if (doc == null) return;
+        _editSw.Restart();
         var table = doc.Table;
         var sel = doc.Selection;
         var style = doc.IndentInfo.Dominant;
@@ -2655,6 +2672,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
 
         ScrollCaretIntoView();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -2665,6 +2684,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private void PerformOutdent() {
         var doc = Document;
         if (doc == null) return;
+        _editSw.Restart();
         var table = doc.Table;
         var sel = doc.Selection;
         var style = doc.IndentInfo.Dominant;
@@ -2706,6 +2726,8 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             doc.Selection = new Selection(rangeStart, rangeEnd);
         }
         ScrollCaretIntoView();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         InvalidateLayout();
         ResetCaretBlink();
     }
