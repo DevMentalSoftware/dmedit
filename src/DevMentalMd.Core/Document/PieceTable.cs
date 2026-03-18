@@ -16,13 +16,13 @@ public sealed class PieceTable {
     private string? _addBufCache;
     private readonly List<Piece> _pieces = new();
 
-    // Lazily-built line-start cache for post-mutation correctness.
-    // When the piece table is unedited (IsOriginalContent), line operations
-    // delegate directly to the IBuffer.  After Insert/Delete, this cache is
-    // invalidated (set to null) and rebuilt on next access by scanning the
-    // modified text via VisitPieces.
+    // Line-start cache: rebuilt lazily after mutations by scanning the modified
+    // text via VisitPieces.  Only used when the document is small enough that a
+    // full scan is cheap.  Above the threshold we delegate to the IBuffer's
+    // (approximate, stale-after-edits) line index instead.
     private List<long>? _lineStartCache;
     private int _maxLineLen = -1;
+    private const long EagerIndexThreshold = 10_000_000L; // 10 M chars
 
     // Sentinel: a piece with this Len spans the entire _buf from its Start offset
     // without knowing the exact length upfront.  Only valid for Piece.Which == Original.
@@ -88,7 +88,10 @@ public sealed class PieceTable {
     public long LineCount {
         get {
             if (IsOriginalContent && _buf.LineCount >= 0) return _buf.LineCount;
-            return LineStarts.Count;
+            if (Length <= EagerIndexThreshold) return LineStarts.Count;
+            // Large edited document: use buffer's (approximate) line count.
+            if (_buf.LineCount >= 0) return _buf.LineCount;
+            return -1L;
         }
     }
 
@@ -99,8 +102,11 @@ public sealed class PieceTable {
     public long MaxLineLength {
         get {
             if (IsOriginalContent && _buf.LongestLine >= 0) return _buf.LongestLine;
-            _ = LineStarts; // force cache build which sets _maxLineLen
-            return _maxLineLen;
+            if (Length <= EagerIndexThreshold) {
+                _ = LineStarts; // force cache build which sets _maxLineLen
+                return _maxLineLen;
+            }
+            return _buf.LongestLine;
         }
     }
 
@@ -251,9 +257,13 @@ public sealed class PieceTable {
     public long LineStartOfs(long lineIdx) {
         ArgumentOutOfRangeException.ThrowIfNegative(lineIdx);
         if (IsOriginalContent) return _buf.GetLineStart(lineIdx);
-        var starts = LineStarts;
-        if (lineIdx >= starts.Count) return -1L;
-        return starts[(int)lineIdx];
+        if (Length <= EagerIndexThreshold) {
+            var starts = LineStarts;
+            if (lineIdx >= starts.Count) return -1L;
+            return starts[(int)lineIdx];
+        }
+        // Large edited document: approximate via buffer's line index.
+        return _buf.GetLineStart(lineIdx);
     }
 
     /// <summary>Returns the zero-based line index that contains logical offset <paramref name="ofs"/>.</summary>
@@ -262,23 +272,22 @@ public sealed class PieceTable {
         if (_buf.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs, Length);
         }
-
         if (IsOriginalContent && _buf.LineCount >= 0) {
             return BinarySearchBufferLines(_buf, ofs);
         }
-
-        var starts = LineStarts;
-        var lo = 0;
-        var hi = starts.Count - 1;
-        while (lo < hi) {
-            var mid = (lo + hi + 1) / 2;
-            if (starts[mid] <= ofs) {
-                lo = mid;
-            } else {
-                hi = mid - 1;
+        if (Length <= EagerIndexThreshold) {
+            var starts = LineStarts;
+            var lo = 0;
+            var hi = starts.Count - 1;
+            while (lo < hi) {
+                var mid = (lo + hi + 1) / 2;
+                if (starts[mid] <= ofs) lo = mid;
+                else hi = mid - 1;
             }
+            return lo;
         }
-        return lo;
+        // Large edited document: approximate via buffer's line index.
+        return _buf.LineCount >= 0 ? BinarySearchBufferLines(_buf, ofs) : 0;
     }
 
     /// <summary>
@@ -401,11 +410,6 @@ public sealed class PieceTable {
         }
     }
 
-    /// <summary>
-    /// Lazily-built line-start list for edited documents. When the piece table
-    /// is unedited, callers use the buffer directly. After mutations this is
-    /// rebuilt by scanning the modified text via <see cref="VisitPieces"/>.
-    /// </summary>
     private List<long> LineStarts {
         get {
             if (_lineStartCache != null) return _lineStartCache;
@@ -434,18 +438,13 @@ public sealed class PieceTable {
                 if (prevWasCr) {
                     prevWasCr = false;
                     if (ch == '\n') {
-                        // \r\n pair crossing chunk boundary — adjust the
-                        // tentative line start to be after the \n.
                         starts[^1] = logicalOfs + i + 1;
                         continue;
                     }
-                    // Bare \r — line start already recorded. Fall through
-                    // to process current char normally.
                 }
                 if (ch == '\n') {
                     starts.Add(logicalOfs + i + 1);
                 } else if (ch == '\r') {
-                    // Tentative line start — may be adjusted if next char is \n.
                     starts.Add(logicalOfs + i + 1);
                     prevWasCr = true;
                 }
@@ -453,7 +452,6 @@ public sealed class PieceTable {
             logicalOfs += span.Length;
         });
 
-        // Compute max line length
         var maxLen = 0;
         for (var i = 1; i < starts.Count; i++) {
             var len = (int)(starts[i] - starts[i - 1]);
