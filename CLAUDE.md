@@ -15,9 +15,11 @@ src/
   DevMentalMd.Core/        — Document model, PieceTable, IBuffer, blocks, FenwickTree, IO
   DevMentalMd.Rendering/   — TextLayoutEngine (Avalonia TextLayout wrapper)
   DevMentalMd.App/         — Avalonia desktop app: EditorControl, DualZoneScrollBar, MainWindow
+  DevMentalMd.Print.Windows/ — Windows printing support
 tests/
   DevMentalMd.Core.Tests/
   DevMentalMd.Rendering.Tests/
+  DevMentalMd.App.Tests/
 docs/
   design-journal.md        — append-only design history (READ THIS FIRST)
   csharp-style.md          — coding style guide
@@ -31,8 +33,8 @@ dotnet build
 dotnet test
 ```
 
-All tests must pass before and after any change. Current baseline: **287 tests**
-(266 Core + 21 Rendering).
+All tests must pass before and after any change. Current baseline: **403 tests**
+(320 Core + 21 Rendering + 62 App).
 
 ## Dev mode
 

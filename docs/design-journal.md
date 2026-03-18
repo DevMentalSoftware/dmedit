@@ -25,21 +25,21 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 399** (316 Core + 21 Rendering + 62 App)
+**Test baseline: 403** (320 Core + 21 Rendering + 62 App)
 
 ### Recently completed
 
 - **Save crash handling** (2026-03-17) — crash report infrastructure writes diagnostic
   files to the session directory when an unexpected save failure occurs. Error dialog
-  offers Save As (to try a different location) or Close Tab. SafeSave and BackupOnSave
-  settings added: SafeSave writes to a temp file then renames; BackupOnSave keeps a
-  .bak copy. Self-referential paged-file save bug identified but deferred to next session.
+  offers Save As (to try a different location) or Close Tab. BackupOnSave
+  setting added: BackupOnSave keeps a .bak copy. 
 
 - **Column/Block Selection** (2026-03-16) — Alt+drag or Alt+Shift+Up/Down creates a
   rectangular selection spanning multiple lines. Typing, backspace, delete, tab, copy,
   cut, paste all operate at every cursor simultaneously. Column selection is defined in
   logical-line/column space with tab-aware column math. Undo reverts all per-line edits
-  as one step. Escape or any non-column navigation command exits column mode.
+  as one step. Escape or any non-column navigation command exits column mode. This feature
+  is currently disabled when line wrapping is enabled.
 
 - **Interactive Status Bar** (2026-03-14) — four clickable segments (Ln/Ch, Encoding,
   Line Ending, Indent) with hover highlights and flyout menus. Indent detection added
@@ -59,8 +59,6 @@ small one — it is the primary way a fresh session recovers context.
 
 ### In progress (uncommitted, 2026-03-11)
 
-**L&F theme unification** — finding colors that work for both light and dark themes
-with consistent, logical hover/focus effects.
 
 #### Design decisions made
 
@@ -107,12 +105,10 @@ with consistent, logical hover/focus effects.
 
 - Block model / WYSIWYG editor is fully designed and partially implemented but not wired
   into the running editor (see [02-document-model](design-journal/02-document-model.md))
-- Find/Replace is a registered stub command
+  The Block document will be optional for Markdown files to allow view/edit of Markdown
+  with wysiwyg editing.
 - Windows 11 Mica transparency researched but not implemented (see
   [05-features](design-journal/05-features.md))
-- Smart Tab, ExpandWord, Wrap options, toolbar, Undo/Redo toolbar buttons not yet
-  implemented
+- toolbar, Undo/Redo toolbar buttons not yet implemented
 - Overwrite mode (Insert/Overwrite toggle) not yet implemented
-- Self-referential paged-file save: saving an edited paged file overwrites the file that
-  PagedFileBuffer reads from (evicted pages become unrecoverable). Requires temp-file save
-  when target path matches the buffer's source path.
+- Performance regression not investigated (Memory usage and time cost of edits greatly increased at some point)
