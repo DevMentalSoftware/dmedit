@@ -1635,7 +1635,7 @@ public partial class MainWindow : Window {
         var sw = Stopwatch.StartNew();
         bool ro = false;
         try {
-            ro = (File.GetAttributes(path) & ~FileAttributes.ReadOnly) > 0;
+            ro = (File.GetAttributes(path) & FileAttributes.ReadOnly) != 0;
         } catch {
         }
         var tab = new TabState(result.Document, path, result.DisplayName) {
