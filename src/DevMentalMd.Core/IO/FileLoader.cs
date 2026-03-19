@@ -9,7 +9,7 @@ namespace DevMentalMd.Core.IO;
 /// Result of loading a file. Contains the <see cref="Document"/>, a display name
 /// for the title bar, and whether the source was a zip archive.
 /// </summary>
-public sealed record LoadResult(Document Document, string DisplayName, bool WasZipped) {
+public sealed record LoadResult(Document Document, string DisplayName, bool WasZipped, IBuffer? Buffer = null) {
     /// <summary>
     /// For zip files, the name of the inner entry (e.g., "model.xml").
     /// <c>null</c> for non-zip files.
@@ -81,7 +81,7 @@ public static class FileLoader {
         var doc = new Document(new PieceTable(paged));
         var tcs = new TaskCompletionSource();
 
-        var result = new LoadResult(doc, Path.GetFileName(path), WasZipped: false) {
+        var result = new LoadResult(doc, Path.GetFileName(path), WasZipped: false, Buffer: paged) {
             Loaded = tcs.Task
         };
 

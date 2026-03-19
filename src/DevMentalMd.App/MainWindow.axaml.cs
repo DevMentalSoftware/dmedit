@@ -2453,8 +2453,6 @@ public partial class MainWindow : Window {
                 // Scan failed — tab stays in base state.
             }
 
-            // Unblock input immediately — the user can start editing while
-            // the line index builds in the background.
             await Dispatcher.UIThread.InvokeAsync(() => {
                 // Tab may have been closed while loading.
                 if (!_tabs.Contains(tab)) return;
@@ -2462,6 +2460,16 @@ public partial class MainWindow : Window {
                 if (tab.LoadResult is not null) {
                     tab.BaseSha1 = tab.LoadResult.BaseSha1;
                     tab.Document.LineEndingInfo = tab.LoadResult.Document.LineEndingInfo;
+                }
+
+                // Install the exact line tree built during the buffer scan.
+                // This replaces the old PreBuildLineIndex post-scan rescan.
+                if (tab.LoadResult?.Buffer is PagedFileBuffer paged) {
+                    var lengths = paged.TakeLineLengths();
+                    if (lengths is { Count: > 0 }) {
+                        tab.Document.Table.InstallLineTree(
+                            CollectionsMarshal.AsSpan(lengths));
+                    }
                 }
 
                 SnapshotFileStats(tab);
@@ -2474,22 +2482,6 @@ public partial class MainWindow : Window {
                     Editor.InvalidateLayout();
                 }
             });
-
-            // Pre-build the line index concurrently with user editing.
-            // Edits that land during the scan are queued and replayed on
-            // install.  Skip for read-only files since they won't be edited.
-            if (!tab.IsReadOnly) {
-                tab.Document.Table.PreBuildLineIndex();
-
-                // Install on the UI thread so replay is race-free.
-                await Dispatcher.UIThread.InvokeAsync(() => {
-                    if (!_tabs.Contains(tab)) return;
-                    tab.Document.Table.InstallPendingLineTree();
-                    if (_activeTab == tab) {
-                        Editor.InvalidateLayout();
-                    }
-                });
-            }
         });
     }
 

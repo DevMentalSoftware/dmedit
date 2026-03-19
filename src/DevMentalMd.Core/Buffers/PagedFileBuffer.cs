@@ -40,9 +40,6 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     /// </summary>
     public const int DefaultMaxPages = 8;
 
-    /// <summary>Number of lines between sampled line-start entries.</summary>
-    public const int LineSampleStride = 1024;
-
     // -----------------------------------------------------------------
     // Page metadata (always in memory)
     // -----------------------------------------------------------------
@@ -70,13 +67,13 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     public int MaxPagesInMemory { get; }
 
     // -----------------------------------------------------------------
-    // Line index (sampled)
+    // Line index (exact line lengths, built during scan)
     // -----------------------------------------------------------------
 
-    private long[] _lineSamples = null!;  // _lineSamples[i] = char offset of line i*Stride
-    private long _lineCount;              // accessed via Interlocked
+    private List<int> _lineLengths = null!;  // every line's length including terminator
+    private int _currentLineLen;             // accumulates chars for the line in progress
+    private long _lineCount;                 // accessed via Interlocked
     private volatile int _longestLine;
-    private int _lineSampleCount;
     private long _lastLineStart;
 
     // -----------------------------------------------------------------
@@ -160,12 +157,9 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         _pages = new PageInfo[Math.Max(estimatedPages, 1)];
         _pageData = new char[]?[_pages.Length];
 
-        // Line samples: estimate ~1 line per 80 bytes.
-        var estimatedLines = Math.Max(16L, byteLen / 80);
-        var estimatedSamples = (int)Math.Min(estimatedLines / LineSampleStride + 1, int.MaxValue / 8);
-        _lineSamples = new long[Math.Max(estimatedSamples, 16)];
-        _lineSamples[0] = 0L;
-        _lineSampleCount = 1;
+        // Line lengths: estimate ~1 line per 80 bytes.
+        var estimatedLines = (int)Math.Min(Math.Max(16L, byteLen / 80), int.MaxValue);
+        _lineLengths = new List<int>(estimatedLines);
         _lineCount = 1;
     }
 
@@ -182,85 +176,20 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     public int LongestLine => _longestLine;
 
     public long GetLineStart(long lineIdx) {
-        var lc = Interlocked.Read(ref _lineCount); // snapshot
+        var lc = Interlocked.Read(ref _lineCount);
         if (lineIdx < 0 || lineIdx >= lc) {
             return -1L;
         }
+        if (lineIdx == 0) return 0;
 
-        // Direct lookup for sampled lines.
-        var sampleIdx = lineIdx / LineSampleStride;
-        long sampleCharOfs;
-        long sampleLine;
-        lock (_lock) {
-            if (sampleIdx >= _lineSampleCount) {
-                return -1L; // not scanned yet
-            }
-            sampleCharOfs = _lineSamples[sampleIdx];
-            sampleLine = sampleIdx * LineSampleStride;
+        // Sum line lengths [0..lineIdx-1] to get the char offset.
+        var lengths = _lineLengths;
+        if (lengths == null || lineIdx > lengths.Count) return -1L;
+        var sum = 0L;
+        for (var i = 0; i < (int)lineIdx; i++) {
+            sum += lengths[i];
         }
-
-        if (lineIdx == sampleLine) {
-            return sampleCharOfs;
-        }
-
-        // Scan forward from the sample, counting newlines.
-        var linesNeeded = (int)(lineIdx - sampleLine);
-        var ofs = sampleCharOfs;
-        var linesFound = 0;
-        var prevWasCr = false;
-
-        while (linesFound < linesNeeded) {
-            var pageIdx = FindPageForCharOffset(ofs);
-            if (pageIdx < 0) {
-                return -1L; // beyond scanned range
-            }
-            var page = _pages[pageIdx];
-            var data = EnsurePageLoaded(pageIdx);
-            if (data == null) {
-                return -1L;
-            }
-
-            var startInPage = (int)(ofs - page.CharStart);
-            for (var i = startInPage; i < page.CharCount && linesFound < linesNeeded; i++) {
-                var ch = data[i];
-                if (ch == '\n') {
-                    if (!prevWasCr || i > startInPage || ofs > sampleCharOfs) {
-                        // \n (standalone or second half of \r\n)
-                    }
-                    linesFound++;
-                    ofs = page.CharStart + i + 1;
-                    prevWasCr = false;
-                } else if (ch == '\r') {
-                    if (i + 1 < page.CharCount) {
-                        if (data[i + 1] == '\n') {
-                            // \r\n — the \n branch will count this line
-                            prevWasCr = true;
-                        } else {
-                            // bare \r
-                            linesFound++;
-                            ofs = page.CharStart + i + 1;
-                        }
-                    } else {
-                        // \r at end of page — defer
-                        prevWasCr = true;
-                        ofs = page.CharStart + i + 1;
-                    }
-                } else {
-                    prevWasCr = false;
-                }
-            }
-
-            // If we haven't found enough lines, advance to the next page.
-            if (linesFound < linesNeeded) {
-                if (pageIdx + 1 < _pageCount) {
-                    ofs = _pages[pageIdx + 1].CharStart;
-                } else {
-                    return -1L;
-                }
-            }
-        }
-
-        return ofs;
+        return sum;
     }
 
     public char this[long offset] {
@@ -472,6 +401,9 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                 Interlocked.Exchange(ref _lineCount, currentLine);
             }
 
+            // Add the final line (content after the last newline, may be empty).
+            _lineLengths.Add(_currentLineLen);
+
             Interlocked.Exchange(ref _totalChars, cumulativeChars);
             _sha1 = Convert.ToHexStringLower(hasher.GetHashAndReset());
             _done = true;
@@ -502,30 +434,34 @@ public sealed class PagedFileBuffer : IProgressBuffer {
             var ch = data[i];
             if (ch == '\n') {
                 if (prevWasCr) {
-                    // \r\n — already counted the line at the \r
+                    // \r\n — already counted the line at the \r; add the \n to its length.
+                    // Don't increment _currentLineLen — the \n belongs to the previous line.
                     _crlfCount++;
+                    _lineLengths[^1] = _lineLengths[^1] + 1; // extend \r to \r\n
                     prevWasCr = false;
                     _atLineStart = true;
                     continue;
                 }
                 _lfCount++;
-                currentLine++;
-                Interlocked.Exchange(ref _lineCount, currentLine + 1); // +1 because line 0 always exists
-                long charOffset = charBase + i + 1;
-                CheckLongestLine(charOffset);
-                RecordLineSample(currentLine, charOffset);
-                _atLineStart = true;
-            } else if (ch == '\r') {
-                // Don't count as CR yet — might be \r\n. If prevWasCr was
-                // set from a previous char, that one was a bare \r.
-                if (prevWasCr) {
-                    _crCount++;
-                }
+                _currentLineLen++; // include the \n in this line's length
+                _lineLengths.Add(_currentLineLen);
                 currentLine++;
                 Interlocked.Exchange(ref _lineCount, currentLine + 1);
                 long charOffset = charBase + i + 1;
                 CheckLongestLine(charOffset);
-                RecordLineSample(currentLine, charBase + i + 1);
+                _currentLineLen = 0;
+                _atLineStart = true;
+            } else if (ch == '\r') {
+                if (prevWasCr) {
+                    _crCount++;
+                }
+                _currentLineLen++; // include the \r in this line's length
+                _lineLengths.Add(_currentLineLen);
+                currentLine++;
+                Interlocked.Exchange(ref _lineCount, currentLine + 1);
+                long charOffset = charBase + i + 1;
+                CheckLongestLine(charOffset);
+                _currentLineLen = 0;
                 prevWasCr = true;
                 _atLineStart = true;
             } else {
@@ -533,6 +469,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                     _crCount++;
                 }
                 prevWasCr = false;
+                _currentLineLen++;
 
                 // Track indentation style: check first char of each line.
                 if (_atLineStart) {
@@ -560,23 +497,15 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         }
     }
 
-    private void RecordLineSample(long lineIdx, long charOffset) {
-        if (lineIdx % LineSampleStride != 0) {
-            return;
-        }
-        var sampleIdx = (int)(lineIdx / LineSampleStride);
-        lock (_lock) {
-            if (sampleIdx >= _lineSamples.Length) {
-                var newLen = Math.Max(_lineSamples.Length * 2, sampleIdx + 1);
-                var newArr = new long[newLen];
-                Array.Copy(_lineSamples, newArr, _lineSampleCount);
-                _lineSamples = newArr;
-            }
-            _lineSamples[sampleIdx] = charOffset;
-            if (sampleIdx >= _lineSampleCount) {
-                _lineSampleCount = sampleIdx + 1;
-            }
-        }
+    /// <summary>
+    /// Returns the exact line lengths computed during the scan.
+    /// Only valid after <see cref="LoadComplete"/> has fired.
+    /// The caller takes ownership; the buffer clears its reference.
+    /// </summary>
+    public List<int>? TakeLineLengths() {
+        var result = _lineLengths;
+        _lineLengths = null!;
+        return result;
     }
 
     // -----------------------------------------------------------------

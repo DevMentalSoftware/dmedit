@@ -55,7 +55,8 @@ public static class EditSerializer {
         DeleteEdit del => new JsonObject {
             ["type"] = "delete",
             ["ofs"] = del.Ofs,
-            ["text"] = del.DeletedText,
+            ["len"] = del.Len,
+            ["text"] = del.DeletedText ?? "",
         },
         CompoundEdit comp => SerializeCompound(comp),
         _ => throw new NotSupportedException($"Unknown edit type: {edit.GetType().Name}")

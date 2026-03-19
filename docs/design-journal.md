@@ -25,7 +25,7 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 403** (320 Core + 21 Rendering + 62 App)
+**Test baseline: 449** (366 Core + 21 Rendering + 62 App)
 
 ### Recently completed
 
@@ -118,9 +118,28 @@ small one — it is the primary way a fresh session recovers context.
   The PieceTable already treats the Add buffer as opaque via `BufFor()` / `VisitPieces`,
   so the abstraction boundary is in place — the main work is implementing a storage-backed
   `IBuffer` for the Add side and wiring it into `_addBuf` / `_addBufCache`.
-- **FenwickTree line index memory** — the current `List<double>` + `FenwickTree` pair
-  stores every line length twice as 8-byte doubles.  For a 5 M-line file that is ~80 MB.
-  Investigate: (a) using `int` instead of `double` (halves to ~40 MB); (b) a more compact
-  encoding such as run-length for files with uniform line lengths; (c) an order-statistic
-  tree that replaces both the array and the Fenwick tree with a single structure supporting
-  O(log L) insert/delete of elements, eliminating the O(L) Rebuild cost on newline edits.
+- **LineIndexTree (implicit treap)** — replaced FenwickTree with an implicit treap
+  (`LineIndexTree`) supporting O(log L) insert/remove of lines.  All edits (including
+  Enter/Delete across lines) are O(log L) with no rebuild.  Line lengths built during
+  `PagedFileBuffer.ScanWorker` (no post-load rescan).  Undo uses piece-based zero-copy
+  re-insertion (`InsertPieces` + `RestoreLines`).  **Known bug:** redo of a massive
+  delete (2.5M+ lines) causes 30 GB memory explosion and multi-minute freeze — needs
+  profiling to identify whether it's in `FreeSubtree`, `Merge`, `MaxLineLength`
+  recompute, or a treap corruption.  The issue does not appear in our Edit metric,
+  suggesting the cost is in layout/render or tree operations outside the timed window.
+- **Delayed clipboard rendering** — currently `GetSelectedText()` materializes the
+  full selection as a `string` for the clipboard.  Windows supports delayed rendering
+  via `IDataObject` / `OleSetClipboard`: the text is only materialized when the target
+  app actually pastes.  This would make copying 250 MB of selected text instant.
+  Caveats: 30-second render timeout, Avalonia's `IClipboard` doesn't expose delayed
+  rendering (needs platform-specific interop).  References:
+  - [Delayed Clipboard Rendering Explainer (MSEdge)](https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/DelayedClipboard/DelayedClipboardRenderingExplainer.md)
+  - [WM_RENDERFORMAT message — Win32 API](https://learn.microsoft.com/en-us/windows/win32/dataxchg/wm-renderformat)
+  - [30-second timeout for delay-rendered clipboard — The Old New Thing](https://devblogs.microsoft.com/oldnewthing/20220609-00/?p=106731)
+- **Guard against accidental whole-document string materialization** — operations
+  that would materialize the entire document as a `string` (or any contiguous buffer)
+  should either be prevented with an error message explaining why, or redesigned to
+  stream via `ForEachPiece`.  Currently `ConvertLineEndings` and `ConvertIndentation`
+  stream the input but still build the full output as a `StringBuilder` + `InsertEdit`.
+  A future improvement could stream the output to a temp file and reference it as
+  pieces, avoiding the full-document string entirely.

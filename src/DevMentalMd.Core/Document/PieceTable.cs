@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -20,22 +19,12 @@ public sealed class PieceTable {
     private string? _addBufCache;
     private readonly List<Piece> _pieces = new();
 
-    // IntFenwickTree-based line index: stores line lengths (including terminators).
+    // LineIndexTree-based line index: stores line lengths (including terminators).
     // Provides O(log L) prefix-sum queries for LineStartOfs/LineFromOfs and
     // O(log L) incremental updates for non-newline edits.  Individual values
     // are derived from the tree via ValueAt() — no parallel list is kept.
-    private IntFenwickTree? _lineTree;
+    private LineIndexTree? _lineTree;
     private int _maxLineLen = -1;
-
-    // Background pre-build support: PreBuildLineIndex() scans the buffer on a
-    // background thread and stores the result here.  Edits that land before
-    // the install are queued in _deferredEdits and replayed on the UI thread
-    // when InstallPendingLineTree() runs.
-    private volatile ConcurrentQueue<DeferredEdit>? _deferredEdits;
-    private IntFenwickTree? _pendingLineTree;
-
-    private readonly record struct DeferredEdit(
-        bool IsInsert, CharOffset Ofs, string? Text, long DeleteLen, bool HasNewline);
 
     // Sentinel: a piece with this Len spans the entire _buf from its Start offset
     // without knowing the exact length upfront.  Only valid for Piece.Which == Original.
@@ -99,14 +88,8 @@ public sealed class PieceTable {
     /// </summary>
     public long LineCount {
         get {
-            if (IsOriginalContent && _buf.LineCount >= 0) return _buf.LineCount;
             if (_lineTree != null) return _lineTree.Count;
-            if (_pendingLineTree != null) {
-                InstallPendingLineTree();
-                if (_lineTree != null) return _lineTree.Count;
-            }
-            // Background build still running — use buffer's approximate count.
-            if (_deferredEdits != null && _buf.LineCount >= 0) return _buf.LineCount;
+            if (IsOriginalContent && _buf.LineCount >= 0) return _buf.LineCount;
             return LineTree.Count;
         }
     }
@@ -117,7 +100,7 @@ public sealed class PieceTable {
     /// </summary>
     public long MaxLineLength {
         get {
-            if (IsOriginalContent && _buf.LongestLine >= 0) return _buf.LongestLine;
+            if (_lineTree == null && IsOriginalContent && _buf.LongestLine >= 0) return _buf.LongestLine;
             if (_maxLineLen < 0) {
                 // Recompute from line lengths.
                 var tree = LineTree;
@@ -135,6 +118,34 @@ public sealed class PieceTable {
     // -------------------------------------------------------------------------
     // Mutation
     // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Re-inserts previously captured pieces at logical offset <paramref name="ofs"/>.
+    /// Only manipulates the piece list — the caller must update the line tree
+    /// separately (e.g. via <see cref="RestoreLines"/>).
+    /// </summary>
+    public void InsertPieces(CharOffset ofs, Piece[] pieces) {
+        if (pieces.Length == 0) return;
+        ArgumentOutOfRangeException.ThrowIfNegative(ofs);
+
+        var (pieceIdx, ofsInPiece) = FindPiece(ofs);
+
+        if (ofsInPiece == 0L) {
+            _pieces.InsertRange(pieceIdx, pieces);
+        } else {
+            var existing = _pieces[pieceIdx];
+            var left = existing.TakeFirst(ofsInPiece);
+            Piece right;
+            if (existing.Len == WholeBufSentinel) {
+                right = new Piece(BufferKind.Original, existing.Start + ofsInPiece, WholeBufSentinel);
+            } else {
+                right = existing.SkipFirst(ofsInPiece);
+            }
+            _pieces[pieceIdx] = left;
+            _pieces.InsertRange(pieceIdx + 1, pieces);
+            _pieces.Insert(pieceIdx + 1 + pieces.Length, right);
+        }
+    }
 
     /// <summary>Inserts <paramref name="text"/> at logical offset <paramref name="ofs"/>.</summary>
     public void Insert(CharOffset ofs, string text) {
@@ -193,9 +204,6 @@ public sealed class PieceTable {
         } else if (affectedLine >= 0 && hasNewlines) {
             // Newlines inserted: splice line lengths array, O(L) rebuild.
             SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs, text);
-        } else if (_deferredEdits is { } insertQ) {
-            // Background build in progress — queue for replay.
-            insertQ.Enqueue(new DeferredEdit(true, ofs, text, 0, hasNewlines));
         } else {
             // Tree not yet built: will be built lazily when needed.
             _maxLineLen = -1;
@@ -214,20 +222,18 @@ public sealed class PieceTable {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs + len, Length);
         }
 
-        // Pre-mutation: scan deleted range for newlines to decide update strategy.
+        // Pre-mutation: use the tree's line structure to determine if the
+        // deletion crosses a line boundary — O(log L), no character scanning.
         var hasNewline = false;
         LineIndex startLine = -1;
         LineIndex endLine = -1;
         if (_lineTree != null) {
-            // Scan deleted range for newline characters.
-            VisitPieces(ofs, len, span => {
-                if (!hasNewline && span.IndexOfAny('\n', '\r') >= 0) hasNewline = true;
-            });
             startLine = (LineIndex)LineFromOfs(ofs);
-            if (hasNewline) {
-                // Use ofs+len (first surviving char after deletion) to find the
-                // last line that participates in the merge.  Using ofs+len-1
-                // would stay on startLine when deleting a line's own terminator.
+            // Check if the deletion extends past the end of startLine.
+            var lineEnd = (startLine == 0 ? 0L : _lineTree.PrefixSum(startLine - 1))
+                        + _lineTree.ValueAt(startLine);
+            if (ofs + len > lineEnd) {
+                hasNewline = true;
                 endLine = (LineIndex)LineFromOfs(Math.Min(ofs + len, Length));
             }
         }
@@ -266,13 +272,11 @@ public sealed class PieceTable {
         if (startLine >= 0 && !hasNewline) {
             // No newlines deleted: O(log L) incremental update.
             _lineTree!.Update(startLine, (int)-len);
-            _maxLineLen = -1; // conservative: may have shortened the longest line
+            // Max may have decreased, but overestimating is harmless (extra
+            // horizontal scroll space).  Avoid O(n log n) full recompute.
         } else if (startLine >= 0 && hasNewline) {
             // Newlines deleted: merge lines, O(L) rebuild.
             SpliceDeleteLines(startLine, endLine, ofs, len);
-        } else if (_deferredEdits is { } deleteQ) {
-            // Background build in progress — queue for replay.
-            deleteQ.Enqueue(new DeferredEdit(false, ofs, null, len, hasNewline));
         } else {
             _lineTree = null;
             _maxLineLen = -1;
@@ -337,24 +341,11 @@ public sealed class PieceTable {
     /// </summary>
     public CharOffset LineStartOfs(long lineIdx) {
         ArgumentOutOfRangeException.ThrowIfNegative(lineIdx);
-        if (IsOriginalContent) return _buf.GetLineStart(lineIdx);
-        // Use the tree if available; otherwise fall back to the buffer's
-        // approximate index during the background build window.
         if (_lineTree != null) {
             if (lineIdx >= _lineTree.Count) return -1L;
             return lineIdx == 0 ? 0 : _lineTree.PrefixSum((int)lineIdx - 1);
         }
-        if (_pendingLineTree != null) {
-            InstallPendingLineTree();
-            if (_lineTree != null) {
-                if (lineIdx >= _lineTree.Count) return -1L;
-                return lineIdx == 0 ? 0 : _lineTree.PrefixSum((int)lineIdx - 1);
-            }
-        }
-        // Background build still running — use buffer's approximate index.
-        if (_deferredEdits != null && _buf.LineCount >= 0) {
-            return _buf.GetLineStart(lineIdx);
-        }
+        if (IsOriginalContent) return _buf.GetLineStart(lineIdx);
         var tree = LineTree;
         if (lineIdx >= tree.Count) return -1L;
         return lineIdx == 0 ? 0 : tree.PrefixSum((int)lineIdx - 1);
@@ -366,24 +357,12 @@ public sealed class PieceTable {
         if (_buf.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs, Length);
         }
-        if (IsOriginalContent && _buf.LineCount >= 0) {
-            return BinarySearchBufferLines(_buf, ofs);
-        }
-        // Use the tree if available.
         if (_lineTree != null) {
             if (_lineTree.Count == 0) return 0;
-            var idx = _lineTree.FindByPrefixSum(ofs + 1);  // ofs is char offset → long
+            var idx = _lineTree.FindByPrefixSum(ofs + 1);
             return idx >= 0 ? idx : _lineTree.Count - 1;
         }
-        if (_pendingLineTree != null) {
-            InstallPendingLineTree();
-            if (_lineTree != null) {
-                var idx = _lineTree.FindByPrefixSum(ofs + 1);
-                return idx >= 0 ? idx : _lineTree.Count - 1;
-            }
-        }
-        // Background build still running — use buffer's approximate index.
-        if (_deferredEdits != null && _buf.LineCount >= 0) {
+        if (IsOriginalContent && _buf.LineCount >= 0) {
             return BinarySearchBufferLines(_buf, ofs);
         }
         var tree = LineTree;
@@ -513,65 +492,25 @@ public sealed class PieceTable {
     }
 
     /// <summary>
-    /// Pre-builds the line index on a background thread.  Reads the buffer
-    /// directly (thread-safe — the buffer is immutable after load).  Edits
-    /// that arrive while the scan is running are queued in
-    /// <see cref="_deferredEdits"/> and replayed when
-    /// <see cref="InstallPendingLineTree"/> runs on the UI thread.
+    /// Installs a pre-built line tree from externally computed line lengths
+    /// (e.g. from PagedFileBuffer's scan).  Call on the UI thread before
+    /// unblocking input.
     /// </summary>
-    public void PreBuildLineIndex() {
-        if (_lineTree != null) return;
-        _deferredEdits = new ConcurrentQueue<DeferredEdit>();
-
-        // Scan buffer directly — does NOT touch the piece list,
-        // so concurrent UI-thread edits to pieces are safe.
-        var lengths = ScanBufferForLineLengths();
-        var tree = IntFenwickTree.FromValues(CollectionsMarshal.AsSpan(lengths));
-
-        _pendingLineTree = tree;
-    }
-
-    /// <summary>
-    /// Installs the pre-built line tree, replaying any edits that were
-    /// queued while the background scan was running.  Must be called on
-    /// the UI thread.
-    /// </summary>
-    public void InstallPendingLineTree() {
-        if (_pendingLineTree == null) return;
-
-        // If the tree was already built lazily (because an edit triggered
-        // a LineTree access before we got here), discard the pending tree.
-        if (_lineTree != null) {
-            _pendingLineTree = null;
-            _deferredEdits = null;
-            return;
+    public void InstallLineTree(ReadOnlySpan<int> lineLengths) {
+        _lineTree = LineIndexTree.FromValues(lineLengths);
+        // Compute max from the raw span — O(n) scan, much cheaper than
+        // O(n log n) via tree.ValueAt() calls.
+        var max = 0;
+        foreach (var len in lineLengths) {
+            if (len > max) max = len;
         }
-
-        var tree = _pendingLineTree;
-        var queue = _deferredEdits;
-
-        // Replay any edits that landed during the background scan.
-        if (queue != null) {
-            while (queue.TryDequeue(out var edit)) {
-                ReplayDeferredEdit(tree, edit);
-            }
-        }
-
-        _lineTree = tree;
-        _pendingLineTree = null;
-        _deferredEdits = null;
-        _maxLineLen = -1;
+        _maxLineLen = max;
         AssertLineTreeValid();
     }
 
-    private IntFenwickTree LineTree {
+    private LineIndexTree LineTree {
         get {
             if (_lineTree != null) return _lineTree;
-            // If a background build completed, install it now (UI thread).
-            if (_pendingLineTree != null) {
-                InstallPendingLineTree();
-                if (_lineTree != null) return _lineTree;
-            }
             BuildLineTree();
             return _lineTree!;
         }
@@ -616,176 +555,67 @@ public sealed class PieceTable {
         }
         _maxLineLen = maxLen;
 
-        _lineTree = IntFenwickTree.FromValues(CollectionsMarshal.AsSpan(lengths));
+        _lineTree = LineIndexTree.FromValues(CollectionsMarshal.AsSpan(lengths));
     }
 
-    /// <summary>
-    /// Scans the underlying buffer directly (without going through the
-    /// piece list) to compute line lengths.  Thread-safe because the
-    /// buffer is immutable after loading.
-    /// </summary>
-    private List<int> ScanBufferForLineLengths() {
-        var bufLen = _buf.Length;
-        var lengths = new List<int>();
-        var currentLineLen = 0;
-        var prevWasCr = false;
-
-        if (bufLen == 0) {
-            lengths.Add(0);
-            return lengths;
-        }
-
-        const int chunkSize = 65536;
-        var chars = new char[chunkSize];
-        for (long pos = 0; pos < bufLen; pos += chunkSize) {
-            var take = (int)Math.Min(chunkSize, bufLen - pos);
-            _buf.CopyTo(pos, chars, take);
-            var span = chars.AsSpan(0, take);
-
-            for (var i = 0; i < span.Length; i++) {
-                var ch = span[i];
-                if (prevWasCr) {
-                    prevWasCr = false;
-                    if (ch == '\n') {
-                        lengths[^1]++;
-                        continue;
-                    }
-                }
-                currentLineLen++;
-                if (ch == '\n') {
-                    lengths.Add(currentLineLen);
-                    currentLineLen = 0;
-                } else if (ch == '\r') {
-                    lengths.Add(currentLineLen);
-                    currentLineLen = 0;
-                    prevWasCr = true;
-                }
-            }
-        }
-        lengths.Add(currentLineLen);
-        return lengths;
-    }
-
-    /// <summary>
-    /// Replays a single deferred edit against the given line lengths and tree.
-    /// Uses the same logic as the post-mutation sections of Insert/Delete.
-    /// </summary>
-    private static void ReplayDeferredEdit(IntFenwickTree tree, DeferredEdit edit) {
-        if (edit.IsInsert) {
-            var ofs = edit.Ofs;             // char offset → long
-            var text = edit.Text!;
-            var line = FindLineByPrefixSum(tree, ofs);
-            if (!edit.HasNewline) {
-                tree.Update(line, text.Length);
-            } else {
-                var lineStart = line == 0 ? 0L : tree.PrefixSum(line - 1);
-                var oldLineLen = tree.ValueAt(line);
-                var prefixLen = (int)(ofs - lineStart);
-                var suffixLen = oldLineLen - prefixLen;
-
-                var newLines = new List<int>();
-                var cur = prefixLen;
-                var prevCr = false;
-                for (var i = 0; i < text.Length; i++) {
-                    var ch = text[i];
-                    if (prevCr) {
-                        prevCr = false;
-                        if (ch == '\n') { newLines[^1]++; continue; }
-                    }
-                    cur++;
-                    if (ch == '\n') { newLines.Add(cur); cur = 0; }
-                    else if (ch == '\r') { newLines.Add(cur); cur = 0; prevCr = true; }
-                }
-                cur += suffixLen;
-                newLines.Add(cur);
-
-                // Extract, splice, rebuild.
-                var values = tree.ExtractValues();
-                var spliced = new int[values.Length + newLines.Count - 1];
-                values.AsSpan(0, line).CopyTo(spliced);
-                CollectionsMarshal.AsSpan(newLines).CopyTo(spliced.AsSpan(line));
-                values.AsSpan(line + 1).CopyTo(spliced.AsSpan(line + newLines.Count));
-                tree.Rebuild(spliced);
-            }
-        } else {
-            var ofs = edit.Ofs;
-            var len = edit.DeleteLen;
-            var startLine = FindLineByPrefixSum(tree, ofs);
-            if (!edit.HasNewline) {
-                tree.Update(startLine, (int)-len);
-            } else {
-                var totalLen = tree.TotalSum();
-                var endLine = FindLineByPrefixSum(tree, Math.Min(ofs + len, totalLen));
-
-                var startLineStart = startLine == 0 ? 0L : tree.PrefixSum(startLine - 1);
-                var endLineStart = endLine == 0 ? 0L : tree.PrefixSum(endLine - 1);
-                var endLineLen = tree.ValueAt(endLine);
-
-                var mergedLen = (int)((ofs - startLineStart) +
-                    (endLineLen - ((ofs + len) - endLineStart)));
-
-                // Extract, merge, rebuild.
-                var values = tree.ExtractValues();
-                var removeCount = endLine - startLine + 1;
-                var spliced = new int[values.Length - removeCount + 1];
-                values.AsSpan(0, startLine).CopyTo(spliced);
-                spliced[startLine] = mergedLen;
-                values.AsSpan(endLine + 1).CopyTo(spliced.AsSpan(startLine + 1));
-                tree.Rebuild(spliced);
-            }
-        }
-    }
 
     /// <summary>
     /// Static helper: finds the 0-based line index for a character offset.
     /// <paramref name="ofs"/> is a CharOffset — must not be truncated to int.
     /// Returns a LineIndex.
     /// </summary>
-    private static LineIndex FindLineByPrefixSum(IntFenwickTree tree, CharOffset ofs) {
+    private static LineIndex FindLineByPrefixSum(LineIndexTree tree, CharOffset ofs) {
         if (tree.Count == 0) return 0;
         var idx = tree.FindByPrefixSum(ofs + 1);  // target is char offset + 1 → long
         return idx >= 0 ? idx : tree.Count - 1;
     }
 
     /// <summary>
-    /// Splices the line-lengths array after a newline-containing insert.
+    /// Splices the line tree after a newline-containing insert.
     /// The affected line is split into multiple new lines based on the
-    /// newline positions in the inserted text.  O(L) tree rebuild.
+    /// newline positions in the inserted text.  O(k log L) via treap
+    /// InsertRange/RemoveAt.
     /// </summary>
     private void SpliceInsertLines(LineIndex line, CharOffset lineStart, int oldLineLen,
                                    CharOffset insertOfs, string text) {
-        var prefixLen = (int)(insertOfs - lineStart);  // within-line offset → int
+        var prefixLen = (int)(insertOfs - lineStart);
         var suffixLen = oldLineLen - prefixLen;
 
-        var newLines = new List<int>();
+        // Compute replacement line lengths from the inserted text.
+        Span<int> buf = stackalloc int[Math.Min(text.Length + 1, 64)];
+        var newLines = text.Length + 1 <= 64 ? buf : new int[text.Length + 1];
+        var nlCount = 0;
         var cur = prefixLen;
         var prevCr = false;
         for (var i = 0; i < text.Length; i++) {
             var ch = text[i];
             if (prevCr) {
                 prevCr = false;
-                if (ch == '\n') { newLines[^1]++; continue; }
+                if (ch == '\n') { newLines[nlCount - 1]++; continue; }
             }
             cur++;
-            if (ch == '\n') { newLines.Add(cur); cur = 0; }
-            else if (ch == '\r') { newLines.Add(cur); cur = 0; prevCr = true; }
+            if (ch == '\n') { newLines[nlCount++] = cur; cur = 0; }
+            else if (ch == '\r') { newLines[nlCount++] = cur; cur = 0; prevCr = true; }
         }
         cur += suffixLen;
-        newLines.Add(cur);
+        newLines[nlCount++] = cur;
 
-        // Extract, splice, rebuild.
-        var values = _lineTree!.ExtractValues();
-        var spliced = new int[values.Length + newLines.Count - 1];
-        values.AsSpan(0, line).CopyTo(spliced);
-        CollectionsMarshal.AsSpan(newLines).CopyTo(spliced.AsSpan(line));
-        values.AsSpan(line + 1).CopyTo(spliced.AsSpan(line + newLines.Count));
-        _lineTree.Rebuild(spliced);
-        _maxLineLen = -1;
+        // Replace the single line with the new lines.
+        _lineTree!.RemoveAt(line);
+        _lineTree.InsertRange(line, newLines[..nlCount]);
+        // The old line was split — each new line is ≤ oldLineLen.
+        // Max can only increase if a new line exceeds it (unlikely but check).
+        if (_maxLineLen >= 0) {
+            for (var i = 0; i < nlCount; i++) {
+                if (newLines[i] > _maxLineLen) _maxLineLen = newLines[i];
+            }
+        }
     }
 
     /// <summary>
-    /// Splices the line-lengths array after a newline-crossing delete.
-    /// Lines startLine..endLine merge into a single line.  O(L) tree rebuild.
+    /// Splices the line tree after a newline-crossing delete.
+    /// Lines startLine..endLine merge into a single line.
+    /// O(k log L) via treap RemoveRange/InsertAt.
     /// </summary>
     private void SpliceDeleteLines(LineIndex startLine, LineIndex endLine, CharOffset deleteOfs, long deleteLen) {
         var startLineStart = startLine == 0 ? 0L : _lineTree!.PrefixSum(startLine - 1);
@@ -795,15 +625,110 @@ public sealed class PieceTable {
         var mergedLen = (int)((deleteOfs - startLineStart) +
             (endLineLen - ((deleteOfs + deleteLen) - endLineStart)));
 
-        // Extract, merge, rebuild.
-        var values = _lineTree.ExtractValues();
-        var removeCount = endLine - startLine + 1;
-        var spliced = new int[values.Length - removeCount + 1];
-        values.AsSpan(0, startLine).CopyTo(spliced);
-        spliced[startLine] = mergedLen;
-        values.AsSpan(endLine + 1).CopyTo(spliced.AsSpan(startLine + 1));
-        _lineTree.Rebuild(spliced);
-        _maxLineLen = -1;
+        _lineTree.RemoveRange(startLine, endLine - startLine + 1);
+        _lineTree.InsertAt(startLine, mergedLen);
+        // Merged line might be longer than the current max.
+        if (_maxLineLen >= 0 && mergedLen > _maxLineLen) {
+            _maxLineLen = mergedLen;
+        }
+    }
+
+    /// <summary>
+    /// Captures line tree information for the range [ofs, ofs+len) so undo can
+    /// restore the line tree without scanning characters.  Returns null if the
+    /// tree isn't built yet (small-file / test path).
+    /// </summary>
+    public (int StartLine, int[] LineLengths)? CaptureLineInfo(CharOffset ofs, long len) {
+        if (_lineTree == null) return null;
+        var startLine = (int)LineFromOfs(ofs);
+        // Check if the deletion crosses line boundaries.
+        var lineEnd = (startLine == 0 ? 0L : _lineTree.PrefixSum(startLine - 1))
+                    + _lineTree.ValueAt(startLine);
+        if (ofs + len <= lineEnd) {
+            // Single-line delete — no line structure change.
+            return null;
+        }
+        var endLine = (int)LineFromOfs(Math.Min(ofs + len, Length));
+        var count = endLine - startLine + 1;
+        var lengths = new int[count];
+        for (var i = 0; i < count; i++) {
+            lengths[i] = _lineTree.ValueAt(startLine + i);
+        }
+        return (startLine, lengths);
+    }
+
+    /// <summary>
+    /// Restores line tree entries that were removed by a previous deletion.
+    /// Called during undo to reverse <see cref="SpliceDeleteLines"/>.
+    /// The merged line at <paramref name="startLine"/> is replaced with the
+    /// original lines.
+    /// </summary>
+    public void RestoreLines(int startLine, int[] lineLengths) {
+        if (_lineTree == null) return;
+        // Remove the merged line that SpliceDeleteLines created.
+        _lineTree.RemoveAt(startLine);
+        // Re-insert the original lines.
+        _lineTree.InsertRange(startLine, lineLengths);
+        _maxLineLen = -1; // conservative recompute
+    }
+
+    /// <summary>
+    /// Updates the line tree after re-inserting non-newline characters at
+    /// <paramref name="ofs"/>.  Used by undo for single-line deletes where
+    /// the line just got shorter and needs its length restored.
+    /// </summary>
+    public void ReinsertedNonNewlineChars(CharOffset ofs, long len) {
+        if (_lineTree == null) return;
+        var line = (int)LineFromOfs(ofs);
+        _lineTree.Update(line, (int)len);
+        var newLen = _lineTree.ValueAt(line);
+        if (newLen > _maxLineLen) _maxLineLen = newLen;
+    }
+
+    /// <summary>
+    /// Captures the piece descriptors covering [ofs, ofs+len) so the text can
+    /// be reconstructed later without reading from the buffer now.  Both the
+    /// Original buffer and the Add buffer are immutable/append-only, so the
+    /// returned pieces remain valid indefinitely.
+    /// </summary>
+    public Piece[] CapturePieces(CharOffset ofs, long len) {
+        if (len == 0) return [];
+        var (startPiece, startOfsInPiece) = FindPiece(ofs);
+        var endOfs = ofs + len;
+        var (endPiece, endOfsInPiece) = FindPiece(endOfs);
+
+        var result = new List<Piece>();
+        for (var i = startPiece; i <= endPiece && i < _pieces.Count; i++) {
+            var p = _pieces[i];
+            var pLen = p.Len == WholeBufSentinel ? _buf.Length - p.Start : p.Len;
+            var skip = (i == startPiece) ? startOfsInPiece : 0L;
+            var limit = (i == endPiece) ? endOfsInPiece : pLen;
+            var take = limit - skip;
+            if (take <= 0) continue;
+            result.Add(new Piece(p.Which, p.Start + skip, take));
+        }
+        return result.ToArray();
+    }
+
+    /// <summary>
+    /// Reads text from previously captured pieces by going directly to the
+    /// underlying buffers.  O(total chars) but deferred — only called if the
+    /// text is actually needed (e.g. undo).
+    /// </summary>
+    public string ReadPieces(Piece[] pieces) {
+        var totalLen = 0L;
+        foreach (var p in pieces) totalLen += p.Len;
+        var sb = new StringBuilder((int)Math.Min(totalLen, int.MaxValue));
+        foreach (var p in pieces) {
+            if (p.Which == BufferKind.Original) {
+                var chars = new char[(int)p.Len];
+                _buf.CopyTo(p.Start, chars, (int)p.Len);
+                sb.Append(chars);
+            } else {
+                sb.Append(_addBuf.ToString(), (int)p.Start, (int)p.Len);
+            }
+        }
+        return sb.ToString();
     }
 
     internal char CharAt(CharOffset ofs) {
@@ -822,7 +747,7 @@ public sealed class PieceTable {
     }
 
     /// <summary>
-    /// Debug-only validation: checks that the IntFenwickTree's total sum matches
+    /// Debug-only validation: checks that the LineIndexTree's total sum matches
     /// the document Length.  Catches tree corruption from incremental update bugs.
     /// </summary>
     [Conditional("DEBUG")]

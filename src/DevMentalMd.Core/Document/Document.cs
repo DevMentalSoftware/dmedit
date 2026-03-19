@@ -1,3 +1,4 @@
+using System.Text;
 using DevMentalMd.Core.Documents.History;
 using DevMentalMd.Core.Printing;
 
@@ -151,8 +152,8 @@ public sealed class Document {
             delLen = 2;
         }
         var delOfs = ofs - delLen;
-        var deleted = _table.GetText(delOfs, delLen);
-        _history.Push(new DeleteEdit(delOfs, deleted), _table, Selection);
+        var pieces = _table.CapturePieces(delOfs, delLen);
+        _history.Push(new DeleteEdit(delOfs, delLen, pieces), _table, Selection);
         Selection = Selection.Collapsed(delOfs);
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -172,8 +173,8 @@ public sealed class Document {
         if (ofs + 1 < _table.Length && _table.GetText(ofs, 2) == "\r\n") {
             delLen = 2;
         }
-        var deleted = _table.GetText(ofs, delLen);
-        _history.Push(new DeleteEdit(ofs, deleted), _table, Selection);
+        var pieces = _table.CapturePieces(ofs, delLen);
+        _history.Push(new DeleteEdit(ofs, delLen, pieces), _table, Selection);
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -215,8 +216,8 @@ public sealed class Document {
 
             // Delete the selected range, then insert.
             if (!s.IsEmpty) {
-                var deleted = _table.GetText(s.Start, (int)s.Len);
-                _history.Push(new DeleteEdit(s.Start, deleted), _table, Selection);
+                var dPieces = _table.CapturePieces(s.Start, s.Len);
+                _history.Push(new DeleteEdit(s.Start, s.Len, dPieces), _table, Selection);
             }
             _history.Push(new InsertEdit(s.Start, text), _table, Selection);
         }
@@ -278,8 +279,8 @@ public sealed class Document {
             if (caret >= 2 && _table.GetText(caret - 2, 2) == "\r\n") {
                 delLen = 2;
             }
-            var deleted = _table.GetText(caret - delLen, delLen);
-            _history.Push(new DeleteEdit(caret - delLen, deleted), _table, Selection);
+            var bPieces = _table.CapturePieces(caret - delLen, delLen);
+            _history.Push(new DeleteEdit(caret - delLen, delLen, bPieces), _table, Selection);
         }
         _history.EndCompound();
 
@@ -324,8 +325,8 @@ public sealed class Document {
             if (caret + 1 < _table.Length && _table.GetText(caret, 2) == "\r\n") {
                 delLen = 2;
             }
-            var deleted = _table.GetText(caret, delLen);
-            _history.Push(new DeleteEdit(caret, deleted), _table, Selection);
+            var fPieces = _table.CapturePieces(caret, delLen);
+            _history.Push(new DeleteEdit(caret, delLen, fPieces), _table, Selection);
         }
         _history.EndCompound();
 
@@ -356,8 +357,8 @@ public sealed class Document {
             if (s.IsEmpty) {
                 continue;
             }
-            var deleted = _table.GetText(s.Start, (int)s.Len);
-            _history.Push(new DeleteEdit(s.Start, deleted), _table, Selection);
+            var cPieces = _table.CapturePieces(s.Start, s.Len);
+            _history.Push(new DeleteEdit(s.Start, s.Len, cPieces), _table, Selection);
         }
         _history.EndCompound();
 
@@ -417,8 +418,8 @@ public sealed class Document {
                 s = new Selection(lineEnd + pad, lineEnd + pad);
             }
             if (!s.IsEmpty) {
-                var deleted = _table.GetText(s.Start, (int)s.Len);
-                _history.Push(new DeleteEdit(s.Start, deleted), _table, Selection);
+                var dPieces = _table.CapturePieces(s.Start, s.Len);
+                _history.Push(new DeleteEdit(s.Start, s.Len, dPieces), _table, Selection);
             }
             _history.Push(new InsertEdit(s.Start, lines[i]), _table, Selection);
         }
@@ -484,8 +485,8 @@ public sealed class Document {
             return;
         }
 
-        var deleted = _table.GetText(deleteStart, (int)len);
-        _history.Push(new DeleteEdit(deleteStart, deleted), _table, Selection);
+        var dlPieces = _table.CapturePieces(deleteStart, len);
+        _history.Push(new DeleteEdit(deleteStart, len, dlPieces), _table, Selection);
         Selection = Selection.Collapsed(Math.Min(deleteStart, _table.Length));
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -768,7 +769,6 @@ public sealed class Document {
     /// Replaces the entire document content in a single compound edit.
     /// </summary>
     public void ConvertLineEndings(LineEnding target) {
-        var text = _table.GetText();
         var nl = target switch {
             LineEnding.LF => "\n",
             LineEnding.CRLF => "\r\n",
@@ -776,25 +776,53 @@ public sealed class Document {
             _ => "\n",
         };
 
-        // Normalize all line endings to LF first, then replace with target.
-        var normalized = text.Replace("\r\n", "\n").Replace("\r", "\n");
-        if (nl != "\n") {
-            normalized = normalized.Replace("\n", nl);
-        }
+        // Stream through pieces to build the normalized content.
+        var sb = new StringBuilder((int)Math.Min(_table.Length * 2, int.MaxValue));
+        var prevCr = false;
+        var changed = false;
+        _table.ForEachPiece(0, _table.Length, span => {
+            foreach (var ch in span) {
+                if (prevCr) {
+                    prevCr = false;
+                    if (ch == '\n') {
+                        // \r\n pair — already emitted nl at the \r
+                        if (nl != "\r\n") changed = true;
+                        continue;
+                    }
+                }
+                if (ch == '\r') {
+                    sb.Append(nl);
+                    prevCr = true;
+                    if (nl != "\r") changed = true;
+                } else if (ch == '\n') {
+                    sb.Append(nl);
+                    if (nl != "\n") changed = true;
+                } else {
+                    sb.Append(ch);
+                }
+            }
+        });
+        if (prevCr && nl != "\r") changed = true;
 
-        if (normalized == text) {
-            // Already in the target format — just update the info.
+        if (!changed) {
             LineEndingInfo = new LineEndingInfo(target, false);
             return;
         }
+        var normalized = sb.ToString();
 
+        var originalLen = _table.Length;
+        var pieces = _table.CapturePieces(0, originalLen);
+        var lineInfo = _table.CaptureLineInfo(0, originalLen);
         var savedCaret = Selection.Caret;
+
         _history.BeginCompound();
-        _history.Push(new DeleteEdit(0, text), _table, Selection);
+        var deleteEdit = lineInfo is var (sl, ll)
+            ? new DeleteEdit(0, originalLen, pieces, sl, ll)
+            : new DeleteEdit(0, originalLen, pieces);
+        _history.Push(deleteEdit, _table, Selection);
         _history.Push(new InsertEdit(0, normalized), _table, Selection);
         _history.EndCompound();
 
-        // Approximate caret position in the new content.
         Selection = Selection.Collapsed(Math.Min(savedCaret, _table.Length));
         LineEndingInfo = new LineEndingInfo(target, false);
         Changed?.Invoke(this, EventArgs.Empty);
@@ -805,73 +833,71 @@ public sealed class Document {
     /// Replaces the entire document content in a single compound edit.
     /// </summary>
     public void ConvertIndentation(IndentStyle target, int tabSize = 4) {
-        var text = _table.GetText();
-        var sb = new System.Text.StringBuilder(text.Length);
-        var spaces = new string(' ', tabSize);
+        var sb = new System.Text.StringBuilder((int)Math.Min(_table.Length * 2, int.MaxValue));
+        var spacesStr = new string(' ', tabSize);
+        var atLineStart = true;
+        var leadingBuf = new System.Text.StringBuilder();
+        var changed = false;
 
-        var i = 0;
-        while (i < text.Length) {
-            // At line start: convert leading whitespace.
-            var lineStart = i;
-            while (i < text.Length && (text[i] == ' ' || text[i] == '\t')) {
-                i++;
-            }
-
-            if (i > lineStart) {
-                var leading = text.AsSpan(lineStart, i - lineStart);
-                if (target == IndentStyle.Spaces) {
-                    // Tabs → spaces
-                    foreach (var ch in leading) {
-                        if (ch == '\t') {
-                            sb.Append(spaces);
-                        } else {
-                            sb.Append(ch);
-                        }
-                    }
-                } else {
-                    // Spaces → tabs: expand tabs first, then convert groups
-                    var expandedSpaces = 0;
-                    foreach (var ch in leading) {
-                        if (ch == '\t') {
-                            expandedSpaces += tabSize;
-                        } else {
-                            expandedSpaces++;
-                        }
-                    }
-                    var wholeTabs = expandedSpaces / tabSize;
-                    var remainSpaces = expandedSpaces % tabSize;
-                    sb.Append('\t', wholeTabs);
-                    sb.Append(' ', remainSpaces);
+        void FlushLeading() {
+            if (leadingBuf.Length == 0) return;
+            var before = leadingBuf.ToString();
+            if (target == IndentStyle.Spaces) {
+                foreach (var c in before) {
+                    if (c == '\t') { sb.Append(spacesStr); changed = true; }
+                    else sb.Append(c);
                 }
-            }
-
-            // Copy rest of line (non-leading content + line ending).
-            while (i < text.Length) {
-                var ch = text[i];
-                sb.Append(ch);
-                i++;
-                if (ch == '\n') {
-                    break;
+            } else {
+                var expandedSpaces = 0;
+                foreach (var c in before) {
+                    if (c == '\t') expandedSpaces += tabSize;
+                    else expandedSpaces++;
                 }
-                if (ch == '\r') {
-                    if (i < text.Length && text[i] == '\n') {
-                        sb.Append('\n');
-                        i++;
-                    }
-                    break;
-                }
+                var wholeTabs = expandedSpaces / tabSize;
+                var remainSpaces = expandedSpaces % tabSize;
+                sb.Append('\t', wholeTabs);
+                sb.Append(' ', remainSpaces);
+                if (sb.Length > 0 && before != sb.ToString()[(sb.Length - wholeTabs - remainSpaces)..])
+                    changed = true;
             }
+            leadingBuf.Clear();
         }
 
-        var result = sb.ToString();
-        if (result == text) {
+        _table.ForEachPiece(0, _table.Length, span => {
+            foreach (var ch in span) {
+                if (atLineStart && (ch == ' ' || ch == '\t')) {
+                    leadingBuf.Append(ch);
+                    continue;
+                }
+                if (atLineStart) {
+                    FlushLeading();
+                    atLineStart = false;
+                }
+                sb.Append(ch);
+                if (ch == '\n' || ch == '\r') {
+                    atLineStart = true;
+                }
+            }
+        });
+        // Flush any trailing leading whitespace (file ends with whitespace-only line).
+        if (atLineStart) FlushLeading();
+
+        if (!changed) {
             IndentInfo = new IndentInfo(target, false);
             return;
         }
 
+        var result = sb.ToString();
+        var originalLen = _table.Length;
+        var pieces = _table.CapturePieces(0, originalLen);
+        var lineInfo = _table.CaptureLineInfo(0, originalLen);
         var savedCaret = Selection.Caret;
+
         _history.BeginCompound();
-        _history.Push(new DeleteEdit(0, text), _table, Selection);
+        var deleteEdit = lineInfo is var (sl, ll)
+            ? new DeleteEdit(0, originalLen, pieces, sl, ll)
+            : new DeleteEdit(0, originalLen, pieces);
+        _history.Push(deleteEdit, _table, Selection);
         _history.Push(new InsertEdit(0, result), _table, Selection);
         _history.EndCompound();
 
@@ -927,8 +953,12 @@ public sealed class Document {
     // -------------------------------------------------------------------------
 
     private void DeleteRange(long ofs, long len) {
-        var deleted = _table.GetText(ofs, (int)len);
-        _history.Push(new DeleteEdit(ofs, deleted), _table, Selection);
+        var pieces = _table.CapturePieces(ofs, len);
+        var lineInfo = _table.CaptureLineInfo(ofs, len);
+        var edit = lineInfo is var (sl, ll)
+            ? new DeleteEdit(ofs, len, pieces, sl, ll)
+            : new DeleteEdit(ofs, len, pieces);
+        _history.Push(edit, _table, Selection);
     }
 
     /// <summary>
