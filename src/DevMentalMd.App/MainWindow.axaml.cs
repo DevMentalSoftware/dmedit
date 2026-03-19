@@ -2453,6 +2453,8 @@ public partial class MainWindow : Window {
                 // Scan failed — tab stays in base state.
             }
 
+            // Unblock input immediately — the user can start editing while
+            // the line index builds in the background.
             await Dispatcher.UIThread.InvokeAsync(() => {
                 // Tab may have been closed while loading.
                 if (!_tabs.Contains(tab)) return;
@@ -2472,6 +2474,22 @@ public partial class MainWindow : Window {
                     Editor.InvalidateLayout();
                 }
             });
+
+            // Pre-build the line index concurrently with user editing.
+            // Edits that land during the scan are queued and replayed on
+            // install.  Skip for read-only files since they won't be edited.
+            if (!tab.IsReadOnly) {
+                tab.Document.Table.PreBuildLineIndex();
+
+                // Install on the UI thread so replay is race-free.
+                await Dispatcher.UIThread.InvokeAsync(() => {
+                    if (!_tabs.Contains(tab)) return;
+                    tab.Document.Table.InstallPendingLineTree();
+                    if (_activeTab == tab) {
+                        Editor.InvalidateLayout();
+                    }
+                });
+            }
         });
     }
 

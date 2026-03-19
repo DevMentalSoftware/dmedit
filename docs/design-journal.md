@@ -111,4 +111,16 @@ small one — it is the primary way a fresh session recovers context.
   [05-features](design-journal/05-features.md))
 - toolbar, Undo/Redo toolbar buttons not yet implemented
 - Overwrite mode (Insert/Overwrite toggle) not yet implemented
-- Performance regression not investigated (Memory usage and time cost of edits greatly increased at some point)
+- **Storage-backed large edits** — currently, inserted text lives in an in-memory
+  `StringBuilder` (the Add buffer).  For extreme workflows (e.g. pasting 100 × 1 GB XML
+  snippets into a single file and then saving a 100 GB result), the Add buffer should
+  spill to storage (a temp file or embedded database) above a configurable threshold.
+  The PieceTable already treats the Add buffer as opaque via `BufFor()` / `VisitPieces`,
+  so the abstraction boundary is in place — the main work is implementing a storage-backed
+  `IBuffer` for the Add side and wiring it into `_addBuf` / `_addBufCache`.
+- **FenwickTree line index memory** — the current `List<double>` + `FenwickTree` pair
+  stores every line length twice as 8-byte doubles.  For a 5 M-line file that is ~80 MB.
+  Investigate: (a) using `int` instead of `double` (halves to ~40 MB); (b) a more compact
+  encoding such as run-length for files with uniform line lengths; (c) an order-statistic
+  tree that replaces both the array and the Fenwick tree with a single structure supporting
+  O(log L) insert/delete of elements, eliminating the O(L) Rebuild cost on newline edits.
