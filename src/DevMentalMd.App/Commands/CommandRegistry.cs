@@ -25,6 +25,7 @@ public static class CommandRegistry {
         new(CommandIds.FileExit, "Exit"),
         new(CommandIds.FileRevertFile, "Revert File"),
         new(CommandIds.FileReloadFile, "Reload File"),
+        new(CommandIds.FileClearRecentFiles, "Clear Recent Files"),
 
         // -- Edit --
         new(CommandIds.EditUndo, "Undo"),

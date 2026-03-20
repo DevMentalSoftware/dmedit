@@ -19,8 +19,15 @@
 * Add Page Setup and Print (System Dialogs or does Avalonia provide?)
 * Add a command to clear the recent files list (no menu or keystroke).
 * Add overwrite mode (Insert key), and display this mode in the status bar. Also change the caret to be letter width and translucen when in overwrite mode.
-* There appears to be a bug in Avalonia text boxes where the caret is blinking slightly on top of a letter instead of just the right of it. 
-* Add an option for whether to subtly highlight (like selection but gray translucent) all text in the document that matches the current selection. This is something that some editors do and people might want it, though I personally hate it. 
+* There appears to be a bug in Avalonia text boxes where the caret is blinking slightly on top of a letter instead of just the right of it.
+* Add an option for whether to subtly highlight (like selection but gray translucent) all text in the document that matches the current selection. This is something that some editors do and people might want it, though I personally hate it.
 * If one or more crash reports exist, then a Help menu item should be added to send the crash reports to support@devmental.com.
-* We need context menus in the editor, but need to decide what subset of commands should be there. 
+* We need context menus in the editor, but need to decide what subset of commands should be there.
+* Bug: After opening a file with the recent menu, the File menu displayed as if it were focused although the actual focus had moved to the editor and we were able to edit the text with the keyboard.
+
+
+
+
+
+Another idea. We use char and String several places. Does dotnet still internally use 16bit characters for these structures? Could we optimize memory usage by using byte and byte\[] instead, and just take on the task of handling complexities of UTF-8 encoding? 
 

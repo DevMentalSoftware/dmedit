@@ -20,7 +20,8 @@ public static class CommandIds {
     public const string FileSaveAsPdf = "File.SaveAsPdf";
     public const string FileExit       = "File.Exit";
     public const string FileRevertFile = "File.RevertFile";
-    public const string FileReloadFile = "File.ReloadFile";
+    public const string FileReloadFile      = "File.ReloadFile";
+    public const string FileClearRecentFiles = "File.ClearRecentFiles";
 
     // -----------------------------------------------------------------
     // Edit

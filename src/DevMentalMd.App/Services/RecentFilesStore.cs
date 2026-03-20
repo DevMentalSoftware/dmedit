@@ -102,6 +102,9 @@ public sealed class RecentFilesStore {
     /// <summary>Removes a path (e.g. when the file is found to no longer exist on disk).</summary>
     public void Remove(string path) => _paths.Remove(path);
 
+    /// <summary>Removes all entries from the recent files list.</summary>
+    public void Clear() => _paths.Clear();
+
     /// <summary>Persists the list. Failures are silently swallowed (best-effort).</summary>
     public void Save() {
         try {

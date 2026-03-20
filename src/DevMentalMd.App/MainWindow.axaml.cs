@@ -790,6 +790,10 @@ public partial class MainWindow : Window {
             case CommandIds.FileReloadFile:
                 _ = ReloadFileAsync(_activeTab);
                 return true;
+            case CommandIds.FileClearRecentFiles:
+                _recentFiles.Clear();
+                _recentFiles.Save();
+                return true;
 
             // -- Find --
             case CommandIds.FindFind:
@@ -1582,7 +1586,7 @@ public partial class MainWindow : Window {
                 var item = new MenuItem { Header = Path.GetFileName(captured) };
                 Controls.UiHelpers.SetPathToolTip(item, captured);
                 item.Click += async (_, _) => {
-                    MenuFile.IsSubMenuOpen = false;
+                    MenuBar.Close();
                     await OpenFileInTabAsync(captured);
                 };
                 MenuFile.Items.Add(item);
@@ -1595,7 +1599,7 @@ public partial class MainWindow : Window {
                 var captured = sample;
                 var item = new MenuItem { Header = sample.DisplayName };
                 item.Click += (_, _) => {
-                    MenuFile.IsSubMenuOpen = false;
+                    MenuBar.Close();
                     OpenDevSample(captured);
                 };
                 MenuFile.Items.Add(item);

@@ -775,12 +775,11 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         }
 
         // When at max scroll and the layout includes the end of the document,
-        // anchor content bottom to viewport bottom so the last line is visible.
-        // When at max scroll and the layout includes the end of the document,
         // anchor content bottom to viewport bottom so the last line is flush.
         // Only at max scroll — otherwise scrolling up from the bottom would be stuck.
         var scrollMax = _extent.Height - _viewport.Height;
-        if (bottomLine >= lineCount && _scrollOffset.Y >= scrollMax - 1.0) {
+        if (bottomLine >= lineCount && _scrollOffset.Y >= scrollMax - 1.0
+                && _layout.TotalHeight >= _viewport.Height) {
             var contentBottom = RenderOffsetY + _layout.TotalHeight;
             if (contentBottom != _viewport.Height) {
                 RenderOffsetY = _viewport.Height - _layout.TotalHeight;
@@ -973,13 +972,23 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 break;
             }
             if (line.CharEnd <= localStart || line.CharStart >= localEnd) {
-                continue;
+                // Blank lines have CharEnd == CharStart, so the check above
+                // rejects them when they sit exactly at localStart.  Let them
+                // through when they fall inside [localStart, localEnd).
+                if (!(line.CharLen == 0 && line.CharStart >= localStart && line.CharStart < localEnd))
+                    continue;
             }
 
             var rangeStart = Math.Max(0, localStart - line.CharStart);
             var rangeEnd = Math.Min(line.CharLen, localEnd - line.CharStart);
             var rangeLen = rangeEnd - rangeStart;
+
             if (rangeLen <= 0) {
+                // Blank line fully inside selection: show a 1-char-wide placeholder
+                // so the user can see that the selection spans across it.
+                if (line.CharLen == 0) {
+                    rects.Add(new Rect(_gutterWidth, lineY, GetCharWidth(), rh));
+                }
                 continue;
             }
 
