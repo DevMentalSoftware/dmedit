@@ -1602,9 +1602,19 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     }
 
     private void PerformColumnSelectHorizontal(Document doc, int delta) {
-        if (doc.ColumnSel is not { } colSel) return;
-        var newCol = Math.Max(0, colSel.ActiveCol + delta);
-        doc.ColumnSel = colSel.ExtendTo(colSel.ActiveLine, newCol);
+        if (_wrapLines) return; // Column mode disabled when wrapping is on.
+        FlushCompound();
+        if (doc.ColumnSel is { } colSel) {
+            var newCol = Math.Max(0, colSel.ActiveCol + delta);
+            doc.ColumnSel = colSel.ExtendTo(colSel.ActiveLine, newCol);
+        } else {
+            // Enter column mode from current caret.
+            var caret = doc.Selection.Caret;
+            var line = (int)doc.Table.LineFromOfs(caret);
+            var col = ColumnSelection.OfsToCol(doc.Table, caret, _indentWidth);
+            var newCol = Math.Max(0, col + delta);
+            doc.ColumnSel = new ColumnSelection(line, col, line, newCol);
+        }
         ScrollCaretIntoView();
         InvalidateVisual();
         ResetCaretBlink();
@@ -1710,6 +1720,12 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 if (id is "Nav.ColumnSelectUp" or "Nav.ColumnSelectDown") {
                     var delta = id == "Nav.ColumnSelectUp" ? -1 : +1;
                     PerformColumnSelectVertical(doc, delta);
+                    return;
+                }
+
+                if (id is "Nav.ColumnSelectLeft" or "Nav.ColumnSelectRight") {
+                    var delta = id == "Nav.ColumnSelectLeft" ? -1 : +1;
+                    PerformColumnSelectHorizontal(doc, delta);
                     return;
                 }
 
