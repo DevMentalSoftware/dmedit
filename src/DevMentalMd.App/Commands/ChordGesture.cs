@@ -9,7 +9,7 @@ namespace DevMentalMd.App.Commands;
 /// as a plain single-key gesture. When <see cref="Second"/> is set,
 /// the user must press <see cref="First"/> then <see cref="Second"/>.
 /// Implicit conversion from <see cref="KeyGesture"/> allows seamless
-/// use in <see cref="CommandDescriptor"/> gesture slots.
+/// use in <see cref="Command"/> gesture slots.
 /// </summary>
 public sealed class ChordGesture {
     public KeyGesture First { get; }

@@ -110,6 +110,7 @@ public partial class KeyboardSettingsSection : UserControl {
         
         // Guard against an unbounded layout before SetAvailableHeight is first called.
         CommandScroll.MaxHeight = 500;
+        CommandScroll.MinHeight = 500;
     }
 
 
@@ -156,8 +157,8 @@ public partial class KeyboardSettingsSection : UserControl {
         _commandRows.Clear();
         _categoryGroups.Clear();
 
-        foreach (var category in CommandRegistry.Categories) {
-            var commands = CommandRegistry.All
+        foreach (var category in _keyBindings.Registry.Categories) {
+            var commands = _keyBindings.Registry.All
                 .Where(c => c.Category == category)
                 .ToList();
             if (commands.Count == 0) {
@@ -186,7 +187,7 @@ public partial class KeyboardSettingsSection : UserControl {
         }
     }
 
-    private Border CreateCommandRow(CommandDescriptor cmd) {
+    private Border CreateCommandRow(Command cmd) {
         var gestureText = _keyBindings.GetGestureText(cmd.Id) ?? "";
         var gesture2Text = _keyBindings.GetGesture2Text(cmd.Id) ?? "";
 
@@ -484,7 +485,7 @@ public partial class KeyboardSettingsSection : UserControl {
 
                     // Name filter: match display name or category (case-insensitive substring).
                     if (visible && hasNameFilter) {
-                        var desc = KeyBindingService.GetDescriptor(commandId);
+                        var desc = _keyBindings.GetCommand(commandId);
                         visible = desc != null
                             && (desc.DisplayName.Contains(nameSearch!,
                                     StringComparison.OrdinalIgnoreCase)
@@ -587,7 +588,9 @@ public partial class KeyboardSettingsSection : UserControl {
         // Subtract a fixed estimate of the non-list elements (profile combo,
         // filter row, buttons, labels, margins ≈ 150px) so the list fills the
         // available space without overflowing.
-        CommandScroll.MaxHeight = Math.Max(100, height - 150);
+        var max = Math.Max(100, height - 150);
+        CommandScroll.MaxHeight = max;
+        CommandScroll.MinHeight = max;
         UpdateScrollHintVisibility();
     }
 
@@ -659,7 +662,7 @@ public partial class KeyboardSettingsSection : UserControl {
     private void SetConflict(string? conflictingCommandId) {
         ConflictPanel.Children.Clear();
         if (conflictingCommandId == null) return;
-        var name = KeyBindingService.GetDescriptor(conflictingCommandId)?.DisplayName
+        var name = _keyBindings.GetCommand(conflictingCommandId)?.DisplayName
             ?? conflictingCommandId;
         ConflictPanel.Children.Add(MakeWarnRun("Will replace the shortcut already assigned to", 11));
         ConflictPanel.Children.Add(MakeNameChip(name, 11));

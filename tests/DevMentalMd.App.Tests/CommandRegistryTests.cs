@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using Avalonia.Input;
 using DevMentalMd.App.Commands;
 using DevMentalMd.App.Services;
@@ -8,21 +7,22 @@ using DevMentalMd.App.Services;
 namespace DevMentalMd.App.Tests;
 
 public class CommandRegistryTests {
+    private static CommandRegistry CreateRegistry() => TestCommands.CreateRegistry();
+
     [Fact]
     public void AllCommandIdsAreUnique() {
-        var ids = CommandRegistry.All.Select(c => c.Id).ToList();
+        var registry = CreateRegistry();
+        var ids = registry.All.Select(c => c.Id).ToList();
         Assert.Equal(ids.Count, ids.Distinct().Count());
     }
 
     [Fact]
     public void AllDefaultGesturesAreUnique() {
-        // Collect single-key gestures from both slots via KeyBindingService
-        // (which loads from the Default profile). Chords are excluded — they
-        // don't occupy the single-key space.
-        var svc = new KeyBindingService(new AppSettings());
+        var registry = CreateRegistry();
+        var svc = new KeyBindingService(new AppSettings(), registry);
         var entries = new List<(string Id, KeyGesture Gesture)>();
 
-        foreach (var cmd in CommandRegistry.All) {
+        foreach (var cmd in registry.All) {
             var g1 = svc.GetGesture(cmd.Id);
             if (g1 is { IsChord: false }) {
                 entries.Add((cmd.Id + " (Gesture)", g1.First));
@@ -49,12 +49,12 @@ public class CommandRegistryTests {
 
     [Fact]
     public void AllDefaultChordsAreUnique() {
-        // Collect chord gestures from both slots via KeyBindingService.
-        var svc = new KeyBindingService(new AppSettings());
+        var registry = CreateRegistry();
+        var svc = new KeyBindingService(new AppSettings(), registry);
         var seen = new HashSet<(int, int, int, int)>();
         var duplicates = new List<string>();
 
-        foreach (var cmd in CommandRegistry.All) {
+        foreach (var cmd in registry.All) {
             CheckChord(cmd.Id, svc.GetGesture(cmd.Id), seen, duplicates);
             CheckChord(cmd.Id, svc.GetGesture2(cmd.Id), seen, duplicates);
         }
@@ -76,7 +76,8 @@ public class CommandRegistryTests {
 
     [Fact]
     public void AllCommandsHaveNonEmptyDisplayName() {
-        foreach (var cmd in CommandRegistry.All) {
+        var registry = CreateRegistry();
+        foreach (var cmd in registry.All) {
             Assert.False(string.IsNullOrWhiteSpace(cmd.DisplayName),
                 $"Command {cmd.Id} has empty display name");
         }
@@ -84,33 +85,16 @@ public class CommandRegistryTests {
 
     [Fact]
     public void AllCommandCategoriesAreValid() {
-        foreach (var cmd in CommandRegistry.All) {
-            Assert.Contains(cmd.Category, CommandRegistry.Categories);
+        var registry = CreateRegistry();
+        foreach (var cmd in registry.All) {
+            Assert.Contains(cmd.Category, registry.Categories);
         }
     }
 
     [Fact]
-    public void EveryCommandIdConstantAppearsInRegistry() {
-        var fields = typeof(CommandIds)
-            .GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
-            .Select(f => (string)f.GetRawConstantValue()!)
-            .ToHashSet();
-
-        var registryIds = CommandRegistry.All.Select(c => c.Id).ToHashSet();
-
-        var missing = fields.Except(registryIds).ToList();
-        Assert.True(missing.Count == 0,
-            $"CommandIds constants not in registry: {string.Join(", ", missing)}");
-
-        var extra = registryIds.Except(fields).ToList();
-        Assert.True(extra.Count == 0,
-            $"Registry entries without CommandIds constant: {string.Join(", ", extra)}");
-    }
-
-    [Fact]
     public void AllCommandIdsContainDot() {
-        foreach (var cmd in CommandRegistry.All) {
+        var registry = CreateRegistry();
+        foreach (var cmd in registry.All) {
             Assert.Contains('.', cmd.Id);
         }
     }

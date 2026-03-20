@@ -65,6 +65,15 @@ public sealed class AppSettings {
     public int RecentFileCount { get; set; } = 10;
 
     // -----------------------------------------------------------------
+    // Command palette
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Whether the command palette groups commands by category.
+    /// </summary>
+    public bool CommandPaletteGroupByCategory { get; set; }
+
+    // -----------------------------------------------------------------
     // Display
     // -----------------------------------------------------------------
 

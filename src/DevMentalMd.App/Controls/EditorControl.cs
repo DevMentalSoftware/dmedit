@@ -1579,190 +1579,6 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     // Command dispatch (called by MainWindow after key → command resolution)
     // -------------------------------------------------------------------------
 
-    private static readonly HashSet<string> VerticalNavCommands = [
-        Commands.CommandIds.NavMoveUp,
-        Commands.CommandIds.NavMoveDown,
-        Commands.CommandIds.NavSelectUp,
-        Commands.CommandIds.NavSelectDown,
-        Commands.CommandIds.NavPageUp,
-        Commands.CommandIds.NavPageDown,
-        Commands.CommandIds.NavSelectPageUp,
-        Commands.CommandIds.NavSelectPageDown,
-        Commands.CommandIds.NavScrollLineUp,
-        Commands.CommandIds.NavScrollLineDown,
-    ];
-
-    /// <summary>
-    /// Commands that are handled specially in column mode and should NOT
-    /// cause an automatic exit from column mode.
-    /// </summary>
-    private static readonly HashSet<string> ColumnAwareCommands = [
-        Commands.CommandIds.NavColumnSelectUp,
-        Commands.CommandIds.NavColumnSelectDown,
-        Commands.CommandIds.NavColumnSelectLeft,
-        Commands.CommandIds.NavColumnSelectRight,
-        Commands.CommandIds.NavMoveLeft,
-        Commands.CommandIds.NavMoveRight,
-        Commands.CommandIds.NavMoveUp,
-        Commands.CommandIds.NavMoveDown,
-        Commands.CommandIds.NavSelectLeft,
-        Commands.CommandIds.NavSelectRight,
-        Commands.CommandIds.NavSelectUp,
-        Commands.CommandIds.NavSelectDown,
-        Commands.CommandIds.NavMoveHome,
-        Commands.CommandIds.NavMoveEnd,
-        Commands.CommandIds.NavMoveWordLeft,
-        Commands.CommandIds.NavMoveWordRight,
-        Commands.CommandIds.NavSelectWordLeft,
-        Commands.CommandIds.NavSelectWordRight,
-        Commands.CommandIds.EditBackspace,
-        Commands.CommandIds.EditDelete,
-        Commands.CommandIds.EditDeleteWordLeft,
-        Commands.CommandIds.EditDeleteWordRight,
-        Commands.CommandIds.EditCut,
-        Commands.CommandIds.EditCopy,
-        Commands.CommandIds.EditPaste,
-        Commands.CommandIds.EditTab,
-        Commands.CommandIds.EditNewline,
-    ];
-
-    /// <summary>
-    /// Intercepts commands that have column-mode-specific behavior.
-    /// Returns true if the command was fully handled, false to continue
-    /// normal dispatch.
-    /// </summary>
-    private bool ColumnModeIntercept(Document doc, string commandId) {
-        switch (commandId) {
-            case Commands.CommandIds.NavColumnSelectUp:
-                PerformColumnSelectVertical(doc, -1);
-                return true;
-
-            case Commands.CommandIds.NavColumnSelectDown:
-                PerformColumnSelectVertical(doc, +1);
-                return true;
-
-            case Commands.CommandIds.NavColumnSelectLeft:
-                PerformColumnSelectHorizontal(doc, -1);
-                return true;
-
-            case Commands.CommandIds.NavColumnSelectRight:
-                PerformColumnSelectHorizontal(doc, +1);
-                return true;
-
-            // -- Arrow navigation inside column mode --
-
-            case Commands.CommandIds.NavMoveLeft:
-                PerformColumnMoveHorizontal(doc, -1);
-                return true;
-
-            case Commands.CommandIds.NavMoveRight:
-                PerformColumnMoveHorizontal(doc, +1);
-                return true;
-
-            case Commands.CommandIds.NavMoveUp:
-                PerformColumnMoveVertical(doc, -1);
-                return true;
-
-            case Commands.CommandIds.NavMoveDown:
-                PerformColumnMoveVertical(doc, +1);
-                return true;
-
-            case Commands.CommandIds.NavSelectLeft:
-                PerformColumnSelectHorizontal(doc, -1);
-                return true;
-
-            case Commands.CommandIds.NavSelectRight:
-                PerformColumnSelectHorizontal(doc, +1);
-                return true;
-
-            case Commands.CommandIds.NavSelectUp:
-                PerformColumnSelectVertical(doc, -1);
-                return true;
-
-            case Commands.CommandIds.NavSelectDown:
-                PerformColumnSelectVertical(doc, +1);
-                return true;
-
-            case Commands.CommandIds.NavMoveHome:
-                if (doc.ColumnSel is { } homeSel) {
-                    doc.ColumnSel = homeSel.MoveColumnsTo(0);
-                    ScrollCaretIntoView();
-                    InvalidateVisual();
-                    ResetCaretBlink();
-                }
-                return true;
-
-            case Commands.CommandIds.NavMoveEnd:
-                if (doc.ColumnSel is { } endSel) {
-                    doc.ColumnSel = endSel.MoveColumnsTo(MaxEndColumn(doc, endSel));
-                    ScrollCaretIntoView();
-                    InvalidateVisual();
-                    ResetCaretBlink();
-                }
-                return true;
-
-            case Commands.CommandIds.NavMoveWordLeft:
-                PerformColumnMoveWord(doc, -1);
-                return true;
-
-            case Commands.CommandIds.NavMoveWordRight:
-                PerformColumnMoveWord(doc, +1);
-                return true;
-
-            case Commands.CommandIds.NavSelectWordLeft:
-                PerformColumnSelectWord(doc, -1);
-                return true;
-
-            case Commands.CommandIds.NavSelectWordRight:
-                PerformColumnSelectWord(doc, +1);
-                return true;
-
-            case Commands.CommandIds.EditNewline:
-                // Exit column mode, then fall through to normal newline handling.
-                doc.ClearColumnSelection(_indentWidth);
-                return false;
-
-            case Commands.CommandIds.EditBackspace:
-                FlushCompound();
-                _editSw.Restart();
-                doc.DeleteBackwardAtCursors(_indentWidth);
-                ScrollCaretIntoView();
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                InvalidateLayout();
-                ResetCaretBlink();
-                return true;
-
-            case Commands.CommandIds.EditDelete:
-                FlushCompound();
-                _editSw.Restart();
-                doc.DeleteForwardAtCursors(_indentWidth);
-                ScrollCaretIntoView();
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                InvalidateLayout();
-                ResetCaretBlink();
-                return true;
-
-            case Commands.CommandIds.EditTab: {
-                var tabText = doc.IndentInfo.Dominant == Core.Documents.IndentStyle.Tabs
-                    ? "\t"
-                    : new string(' ', _indentWidth);
-                Coalesce("col-tab");
-                _editSw.Restart();
-                doc.InsertAtCursors(tabText, _indentWidth);
-                ScrollCaretIntoView();
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                InvalidateLayout();
-                ResetCaretBlink();
-                return true;
-            }
-
-            default:
-                return false;
-        }
-    }
 
     private void PerformColumnSelectVertical(Document doc, int delta) {
         if (_wrapLines) return; // Column mode disabled when wrapping is on.
@@ -1871,409 +1687,333 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         return max;
     }
 
-    /// <summary>
-    /// Executes an editor-level command by ID. Returns true if the command
-    /// was handled. Called by MainWindow's centralized dispatch after
-    /// resolving a key gesture to a command ID via KeyBindingService.
-    /// </summary>
-    public bool ExecuteCommand(string commandId) {
-        if (IsInputBlocked) return false;
-        var doc = Document;
-        if (doc == null) return false;
+    public void RegisterCommands(Commands.CommandRegistry registry) {
+        // Column-mode intercepts: alternative behavior for commands when column
+        // selection is active. Returns true if fully handled, false to fall
+        // through to normal handling (e.g. Edit.Newline exits column mode first).
+        var columnIntercepts = new Dictionary<string, Func<Document, bool>>();
 
-        // Any command other than PasteMore confirms (ends) an active cycling session.
-        if (_isClipboardCycling && commandId != Commands.CommandIds.EditPasteMore) {
-            ConfirmClipboardCycle();
+        void ColIntercept(string id, Func<Document, bool> handler) =>
+            columnIntercepts[id] = handler;
+
+        // Local helper: wraps each editor command with the standard preamble.
+        void Reg(string id, string displayName, Action<Document> action,
+                 bool showInPalette = true, bool isVerticalNav = false,
+                 bool isColumnAware = false) {
+            registry.Register(id, displayName, () => {
+                if (IsInputBlocked) return;
+                var doc = Document;
+                if (doc == null) return;
+                if (_isClipboardCycling && id != "Edit.PasteMore") ConfirmClipboardCycle();
+                if (!isVerticalNav) _preferredCaretX = -1;
+
+                if (id is "Nav.ColumnSelectUp" or "Nav.ColumnSelectDown") {
+                    var delta = id == "Nav.ColumnSelectUp" ? -1 : +1;
+                    PerformColumnSelectVertical(doc, delta);
+                    return;
+                }
+
+                if (doc.ColumnSel != null) {
+                    if (columnIntercepts.TryGetValue(id, out var intercept) && intercept(doc))
+                        return;
+                    if (!isColumnAware) doc.ClearColumnSelection(_indentWidth);
+                }
+
+                action(doc);
+            }, showInPalette, requiresEditor: true);
         }
 
-        // Vertical movement keys preserve the preferred column; everything
-        // else resets it so the next Up/Down captures a fresh X position.
-        if (!VerticalNavCommands.Contains(commandId)) {
-            _preferredCaretX = -1;
-        }
+        // -- Edit commands --
 
-        // Column select up/down always works (enters or extends column mode).
-        if (commandId is Commands.CommandIds.NavColumnSelectUp
-                      or Commands.CommandIds.NavColumnSelectDown) {
-            var delta = commandId == Commands.CommandIds.NavColumnSelectUp ? -1 : +1;
-            PerformColumnSelectVertical(doc, delta);
+        Reg("Edit.Backspace", "Backspace", doc => {
+            Coalesce("backspace");
+            _editSw.Restart();
+            doc.DeleteBackward();
+            ScrollCaretIntoView();
+            _editSw.Stop();
+            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+            InvalidateLayout();
+            ResetCaretBlink();
+        }, showInPalette: false, isColumnAware: true);
+
+        Reg("Edit.Delete", "Delete", _ => EditDelete(), showInPalette: false, isColumnAware: true);
+        Reg("Edit.Undo", "Undo", _ => PerformUndo());
+        Reg("Edit.Redo", "Redo", _ => PerformRedo());
+        Reg("Edit.Cut", "Cut", doc => { _ = CutAsync(); }, isColumnAware: true);
+        Reg("Edit.Copy", "Copy", doc => { _ = CopyAsync(); }, isColumnAware: true);
+        Reg("Edit.Paste", "Paste", doc => { _ = PasteAsync(); }, isColumnAware: true);
+        Reg("Edit.PasteMore", "Paste More", _ => PasteMore());
+        Reg("Edit.SelectAll", "Select All", _ => PerformSelectAll());
+        Reg("Edit.SelectWord", "Select Word", _ => PerformSelectWord());
+        Reg("Edit.ExpandSelection", "Expand Selection", _ => PerformExpandSelection());
+        Reg("Edit.DeleteLine", "Delete Line", _ => PerformDeleteLine());
+        Reg("Edit.MoveLineUp", "Move Line Up", _ => PerformMoveLineUp());
+        Reg("Edit.MoveLineDown", "Move Line Down", _ => PerformMoveLineDown());
+        Reg("Edit.UpperCase", "Upper Case", _ => PerformTransformCase(CaseTransform.Upper));
+        Reg("Edit.LowerCase", "Lower Case", _ => PerformTransformCase(CaseTransform.Lower));
+        Reg("Edit.ProperCase", "Proper Case", _ => PerformTransformCase(CaseTransform.Proper));
+
+        Reg("Edit.Newline", "Insert Newline", doc => {
+            FlushCompound();
+            _editSw.Restart();
+            doc.Insert(doc.LineEndingInfo.NewlineString);
+            ScrollCaretIntoView();
+            _editSw.Stop();
+            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+            InvalidateLayout();
+            ResetCaretBlink();
+        }, showInPalette: false, isColumnAware: true);
+
+        Reg("Edit.Tab", "Insert Tab", doc => {
+            Coalesce("tab");
+            _editSw.Restart();
+            var tabText = doc.IndentInfo.Dominant == Core.Documents.IndentStyle.Tabs
+                ? "\t"
+                : new string(' ', _indentWidth);
+            doc.Insert(tabText);
+            ScrollCaretIntoView();
+            _editSw.Stop();
+            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+            InvalidateLayout();
+            ResetCaretBlink();
+        }, showInPalette: false, isColumnAware: true);
+
+        // -- Navigation: horizontal --
+
+        Reg("Nav.MoveLeft", "Move Left", doc => { FlushCompound(); MoveCaretHorizontal(doc, -1, false, false); }, isColumnAware: true);
+        Reg("Nav.SelectLeft", "Select Left", doc => { FlushCompound(); MoveCaretHorizontal(doc, -1, false, true); }, isColumnAware: true);
+        Reg("Nav.MoveRight", "Move Right", doc => { FlushCompound(); MoveCaretHorizontal(doc, +1, false, false); }, isColumnAware: true);
+        Reg("Nav.SelectRight", "Select Right", doc => { FlushCompound(); MoveCaretHorizontal(doc, +1, false, true); }, isColumnAware: true);
+        Reg("Nav.MoveWordLeft", "Move Word Left", doc => { FlushCompound(); MoveCaretHorizontal(doc, -1, true, false); }, isColumnAware: true);
+        Reg("Nav.SelectWordLeft", "Select Word Left", doc => { FlushCompound(); MoveCaretHorizontal(doc, -1, true, true); }, isColumnAware: true);
+        Reg("Nav.MoveWordRight", "Move Word Right", doc => { FlushCompound(); MoveCaretHorizontal(doc, +1, true, false); }, isColumnAware: true);
+        Reg("Nav.SelectWordRight", "Select Word Right", doc => { FlushCompound(); MoveCaretHorizontal(doc, +1, true, true); }, isColumnAware: true);
+
+        // -- Navigation: vertical --
+
+        Reg("Nav.MoveUp", "Move Up", doc => { FlushCompound(); MoveCaretVertical(doc, -1, false); }, isVerticalNav: true, isColumnAware: true);
+        Reg("Nav.SelectUp", "Select Up", doc => { FlushCompound(); MoveCaretVertical(doc, -1, true); }, isVerticalNav: true, isColumnAware: true);
+        Reg("Nav.MoveDown", "Move Down", doc => { FlushCompound(); MoveCaretVertical(doc, +1, false); }, isVerticalNav: true, isColumnAware: true);
+        Reg("Nav.SelectDown", "Select Down", doc => { FlushCompound(); MoveCaretVertical(doc, +1, true); }, isVerticalNav: true, isColumnAware: true);
+
+        // -- Navigation: home/end --
+
+        Reg("Nav.MoveHome", "Move to Line Start", doc => { FlushCompound(); MoveCaretToLineEdge(doc, toStart: true, false); }, isColumnAware: true);
+        Reg("Nav.SelectHome", "Select to Line Start", doc => { FlushCompound(); MoveCaretToLineEdge(doc, toStart: true, true); });
+        Reg("Nav.MoveEnd", "Move to Line End", doc => { FlushCompound(); MoveCaretToLineEdge(doc, toStart: false, false); }, isColumnAware: true);
+        Reg("Nav.SelectEnd", "Select to Line End", doc => { FlushCompound(); MoveCaretToLineEdge(doc, toStart: false, true); });
+
+        // -- Navigation: document start/end --
+
+        Reg("Nav.MoveDocStart", "Move to Document Start", doc => {
+            FlushCompound();
+            doc.Selection = Selection.Collapsed(0);
+            ScrollCaretIntoView();
+            InvalidateVisual();
+            ResetCaretBlink();
+        });
+
+        Reg("Nav.SelectDocStart", "Select to Document Start", doc => {
+            FlushCompound();
+            doc.Selection = doc.Selection.ExtendTo(0);
+            ScrollCaretIntoView();
+            InvalidateVisual();
+            ResetCaretBlink();
+        });
+
+        Reg("Nav.MoveDocEnd", "Move to Document End", doc => {
+            FlushCompound();
+            doc.Selection = Selection.Collapsed(doc.Table.Length);
+            ScrollCaretIntoView();
+            InvalidateVisual();
+            ResetCaretBlink();
+        });
+
+        Reg("Nav.SelectDocEnd", "Select to Document End", doc => {
+            FlushCompound();
+            doc.Selection = doc.Selection.ExtendTo(doc.Table.Length);
+            ScrollCaretIntoView();
+            InvalidateVisual();
+            ResetCaretBlink();
+        });
+
+        // -- Navigation: page up/down --
+
+        Reg("Nav.PageUp", "Page Up", doc => { FlushCompound(); MoveCaretByPage(doc, -1, false); }, isVerticalNav: true);
+        Reg("Nav.SelectPageUp", "Select Page Up", doc => { FlushCompound(); MoveCaretByPage(doc, -1, true); }, isVerticalNav: true);
+        Reg("Nav.PageDown", "Page Down", doc => { FlushCompound(); MoveCaretByPage(doc, +1, false); }, isVerticalNav: true);
+        Reg("Nav.SelectPageDown", "Select Page Down", doc => { FlushCompound(); MoveCaretByPage(doc, +1, true); }, isVerticalNav: true);
+
+        // -- Editing: word delete, line ops, indent --
+
+        Reg("Edit.DeleteWordLeft", "Delete Word Left", doc => {
+            FlushCompound();
+            if (!doc.Selection.IsEmpty) {
+                doc.DeleteSelection();
+            } else {
+                var wordLeft = FindWordBoundaryLeft(doc, doc.Selection.Caret);
+                if (wordLeft < doc.Selection.Caret) {
+                    doc.Selection = new Selection(wordLeft, doc.Selection.Caret);
+                    doc.DeleteSelection();
+                }
+            }
+            ScrollCaretIntoView();
+            InvalidateLayout();
+            ResetCaretBlink();
+        }, isColumnAware: true);
+
+        Reg("Edit.DeleteWordRight", "Delete Word Right", doc => {
+            FlushCompound();
+            if (!doc.Selection.IsEmpty) {
+                doc.DeleteSelection();
+            } else {
+                var wordRight = FindWordBoundaryRight(doc, doc.Selection.Caret);
+                if (wordRight > doc.Selection.Caret) {
+                    doc.Selection = new Selection(doc.Selection.Caret, wordRight);
+                    doc.DeleteSelection();
+                }
+            }
+            ScrollCaretIntoView();
+            InvalidateLayout();
+            ResetCaretBlink();
+        }, isColumnAware: true);
+
+        Reg("Edit.InsertLineBelow", "Insert Line Below", _ => PerformInsertLineBelow());
+        Reg("Edit.InsertLineAbove", "Insert Line Above", _ => PerformInsertLineAbove());
+        Reg("Edit.DuplicateLine", "Duplicate Line", _ => PerformDuplicateLine());
+        Reg("Edit.SmartIndent", "Smart Indent", _ => { FlushCompound(); PerformSmartIndent(); });
+        Reg("Edit.Indent", "Indent", _ => { FlushCompound(); PerformSimpleIndent(); });
+        Reg("Edit.Outdent", "Outdent", _ => { FlushCompound(); PerformOutdent(); });
+
+        // -- Line ending, indent conversion --
+
+        Reg("Edit.LineEndingLF", "Convert Line Endings to LF", doc => {
+            FlushCompound();
+            doc.ConvertLineEndings(Core.Documents.LineEnding.LF);
+            InvalidateLayout();
+        });
+        Reg("Edit.LineEndingCRLF", "Convert Line Endings to CRLF", doc => {
+            FlushCompound();
+            doc.ConvertLineEndings(Core.Documents.LineEnding.CRLF);
+            InvalidateLayout();
+        });
+        Reg("Edit.LineEndingCR", "Convert Line Endings to CR", doc => {
+            FlushCompound();
+            doc.ConvertLineEndings(Core.Documents.LineEnding.CR);
+            InvalidateLayout();
+        });
+        Reg("Edit.IndentToSpaces", "Convert Indentation to Spaces", doc => {
+            FlushCompound();
+            doc.ConvertIndentation(Core.Documents.IndentStyle.Spaces, _indentWidth);
+            InvalidateLayout();
+        });
+        Reg("Edit.IndentToTabs", "Convert Indentation to Tabs", doc => {
+            FlushCompound();
+            doc.ConvertIndentation(Core.Documents.IndentStyle.Tabs, _indentWidth);
+            InvalidateLayout();
+        });
+
+        // -- Encoding --
+
+        Reg("Edit.EncodingUtf8", "Set Encoding to UTF-8", doc => doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf8));
+        Reg("Edit.EncodingUtf8Bom", "Set Encoding to UTF-8 with BOM", doc => doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf8Bom));
+        Reg("Edit.EncodingUtf16Le", "Set Encoding to UTF-16 LE", doc => doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf16Le));
+        Reg("Edit.EncodingUtf16Be", "Set Encoding to UTF-16 BE", doc => doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf16Be));
+        Reg("Edit.EncodingWin1252", "Set Encoding to Windows-1252", doc => doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Windows1252));
+        Reg("Edit.EncodingAscii", "Set Encoding to ASCII", doc => doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Ascii));
+
+        // -- Scroll without moving caret --
+
+        Reg("Nav.ScrollLineUp", "Scroll Line Up", _ => {
+            FlushCompound();
+            ScrollValue -= GetRowHeight();
+            InvalidateVisual();
+        }, isVerticalNav: true);
+        Reg("Nav.ScrollLineDown", "Scroll Line Down", _ => {
+            FlushCompound();
+            ScrollValue += GetRowHeight();
+            InvalidateVisual();
+        }, isVerticalNav: true);
+
+        // -- Column selection commands (handled in preamble, register with empty action) --
+
+        Reg("Nav.ColumnSelectUp", "Column Select Up", _ => { }, isVerticalNav: true, isColumnAware: true);
+        Reg("Nav.ColumnSelectDown", "Column Select Down", _ => { }, isVerticalNav: true, isColumnAware: true);
+        Reg("Nav.ColumnSelectLeft", "Column Select Left", _ => { }, isColumnAware: true);
+        Reg("Nav.ColumnSelectRight", "Column Select Right", _ => { }, isColumnAware: true);
+
+        // -- Column-mode intercepts --
+        // These replace the normal behavior of existing commands when a column
+        // selection is active. Return true = fully handled; false = exit column
+        // mode and fall through to normal handling.
+        ColIntercept("Nav.ColumnSelectUp", doc => { PerformColumnSelectVertical(doc, -1); return true; });
+        ColIntercept("Nav.ColumnSelectDown", doc => { PerformColumnSelectVertical(doc, +1); return true; });
+        ColIntercept("Nav.ColumnSelectLeft", doc => { PerformColumnSelectHorizontal(doc, -1); return true; });
+        ColIntercept("Nav.ColumnSelectRight", doc => { PerformColumnSelectHorizontal(doc, +1); return true; });
+        ColIntercept("Nav.MoveLeft", doc => { PerformColumnMoveHorizontal(doc, -1); return true; });
+        ColIntercept("Nav.MoveRight", doc => { PerformColumnMoveHorizontal(doc, +1); return true; });
+        ColIntercept("Nav.MoveUp", doc => { PerformColumnMoveVertical(doc, -1); return true; });
+        ColIntercept("Nav.MoveDown", doc => { PerformColumnMoveVertical(doc, +1); return true; });
+        ColIntercept("Nav.SelectLeft", doc => { PerformColumnSelectHorizontal(doc, -1); return true; });
+        ColIntercept("Nav.SelectRight", doc => { PerformColumnSelectHorizontal(doc, +1); return true; });
+        ColIntercept("Nav.SelectUp", doc => { PerformColumnSelectVertical(doc, -1); return true; });
+        ColIntercept("Nav.SelectDown", doc => { PerformColumnSelectVertical(doc, +1); return true; });
+        ColIntercept("Nav.MoveHome", doc => {
+            if (doc.ColumnSel is { } sel) {
+                doc.ColumnSel = sel.MoveColumnsTo(0);
+                ScrollCaretIntoView(); InvalidateVisual(); ResetCaretBlink();
+            }
             return true;
-        }
-
-        // Column selection: intercept commands that operate differently in
-        // column mode, and exit column mode for everything else.
-        if (doc.ColumnSel != null) {
-            if (ColumnModeIntercept(doc, commandId)) {
-                return true;
+        });
+        ColIntercept("Nav.MoveEnd", doc => {
+            if (doc.ColumnSel is { } sel) {
+                doc.ColumnSel = sel.MoveColumnsTo(MaxEndColumn(doc, sel));
+                ScrollCaretIntoView(); InvalidateVisual(); ResetCaretBlink();
             }
-            // Non-column-aware commands exit column mode before proceeding.
-            if (!ColumnAwareCommands.Contains(commandId)) {
-                doc.ClearColumnSelection(_indentWidth);
-            }
-        }
-
-        switch (commandId) {
-            // -- Edit commands --
-            case Commands.CommandIds.EditBackspace:
-                Coalesce("backspace");
-                _editSw.Restart();
-                doc.DeleteBackward();
-                ScrollCaretIntoView();
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                InvalidateLayout();
-                ResetCaretBlink();
-                return true;
-
-            case Commands.CommandIds.EditDelete:
-                EditDelete();
-                return true;
-
-            case Commands.CommandIds.EditUndo:
-                PerformUndo();
-                return true;
-
-            case Commands.CommandIds.EditRedo:
-                PerformRedo();
-                return true;
-
-            case Commands.CommandIds.EditCut:
-                _ = CutAsync();
-                return true;
-
-            case Commands.CommandIds.EditCopy:
-                _ = CopyAsync();
-                return true;
-
-            case Commands.CommandIds.EditPaste:
-                _ = PasteAsync();
-                return true;
-
-            case Commands.CommandIds.EditPasteMore:
-                PasteMore();
-                return true;
-
-            case Commands.CommandIds.EditSelectAll:
-                PerformSelectAll();
-                return true;
-
-            case Commands.CommandIds.EditSelectWord:
-                PerformSelectWord();
-                return true;
-
-            case Commands.CommandIds.EditExpandSelection:
-                PerformExpandSelection();
-                return true;
-
-            case Commands.CommandIds.EditDeleteLine:
-                PerformDeleteLine();
-                return true;
-
-            case Commands.CommandIds.EditMoveLineUp:
-                PerformMoveLineUp();
-                return true;
-
-            case Commands.CommandIds.EditMoveLineDown:
-                PerformMoveLineDown();
-                return true;
-
-            case Commands.CommandIds.EditUpperCase:
-                PerformTransformCase(CaseTransform.Upper);
-                return true;
-
-            case Commands.CommandIds.EditLowerCase:
-                PerformTransformCase(CaseTransform.Lower);
-                return true;
-
-            case Commands.CommandIds.EditProperCase:
-                PerformTransformCase(CaseTransform.Proper);
-                return true;
-
-            case Commands.CommandIds.EditNewline:
-                FlushCompound();
-                _editSw.Restart();
-                doc.Insert(doc.LineEndingInfo.NewlineString);
-                ScrollCaretIntoView();
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                InvalidateLayout();
-                ResetCaretBlink();
-                return true;
-
-            case Commands.CommandIds.EditTab:
-                Coalesce("tab");
-                _editSw.Restart();
-                var tabText = doc.IndentInfo.Dominant == Core.Documents.IndentStyle.Tabs
-                    ? "\t"
-                    : new string(' ', _indentWidth);
-                doc.Insert(tabText);
-                ScrollCaretIntoView();
-                _editSw.Stop();
-                PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-                InvalidateLayout();
-                ResetCaretBlink();
-                return true;
-
-            // -- Navigation: horizontal --
-            case Commands.CommandIds.NavMoveLeft:
-                FlushCompound();
-                MoveCaretHorizontal(doc, -1, false, false);
-                return true;
-
-            case Commands.CommandIds.NavSelectLeft:
-                FlushCompound();
-                MoveCaretHorizontal(doc, -1, false, true);
-                return true;
-
-            case Commands.CommandIds.NavMoveRight:
-                FlushCompound();
-                MoveCaretHorizontal(doc, +1, false, false);
-                return true;
-
-            case Commands.CommandIds.NavSelectRight:
-                FlushCompound();
-                MoveCaretHorizontal(doc, +1, false, true);
-                return true;
-
-            case Commands.CommandIds.NavMoveWordLeft:
-                FlushCompound();
-                MoveCaretHorizontal(doc, -1, true, false);
-                return true;
-
-            case Commands.CommandIds.NavSelectWordLeft:
-                FlushCompound();
-                MoveCaretHorizontal(doc, -1, true, true);
-                return true;
-
-            case Commands.CommandIds.NavMoveWordRight:
-                FlushCompound();
-                MoveCaretHorizontal(doc, +1, true, false);
-                return true;
-
-            case Commands.CommandIds.NavSelectWordRight:
-                FlushCompound();
-                MoveCaretHorizontal(doc, +1, true, true);
-                return true;
-
-            // -- Navigation: vertical --
-            case Commands.CommandIds.NavMoveUp:
-                FlushCompound();
-                MoveCaretVertical(doc, -1, false);
-                return true;
-
-            case Commands.CommandIds.NavSelectUp:
-                FlushCompound();
-                MoveCaretVertical(doc, -1, true);
-                return true;
-
-            case Commands.CommandIds.NavMoveDown:
-                FlushCompound();
-                MoveCaretVertical(doc, +1, false);
-                return true;
-
-            case Commands.CommandIds.NavSelectDown:
-                FlushCompound();
-                MoveCaretVertical(doc, +1, true);
-                return true;
-
-            // -- Navigation: home/end --
-            case Commands.CommandIds.NavMoveHome:
-                FlushCompound();
-                MoveCaretToLineEdge(doc, toStart: true, false);
-                return true;
-
-            case Commands.CommandIds.NavSelectHome:
-                FlushCompound();
-                MoveCaretToLineEdge(doc, toStart: true, true);
-                return true;
-
-            case Commands.CommandIds.NavMoveEnd:
-                FlushCompound();
-                MoveCaretToLineEdge(doc, toStart: false, false);
-                return true;
-
-            case Commands.CommandIds.NavSelectEnd:
-                FlushCompound();
-                MoveCaretToLineEdge(doc, toStart: false, true);
-                return true;
-
-            // -- Navigation: document start/end --
-            case Commands.CommandIds.NavMoveDocStart:
-                FlushCompound();
-                doc.Selection = Selection.Collapsed(0);
-                ScrollCaretIntoView();
-                InvalidateVisual();
-                ResetCaretBlink();
-                return true;
-
-            case Commands.CommandIds.NavSelectDocStart:
-                FlushCompound();
-                doc.Selection = doc.Selection.ExtendTo(0);
-                ScrollCaretIntoView();
-                InvalidateVisual();
-                ResetCaretBlink();
-                return true;
-
-            case Commands.CommandIds.NavMoveDocEnd:
-                FlushCompound();
-                doc.Selection = Selection.Collapsed(doc.Table.Length);
-                ScrollCaretIntoView();
-                InvalidateVisual();
-                ResetCaretBlink();
-                return true;
-
-            case Commands.CommandIds.NavSelectDocEnd:
-                FlushCompound();
-                doc.Selection = doc.Selection.ExtendTo(doc.Table.Length);
-                ScrollCaretIntoView();
-                InvalidateVisual();
-                ResetCaretBlink();
-                return true;
-
-            // -- Navigation: page up/down --
-            case Commands.CommandIds.NavPageUp:
-                FlushCompound();
-                MoveCaretByPage(doc, -1, false);
-                return true;
-
-            case Commands.CommandIds.NavSelectPageUp:
-                FlushCompound();
-                MoveCaretByPage(doc, -1, true);
-                return true;
-
-            case Commands.CommandIds.NavPageDown:
-                FlushCompound();
-                MoveCaretByPage(doc, +1, false);
-                return true;
-
-            case Commands.CommandIds.NavSelectPageDown:
-                FlushCompound();
-                MoveCaretByPage(doc, +1, true);
-                return true;
-
-            // -- New editing commands --
-            case Commands.CommandIds.EditDeleteWordLeft:
-                FlushCompound();
-                if (!doc.Selection.IsEmpty) {
-                    doc.DeleteSelection();
-                } else {
-                    var wordLeft = FindWordBoundaryLeft(doc, doc.Selection.Caret);
-                    if (wordLeft < doc.Selection.Caret) {
-                        doc.Selection = new Selection(wordLeft, doc.Selection.Caret);
-                        doc.DeleteSelection();
-                    }
-                }
-                ScrollCaretIntoView();
-                InvalidateLayout();
-                ResetCaretBlink();
-                return true;
-
-            case Commands.CommandIds.EditDeleteWordRight:
-                FlushCompound();
-                if (!doc.Selection.IsEmpty) {
-                    doc.DeleteSelection();
-                } else {
-                    var wordRight = FindWordBoundaryRight(doc, doc.Selection.Caret);
-                    if (wordRight > doc.Selection.Caret) {
-                        doc.Selection = new Selection(doc.Selection.Caret, wordRight);
-                        doc.DeleteSelection();
-                    }
-                }
-                ScrollCaretIntoView();
-                InvalidateLayout();
-                ResetCaretBlink();
-                return true;
-
-            case Commands.CommandIds.EditInsertLineBelow:
-                PerformInsertLineBelow();
-                return true;
-
-            case Commands.CommandIds.EditInsertLineAbove:
-                PerformInsertLineAbove();
-                return true;
-
-            case Commands.CommandIds.EditDuplicateLine:
-                PerformDuplicateLine();
-                return true;
-
-            case Commands.CommandIds.EditSmartIndent:
-                FlushCompound();
-                PerformSmartIndent();
-                return true;
-
-            case Commands.CommandIds.EditIndent:
-                FlushCompound();
-                PerformSimpleIndent();
-                return true;
-
-            case Commands.CommandIds.EditOutdent:
-                FlushCompound();
-                PerformOutdent();
-                return true;
-
-            case Commands.CommandIds.EditLineEndingLF:
-                FlushCompound();
-                doc.ConvertLineEndings(Core.Documents.LineEnding.LF);
-                InvalidateLayout();
-                return true;
-            case Commands.CommandIds.EditLineEndingCRLF:
-                FlushCompound();
-                doc.ConvertLineEndings(Core.Documents.LineEnding.CRLF);
-                InvalidateLayout();
-                return true;
-            case Commands.CommandIds.EditLineEndingCR:
-                FlushCompound();
-                doc.ConvertLineEndings(Core.Documents.LineEnding.CR);
-                InvalidateLayout();
-                return true;
-
-            case Commands.CommandIds.EditIndentToSpaces:
-                FlushCompound();
-                doc.ConvertIndentation(Core.Documents.IndentStyle.Spaces, _indentWidth);
-                InvalidateLayout();
-                return true;
-            case Commands.CommandIds.EditIndentToTabs:
-                FlushCompound();
-                doc.ConvertIndentation(Core.Documents.IndentStyle.Tabs, _indentWidth);
-                InvalidateLayout();
-                return true;
-
-            // -- Encoding (save-time only, no content conversion) --
-            case Commands.CommandIds.EditEncodingUtf8:
-                doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf8);
-                return true;
-            case Commands.CommandIds.EditEncodingUtf8Bom:
-                doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf8Bom);
-                return true;
-            case Commands.CommandIds.EditEncodingUtf16Le:
-                doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf16Le);
-                return true;
-            case Commands.CommandIds.EditEncodingUtf16Be:
-                doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf16Be);
-                return true;
-            case Commands.CommandIds.EditEncodingWin1252:
-                doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Windows1252);
-                return true;
-            case Commands.CommandIds.EditEncodingAscii:
-                doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Ascii);
-                return true;
-
-            // -- Scroll without moving caret --
-            case Commands.CommandIds.NavScrollLineUp:
-                FlushCompound();
-                ScrollValue -= GetRowHeight();
-                InvalidateVisual();
-                return true;
-
-            case Commands.CommandIds.NavScrollLineDown:
-                FlushCompound();
-                ScrollValue += GetRowHeight();
-                InvalidateVisual();
-                return true;
-
-            default:
-                return false;
-        }
+            return true;
+        });
+        ColIntercept("Nav.MoveWordLeft", doc => { PerformColumnMoveWord(doc, -1); return true; });
+        ColIntercept("Nav.MoveWordRight", doc => { PerformColumnMoveWord(doc, +1); return true; });
+        ColIntercept("Nav.SelectWordLeft", doc => { PerformColumnSelectWord(doc, -1); return true; });
+        ColIntercept("Nav.SelectWordRight", doc => { PerformColumnSelectWord(doc, +1); return true; });
+        ColIntercept("Edit.Newline", doc => {
+            // Exit column mode, then fall through to normal newline handling.
+            doc.ClearColumnSelection(_indentWidth);
+            return false;
+        });
+        ColIntercept("Edit.Backspace", doc => {
+            FlushCompound();
+            _editSw.Restart();
+            doc.DeleteBackwardAtCursors(_indentWidth);
+            ScrollCaretIntoView();
+            _editSw.Stop();
+            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+            InvalidateLayout(); ResetCaretBlink();
+            return true;
+        });
+        ColIntercept("Edit.Delete", doc => {
+            FlushCompound();
+            _editSw.Restart();
+            doc.DeleteForwardAtCursors(_indentWidth);
+            ScrollCaretIntoView();
+            _editSw.Stop();
+            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+            InvalidateLayout(); ResetCaretBlink();
+            return true;
+        });
+        ColIntercept("Edit.Tab", doc => {
+            var tabText = doc.IndentInfo.Dominant == Core.Documents.IndentStyle.Tabs
+                ? "\t"
+                : new string(' ', _indentWidth);
+            Coalesce("col-tab");
+            _editSw.Restart();
+            doc.InsertAtCursors(tabText, _indentWidth);
+            ScrollCaretIntoView();
+            _editSw.Stop();
+            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+            InvalidateLayout(); ResetCaretBlink();
+            return true;
+        });
     }
 
     // -------------------------------------------------------------------------

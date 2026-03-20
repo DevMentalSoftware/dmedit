@@ -31,7 +31,7 @@ public class ProfileLoaderTests {
 
     [Fact]
     public void AllProfileCommandIdsAreValid() {
-        var validIds = CommandRegistry.All.Select(c => c.Id).ToHashSet();
+        var validIds = TestCommands.CreateRegistry().All.Select(c => c.Id).ToHashSet();
 
         foreach (var id in ProfileLoader.ProfileIds) {
             var profile = ProfileLoader.Load(id);
@@ -121,20 +121,20 @@ public class ProfileLoaderTests {
 
         // Commands intentionally left unbound in the Default profile.
         var intentionallyUnbound = new HashSet<string> {
-            CommandIds.EditInsertLineBelow,
-            CommandIds.EditInsertLineAbove,
-            CommandIds.EditDuplicateLine,
-            CommandIds.EditTab,
-            CommandIds.FileRevertFile,
-            CommandIds.ViewZoomIn,
-            CommandIds.ViewZoomOut,
-            CommandIds.WindowSettings,
-            CommandIds.NavFocusEditor,
+            "Edit.InsertLineBelow",
+            "Edit.InsertLineAbove",
+            "Edit.DuplicateLine",
+            "Edit.Tab",
+            "File.RevertFile",
+            "View.ZoomIn",
+            "View.ZoomOut",
+            "Window.Settings",
+            "Nav.FocusEditor",
         };
 
         // At minimum, all File, Edit, Nav commands (minus exclusions) should be bound.
         var expectedCategories = new[] { "File", "Edit", "Nav" };
-        var allIds = CommandRegistry.All.Select(c => c.Id).ToHashSet();
+        var allIds = TestCommands.CreateRegistry().All.Select(c => c.Id).ToHashSet();
         foreach (var cat in expectedCategories) {
             var catCommands = allIds
                 .Where(id => id.StartsWith(cat + "."))
@@ -154,7 +154,7 @@ public class ProfileLoaderTests {
     /// </summary>
     [Fact]
     public void AllProfilesContainEveryCommandId() {
-        var allIds = CommandRegistry.All.Select(c => c.Id).ToList();
+        var allIds = TestCommands.CreateRegistry().All.Select(c => c.Id).ToList();
         var failures = new StringBuilder();
 
         foreach (var profileId in ProfileLoader.ProfileIds) {
@@ -185,7 +185,7 @@ public class ProfileLoaderTests {
     /// </summary>
     [Fact(Skip = "Manual helper — remove Skip to auto-fix profile JSONs")]
     public void FixProfiles_AddMissingCommandIds() {
-        var allIds = CommandRegistry.All.Select(c => c.Id).ToList();
+        var allIds = TestCommands.CreateRegistry().All.Select(c => c.Id).ToList();
 
         // Walk up from the test output directory to the repo root.
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

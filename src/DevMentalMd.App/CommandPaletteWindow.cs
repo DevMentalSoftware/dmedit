@@ -7,7 +7,9 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Controls.Documents;
 using DevMentalMd.App.Commands;
+using DevMentalMd.App.Controls;
 using DevMentalMd.App.Services;
 
 namespace DevMentalMd.App;
@@ -19,20 +21,24 @@ namespace DevMentalMd.App;
 /// VS Code's Ctrl+Shift+P command palette.
 /// </summary>
 public class CommandPaletteWindow : Window {
+    private readonly CommandRegistry _commands;
     private readonly KeyBindingService _keyBindings;
-    private readonly TextBox _filterBox;
+    private readonly AppSettings _settings;
+    private readonly DMTextBox _filterBox;
+    private readonly ToggleButton _groupToggle;
     private readonly StackPanel _listPanel;
     private readonly ScrollViewer _listScroll;
     private readonly TextBlock _hintText;
     private readonly Border _rootBorder;
 
     // Flat list of visible command rows, kept in sync with the panel.
-    private readonly List<(Border border, CommandDescriptor cmd)> _visibleRows = [];
+    private readonly List<(Border border, Command cmd)> _visibleRows = [];
     private int _selectedIndex = -1;
 
     // Suppresses redundant filter updates while arrow navigation is filling the box.
     private bool _suppressFilter;
 
+    private bool _grouped;
     private EditorTheme _theme = EditorTheme.Light;
 
     /// <summary>
@@ -41,9 +47,13 @@ public class CommandPaletteWindow : Window {
     /// </summary>
     public string? SelectedCommandId { get; private set; }
 
-    public CommandPaletteWindow(KeyBindingService keyBindings, EditorTheme theme) {
+    public CommandPaletteWindow(CommandRegistry commands, KeyBindingService keyBindings,
+                                AppSettings settings, EditorTheme theme) {
+        _commands = commands;
         _keyBindings = keyBindings;
+        _settings = settings;
         _theme = theme;
+        _grouped = settings.CommandPaletteGroupByCategory;
 
         Title = "Command Palette";
         Width = 520;
@@ -53,19 +63,69 @@ public class CommandPaletteWindow : Window {
         SystemDecorations = SystemDecorations.BorderOnly;
         ShowInTaskbar = false;
 
-        // Filter text box.
-        _filterBox = new TextBox {
+        // Filter text box with built-in clear button.
+        _filterBox = new DMTextBox {
             Watermark = "Type to filter commands\u2026",
             FontSize = 14,
-            Margin = new Thickness(8, 8, 8, 4),
         };
         _filterBox.PropertyChanged += (_, e) => {
-            if (e.Property == TextBox.TextProperty && !_suppressFilter) {
+            if (e.Property == DMTextBox.TextProperty && !_suppressFilter) {
                 RebuildList();
             }
         };
-        _filterBox.AddHandler(
-            KeyDownEvent, OnFilterKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        _filterBox.TemplateApplied += (_, _) => {
+            _filterBox.InnerTextBox?.AddHandler(
+                KeyDownEvent, OnFilterKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        };
+
+        // Grouping toggle button.
+        _groupToggle = new ToggleButton {
+            Content = "C",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            IsChecked = _grouped,
+            Padding = new Thickness(5, 3),
+            MinHeight = 0,
+            MinWidth = 0,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(_groupToggle, "Group by category");
+        _groupToggle.IsCheckedChanged += (_, _) => {
+            _grouped = _groupToggle.IsChecked == true;
+            _settings.CommandPaletteGroupByCategory = _grouped;
+            _settings.ScheduleSave();
+            RebuildList();
+        };
+
+        // Close button (same style as find bar close).
+        var closeBtn = new Button {
+            Width = 24, Height = 24,
+            Padding = new Thickness(0),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Content = new TextBlock {
+                Text = IconGlyphs.Close,
+                FontFamily = IconGlyphs.Family,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            },
+        };
+        ToolTip.SetTip(closeBtn, "Close (Escape)");
+        closeBtn.Click += (_, _) => Close();
+
+        var filterRow = new Grid {
+            ColumnDefinitions = ColumnDefinitions.Parse("*,Auto,Auto"),
+            Margin = new Thickness(8, 8, 8, 4),
+        };
+        Grid.SetColumn(_filterBox, 0);
+        Grid.SetColumn(_groupToggle, 1);
+        Grid.SetColumn(closeBtn, 2);
+        _groupToggle.Margin = new Thickness(4, 0, 0, 0);
+        closeBtn.Margin = new Thickness(2, 0, 0, 0);
+        filterRow.Children.Add(_filterBox);
+        filterRow.Children.Add(_groupToggle);
+        filterRow.Children.Add(closeBtn);
 
         // Command list.
         _listPanel = new StackPanel { Spacing = 0 };
@@ -86,8 +146,8 @@ public class CommandPaletteWindow : Window {
         };
 
         var root = new DockPanel();
-        DockPanel.SetDock(_filterBox, Dock.Top);
-        root.Children.Add(_filterBox);
+        DockPanel.SetDock(filterRow, Dock.Top);
+        root.Children.Add(filterRow);
         root.Children.Add(_hintText);
         root.Children.Add(_listScroll);
 
@@ -117,12 +177,10 @@ public class CommandPaletteWindow : Window {
         var filter = _filterBox.Text?.Trim() ?? "";
         var hasFilter = filter.Length > 0;
 
-        foreach (var cmd in CommandRegistry.All) {
-            // Skip low-level typing primitives that aren't useful in the palette.
-            if (IsHiddenCommand(cmd.Id)) {
-                continue;
-            }
-
+        // Collect filtered commands.
+        var filtered = new List<Command>();
+        foreach (var cmd in _commands.All) {
+            if (!cmd.ShowInPalette) continue;
             if (hasFilter) {
                 var matchesName = cmd.DisplayName.Contains(filter,
                     StringComparison.OrdinalIgnoreCase);
@@ -134,10 +192,13 @@ public class CommandPaletteWindow : Window {
                     continue;
                 }
             }
+            filtered.Add(cmd);
+        }
 
-            var row = CreateRow(cmd);
-            _listPanel.Children.Add(row);
-            _visibleRows.Add((row, cmd));
+        if (_grouped) {
+            BuildGroupedList(filtered);
+        } else {
+            BuildFlatList(filtered);
         }
 
         _hintText.IsVisible = _visibleRows.Count == 0;
@@ -148,37 +209,47 @@ public class CommandPaletteWindow : Window {
         }
     }
 
-    /// <summary>
-    /// Commands that are low-level typing primitives (single character input,
-    /// backspace, delete, newline, tab) are hidden from the palette since
-    /// executing them from here doesn't make practical sense.
-    /// </summary>
-    private static bool IsHiddenCommand(string id) =>
-        id is CommandIds.EditNewline
-            or CommandIds.EditTab
-            or CommandIds.EditBackspace
-            or CommandIds.EditDelete;
+    private void BuildFlatList(List<Command> commands) {
+        commands.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName,
+            StringComparison.OrdinalIgnoreCase));
+        foreach (var cmd in commands) {
+            var row = CreateRow(cmd, indent: false);
+            _listPanel.Children.Add(row);
+            _visibleRows.Add((row, cmd));
+        }
+    }
 
-    private Border CreateRow(CommandDescriptor cmd) {
+    private void BuildGroupedList(List<Command> commands) {
+        var groups = commands
+            .GroupBy(c => c.Category)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in groups) {
+            // Category header (not selectable).
+            var header = new TextBlock {
+                Text = group.Key,
+                FontSize = 13,
+                FontWeight = FontWeight.SemiBold,
+                Margin = new Thickness(4, 8, 0, 2),
+                Foreground = _theme.EditorForeground,
+            };
+            _listPanel.Children.Add(header);
+
+            foreach (var cmd in group.OrderBy(c => c.DisplayName, StringComparer.OrdinalIgnoreCase)) {
+                var row = CreateRow(cmd, indent: true);
+                _listPanel.Children.Add(row);
+                _visibleRows.Add((row, cmd));
+            }
+        }
+    }
+
+    private Border CreateRow(Command cmd, bool indent) {
         var gesture1 = _keyBindings.GetGestureText(cmd.Id) ?? "";
         var gesture2 = _keyBindings.GetGesture2Text(cmd.Id) ?? "";
         var gestureDisplay = gesture1;
         if (gesture2.Length > 0) {
             gestureDisplay += gestureDisplay.Length > 0 ? $"  |  {gesture2}" : gesture2;
         }
-
-        var nameText = new TextBlock {
-            Text = cmd.DisplayName,
-            FontSize = 13,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-
-        var categoryText = new TextBlock {
-            Text = cmd.Category,
-            FontSize = 11,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8, 0, 0, 0),
-        };
 
         var gestureText = new TextBlock {
             Text = gestureDisplay,
@@ -187,19 +258,45 @@ public class CommandPaletteWindow : Window {
             HorizontalAlignment = HorizontalAlignment.Right,
         };
 
-        var grid = new Grid {
-            ColumnDefinitions = ColumnDefinitions.Parse("Auto,Auto,*"),
-        };
-        Grid.SetColumn(nameText, 0);
-        Grid.SetColumn(categoryText, 1);
-        Grid.SetColumn(gestureText, 2);
-        grid.Children.Add(nameText);
-        grid.Children.Add(categoryText);
-        grid.Children.Add(gestureText);
+        Grid grid;
+        if (_grouped) {
+            var nameText = new TextBlock {
+                Text = cmd.DisplayName,
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            grid = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("Auto,*") };
+            Grid.SetColumn(nameText, 0);
+            Grid.SetColumn(gestureText, 1);
+            grid.Children.Add(nameText);
+            grid.Children.Add(gestureText);
+        } else {
+            // Fixed-width category column (52px fits "Window" at 11px) so
+            // command names align. Inlines in a single TextBlock share baselines.
+            var nameBlock = new TextBlock {
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                MinWidth = 52,
+            };
+            nameBlock.Inlines!.Add(new Run(cmd.Category) { FontSize = 11 });
+            var nameText = new TextBlock {
+                Text = cmd.DisplayName,
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            grid = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("Auto,Auto,*") };
+            Grid.SetColumn(nameBlock, 0);
+            Grid.SetColumn(nameText, 1);
+            Grid.SetColumn(gestureText, 2);
+            nameBlock.Margin = new Thickness(0, 0, 8, 0);
+            grid.Children.Add(nameBlock);
+            grid.Children.Add(nameText);
+            grid.Children.Add(gestureText);
+        }
 
         var border = new Border {
             Child = grid,
-            Padding = new Thickness(8, 5, 8, 5),
+            Padding = new Thickness(indent ? 20 : 8, 5, 8, 5),
             Background = Brushes.Transparent,
             CornerRadius = new CornerRadius(3),
             Tag = cmd.Id,
@@ -221,6 +318,7 @@ public class CommandPaletteWindow : Window {
             }
         };
 
+        ApplyRowTheme(border, cmd);
         return border;
     }
 
@@ -264,7 +362,9 @@ public class CommandPaletteWindow : Window {
         _suppressFilter = true;
         _filterBox.Text = _visibleRows[newIdx].cmd.DisplayName;
         // Move caret to end.
-        _filterBox.CaretIndex = _filterBox.Text?.Length ?? 0;
+        if (_filterBox.InnerTextBox != null) {
+            _filterBox.InnerTextBox.CaretIndex = _filterBox.Text?.Length ?? 0;
+        }
         _suppressFilter = false;
     }
 
@@ -343,16 +443,21 @@ public class CommandPaletteWindow : Window {
         }
     }
 
-    private void ApplyRowTheme(Border border, CommandDescriptor cmd) {
+    private void ApplyRowTheme(Border border, Command cmd) {
         if (border.Child is not Grid grid) return;
+        var lastCol = grid.ColumnDefinitions.Count - 1;
         foreach (var child in grid.Children) {
-            if (child is TextBlock tb) {
-                var col = Grid.GetColumn(tb);
-                tb.Foreground = col switch {
-                    1 => _theme.SettingsDimForeground,   // category
-                    2 => _theme.SettingsAccent,           // gesture
-                    _ => _theme.EditorForeground,         // name
-                };
+            if (child is not TextBlock tb) continue;
+            var col = Grid.GetColumn(tb);
+            if (col == lastCol) {
+                // Gesture (always the last column).
+                tb.Foreground = _theme.SettingsAccent;
+            } else if (tb.Inlines is { Count: > 0 }) {
+                // Category block with Inlines (ungrouped mode, col 0).
+                tb.Foreground = _theme.SettingsDimForeground;
+            } else {
+                // Command name.
+                tb.Foreground = _theme.EditorForeground;
             }
         }
     }
