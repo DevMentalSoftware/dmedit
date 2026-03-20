@@ -221,6 +221,7 @@ public partial class MainWindow : Window {
             Editor.Document = tab.Document;
             Editor.IsInputBlocked = tab.IsLoading;
             Editor.RestoreScrollState(tab);
+            Editor.Focus();
 
             // When a loading tab finishes, unblock the editor if it's
             // still the active tab. One-shot — fires once per load.
@@ -745,7 +746,7 @@ public partial class MainWindow : Window {
         _commands.Register("View.ZoomOut", "Zoom Out",
             () => Editor.FontSize = Math.Max(Editor.FontSize - 1, 6));
         _commands.Register("View.ZoomReset", "Zoom Reset",
-            () => Editor.FontSize = 11.ToPixels());
+            () => Editor.FontSize = _settings.EditorFontSize.ToPixels());
 
         // -- Window --
         _commands.Register("Window.NextTab", "Next Tab", () => CycleTab(+1));
@@ -1112,6 +1113,13 @@ public partial class MainWindow : Window {
         _statusBarGlyph = CreateMenuCheckGlyph(_settings.ShowStatusBar);
         MenuStatusBar.Icon = _statusBarGlyph;
         MenuStatusBar.Click += (_, _) => ToggleStatusBar();
+
+        // Editor font — always apply the resolved font so it matches the
+        // settings preview exactly (avoids subtle differences from the
+        // multi-font fallback chain in the EditorControl default).
+        Editor.FontFamily = new FontFamily(
+            SettingRowFactory.GetEffectiveFontFamily(_settings));
+        Editor.FontSize = _settings.EditorFontSize.ToPixels();
 
         // Wrap Lines + column limit
         Editor.WrapLines = _settings.WrapLines;
@@ -2054,6 +2062,13 @@ public partial class MainWindow : Window {
                     break;
                 case "IndentWidth":
                     Editor.IndentWidth = _settings.IndentWidth;
+                    break;
+                case "EditorFontFamily":
+                    Editor.FontFamily = new FontFamily(
+                        SettingRowFactory.GetEffectiveFontFamily(_settings));
+                    break;
+                case "EditorFontSize":
+                    Editor.FontSize = _settings.EditorFontSize.ToPixels();
                     break;
                 case "DevMode":
                     UpdateStatusBarVisibility();

@@ -4,30 +4,25 @@
 * Add feature to track usage count of commands with separate counters for menu vs keyboard vs command palette use.
 * Add feature to hide menus that have high keyboard use (with the assumption the user has learned the shortcut.)
 * Add file history feature based on a hidden git implementation. This would only be used on files not already within a git repo. We're making our own simplified interface on top of git to allow Blame, Checkpoints/Log, Commit/Amend, and other features.
-* If we close a file while it's still loading then loading should cancel. The session state should know enough about the file to know whether it has unsaved edits, so this shouldn't impact the logic for asking the user what to do as usual.
-* Detect changes in open files, and handle the same as when we detect changes at open of session. May need to revise the latter to account for possible actions. One of the possibilities is always to discard unsaved edits and load the new base file. Another would be to merge the unsaved edits into the new base (like a diff utility would do). A third option would be to do nothing so that if the user changes the base file to match the original then we're back to a good state. These latter two options might really be the same, because as long as we don't actually modify the base again, it would be ok to show the current edits as if they're merged into the new base.
-* Add a setting for picking the Editor Font. Show the system fonts as a list, but have a toggle button to filter to fixed width fonts by default. For the initial default, prefer "Cascadia Code", Consolas, or "Courier", and something appropriate for Linux.
-* Add support for Selecting by column using either Alt-Shift-ArrowUpDown or Alt-MouseDrag.  Support duplicating the caret across each row of the selection and making simultaneous edits. (NP++, VS, and others all support this)
-* When opening a file and the only current tab is the Unnamed tab then replace that tab with the new opened one.
-* Command Palette should not put the category after each command. Instead organize by category like we did in the keyboard settings. In fact this is almost a duplicate of the keyboard settings command list and search box, but with enter key or double click of a command actually running the command.
 * Add a Tail command boolean setting. When enabled then if ReloadFile occurs \*and\* we are currently scrolled to the end of the document \*and\* the file doesn't have any unsaved edits, then automatically keep the document scrolled to the bottom to see any new content. However, if we are currently scrolled somewhere else in the document then the reload should not move the current scroll position (unless it's no longer available such as when the external change was to delete that part of the file.)
 * Add tab context menu to open the file location in Explorer (or equiv unix).
 * Add tab context menu to copy the path to the clipboard.
 * The popup when closing a file with changes has the wrong background color. The system Open and Save dialogs have a different look than the reset of the app, but maybe any modal popups should try to match that look? Or we could stick with our custom look for our own non-system dialogs. I think the background should match our menu/statusbar, and the buttons should act like our other buttons.
 * Same for the Close All popup.
 * Add Toolbar buttons for Open, Save, Save All, Wrap, Cut, Copy, Paste, Find, Show Whitespace, Tail, Command Palette.
-* Add Page Setup and Print (System Dialogs or does Avalonia provide?)
-* Add a command to clear the recent files list (no menu or keystroke).
-* Add overwrite mode (Insert key), and display this mode in the status bar. Also change the caret to be letter width and translucen when in overwrite mode.
-* There appears to be a bug in Avalonia text boxes where the caret is blinking slightly on top of a letter instead of just the right of it.
 * Add an option for whether to subtly highlight (like selection but gray translucent) all text in the document that matches the current selection. This is something that some editors do and people might want it, though I personally hate it.
 * If one or more crash reports exist, then a Help menu item should be added to send the crash reports to support@devmental.com.
 * We need context menus in the editor, but need to decide what subset of commands should be there.
-* Bug: After opening a file with the recent menu, the File menu displayed as if it were focused although the actual focus had moved to the editor and we were able to edit the text with the keyboard.
 
 
 
 
 
-Another idea. We use char and String several places. Does dotnet still internally use 16bit characters for these structures? Could we optimize memory usage by using byte and byte\[] instead, and just take on the task of handling complexities of UTF-8 encoding? 
+Another idea. We use char and String several places. Does dotnet still internally use 16bit characters for these structures? I remember some talk about switching to UTF8 by default, but don't know if it happened.
+
+
+
+
+
+
 

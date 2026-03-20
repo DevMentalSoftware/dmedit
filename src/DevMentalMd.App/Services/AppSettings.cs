@@ -137,6 +137,26 @@ public sealed class AppSettings {
     public bool BackupOnSave { get; set; }
 
     // -----------------------------------------------------------------
+    // Editor font
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Editor font family name. Null means use the built-in default
+    /// (Cascadia Code with Consolas / Courier New fallbacks).
+    /// </summary>
+    public string? EditorFontFamily { get; set; }
+
+    /// <summary>
+    /// Editor font size in typographic points. Default: 11.
+    /// </summary>
+    public int EditorFontSize { get; set; } = 11;
+
+    /// <summary>
+    /// Custom sample text for the font preview. Null uses the built-in default.
+    /// </summary>
+    public string? FontPreviewText { get; set; }
+
+    // -----------------------------------------------------------------
     // Theme
     // -----------------------------------------------------------------
 

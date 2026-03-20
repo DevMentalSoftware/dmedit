@@ -115,6 +115,16 @@ public partial class SettingsControl : UserControl {
             _headersByCategory[cat] = header;
             SettingsContent.Children.Add(header);
 
+            // Font row at the top of Display (composite, not a standard descriptor).
+            if (cat == "Display") {
+                var fontRow = SettingRowFactory.CreateFontRow(_settings, key => {
+                    SettingChanged?.Invoke(key);
+                });
+                _rowsByCategory[cat].Add(fontRow);
+                _allRows.Add(fontRow);
+                SettingsContent.Children.Add(fontRow);
+            }
+
             // Setting rows for this category
             var descriptors = SettingsRegistry.All.Where(d => d.Category == cat);
             foreach (var desc in descriptors) {
@@ -230,7 +240,7 @@ public partial class SettingsControl : UserControl {
     /// Walks a single setting row border and applies theme colors to
     /// description TextBlocks (tag "dim") and the modified-state accent.
     /// </summary>
-    private static void ThemeSettingRow(Border row, EditorTheme theme) {
+    private void ThemeSettingRow(Border row, EditorTheme theme) {
         // Modified indicator: non-transparent border means "modified".
         if (row.BorderBrush is SolidColorBrush scb && scb.Color.A > 0) {
             row.BorderBrush = theme.SettingsAccent;
@@ -240,7 +250,7 @@ public partial class SettingsControl : UserControl {
         ThemeChildren(row, theme);
     }
 
-    private static void ThemeChildren(Control parent, EditorTheme theme) {
+    private void ThemeChildren(Control parent, EditorTheme theme) {
         IEnumerable<Control>? children = parent switch {
             Panel p => p.Children.OfType<Control>(),
             ContentControl cc when cc.Content is Control c => [c],
@@ -257,6 +267,24 @@ public partial class SettingsControl : UserControl {
                 } else if (tb.Tag is not string) {
                     // Display name labels (no tag) get foreground.
                     tb.Foreground = theme.EditorForeground;
+                }
+            }
+            if (child is TextBox txb && txb.Tag is "preview") {
+                txb.Foreground = theme.EditorForeground;
+                txb.CaretBrush = theme.EditorForeground;
+            }
+            if (child is Border b && b.Tag is "previewBorder") {
+                b.Background = theme.EditorBackground;
+                b.BorderBrush = theme.SettingsInputBorder;
+            }
+            if (child is Controls.DMEditableCombo combo && _settings != null) {
+                var displayFont = SettingRowFactory.GetDisplayFontFamily(_settings);
+                var brush = SettingRowFactory.IsFontInstalled(displayFont)
+                    ? theme.EditorForeground
+                    : theme.SettingsErrorForeground;
+                combo.Foreground = brush;
+                if (combo.InnerTextBox != null) {
+                    combo.InnerTextBox.Foreground = brush;
                 }
             }
             ThemeChildren(child, theme);

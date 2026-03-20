@@ -29,6 +29,19 @@ small one — it is the primary way a fresh session recovers context.
 
 ### Recently completed
 
+- **Editor Font Setting** (2026-03-20) — font picker in Display settings: DMEditableCombo
+  with dropdown (no filtering, full list always shown), ToggleButton "F" for fixed-width
+  filter, NumericUpDown for size (points), and editable preview paragraph with editor
+  colors. Font name validation (red foreground for uninstalled fonts, case normalization
+  on lost focus). Default font auto-detected from preference list (Cascadia Code →
+  Consolas → DejaVu Sans Mono → Liberation Mono → Courier New). Star glyph marks the
+  default in the dropdown (display-only via ItemTemplate). Custom preview text persisted.
+  DMEditableCombo enhanced: ShowClearButton, HighlightItem, scroll containment, popup
+  close-before-text ordering fix. Settings controls hardened: left-click-only guards on
+  checkboxes/combo boxes/command rows, context menu disabled on shortcut key capture
+  boxes. GoTo Line and Command Palette dialogs: transparent corners, close buttons.
+  Editor focus restored when switching from settings tab.
+
 - **Save crash handling** (2026-03-17) — crash report infrastructure writes diagnostic
   files to the session directory when an unexpected save failure occurs. Error dialog
   offers Save As (to try a different location) or Close Tab. BackupOnSave
@@ -57,7 +70,7 @@ small one — it is the primary way a fresh session recovers context.
 - **Command Registry + Key Binding System** (2026-03-06) — centralized dispatch,
   user-customizable bindings, Keyboard settings section, 55 App tests.
 
-### In progress (uncommitted, 2026-03-11)
+### In progress (uncommitted, 2026-03-20)
 
 
 #### Design decisions made

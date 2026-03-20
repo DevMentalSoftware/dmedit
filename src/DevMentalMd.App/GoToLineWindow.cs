@@ -24,23 +24,50 @@ public class GoToLineWindow : Window {
     public GoToLineWindow(EditorTheme theme, long currentLine = 1) {
         Title = "Go to Line";
         Width = 300;
-        Height = 70;
+        SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        SystemDecorations = SystemDecorations.BorderOnly;
+        SystemDecorations = SystemDecorations.None;
         ShowInTaskbar = false;
+        Background = Brushes.Transparent;
+        TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
 
         _input = new TextBox {
             Watermark = "Line[:Column]",
             FontSize = 14,
             Text = currentLine.ToString(),
-            Margin = new Thickness(8),
         };
         _input.AddHandler(
             KeyDownEvent, OnInputKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
+        var closeBtn = new Button {
+            Width = 24, Height = 24,
+            Padding = new Thickness(0),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Content = new TextBlock {
+                Text = IconGlyphs.Close,
+                FontFamily = IconGlyphs.Family,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            },
+        };
+        ToolTip.SetTip(closeBtn, "Close (Escape)");
+        closeBtn.Click += (_, _) => Close();
+
+        var row = new Grid {
+            ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"),
+            Margin = new Thickness(6),
+        };
+        Grid.SetColumn(_input, 0);
+        Grid.SetColumn(closeBtn, 1);
+        closeBtn.Margin = new Thickness(4, 0, 0, 0);
+        row.Children.Add(_input);
+        row.Children.Add(closeBtn);
+
         _rootBorder = new Border {
-            Child = _input,
+            Child = row,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
         };

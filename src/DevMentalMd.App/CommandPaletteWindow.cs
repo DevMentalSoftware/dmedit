@@ -60,8 +60,10 @@ public class CommandPaletteWindow : Window {
         Height = 420;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        SystemDecorations = SystemDecorations.BorderOnly;
+        SystemDecorations = SystemDecorations.None;
         ShowInTaskbar = false;
+        Background = Brushes.Transparent;
+        TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
 
         // Filter text box with built-in clear button.
         _filterBox = new DMTextBox {

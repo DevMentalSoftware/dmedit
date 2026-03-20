@@ -69,6 +69,10 @@ public partial class KeyboardSettingsSection : UserControl {
             }
         }
         ProfileCombo.SelectionChanged += OnProfileSelectionChanged;
+        ProfileCombo.AddHandler(PointerPressedEvent, (_, e) => {
+            if (!e.GetCurrentPoint(ProfileCombo).Properties.IsLeftButtonPressed)
+                e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         // =====================================================================
         // Wire event handlers
@@ -81,9 +85,12 @@ public partial class KeyboardSettingsSection : UserControl {
 
         // InnerTextBox is null until OnApplyTemplate runs (after first layout),
         // so defer handler wiring until the template is applied.
-        FindShortcut.TemplateApplied += (_, _) =>
+        FindShortcut.TemplateApplied += (_, _) => {
             FindShortcut.InnerTextBox?.AddHandler(
                 KeyDownEvent, OnFindShortcutKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            if (FindShortcut.InnerTextBox != null)
+                FindShortcut.InnerTextBox.ContextMenu = null;
+        };
 
         ModifiedFilterBtn.IsCheckedChanged += (_, _) => {
             _showModifiedOnly = ModifiedFilterBtn.IsChecked == true;
@@ -93,9 +100,12 @@ public partial class KeyboardSettingsSection : UserControl {
         CommandScroll.AddHandler(PointerWheelChangedEvent, OnCommandListWheel,
             Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
-        CaptureBox.TemplateApplied += (_, _) =>
+        CaptureBox.TemplateApplied += (_, _) => {
             CaptureBox.InnerTextBox?.AddHandler(
                 KeyDownEvent, OnCaptureKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            if (CaptureBox.InnerTextBox != null)
+                CaptureBox.InnerTextBox.ContextMenu = null;
+        };
 
         AssignBtn.Click += OnAssign;
         RemoveBtn.Click += OnRemove;
@@ -240,6 +250,7 @@ public partial class KeyboardSettingsSection : UserControl {
         };
 
         border.PointerPressed += (_, e) => {
+            if (!e.GetCurrentPoint(border).Properties.IsLeftButtonPressed) return;
             SelectCommand(cmd.Id);
             e.Handled = true;
         };
