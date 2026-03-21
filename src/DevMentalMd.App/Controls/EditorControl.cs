@@ -88,6 +88,13 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// </summary>
     public bool IsInputBlocked { get; set; }
 
+    /// <summary>True when the document has an active selection or column selection.</summary>
+    private bool HasSelection() {
+        var doc = Document;
+        if (doc == null) return false;
+        return !doc.Selection.IsEmpty || doc.ColumnSel != null;
+    }
+
     // -------------------------------------------------------------------------
     // Private state
     // -------------------------------------------------------------------------
@@ -1757,7 +1764,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         // Local helper: wraps each editor command with the standard preamble.
         void Reg(string id, string displayName, Action<Document> action,
                  bool showInPalette = true, bool isVerticalNav = false,
-                 bool isColumnAware = false) {
+                 bool isColumnAware = false, Func<bool>? canExecute = null) {
             registry.Register(id, displayName, () => {
                 if (IsInputBlocked) return;
                 var doc = Document;
@@ -1784,7 +1791,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
                 }
 
                 action(doc);
-            }, showInPalette, requiresEditor: true);
+            }, canExecute: canExecute, showInPalette: showInPalette, requiresEditor: true);
         }
 
         // -- Edit commands --
@@ -1800,22 +1807,30 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             ResetCaretBlink();
         }, showInPalette: false, isColumnAware: true);
 
-        Reg("Edit.Delete", "Delete", _ => EditDelete(), showInPalette: false, isColumnAware: true);
-        Reg("Edit.Undo", "Undo", _ => PerformUndo());
-        Reg("Edit.Redo", "Redo", _ => PerformRedo());
-        Reg("Edit.Cut", "Cut", doc => { _ = CutAsync(); }, isColumnAware: true);
-        Reg("Edit.Copy", "Copy", doc => { _ = CopyAsync(); }, isColumnAware: true);
-        Reg("Edit.Paste", "Paste", doc => { _ = PasteAsync(); }, isColumnAware: true);
-        Reg("Edit.PasteMore", "Paste More", _ => PasteMore());
+        Reg("Edit.Delete", "Delete", _ => EditDelete(), showInPalette: false, isColumnAware: true,
+            canExecute: () => HasSelection() || (Document is { } d && d.Selection.Caret < d.Table.Length));
+        Reg("Edit.Undo", "Undo", _ => PerformUndo(), canExecute: () => Document?.CanUndo == true);
+        Reg("Edit.Redo", "Redo", _ => PerformRedo(), canExecute: () => Document?.CanRedo == true);
+        Reg("Edit.Cut", "Cut", doc => { _ = CutAsync(); }, isColumnAware: true,
+            canExecute: HasSelection);
+        Reg("Edit.Copy", "Copy", doc => { _ = CopyAsync(); }, isColumnAware: true,
+            canExecute: HasSelection);
+        Reg("Edit.Paste", "Paste", doc => { _ = PasteAsync(); }, isColumnAware: true,
+            canExecute: () => _clipboardRing.Count > 0);
+        Reg("Edit.PasteMore", "Paste More", _ => PasteMore(),
+            canExecute: () => _clipboardRing.Count > 1);
         Reg("Edit.SelectAll", "Select All", _ => PerformSelectAll());
         Reg("Edit.SelectWord", "Select Word", _ => PerformSelectWord());
         Reg("Edit.ExpandSelection", "Expand Selection", _ => PerformExpandSelection());
         Reg("Edit.DeleteLine", "Delete Line", _ => PerformDeleteLine());
         Reg("Edit.MoveLineUp", "Move Line Up", _ => PerformMoveLineUp());
         Reg("Edit.MoveLineDown", "Move Line Down", _ => PerformMoveLineDown());
-        Reg("Edit.UpperCase", "Upper Case", _ => PerformTransformCase(CaseTransform.Upper));
-        Reg("Edit.LowerCase", "Lower Case", _ => PerformTransformCase(CaseTransform.Lower));
-        Reg("Edit.ProperCase", "Proper Case", _ => PerformTransformCase(CaseTransform.Proper));
+        Reg("Edit.UpperCase", "Upper Case", _ => PerformTransformCase(CaseTransform.Upper),
+            canExecute: HasSelection);
+        Reg("Edit.LowerCase", "Lower Case", _ => PerformTransformCase(CaseTransform.Lower),
+            canExecute: HasSelection);
+        Reg("Edit.ProperCase", "Proper Case", _ => PerformTransformCase(CaseTransform.Proper),
+            canExecute: HasSelection);
 
         Reg("Edit.ToggleOverwrite", "Toggle Overwrite Mode", _ => {
             OverwriteMode = !OverwriteMode;

@@ -200,16 +200,6 @@
 							           Padding="6,6,6,6"
 							           Text="" />
 						</Border>
-						<TextBlock x:Name="StatusSep5"
-						           FontFamily="Cascadia Code, Consolas, Courier New"
-						           FontSize="11" Padding="0,6,0,6" Text="" />
-						<Border x:Name="BtnReadOnly" Background="Transparent">
-							<TextBlock x:Name="StatusReadOnly"
-							           FontFamily="Cascadia Code, Consolas, Courier New"
-							           FontSize="11"
-							           Padding="6,6,6,6"
-							           Text="" />
-						</Border>
 					</StackPanel>
 				</Grid>
 			</StackPanel>

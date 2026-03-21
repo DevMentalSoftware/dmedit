@@ -266,6 +266,7 @@ public class PrintDialog : Window {
     private void ApplyTheme(EditorTheme theme) {
         _rootBorder.Background = theme.TabActiveBackground;
         Background = theme.TabActiveBackground;
+        Foreground = theme.TabForeground;
     }
 
     private static TextBlock MakeLabel(string text) => new() {

@@ -43,6 +43,7 @@ public class ClipboardRingWindow : Window {
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         SystemDecorations = SystemDecorations.BorderOnly;
         ShowInTaskbar = false;
+        Focusable = true;
 
         _listPanel = new StackPanel { Spacing = 0 };
         _listScroll = new ScrollViewer {

@@ -14,13 +14,18 @@ public sealed class CommandRegistry {
     private readonly Dictionary<string, Command> _commands = new(StringComparer.Ordinal);
 
     public void Register(string id, string displayName, Action execute,
+                         Func<bool>? canExecute = null,
                          bool showInPalette = true, bool requiresEditor = false) {
-        _commands[id] = new Command(id, displayName, execute, showInPalette, requiresEditor);
+        _commands[id] = new Command(id, displayName, execute, canExecute,
+                                    showInPalette, requiresEditor);
     }
 
-    /// <summary>Executes the command with the given ID. Returns true if found.</summary>
+    /// <summary>
+    /// Executes the command with the given ID if it is enabled.
+    /// Returns true if found and executed.
+    /// </summary>
     public bool Execute(string id) {
-        if (_commands.TryGetValue(id, out var cmd)) {
+        if (_commands.TryGetValue(id, out var cmd) && cmd.IsEnabled) {
             cmd.Execute();
             return true;
         }

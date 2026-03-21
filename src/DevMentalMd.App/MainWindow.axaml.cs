@@ -51,6 +51,7 @@ public partial class MainWindow : Window {
     private bool _windowStateReady;
     private TabState? _settingsTab;
     private readonly FileWatcherService _watcher = new();
+    private readonly List<(MenuItem item, string commandId)> _menuCommandBindings = [];
     private TextBlock? _lineNumGlyph;
     private TextBlock? _statusBarGlyph;
     private TextBlock? _wrapLinesGlyph;
@@ -110,6 +111,24 @@ public partial class MainWindow : Window {
 
         MenuManual.Click += (_, _) => OpenHelpDocumentAsync("manual.md", "Manual");
         MenuAbout.Click += (_, _) => OpenHelpDocumentAsync("about.md", "About");
+
+        // Bind menu items to commands so IsEnabled tracks CanExecute.
+        // State is refreshed lazily when the parent submenu opens.
+        BindMenuToCommand(MenuSave, "File.Save");
+        BindMenuToCommand(MenuSaveAs, "File.SaveAs");
+        BindMenuToCommand(MenuUndo, "Edit.Undo");
+        BindMenuToCommand(MenuRedo, "Edit.Redo");
+        BindMenuToCommand(MenuCut, "Edit.Cut");
+        BindMenuToCommand(MenuCopy, "Edit.Copy");
+        BindMenuToCommand(MenuPaste, "Edit.Paste");
+        BindMenuToCommand(MenuPasteMore, "Edit.PasteMore");
+        BindMenuToCommand(MenuClipboardRing, "Edit.ClipboardRing");
+        BindMenuToCommand(MenuDelete, "Edit.Delete");
+        BindMenuToCommand(MenuCaseUpper, "Edit.UpperCase");
+        BindMenuToCommand(MenuCaseLower, "Edit.LowerCase");
+        BindMenuToCommand(MenuCaseProper, "Edit.ProperCase");
+        MenuFile.SubmenuOpened += OnTopMenuOpened;
+        MenuEdit.SubmenuOpened += OnTopMenuOpened;
 
         _staticMenuItemCount = MenuFile.Items.Count;
 
@@ -626,6 +645,7 @@ public partial class MainWindow : Window {
     private bool DispatchCommand(string commandId) {
         var cmd = _commands.TryGet(commandId);
         if (cmd == null) return false;
+        if (!cmd.IsEnabled) return false;
         if (cmd.RequiresEditor) {
             if (_activeTab is { IsSettings: true }) return false;
             if (FindBar.IsVisible && FindBar.IsKeyboardFocusWithin) return false;
@@ -719,8 +739,10 @@ public partial class MainWindow : Window {
         // -- File --
         _commands.Register("File.New", "New", () => OnNew(null, null!));
         _commands.Register("File.Open", "Open", () => OnOpen(null, null!));
-        _commands.Register("File.Save", "Save", () => OnSave(null, null!));
-        _commands.Register("File.SaveAs", "Save As", () => OnSaveAs(null, null!));
+        _commands.Register("File.Save", "Save", () => OnSave(null, null!),
+            canExecute: () => _activeTab is { IsSettings: false, IsReadOnly: false });
+        _commands.Register("File.SaveAs", "Save As", () => OnSaveAs(null, null!),
+            canExecute: () => _activeTab is { IsSettings: false });
         _commands.Register("File.SaveAll", "Save All", SaveAll);
         _commands.Register("File.Close", "Close",
             () => { if (_activeTab != null) _ = PromptAndCloseTabAsync(_activeTab); });
@@ -755,7 +777,8 @@ public partial class MainWindow : Window {
         _commands.Register("Window.CommandPalette", "Command Palette", OpenCommandPalette);
 
         // -- Edit: Clipboard Ring popup (window-level because it opens a dialog) --
-        _commands.Register("Edit.ClipboardRing", "Clipboard Ring", () => _ = OpenClipboardRing());
+        _commands.Register("Edit.ClipboardRing", "Clipboard Ring", () => _ = OpenClipboardRing(),
+            canExecute: () => Editor._clipboardRing.Count > 1);
 
         // -- Find --
         _commands.Register("Find.Find", "Find", () => OpenFindBar(replaceMode: false));
@@ -951,6 +974,24 @@ public partial class MainWindow : Window {
         MenuIndent.Click += (_, _) => _commands.Execute("Edit.SmartIndent");
     }
 
+    // -------------------------------------------------------------------------
+    // Menu-to-command enable/disable tracking
+    // -------------------------------------------------------------------------
+
+    private void BindMenuToCommand(MenuItem item, string commandId) =>
+        _menuCommandBindings.Add((item, commandId));
+
+    /// <summary>
+    /// Refreshes <see cref="MenuItem.IsEnabled"/> for every bound menu item.
+    /// Hooked to top-level menu <c>SubmenuOpened</c> so state is evaluated
+    /// lazily, right before the user sees the menu.
+    /// </summary>
+    private void OnTopMenuOpened(object? sender, RoutedEventArgs e) {
+        foreach (var (item, id) in _menuCommandBindings) {
+            var cmd = _commands.TryGet(id);
+            item.IsEnabled = cmd?.IsEnabled ?? true;
+        }
+    }
 
     // -------------------------------------------------------------------------
     // Theme
@@ -1242,20 +1283,9 @@ public partial class MainWindow : Window {
         WireHover(BtnEncoding);
         WireHover(BtnLineEnding);
         WireHover(BtnIndent);
-        WireHover(BtnReadOnly);
 
         // -- Line/Col → GoTo Line --
         BtnLineCol.PointerPressed += (_, _) => OpenGoToLine();
-
-        // -- Read Only → click to clear --
-        BtnReadOnly.PointerPressed += (_, e) => {
-            e.Handled = true;
-            if (_activeTab is { IsReadOnly: true }) {
-                _activeTab.IsReadOnly = false;
-                UpdateStatusBar();
-                UpdateTabBar();
-            }
-        };
 
         // -- Encoding → flyout --
         BtnEncoding.PointerPressed += (_, e) => {
@@ -1339,8 +1369,6 @@ public partial class MainWindow : Window {
             SetText(StatusLineEnding, "");
             SetText(StatusSep4, "");
             SetText(StatusIndent, "");
-            SetText(StatusSep5, "");
-            SetText(StatusReadOnly, "");
             if (_chordFirst == null) SetText(StatusLeft, "");
         } else {
             var table = doc.Table;
@@ -1408,10 +1436,6 @@ public partial class MainWindow : Window {
                 SetText(StatusIndent, doc.IndentInfo.Label);
             }
 
-            var isRo = _activeTab is { IsReadOnly: true };
-            SetText(StatusSep5, isRo ? "|" : "");
-            SetText(StatusReadOnly, isRo ? "RO" : "");
-            BtnReadOnly.IsVisible = isRo;
         }
     }
 

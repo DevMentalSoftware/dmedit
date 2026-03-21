@@ -306,7 +306,7 @@ public class CommandPaletteWindow : Window {
 
         border.PointerPressed += (_, e) => {
             var idx = _visibleRows.FindIndex(r => r.border == border);
-            if (idx >= 0) {
+            if (idx >= 0 && cmd.IsEnabled) {
                 SetSelected(idx);
                 Confirm();
             }
@@ -371,7 +371,8 @@ public class CommandPaletteWindow : Window {
     }
 
     private void Confirm() {
-        if (_selectedIndex >= 0 && _selectedIndex < _visibleRows.Count) {
+        if (_selectedIndex >= 0 && _selectedIndex < _visibleRows.Count
+            && _visibleRows[_selectedIndex].cmd.IsEnabled) {
             SelectedCommandId = _visibleRows[_selectedIndex].cmd.Id;
         }
         Close();
@@ -447,6 +448,7 @@ public class CommandPaletteWindow : Window {
 
     private void ApplyRowTheme(Border border, Command cmd) {
         if (border.Child is not Grid grid) return;
+        border.Opacity = cmd.IsEnabled ? 1.0 : 0.4;
         var lastCol = grid.ColumnDefinitions.Count - 1;
         foreach (var child in grid.Children) {
             if (child is not TextBlock tb) continue;

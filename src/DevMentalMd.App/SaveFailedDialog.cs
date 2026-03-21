@@ -81,6 +81,7 @@ public class SaveFailedDialog : Window {
 
         if (theme is not null) {
             Background = theme.TabActiveBackground;
+            Foreground = theme.TabForeground;
         }
     }
 }

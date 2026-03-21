@@ -10,6 +10,10 @@
 			<SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#D9D9D9" />
 			<SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#D9D9D9" />
 			<SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="Transparent" />
+			<SolidColorBrush x:Key="ButtonForeground" Color="Black" />
+			<SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="Black" />
+			<SolidColorBrush x:Key="ButtonForegroundPressed" Color="Black" />
+			<SolidColorBrush x:Key="ButtonForegroundDisabled" Color="#898989" />
 			<SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
 			<SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
 			<SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
@@ -26,6 +30,10 @@
 			<SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#4A4A4A" />
 			<SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#4A4A4A" />
 			<SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="Transparent" />
+			<SolidColorBrush x:Key="ButtonForeground" Color="White" />
+			<SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White" />
+			<SolidColorBrush x:Key="ButtonForegroundPressed" Color="White" />
+			<SolidColorBrush x:Key="ButtonForegroundDisabled" Color="#9A9A9A" />
 			<SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
 			<SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
 			<SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />

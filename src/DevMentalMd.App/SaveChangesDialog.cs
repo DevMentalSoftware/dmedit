@@ -98,6 +98,7 @@ public class SaveChangesDialog : Window {
 
         if (theme is not null) {
             Background = theme.TabActiveBackground;
+            Foreground = theme.TabForeground;
         }
     }
 }
@@ -210,6 +211,7 @@ public class MultiSaveChangesDialog : Window {
 
         if (theme is not null) {
             Background = theme.TabActiveBackground;
+            Foreground = theme.EditorForeground;
         }
     }
 
