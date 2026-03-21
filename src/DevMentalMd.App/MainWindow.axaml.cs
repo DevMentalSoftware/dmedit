@@ -2125,6 +2125,7 @@ public partial class MainWindow : Window {
 
         // ---- Swap ----
         _tabs[idx] = newTab;
+        newTab.Document.Changed += (_, _) => OnTabDocumentChanged(newTab);
         if (isActive) {
             _activeTab = newTab;
             Editor.ReplaceDocument(newTab.Document, newTab);
@@ -2686,21 +2687,23 @@ public partial class MainWindow : Window {
             ExpectedSha1 = tab.BaseSha1,
         };
 
-        // Clean tab with a modified file: flash the spinner briefly and
-        // update baseline stats so the watcher can detect the next change.
+        // Clean tab with a modified file: update baseline stats so the
+        // watcher can detect the next change.  Flash the spinner only when
+        // auto-reload is enabled — otherwise no work happens until the user
+        // switches to the tab, so the animation would be misleading.
         if (!tab.IsDirty && kind == FileChangeKind.Modified) {
-            tab.FlashReloadUntil = DateTime.UtcNow.AddMilliseconds(FLASH_RELOAD_DURATION_MS);
             SnapshotFileStats(tab);
 
-            // Schedule a precise UI-thread callback to end the flash.
-            // RequestAnimationFrame drives the animation smoothly but its
-            // tick rate is too coarse to stop on time.
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FLASH_RELOAD_DURATION_MS) };
-            timer.Tick += (_, _) => {
-                timer.Stop();
-                UpdateTabBar();
-            };
-            timer.Start();
+            if (_settings.AutoReloadExternalChanges) {
+                tab.FlashReloadUntil = DateTime.UtcNow.AddMilliseconds(FLASH_RELOAD_DURATION_MS);
+
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FLASH_RELOAD_DURATION_MS) };
+                timer.Tick += (_, _) => {
+                    timer.Stop();
+                    UpdateTabBar();
+                };
+                timer.Start();
+            }
         }
 
         UpdateTabBar();
@@ -2720,7 +2723,10 @@ public partial class MainWindow : Window {
 
         switch (choice) {
             case FileConflictChoice.LoadDiskVersion:
-                // User already confirmed — skip the dirty check in ReloadFileAsync.
+                // User already confirmed — clear dirty so the reload
+                // doesn't abort at the "user started editing" guard.
+                tab.IsDirty = false;
+                tab.Conflict = null;
                 _ = ReloadFileInPlaceAsync(tab);
                 break;
             case FileConflictChoice.KeepMyVersion:
