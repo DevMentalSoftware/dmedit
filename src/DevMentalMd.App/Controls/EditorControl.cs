@@ -730,20 +730,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         var len = (int)(endOfs - startOfs);
 
-        // If the underlying buffer has evicted pages for this range, kick off
-        // async page loads and layout empty text.  ProgressChanged will trigger
-        // a re-layout once the data arrives.
-        // Only check when the document is unedited — after edits, logical
-        // offsets diverge from raw buffer offsets, making IsLoaded unreliable.
-        if (len > 0 && doc.Table.IsOriginalContent
-            && doc.Table.Buffer is { } buf && !buf.IsLoaded(startOfs, len)) {
-            buf.EnsureLoaded(startOfs, len);
-            _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, maxWidth, 0);
-            _extent = new Size(extentWidth, totalVisualRows * rh);
-            RenderOffsetY = 0;
-            return;
-        }
-
+        // Evicted pages are loaded synchronously by GetText → CopyTo →
+        // EnsurePageLoaded (~1 ms/page from SSD).  This avoids the blank
+        // frame that the previous async EnsureLoaded path produced, which
+        // was the main source of flicker during rapid scroll-thumb drags.
         var text = len > 0 ? doc.Table.GetText(startOfs, len) : string.Empty;
 
         _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, maxWidth, startOfs);
