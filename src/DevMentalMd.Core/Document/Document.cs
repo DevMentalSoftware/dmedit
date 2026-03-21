@@ -520,10 +520,10 @@ public sealed class Document {
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Expands the current selection outward to whitespace boundaries within
-    /// the current line. No-op if the selection already contains whitespace
-    /// or spans multiple lines. When collapsed (caret only), expands around
-    /// the caret position.
+    /// Expands the current selection outward to alphanumeric boundaries within
+    /// the current line. No-op if the selection already contains a
+    /// non-alphanumeric character or spans multiple lines. When collapsed
+    /// (caret only), expands around the caret position.
     /// </summary>
     public void SelectWord() {
         var len = _table.Length;
@@ -533,7 +533,7 @@ public sealed class Document {
 
         var (lineStart, lineEnd) = GetLineContentRange(Selection.Start);
 
-        // If selection spans multiple lines, treat as containing whitespace → no-op.
+        // If selection spans multiple lines, treat as containing non-word chars → no-op.
         if (!Selection.IsEmpty && Selection.End > lineEnd) {
             return;
         }
@@ -548,22 +548,22 @@ public sealed class Document {
         var selStartInLine = (int)(Selection.Start - lineStart);
         var selEndInLine = (int)(Selection.End - lineStart);
 
-        // If selection contains whitespace → no-op.
+        // If selection contains a non-word character → no-op.
         for (var i = selStartInLine; i < selEndInLine; i++) {
-            if (char.IsWhiteSpace(lineText[i])) {
+            if (!IsWordChar(lineText[i])) {
                 return;
             }
         }
 
-        // Expand backward from selection start to whitespace or line start.
+        // Expand backward from selection start to non-word or line start.
         var left = selStartInLine;
-        while (left > 0 && !char.IsWhiteSpace(lineText[left - 1])) {
+        while (left > 0 && IsWordChar(lineText[left - 1])) {
             left--;
         }
 
-        // Expand forward from selection end to whitespace or line end.
+        // Expand forward from selection end to non-word or line end.
         var right = selEndInLine;
-        while (right < lineLen && !char.IsWhiteSpace(lineText[right])) {
+        while (right < lineLen && IsWordChar(lineText[right])) {
             right++;
         }
 

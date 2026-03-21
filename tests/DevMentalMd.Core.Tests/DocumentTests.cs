@@ -111,13 +111,13 @@ public class DocumentTests {
     }
 
     [Fact]
-    public void SelectWord_OnPunctuation_ExpandsToWhitespaceBoundary() {
+    public void SelectWord_OnPunctuation_NoOp() {
         var doc = MakeDoc("foo...bar");
         doc.Selection = Selection.Collapsed(4); // in "..."
         doc.SelectWord();
-        // No whitespace in "foo...bar" — selects the entire line content.
-        Assert.Equal(0L, doc.Selection.Start);
-        Assert.Equal(9L, doc.Selection.End);
+        // Caret on non-alphanumeric: expansion stops immediately.
+        Assert.Equal(4L, doc.Selection.Start);
+        Assert.Equal(4L, doc.Selection.End);
     }
 
     [Fact]
