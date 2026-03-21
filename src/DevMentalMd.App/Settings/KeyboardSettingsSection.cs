@@ -109,7 +109,6 @@ public partial class KeyboardSettingsSection : UserControl {
 
         AssignBtn.Click += OnAssign;
         RemoveBtn.Click += OnRemove;
-        ResetBtn.Click += OnReset;
 
         // =====================================================================
         // Initial build
@@ -228,21 +227,39 @@ public partial class KeyboardSettingsSection : UserControl {
             Tag = g2Modified ? "modified" : "dim",
         };
 
-        // 3-column grid: Name (flex) | Gesture (fixed) | Gesture2 (flex)
+        var isModified = g1Modified || g2Modified;
+
+        // Per-row reset button — only visible when the command has overrides.
+        var resetBtn = SettingRowFactory.CreateResetIconButton();
+        resetBtn.IsVisible = isModified;
+        resetBtn.Margin = new Thickness(0);
+        resetBtn.Click += (_, _) => {
+            // Evict conflicts before resetting, same as OnReset.
+            for (var slot = 1; slot <= 2; slot++) {
+                var defaultGesture = _keyBindings.GetProfileDefault(cmd.Id, slot);
+                if (defaultGesture == null) continue;
+                RemoveConflict(defaultGesture, cmd.Id);
+            }
+            _keyBindings.ResetBinding(cmd.Id);
+            RefreshAfterChange();
+        };
+
+        // 4-column grid: Name (flex) | Gesture (fixed) | Gesture2 (flex) | Reset (auto)
         var grid = new Grid {
-            ColumnDefinitions = ColumnDefinitions.Parse("*,130,*"),
+            ColumnDefinitions = ColumnDefinitions.Parse("*,130,*,Auto"),
         };
         Grid.SetColumn(nameText, 0);
         Grid.SetColumn(gestureLabel, 1);
         Grid.SetColumn(gesture2Label, 2);
+        Grid.SetColumn(resetBtn, 3);
         grid.Children.Add(nameText);
         grid.Children.Add(gestureLabel);
         grid.Children.Add(gesture2Label);
+        grid.Children.Add(resetBtn);
 
-        var isModified = g1Modified || g2Modified;
         var border = new Border {
             Child = grid,
-            Padding = new Thickness(21, 4, 8, 4),   // 21px left padding (24 - 3 border)
+            Padding = new Thickness(21, 4, 4, 4),   // 21px left padding (24 - 3 border)
             BorderThickness = new Thickness(3, 0, 0, 0),
             BorderBrush = isModified ? _theme.SettingsAccent : Brushes.Transparent,
             Background = Brushes.Transparent,
@@ -429,23 +446,6 @@ public partial class KeyboardSettingsSection : UserControl {
         RefreshAfterChange();
     }
 
-    private void OnReset(object? sender, Avalonia.Interactivity.RoutedEventArgs e) {
-        if (_selectedCommandId == null) return;
-
-        // The profile defaults for this command may be currently owned by other
-        // commands (e.g. Ctrl+C was re-assigned to Insert Line Below).  Evict
-        // each conflicting owner — promoting its secondary binding if present —
-        // so the reset doesn't create duplicates.
-        for (var slot = 1; slot <= 2; slot++) {
-            var defaultGesture = _keyBindings.GetProfileDefault(_selectedCommandId, slot);
-            if (defaultGesture == null) continue;
-            RemoveConflict(defaultGesture, _selectedCommandId);
-        }
-
-        _keyBindings.ResetBinding(_selectedCommandId);
-        RefreshAfterChange();
-    }
-
     private void RefreshAfterChange() {
         // Rebuild the command list to reflect updated gesture text.
         var selected = _selectedCommandId;
@@ -475,8 +475,6 @@ public partial class KeyboardSettingsSection : UserControl {
             RemoveBtn.IsEnabled = false;
         }
 
-        ResetBtn.IsEnabled = _selectedCommandId != null
-            && (IsBindingModified(_selectedCommandId, 1) || IsBindingModified(_selectedCommandId, 2));
     }
 
     // =====================================================================

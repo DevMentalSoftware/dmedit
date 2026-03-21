@@ -79,8 +79,7 @@
 			                    IsReadOnly="True"
 			                    MinWidth="180" />
 			<Button x:Name="AssignBtn" Content="Assign" Margin="8,0,4,0" />
-			<Button x:Name="RemoveBtn" Content="Remove" Margin="0,0,4,0" />
-			<Button x:Name="ResetBtn" Content="Reset" />
+			<Button x:Name="RemoveBtn" Content="Remove" />
 		</WrapPanel>
 
 		<!-- Replacement notice: "Will replace the shortcut already assigned to [Cmd]".

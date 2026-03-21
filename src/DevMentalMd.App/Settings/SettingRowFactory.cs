@@ -70,6 +70,68 @@ public static class SettingRowFactory {
         return border;
     }
 
+    /// <summary>
+    /// Creates a small icon button that restores a setting to its default
+    /// value. Hidden when the setting already has its default.
+    /// </summary>
+    private static Button CreateResetButton(
+        SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
+        Action<string> onChanged, Border border) {
+        var btn = CreateResetIconButton();
+        btn.IsVisible = !Equals(prop.GetValue(settings), desc.DefaultValue);
+
+        btn.Click += (_, _) => {
+            prop.SetValue(settings, desc.DefaultValue);
+            settings.ScheduleSave();
+            UpdateModifiedIndicator(border, desc, prop, settings);
+            onChanged(desc.Key);
+        };
+
+        return btn;
+    }
+
+    /// <summary>
+    /// Creates the shared icon-button visual for reset/undo. Callers wire
+    /// their own Click handler and visibility logic.
+    /// </summary>
+    internal static Button CreateResetIconButton() {
+        var btn = new Button {
+            Width = 22, Height = 22,
+            Padding = new Thickness(0),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(4, 0, 0, 0),
+            Tag = "reset",
+            Content = new TextBlock {
+                Text = IconGlyphs.ArrowUndo,
+                FontFamily = IconGlyphs.Family,
+                FontSize = 14,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            },
+        };
+        ToolTip.SetTip(btn, "Reset to default");
+        return btn;
+    }
+
+    /// <summary>
+    /// Creates a horizontal row with a setting label and a reset button.
+    /// Used by non-bool row types.
+    /// </summary>
+    private static Panel CreateLabelRow(string displayName, Button resetBtn) {
+        var row = new StackPanel {
+            Orientation = Orientation.Horizontal,
+            Spacing = 0,
+        };
+        row.Children.Add(new TextBlock {
+            Text = displayName,
+            FontSize = 13,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        row.Children.Add(resetBtn);
+        return row;
+    }
+
     private static Control CreateBoolRow(
         SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
         Action<string> onChanged, Border border) {
@@ -131,11 +193,6 @@ public static class SettingRowFactory {
         SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
         Action<string> onChanged, Border border) {
         var panel = new StackPanel { Spacing = 4 };
-        panel.Children.Add(new TextBlock {
-            Text = desc.DisplayName,
-            FontSize = 13,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
 
         var nud = new NumericUpDown {
             Value = Convert.ToDecimal(prop.GetValue(settings)),
@@ -146,6 +203,11 @@ public static class SettingRowFactory {
             HorizontalAlignment = HorizontalAlignment.Left,
             FormatString = "0",
         };
+
+        var resetBtn = CreateResetButton(desc, prop, settings, onChanged, border);
+        resetBtn.Click += (_, _) => nud.Value = Convert.ToDecimal(desc.DefaultValue);
+
+        panel.Children.Add(CreateLabelRow(desc.DisplayName, resetBtn));
 
         nud.ValueChanged += (_, _) => {
             if (nud.Value.HasValue) {
@@ -164,11 +226,6 @@ public static class SettingRowFactory {
         SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
         Action<string> onChanged, Border border) {
         var panel = new StackPanel { Spacing = 4 };
-        panel.Children.Add(new TextBlock {
-            Text = desc.DisplayName,
-            FontSize = 13,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
 
         var nud = new NumericUpDown {
             Value = Convert.ToDecimal(prop.GetValue(settings)),
@@ -179,6 +236,11 @@ public static class SettingRowFactory {
             HorizontalAlignment = HorizontalAlignment.Left,
             FormatString = "0",
         };
+
+        var resetBtn = CreateResetButton(desc, prop, settings, onChanged, border);
+        resetBtn.Click += (_, _) => nud.Value = Convert.ToDecimal(desc.DefaultValue);
+
+        panel.Children.Add(CreateLabelRow(desc.DisplayName, resetBtn));
 
         nud.ValueChanged += (_, _) => {
             if (nud.Value.HasValue) {
@@ -197,11 +259,6 @@ public static class SettingRowFactory {
         SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
         Action<string> onChanged, Border border) {
         var panel = new StackPanel { Spacing = 4 };
-        panel.Children.Add(new TextBlock {
-            Text = desc.DisplayName,
-            FontSize = 13,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
 
         var nud = new NumericUpDown {
             Value = Convert.ToDecimal(prop.GetValue(settings)),
@@ -212,6 +269,11 @@ public static class SettingRowFactory {
             HorizontalAlignment = HorizontalAlignment.Left,
             FormatString = "0.0",
         };
+
+        var resetBtn = CreateResetButton(desc, prop, settings, onChanged, border);
+        resetBtn.Click += (_, _) => nud.Value = Convert.ToDecimal(desc.DefaultValue);
+
+        panel.Children.Add(CreateLabelRow(desc.DisplayName, resetBtn));
 
         nud.ValueChanged += (_, _) => {
             if (nud.Value.HasValue) {
@@ -233,11 +295,6 @@ public static class SettingRowFactory {
                        ?? throw new InvalidOperationException($"EnumType required for {desc.Key}");
 
         var panel = new StackPanel { Spacing = 4 };
-        panel.Children.Add(new TextBlock {
-            Text = desc.DisplayName,
-            FontSize = 13,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
 
         var combo = new ComboBox {
             Width = 180,
@@ -255,6 +312,11 @@ public static class SettingRowFactory {
 
         var current = prop.GetValue(settings)!.ToString()!;
         combo.SelectedItem = current;
+
+        var resetBtn = CreateResetButton(desc, prop, settings, onChanged, border);
+        resetBtn.Click += (_, _) => combo.SelectedItem = desc.DefaultValue.ToString();
+
+        panel.Children.Add(CreateLabelRow(desc.DisplayName, resetBtn));
 
         combo.SelectionChanged += (_, _) => {
             if (combo.SelectedItem is string selected) {
@@ -275,6 +337,32 @@ public static class SettingRowFactory {
         var current = prop.GetValue(settings);
         var isDefault = Equals(current, desc.DefaultValue);
         border.BorderBrush = isDefault ? Brushes.Transparent : CurrentTheme.SettingsAccent;
+        // Toggle reset button visibility.
+        if (FindByTag(border, "reset") is Control resetBtn) {
+            resetBtn.IsVisible = !isDefault;
+        }
+    }
+
+    /// <summary>
+    /// Walks the visual tree under <paramref name="parent"/> looking for a
+    /// control whose <see cref="Control.Tag"/> matches <paramref name="tag"/>.
+    /// </summary>
+    private static Control? FindByTag(Control parent, string tag) {
+        if (parent is Panel panel) {
+            foreach (var child in panel.Children) {
+                if (child is Control c && Equals(c.Tag, tag)) return c;
+                if (child is Control cp && FindByTag(cp, tag) is { } found) return found;
+            }
+        }
+        if (parent is ContentControl { Content: Control content }) {
+            if (Equals(content.Tag, tag)) return content;
+            return FindByTag(content, tag);
+        }
+        if (parent is Decorator { Child: Control dec }) {
+            if (Equals(dec.Tag, tag)) return dec;
+            return FindByTag(dec, tag);
+        }
+        return null;
     }
 
     // =================================================================
@@ -393,11 +481,6 @@ public static class SettingRowFactory {
         };
 
         var stack = new StackPanel { Spacing = 4 };
-
-        stack.Children.Add(new TextBlock {
-            Text = "Editor Font",
-            FontSize = 13,
-        });
 
         // Font lists (cached).
         var allFonts = GetAllFontNames();
@@ -554,7 +637,27 @@ public static class SettingRowFactory {
             }
         };
 
+        // ── Reset button ──────────────────────────────────────────────
+
+        var fontResetBtn = CreateResetIconButton();
+        fontResetBtn.IsVisible = settings.EditorFontFamily != null || settings.EditorFontSize != 11;
+
+        fontResetBtn.Click += (_, _) => {
+            fontBox.Text = defaultFont;
+            sizeNud.Value = 11;
+            ApplyFontChange(defaultFont);
+            settings.EditorFontFamily = null;
+            settings.EditorFontSize = 11;
+            settings.ScheduleSave();
+            previewBox.FontSize = 11.ToPixels();
+            UpdateFontModified(border, settings);
+            onChanged("EditorFontFamily");
+            onChanged("EditorFontSize");
+        };
+
         // ── Assemble ─────────────────────────────────────────────────
+
+        stack.Children.Add(CreateLabelRow("Editor Font", fontResetBtn));
 
         var controlRow = new StackPanel {
             Orientation = Orientation.Horizontal,
@@ -609,5 +712,8 @@ public static class SettingRowFactory {
     private static void UpdateFontModified(Border border, AppSettings settings) {
         var isModified = settings.EditorFontFamily != null || settings.EditorFontSize != 11;
         border.BorderBrush = isModified ? CurrentTheme.SettingsAccent : Brushes.Transparent;
+        if (FindByTag(border, "reset") is Control resetBtn) {
+            resetBtn.IsVisible = isModified;
+        }
     }
 }

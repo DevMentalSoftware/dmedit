@@ -29,6 +29,9 @@ static class IconGlyphs {
     public const string ArrowRight   = "\uF182";  // →  ic_fluent_arrow_right_20_regular
     public const string Dirty        = "\uF660";  // ●  ic_fluent_record_16_regular
 
+    // Reset / undo
+    public const string ArrowUndo    = "\uF199";  // ↺  TODO: verify codepoint against bundled font
+
     // Conflict / error indicators
     public const string ErrorCircle  = "\uF4A0";  // TODO: placeholder — pick a better error/warning glyph
 
