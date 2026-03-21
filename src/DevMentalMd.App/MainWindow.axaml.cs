@@ -2148,13 +2148,13 @@ public partial class MainWindow : Window {
 
         // ---- Swap ----
         _tabs[idx] = newTab;
-        newTab.Document.Changed += (_, _) => OnTabDocumentChanged(newTab);
         if (isActive) {
             _activeTab = newTab;
             Editor.ReplaceDocument(newTab.Document, newTab);
             Editor.PerfStats.FirstChunkTimeMs = 0;
             Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
         }
+        newTab.Document.Changed += (_, _) => OnTabDocumentChanged(newTab);
         if (_findBarTab == tab) {
             _findBarTab = newTab;
         }

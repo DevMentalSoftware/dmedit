@@ -29,6 +29,13 @@ small one — it is the primary way a fresh session recovers context.
 
 ### Recently completed
 
+- **Theme Refinements** (2026-03-20) — consistent light/dark theming across all controls.
+  Design rules: foreground always black/white (state via background only), border = background
+  (invisible border for corner rounding only), hover = background tint, focus = background
+  shift. New ButtonTheme and GridSplitterTheme. Updated ComboBox, TextBox, NumericUpDown
+  themes with proper ThemeDictionaries. NUD inner TextBox always transparent. Dark
+  placeholder foreground `#909090`.
+
 - **Tail File & Auto-Reload Improvements** (2026-03-21) — TailFile boolean setting
   (Editor category) with status bar icon button (Fluent \uF126). When enabled and
   caret is on last line + scrolled to bottom, auto-reload scrolls to show new content.
@@ -86,49 +93,8 @@ small one — it is the primary way a fresh session recovers context.
 - **Command Registry + Key Binding System** (2026-03-06) — centralized dispatch,
   user-customizable bindings, Keyboard settings section, 55 App tests.
 
-### In progress (uncommitted, 2026-03-20)
+### In progress
 
-
-#### Design decisions made
-
-- **Foreground is always black (light) or white (dark)** — never changes on hover or
-  focus. All state feedback is communicated via background color only.
-- **Background and border use the same color** — the border exists only to provide
-  rounded corners; it is not a visible dividing line. This gives a cleaner, flatter look.
-- **Hover effects** — background tint only (semi-transparent overlay).
-- **Focus effects** — background color shift only.
-
-#### Changes made so far (uncommitted)
-
-- **New** `Themes/ButtonTheme.axaml` — flat/transparent Button + ToggleButton theme
-- **New** `Themes/GridSplitterTheme.axaml` — light/dark colors + hover/pressed states
-- **Updated** `Themes/ComboBoxTheme.axaml` — added ThemeDictionaries (light+dark);
-  improved hover: split into `ContentArea` and `DropDownOverlay` borders so each zone
-  tints independently
-- **Updated** `Themes/TextBoxTheme.axaml` — added ThemeDictionaries with proper
-  light+dark values; removed foreground setters from `:pointerover`/`:focus` states
-- **Updated** `Themes/NumericUpDownTheme.axaml` — pointer-over updates border only
-- **Updated** `App.axaml` — references new theme files; removed redundant inline
-  ThemeDictionaries block; dark palette `ChromeMediumLow` tweaked `#2c` → `#2d`
-- **Updated** `Settings/SettingsControl.axaml.cs` — panel background uses
-  `MenuBackground` instead of `EditorBackground`
-- **Updated** `Settings/SettingsControl.axaml` — GridSplitter width 1 → 3px
-- **Updated** `Services/EditorTheme.cs` — `MenuBackground` `#F9F9F9` → `#F8F8F8`
-- **Updated** `DevMentalMd.App.csproj` — simplified `Avalonia.Diagnostics` reference
-  to `Condition="'$(Configuration)' == 'Debug'"`
-
-#### Additional design decisions (2026-03-11)
-
-- **Border = Background at all times** (firm decision) — border is invisible; its only
-  job is to provide corner rounding. Both colors are `#E8E8E8` (light) / `#383838` (dark).
-- **Hover: background shifts to a darker/lighter opaque color** — `#DEDEDE` (light
-  hover) / `#454545` (dark hover). No semi-transparent overlays for TextBox.
-- **Focus: background shifts** — `#FFFFFF` (light focused) / `#2C2C2C` (dark focused).
-- **NUD inner TextBox always transparent** — all three of Background, BackgroundPointerOver,
-  and BackgroundFocused overridden to Transparent in Resources. Outer NUD shell handles
-  all visual states.
-- **Dark placeholder foreground** changed from `#DDDDDD` to `#909090` to match light
-  placeholder color (same relative contrast in both themes).
 
 ### Key deferred items
 
@@ -139,7 +105,6 @@ small one — it is the primary way a fresh session recovers context.
 - Windows 11 Mica transparency researched but not implemented (see
   [05-features](design-journal/05-features.md))
 - toolbar, Undo/Redo toolbar buttons not yet implemented
-- Overwrite mode (Insert/Overwrite toggle) not yet implemented
 - **Storage-backed large edits** — currently, inserted text lives in an in-memory
   `StringBuilder` (the Add buffer).  For extreme workflows (e.g. pasting 100 × 1 GB XML
   snippets into a single file and then saving a 100 GB result), the Add buffer should
