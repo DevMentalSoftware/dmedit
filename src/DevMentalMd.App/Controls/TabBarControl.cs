@@ -146,6 +146,7 @@ public sealed class TabBarControl : Control {
     public event Action<int, int>? TabReordered; // (fromIndex, toIndex)
     public event Action? DragAreaDoubleClicked;
     public event Action<int, FileConflictChoice>? ConflictResolutionClicked;
+    public event Action<int>? RevealInExplorerClicked;
 
     // Custom chrome (Linux only)
     public event Action? MinimizeClicked;
@@ -1160,17 +1161,38 @@ public sealed class TabBarControl : Control {
             menu.Items.Add(new Separator());
         }
 
-        var closeRight = new MenuItem { Header = "Close Tabs to the _Right" };
+        var closeRight = new MenuItem {
+            Header = "Close Tabs to the _Right",
+            IsEnabled = tabIndex < _tabs.Count - 1,
+        };
         closeRight.Click += (_, _) => CloseTabsToRightClicked?.Invoke(tabIndex);
         menu.Items.Add(closeRight);
 
-        var closeOthers = new MenuItem { Header = "Close _Other Tabs" };
+        var closeOthers = new MenuItem {
+            Header = "Close _Other Tabs",
+            IsEnabled = _tabs.Count > 1,
+        };
         closeOthers.Click += (_, _) => CloseOtherTabsClicked?.Invoke(tabIndex);
         menu.Items.Add(closeOthers);
 
         var closeAll = new MenuItem { Header = "Close _All Tabs" };
         closeAll.Click += (_, _) => CloseAllTabsClicked?.Invoke();
         menu.Items.Add(closeAll);
+
+        if (tabIndex >= 0 && tabIndex < _tabs.Count && _tabs[tabIndex].FilePath != null) {
+            menu.Items.Add(new Separator());
+            var copyPath = new MenuItem { Header = "Copy _Path" };
+            copyPath.Click += async (_, _) => {
+                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+                if (clipboard != null) {
+                    await clipboard.SetTextAsync(_tabs[tabIndex].FilePath);
+                }
+            };
+            menu.Items.Add(copyPath);
+            var reveal = new MenuItem { Header = "Open File _Location" };
+            reveal.Click += (_, _) => RevealInExplorerClicked?.Invoke(tabIndex);
+            menu.Items.Add(reveal);
+        }
 
         menu.PlacementTarget = this;
         menu.Placement = PlacementMode.Pointer;

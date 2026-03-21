@@ -468,6 +468,8 @@ public partial class MainWindow : Window {
 
         // Conflict resolution (session restore error icon)
         TabBar.ConflictResolutionClicked += HandleConflictResolution;
+
+        TabBar.RevealInExplorerClicked += RevealInExplorer;
     }
 
     private void ShowOverflowMenu() {
@@ -494,6 +496,27 @@ public partial class MainWindow : Window {
     }
 
     private void UpdateTabBar() => TabBar.Update(_tabs, _activeTab);
+
+    private void RevealInExplorer(int tabIndex) {
+        if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
+        var path = _tabs[tabIndex].FilePath;
+        if (string.IsNullOrEmpty(path)) return;
+        try {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+                Process.Start("explorer.exe", $"/select,\"{path}\"");
+            } else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
+                Process.Start("open", $"-R \"{path}\"");
+            } else {
+                // Linux: open the containing folder
+                var dir = Path.GetDirectoryName(path);
+                if (dir != null) {
+                    Process.Start(new ProcessStartInfo(dir) { UseShellExecute = true });
+                }
+            }
+        } catch {
+            // Silently ignore — file manager may not be available
+        }
+    }
 
     private async Task CloseTabsToRightAsync(int tabIndex) {
         if (tabIndex < 0 || tabIndex >= _tabs.Count) return;

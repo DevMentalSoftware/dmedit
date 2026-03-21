@@ -63,7 +63,7 @@
 			<Setter Property="FontSize" Value="13" />
 			<Setter Property="VerticalAlignment" Value="Center" />
 		</Style>
-		<Style Selector="MenuItem > Separator">
+		<Style Selector="MenuItem > Separator, ContextMenu > Separator">
 			<Setter Property="Height" Value="1" />
 			<Setter Property="Margin" Value="0,2" />
 			<Setter Property="Opacity" Value="0.2" />
