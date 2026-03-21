@@ -31,6 +31,7 @@
     "Edit.UpperCase": "Ctrl+Shift+U",
     "Edit.LowerCase": "Ctrl+Shift+L",
     "Edit.ProperCase": "Ctrl+Shift+P",
+    "Edit.ToggleOverwrite": "Insert",
     "Edit.Newline": "Return",
     "Edit.Tab": "Tab",
     "Edit.InsertLineBelow": "",

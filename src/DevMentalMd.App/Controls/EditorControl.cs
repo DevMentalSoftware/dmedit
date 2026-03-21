@@ -100,6 +100,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private bool _middleDrag;
     private bool _columnDrag;
     private double _middleDragStartY;
+    private bool _overwriteMode;
 
     // Clipboard ring — shared by PasteMore (inline cycling) and ClipboardRing (popup).
     internal readonly ClipboardRing _clipboardRing = new();
@@ -335,6 +336,20 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
     /// <summary>Fired after each render with updated stats.</summary>
     public event Action? StatusUpdated;
+
+    /// <summary>Whether overwrite mode is active (toggled by Insert key).</summary>
+    public bool OverwriteMode {
+        get => _overwriteMode;
+        set {
+            if (_overwriteMode == value) return;
+            _overwriteMode = value;
+            OverwriteModeChanged?.Invoke(this, EventArgs.Empty);
+            InvalidateVisual();
+        }
+    }
+
+    /// <summary>Fired when overwrite mode is toggled.</summary>
+    public event EventHandler? OverwriteModeChanged;
 
 
     // -------------------------------------------------------------------------
@@ -1069,7 +1084,23 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         if (y + rect.Height < 0 || y > Bounds.Height) {
             return;
         }
-        context.FillRectangle(CaretBrush, new Rect(rect.X + _gutterWidth, y, 1.5, rect.Height));
+
+        if (_overwriteMode) {
+            // Block caret: character-width, translucent.
+            var caretWidth = rect.Height * 0.55; // fallback: ~em-width
+            if (localCaret < totalChars) {
+                var nextRect = _layoutEngine.GetCaretBounds(localCaret + 1, layout);
+                var w = nextRect.X - rect.X;
+                if (w > 0) caretWidth = w;
+            }
+            var caretColor = CaretBrush is ISolidColorBrush scb
+                ? Color.FromArgb(100, scb.Color.R, scb.Color.G, scb.Color.B)
+                : Color.FromArgb(100, 0, 0, 0);
+            context.FillRectangle(new SolidColorBrush(caretColor),
+                new Rect(rect.X + _gutterWidth, y, caretWidth, rect.Height));
+        } else {
+            context.FillRectangle(CaretBrush, new Rect(rect.X + _gutterWidth, y, 1.5, rect.Height));
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -1565,8 +1596,25 @@ public sealed class EditorControl : Control, ILogicalScrollable {
 
         Coalesce("char");
 
+        // In overwrite mode, select the next character(s) so Insert replaces them.
+        // Don't overwrite past line endings (standard overwrite behavior).
+        if (_overwriteMode && doc.Selection.IsEmpty && e.Text != null) {
+            var caret = doc.Selection.Caret;
+            var table = doc.Table;
+            var len = table.Length;
+            var charsToOverwrite = 0;
+            for (var i = 0; i < e.Text.Length && caret + charsToOverwrite < len; i++) {
+                var ch = table.GetText(caret + charsToOverwrite, 1);
+                if (ch[0] is '\r' or '\n') break;
+                charsToOverwrite++;
+            }
+            if (charsToOverwrite > 0) {
+                doc.Selection = new Selection(caret, caret + charsToOverwrite);
+            }
+        }
+
         _editSw.Restart();
-        doc.Insert(e.Text);
+        doc.Insert(e.Text!);
         ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
@@ -1768,6 +1816,10 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         Reg("Edit.UpperCase", "Upper Case", _ => PerformTransformCase(CaseTransform.Upper));
         Reg("Edit.LowerCase", "Lower Case", _ => PerformTransformCase(CaseTransform.Lower));
         Reg("Edit.ProperCase", "Proper Case", _ => PerformTransformCase(CaseTransform.Proper));
+
+        Reg("Edit.ToggleOverwrite", "Toggle Overwrite Mode", _ => {
+            OverwriteMode = !OverwriteMode;
+        });
 
         Reg("Edit.Newline", "Insert Newline", doc => {
             FlushCompound();

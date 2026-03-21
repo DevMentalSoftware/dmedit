@@ -161,6 +161,12 @@
 						<TextBlock x:Name="StatusSep1"
 						           FontFamily="Cascadia Code, Consolas, Courier New"
 						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<TextBlock x:Name="StatusInsMode"
+						           FontFamily="Cascadia Code, Consolas, Courier New"
+						           FontSize="11" Padding="6,6,6,6" Text="INS" />
+						<TextBlock x:Name="StatusSep1b"
+						           FontFamily="Cascadia Code, Consolas, Courier New"
+						           FontSize="11" Padding="0,6,0,6" Text="" />
 						<TextBlock x:Name="StatusLineCount"
 						           FontFamily="Cascadia Code, Consolas, Courier New"
 						           FontSize="11" Padding="0,6,0,6" Text="" />

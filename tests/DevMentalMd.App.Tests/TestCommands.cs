@@ -41,6 +41,7 @@ static class TestCommands {
         r.Register("Edit.UpperCase", "Upper Case", Noop);
         r.Register("Edit.LowerCase", "Lower Case", Noop);
         r.Register("Edit.ProperCase", "Proper Case", Noop);
+        r.Register("Edit.ToggleOverwrite", "Toggle Overwrite Mode", Noop);
         r.Register("Edit.Newline", "Insert Newline", Noop, showInPalette: false);
         r.Register("Edit.Tab", "Insert Tab", Noop, showInPalette: false);
         r.Register("Edit.InsertLineBelow", "Insert Line Below", Noop);

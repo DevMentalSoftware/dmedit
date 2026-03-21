@@ -1037,6 +1037,8 @@ public partial class MainWindow : Window {
         StatusLeft.Foreground = theme.StatusBarForeground;
         StatusLineCol.Foreground = theme.StatusBarForeground;
         StatusSep1.Foreground = theme.StatusBarForeground;
+        StatusInsMode.Foreground = theme.StatusBarForeground;
+        StatusSep1b.Foreground = theme.StatusBarForeground;
         StatusLineCount.Foreground = theme.StatusBarForeground;
         StatusSep2.Foreground = theme.StatusBarForeground;
         StatusEncoding.Foreground = theme.StatusBarForeground;
@@ -1056,6 +1058,9 @@ public partial class MainWindow : Window {
 
         // Editor → ScrollBar: push scroll state whenever it changes
         Editor.ScrollChanged += (_, _) => SyncScrollBarFromEditor();
+
+        // Overwrite mode → status bar
+        Editor.OverwriteModeChanged += (_, _) => UpdateStatusBar();
 
         // Incremental search → status bar
         Editor.IncrementalSearchChanged += (_, _) => UpdateIncrementalSearchStatus();
@@ -1325,6 +1330,8 @@ public partial class MainWindow : Window {
         if (doc == null) {
             SetText(StatusLineCol, "Ln 1 Ch 1");
             SetText(StatusSep1, "");
+            SetText(StatusInsMode, "INS");
+            SetText(StatusSep1b, "");
             SetText(StatusLineCount, "");
             SetText(StatusSep2, "");
             SetText(StatusEncoding, "");
@@ -1361,9 +1368,11 @@ public partial class MainWindow : Window {
             }
 
             SetText(StatusLineCol, lineCol);
+            SetText(StatusSep1, "|");
+            SetText(StatusInsMode, Editor.OverwriteMode ? "OVR" : "INS");
 
             if (stillLoading) {
-                SetText(StatusSep1, "|");
+                SetText(StatusSep1b, "|");
                 SetText(StatusLineCount, $"{lcText} lines");
                 SetText(StatusSep2, "|");
                 SetText(StatusEncoding, "loading\u2026");
@@ -1372,7 +1381,7 @@ public partial class MainWindow : Window {
                 SetText(StatusSep4, "");
                 SetText(StatusIndent, "");
             } else {
-                SetText(StatusSep1, "|");
+                SetText(StatusSep1b, "|");
                 SetText(StatusLineCount, $"{lcText} lines");
                 SetText(StatusSep2, "|");
                 SetText(StatusEncoding, doc.EncodingInfo.Label);
