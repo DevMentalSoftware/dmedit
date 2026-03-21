@@ -266,8 +266,7 @@ public partial class KeyboardSettingsSection : UserControl {
             Tag = cmd.Id,
         };
 
-        border.PointerPressed += (_, e) => {
-            if (!e.GetCurrentPoint(border).Properties.IsLeftButtonPressed) return;
+        border.Tapped += (_, e) => {
             SelectCommand(cmd.Id);
             e.Handled = true;
         };

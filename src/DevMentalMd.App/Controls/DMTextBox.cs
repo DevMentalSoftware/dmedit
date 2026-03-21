@@ -10,6 +10,10 @@ namespace DevMentalMd.App.Controls;
 /// does not propagate :pointerover to the TextBox.
 /// </summary>
 public class DMTextBox : TemplatedControl {
+    static DMTextBox() {
+        FocusableProperty.OverrideDefaultValue<DMTextBox>(true);
+    }
+
     public static readonly StyledProperty<string?> TextProperty =
         AvaloniaProperty.Register<DMTextBox, string?>(nameof(Text), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
