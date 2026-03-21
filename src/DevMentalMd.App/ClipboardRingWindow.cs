@@ -254,6 +254,9 @@ public class ClipboardRingWindow : Window {
     private void ApplyTheme(EditorTheme theme) {
         _theme = theme;
         Background = theme.EditorBackground;
+        RequestedThemeVariant = theme == EditorTheme.Dark
+            ? Avalonia.Styling.ThemeVariant.Dark
+            : Avalonia.Styling.ThemeVariant.Light;
         _rootBorder.BorderBrush = theme.TabBarBorder;
         _hintText.Foreground = theme.SettingsDimForeground;
 

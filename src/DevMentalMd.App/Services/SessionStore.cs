@@ -216,10 +216,19 @@ public static class SessionStore {
             RestoreSelection(doc, entry);
         }
 
+        bool ro = false;
+        if (entry.FilePath is not null && conflict is null) {
+            try {
+                ro = (File.GetAttributes(entry.FilePath) & FileAttributes.ReadOnly) != 0;
+            } catch {
+            }
+        }
+
         return new TabState(doc, entry.FilePath, entry.DisplayName) {
             Id = entry.Id,
             BaseSha1 = entry.BaseSha1,
             IsDirty = entry.IsDirty,
+            IsReadOnly = ro,
             Conflict = conflict,
             IsLoading = isLoading,
             LoadResult = loadResult,

@@ -99,6 +99,9 @@ public class SaveChangesDialog : Window {
         if (theme is not null) {
             Background = theme.TabActiveBackground;
             Foreground = theme.TabForeground;
+            RequestedThemeVariant = theme == EditorTheme.Dark
+                ? Avalonia.Styling.ThemeVariant.Dark
+                : Avalonia.Styling.ThemeVariant.Light;
         }
     }
 }
@@ -212,6 +215,9 @@ public class MultiSaveChangesDialog : Window {
         if (theme is not null) {
             Background = theme.TabActiveBackground;
             Foreground = theme.EditorForeground;
+            RequestedThemeVariant = theme == EditorTheme.Dark
+                ? Avalonia.Styling.ThemeVariant.Dark
+                : Avalonia.Styling.ThemeVariant.Light;
         }
     }
 

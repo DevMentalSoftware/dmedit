@@ -127,5 +127,8 @@ public class GoToLineWindow : Window {
         _rootBorder.BorderBrush = theme.StatusBarBorder;
         _input.Foreground = theme.EditorForeground;
         _input.Background = theme.EditorBackground;
+        RequestedThemeVariant = theme == EditorTheme.Dark
+            ? Avalonia.Styling.ThemeVariant.Dark
+            : Avalonia.Styling.ThemeVariant.Light;
     }
 }

@@ -1760,7 +1760,15 @@ public partial class MainWindow : Window {
             Editor.PerfStats.SaveTimeMs = sw.Elapsed.TotalMilliseconds;
             return sha1;
         } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-            StatusLeft.Text = $"Save failed: {ex.Message}";
+            var dialog = new SaveErrorDialog(path, ex.Message, _theme);
+            await dialog.ShowDialog(this);
+
+            if (dialog.Result == SaveErrorChoice.SaveAs) {
+                await SaveAsAsync();
+                if (_activeTab?.FilePath is not null && !_activeTab.IsDirty) {
+                    return _activeTab.BaseSha1;
+                }
+            }
             return null;
         } catch (Exception ex) {
             // Unexpected failure — write crash report and show error dialog.
@@ -1770,7 +1778,6 @@ public partial class MainWindow : Window {
 
             if (dialog.Result == SaveFailedChoice.SaveAs) {
                 await SaveAsAsync();
-                // If SaveAs succeeded, the tab now has a new path and is saved.
                 if (_activeTab?.FilePath is not null && !_activeTab.IsDirty) {
                     return _activeTab.BaseSha1;
                 }

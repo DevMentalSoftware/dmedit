@@ -6,22 +6,22 @@ using DevMentalMd.App.Services;
 
 namespace DevMentalMd.App;
 
-public enum SaveFailedChoice {
+public enum SaveErrorChoice {
     SaveAs,
-    CloseTab,
+    OK,
 }
 
 /// <summary>
-/// Error dialog shown when a save operation fails with an unexpected exception.
-/// Offers [Save As...] to try a different location, or [Close Tab] to discard.
-/// Shows the crash report path so the user can report the issue.
+/// Dialog shown when a save operation fails due to an IO or permission error
+/// (file locked, read-only, disk full, etc.). Offers [Save As...] to try a
+/// different location, or [OK] to dismiss. The tab is kept open either way.
 /// </summary>
-public class SaveFailedDialog : Window {
-    public SaveFailedChoice Result { get; private set; } = SaveFailedChoice.CloseTab;
+public class SaveErrorDialog : Window {
+    public SaveErrorChoice Result { get; private set; } = SaveErrorChoice.OK;
 
-    public SaveFailedDialog(string? filePath, string errorMessage, string? crashReportPath, EditorTheme? theme = null) {
-        Title = "Save Failed";
-        Width = 500;
+    public SaveErrorDialog(string? filePath, string errorMessage, EditorTheme? theme = null) {
+        Title = "Could Not Save";
+        Width = 460;
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -30,7 +30,7 @@ public class SaveFailedDialog : Window {
         var panel = new StackPanel { Margin = new Thickness(20) };
 
         panel.Children.Add(new TextBlock {
-            Text = "Save failed. The file may be corrupted.",
+            Text = "Could not save the file.",
             FontSize = 14,
             FontWeight = FontWeight.Bold,
             Margin = new Thickness(0, 0, 0, 12),
@@ -43,31 +43,21 @@ public class SaveFailedDialog : Window {
         });
 
         panel.Children.Add(new TextBlock {
-            Text = $"Error: {errorMessage}",
+            Text = errorMessage,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8),
+            Margin = new Thickness(0, 0, 0, 16),
             Foreground = Brushes.OrangeRed,
         });
 
-        if (crashReportPath is not null) {
-            panel.Children.Add(new TextBlock {
-                Text = $"Crash report saved to:\n{crashReportPath}",
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 12),
-                FontSize = 11,
-                Opacity = 0.7,
-            });
-        }
-
         var saveAsBtn = new Button { Content = "Save As...", MinWidth = 90 };
         saveAsBtn.Click += (_, _) => {
-            Result = SaveFailedChoice.SaveAs;
+            Result = SaveErrorChoice.SaveAs;
             Close();
         };
 
-        var closeTabBtn = new Button { Content = "Close Tab", MinWidth = 90 };
-        closeTabBtn.Click += (_, _) => {
-            Result = SaveFailedChoice.CloseTab;
+        var okBtn = new Button { Content = "OK", MinWidth = 90 };
+        okBtn.Click += (_, _) => {
+            Result = SaveErrorChoice.OK;
             Close();
         };
 
@@ -75,7 +65,7 @@ public class SaveFailedDialog : Window {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
             Spacing = 8,
-            Children = { saveAsBtn, closeTabBtn },
+            Children = { saveAsBtn, okBtn },
         });
 
         Content = panel;

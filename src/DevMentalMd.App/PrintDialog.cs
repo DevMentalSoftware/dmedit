@@ -267,6 +267,9 @@ public class PrintDialog : Window {
         _rootBorder.Background = theme.TabActiveBackground;
         Background = theme.TabActiveBackground;
         Foreground = theme.TabForeground;
+        RequestedThemeVariant = theme == EditorTheme.Dark
+            ? Avalonia.Styling.ThemeVariant.Dark
+            : Avalonia.Styling.ThemeVariant.Light;
     }
 
     private static TextBlock MakeLabel(string text) => new() {
