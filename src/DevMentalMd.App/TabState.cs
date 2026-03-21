@@ -69,6 +69,19 @@ public sealed class TabState {
     /// </summary>
     public event Action? LoadCompleted;
 
+    /// <summary>
+    /// True while an auto-reload is in progress. Prevents re-entrant
+    /// reloads when external changes arrive faster than we can process.
+    /// </summary>
+    public bool ReloadInProgress { get; set; }
+
+    /// <summary>
+    /// UTC time when the last auto-reload finished. Used with
+    /// <see cref="Services.AppSettings.TailReloadCooldownMs"/> to
+    /// enforce a minimum interval between reloads.
+    /// </summary>
+    public DateTime LastReloadFinishedUtc { get; set; }
+
     // Scroll / windowed-layout state, saved when leaving the tab so
     // returning does not produce a visual jump.
     public double ScrollOffsetY { get; set; }

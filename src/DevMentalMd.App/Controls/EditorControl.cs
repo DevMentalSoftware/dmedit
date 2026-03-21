@@ -23,7 +23,7 @@ namespace DevMentalMd.App.Controls;
 /// Implements <see cref="ILogicalScrollable"/> so a parent ScrollViewer cooperates
 /// with windowed layout for large documents.
 /// </summary>
-public sealed class EditorControl : Control, ILogicalScrollable {
+public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     // -------------------------------------------------------------------------
     // Avalonia properties
     // -------------------------------------------------------------------------
@@ -102,6 +102,7 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     private readonly TextLayoutEngine _layoutEngine = new();
     private LayoutResult? _layout;
     private bool _caretVisible = true;
+    private bool _keepScrollOnSwap;
     private readonly DispatcherTimer _caretTimer;
     private bool _pointerDown;
     private bool _middleDrag;
@@ -369,6 +370,14 @@ public sealed class EditorControl : Control, ILogicalScrollable {
     /// <summary>Maximum scroll offset (extent height − viewport height). Always ≥ 0.</summary>
     public double ScrollMaximum => Math.Max(0, _extent.Height - _viewport.Height);
 
+    /// <summary>
+    /// True when the viewport is scrolled to the very bottom of the document
+    /// (or the document is shorter than the viewport).
+    /// </summary>
+    public bool IsScrolledToEnd =>
+        _extent.Height <= _viewport.Height
+        || _scrollOffset.Y >= ScrollMaximum - 1.0;
+
     /// <summary>Current vertical scroll offset (0 .. ScrollMaximum).</summary>
     public double ScrollValue {
         get => _scrollOffset.Y;
@@ -472,6 +481,18 @@ public sealed class EditorControl : Control, ILogicalScrollable {
             }
             if (e.NewValue is Document doc) {
                 doc.Changed += OnDocumentChanged;
+            }
+            if (_keepScrollOnSwap) {
+                _keepScrollOnSwap = false;
+                // Reload path — keep current scroll offset and do NOT
+                // dispose the existing layout eagerly. The next
+                // MeasureOverride will rebuild it with the new document.
+                // This avoids a frame where the layout is null and the
+                // viewport renders as blank.
+                _rowHeight = 0;
+                _charWidth = 0;
+                InvalidateMeasure();
+                return;
             }
             _scrollOffset = default; // reset scroll to top
             _rowHeight = 0;         // force line-height recomputation
@@ -3024,6 +3045,38 @@ public sealed class EditorControl : Control, ILogicalScrollable {
         tab.WinScrollOffset = _winScrollOffset;
         tab.WinRenderOffsetY = _winRenderOffsetY;
         tab.WinFirstLineHeight = _winFirstLineHeight;
+    }
+
+    /// <summary>
+    /// Replaces the document and restores scroll state in a single
+    /// operation without any intermediate frame where the layout is
+    /// null. Used by auto-reload so the viewport stays visually stable.
+    /// </summary>
+    public void ReplaceDocument(Document newDoc, TabState scrollState) {
+        if (Document is Document old) {
+            old.Changed -= OnDocumentChanged;
+        }
+        // Set the property value. OnPropertyChanged will fire but
+        // _keepScrollOnSwap prevents scroll reset and layout disposal.
+        _keepScrollOnSwap = true;
+        Document = newDoc;
+
+        // Apply the target scroll position. Don't dispose the old
+        // layout — MeasureOverride will rebuild it atomically so there
+        // is never a frame with _layout == null.
+        _scrollOffset = new Vector(0, scrollState.ScrollOffsetY);
+        _winTopLine = scrollState.WinTopLine;
+        _winScrollOffset = scrollState.WinScrollOffset;
+        _winRenderOffsetY = scrollState.WinRenderOffsetY;
+        _winFirstLineHeight = scrollState.WinFirstLineHeight;
+
+        // Force a full measure → layout → render cycle. MeasureOverride
+        // rebuilds the layout with the new document's content and fires
+        // ScrollChanged (which syncs the scrollbar extent/position).
+        // InvalidateVisual ensures the render pass runs even if the
+        // available size hasn't changed.
+        InvalidateMeasure();
+        InvalidateVisual();
     }
 
     /// <summary>

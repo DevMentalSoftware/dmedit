@@ -29,6 +29,22 @@ small one — it is the primary way a fresh session recovers context.
 
 ### Recently completed
 
+- **Tail File & Auto-Reload Improvements** (2026-03-21) — TailFile boolean setting
+  (Editor category) with status bar icon button (Fluent \uF126). When enabled and
+  caret is on last line + scrolled to bottom, auto-reload scrolls to show new content.
+  Clicking the status bar button moves the caret to engage/disengage tail (Nav.MoveDocEnd
+  / Nav.MoveUp). Icon dims when tail is inactive. Auto-reload rearchitected: background
+  load awaits full completion before atomic UI-thread swap — eliminates flicker entirely.
+  `EditorControl.ReplaceDocument(doc, scrollState)` swaps the document without resetting
+  scroll to (0,0) by gating `_scrollOffset = default` behind `_keepScrollOnSwap` flag
+  and skipping eager layout disposal. Full editor state (Selection with Anchor+Active,
+  ColumnSel, scroll position) captured at swap time, not before the await. Dirty check
+  aborts reload if user edited during load. Reload throttle: `ReloadInProgress` guard +
+  `TailReloadCooldownMs` hidden setting (default 500ms). `DualZoneScrollBar` refactored
+  to read from `IScrollSource` interface (implemented by EditorControl) — eliminated 5
+  duplicate state fields, single source of truth. `SyncScrollBarFromEditor` removed.
+  Load perf stat now captured for reloads. Re-watch on failed reload so watcher recovers.
+
 - **Editor Font Setting** (2026-03-20) — font picker in Display settings: DMEditableCombo
   with dropdown (no filtering, full list always shown), ToggleButton "F" for fixed-width
   filter, NumericUpDown for size (points), and editable preview paragraph with editor
@@ -149,6 +165,12 @@ small one — it is the primary way a fresh session recovers context.
   - [Delayed Clipboard Rendering Explainer (MSEdge)](https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/DelayedClipboard/DelayedClipboardRenderingExplainer.md)
   - [WM_RENDERFORMAT message — Win32 API](https://learn.microsoft.com/en-us/windows/win32/dataxchg/wm-renderformat)
   - [30-second timeout for delay-rendered clipboard — The Old New Thing](https://devblogs.microsoft.com/oldnewthing/20220609-00/?p=106731)
+- **Windows installer (Velopack + GitHub Releases)** — use Velopack to produce a
+  self-contained installer with auto-update support. Deploy via GitHub Releases (free,
+  no infrastructure). Steps: add `Velopack` NuGet package, wire `UpdateManager` for
+  auto-update on startup, `dotnet publish` self-contained, `vpk pack` to build
+  installer + delta packages, `vpk upload github` to push release assets. Requires
+  GitHub repo to be set up first.
 - **Guard against accidental whole-document string materialization** — operations
   that would materialize the entire document as a `string` (or any contiguous buffer)
   should either be prevented with an error message explaining why, or redesigned to

@@ -32,6 +32,9 @@ static class IconGlyphs {
     // Reset / undo
     public const string ArrowUndo    = "\uF199";  // ↺  TODO: verify codepoint against bundled font
 
+    // Tail file indicator
+    public const string ArrowDown    = "\uF126";  // ↓  ic_fluent_arrow_download_20_regular
+
     // Conflict / error indicators
     public const string ErrorCircle  = "\uF4A0";  // TODO: placeholder — pick a better error/warning glyph
 

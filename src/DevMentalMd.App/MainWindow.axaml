@@ -200,6 +200,18 @@
 							           Padding="6,6,6,6"
 							           Text="" />
 						</Border>
+						<TextBlock x:Name="StatusSep5"
+						           FontFamily="Cascadia Code, Consolas, Courier New"
+						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<Border x:Name="BtnTail" Background="Transparent"
+						        IsVisible="False"
+						        ToolTip.Tip="Tail File">
+							<TextBlock x:Name="StatusTailGlyph"
+							           FontFamily="avares://dmedit/Resources/FluentSystemIcons-Regular.ttf#FluentSystemIcons-Regular"
+							           FontSize="16"
+							           Padding="6,5,6,5"
+							           Text="&#xF126;" />
+						</Border>
 					</StackPanel>
 				</Grid>
 			</StackPanel>

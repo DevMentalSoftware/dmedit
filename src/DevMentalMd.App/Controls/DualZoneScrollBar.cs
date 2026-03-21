@@ -48,50 +48,30 @@ public sealed class DualZoneScrollBar : Control {
     }
 
     // -------------------------------------------------------------------------
-    // Scroll state (set by parent)
+    // Scroll state — read from an IScrollSource (single source of truth)
     // -------------------------------------------------------------------------
 
-    private double _maximum;
-    private double _value;
-    private double _viewportSize;
-    private double _extentSize;
-    private double _rowHeight = 20;
+    private IScrollSource? _scrollSource;
 
-    /// <summary>Maximum scroll value (extent − viewport). Must be ≥ 0.</summary>
-    public double Maximum {
-        get => _maximum;
-        set { _maximum = Math.Max(0, value); InvalidateVisual(); }
-    }
-
-    /// <summary>Current scroll offset (0 .. Maximum).</summary>
-    public double Value {
-        get => _value;
+    /// <summary>
+    /// The scroll source this scrollbar reads state from. All scroll
+    /// values (maximum, value, viewport, extent, row height) are read
+    /// directly — no duplicated state.
+    /// </summary>
+    public IScrollSource? ScrollSource {
+        get => _scrollSource;
         set {
-            var v = Math.Clamp(value, 0, _maximum);
-            if (Math.Abs(v - _value) > 0.01) {
-                _value = v;
-                InvalidateVisual();
-            }
+            if (_scrollSource == value) return;
+            _scrollSource = value;
+            InvalidateVisual();
         }
     }
 
-    /// <summary>Viewport height in pixels.</summary>
-    public double ViewportSize {
-        get => _viewportSize;
-        set { _viewportSize = value; InvalidateVisual(); }
-    }
-
-    /// <summary>Total content extent in pixels.</summary>
-    public double ExtentSize {
-        get => _extentSize;
-        set { _extentSize = value; InvalidateVisual(); }
-    }
-
-    /// <summary>Height of a single visual row in pixels (used for fixed-rate calculation).</summary>
-    public double RowHeight {
-        get => _rowHeight;
-        set => _rowHeight = Math.Max(1, value);
-    }
+    private double Maximum => _scrollSource?.ScrollMaximum ?? 0;
+    private double Value => _scrollSource?.ScrollValue ?? 0;
+    private double ViewportSize => _scrollSource?.ScrollViewportHeight ?? 0;
+    private double ExtentSize => _scrollSource?.ScrollExtentHeight ?? 0;
+    private double RowHeight => _scrollSource?.RowHeightValue ?? 20;
 
     /// <summary>
     /// Multiplier applied to the outer-thumb fixed scroll rate.
@@ -163,7 +143,7 @@ public sealed class DualZoneScrollBar : Control {
     private ThumbGeo ComputeThumbGeometry() {
         var trackTop = ArrowHeight;
         var trackHeight = Math.Max(0, Bounds.Height - 2 * ArrowHeight);
-        if (trackHeight < 1 || _maximum < 1) {
+        if (trackHeight < 1 || Maximum < 1) {
             // No scrolling possible — degenerate case
             return new ThumbGeo {
                 IsDualZone = false,
@@ -180,11 +160,11 @@ public sealed class DualZoneScrollBar : Control {
             };
         }
 
-        var fraction = _maximum > 0 ? Math.Clamp(_value / _maximum, 0, 1) : 0;
+        var fraction = Maximum > 0 ? Math.Clamp(Value / Maximum, 0, 1) : 0;
 
         // Proportional inner thumb height
-        var proportionalHeight = _extentSize > 0
-            ? (_viewportSize / _extentSize) * trackHeight
+        var proportionalHeight = ExtentSize > 0
+            ? (ViewportSize / ExtentSize) * trackHeight
             : trackHeight;
 
         bool isDualZone = proportionalHeight < MinInnerThumbHeight;
@@ -241,8 +221,8 @@ public sealed class DualZoneScrollBar : Control {
     /// </summary>
     private double ComputeFixedScrollRate() {
         var trackHeight = Math.Max(1, Bounds.Height - 2 * ArrowHeight);
-        var refExtent = ReferenceDocLines * _rowHeight;
-        var refViewport = _viewportSize;
+        var refExtent = ReferenceDocLines * RowHeight;
+        var refViewport = ViewportSize;
         if (refExtent <= refViewport) {
             return 1.0; // trivial doc — fallback
         }
@@ -270,7 +250,7 @@ public sealed class DualZoneScrollBar : Control {
         }
 
         var geo = ComputeThumbGeometry();
-        if (_maximum < 1) {
+        if (Maximum < 1) {
             return HitZone.None;
         }
 
@@ -342,7 +322,7 @@ public sealed class DualZoneScrollBar : Control {
         DrawArrowButton(ctx, isUp: true, w);
         DrawArrowButton(ctx, isUp: false, w);
 
-        if (_maximum < 1) {
+        if (Maximum < 1) {
             return; // nothing to scroll
         }
 
@@ -534,7 +514,7 @@ public sealed class DualZoneScrollBar : Control {
     private void StartInnerDrag(double mouseY) {
         _isDragging = true;
         _dragStartMouseY = mouseY;
-        _dragStartValue = _value;
+        _dragStartValue = Value;
         _outerDragVisualOffset = 0;
     }
 
@@ -542,7 +522,7 @@ public sealed class DualZoneScrollBar : Control {
         _isDragging = true;
         _pressedZone = zone;
         _dragStartMouseY = mouseY;
-        _dragStartValue = _value;
+        _dragStartValue = Value;
         _outerDragVisualOffset = 0;
     }
 
@@ -554,7 +534,7 @@ public sealed class DualZoneScrollBar : Control {
             var geo = ComputeThumbGeometry();
             var availableRange = geo.TrackHeight - geo.TotalThumbHeight;
             if (availableRange > 0) {
-                var scrollPerPixel = _maximum / availableRange;
+                var scrollPerPixel = Maximum / availableRange;
                 var newValue = _dragStartValue + deltaPixels * scrollPerPixel;
                 RequestScroll(newValue);
             }
@@ -574,9 +554,9 @@ public sealed class DualZoneScrollBar : Control {
             // If scroll hit a boundary (top or bottom), reset the drag anchor
             // so that reversing direction immediately starts scrolling again
             // instead of having dead travel back to the original anchor point.
-            if (Math.Abs(_value - unclamped) > 0.01) {
+            if (Math.Abs(Value - unclamped) > 0.01) {
                 _dragStartMouseY = mouseY;
-                _dragStartValue = _value;
+                _dragStartValue = Value;
             }
 
             // Visual offset: the grabbed zone separates from the inner thumb
@@ -605,7 +585,7 @@ public sealed class DualZoneScrollBar : Control {
         _isDragging = true;
         _pressedZone = HitZone.OuterBottom;
         _dragStartMouseY = 0;
-        _dragStartValue = _value;
+        _dragStartValue = Value;
         _outerDragVisualOffset = 0;
         InvalidateVisual();
     }
@@ -641,17 +621,16 @@ public sealed class DualZoneScrollBar : Control {
         // the partial row, then subsequent clicks move full rows.
         double newValue;
         if (rows > 0) {
-            newValue = (Math.Floor(_value / _rowHeight) + rows) * _rowHeight;
+            newValue = (Math.Floor(Value / RowHeight) + rows) * RowHeight;
         } else {
-            newValue = (Math.Ceiling(_value / _rowHeight) + rows) * _rowHeight;
+            newValue = (Math.Ceiling(Value / RowHeight) + rows) * RowHeight;
         }
         RequestScroll(newValue);
     }
 
     private void RequestScroll(double newValue) {
-        newValue = Math.Clamp(newValue, 0, _maximum);
-        if (Math.Abs(newValue - _value) > 0.01) {
-            _value = newValue;
+        newValue = Math.Clamp(newValue, 0, Maximum);
+        if (Math.Abs(newValue - Value) > 0.01) {
             ScrollRequested?.Invoke(newValue);
             InvalidateVisual();
         }
@@ -683,8 +662,8 @@ public sealed class DualZoneScrollBar : Control {
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e) {
         base.OnPointerWheelChanged(e);
         // Scroll 3 rows per wheel notch
-        var delta = -e.Delta.Y * _rowHeight * 3;
-        RequestScroll(_value + delta);
+        var delta = -e.Delta.Y * RowHeight * 3;
+        RequestScroll(Value + delta);
         e.Handled = true;
     }
 }

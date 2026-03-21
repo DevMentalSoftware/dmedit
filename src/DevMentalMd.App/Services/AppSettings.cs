@@ -136,6 +136,22 @@ public sealed class AppSettings {
     /// </summary>
     public bool BackupOnSave { get; set; }
 
+    /// <summary>
+    /// When true and a file is reloaded from disk while the editor is
+    /// scrolled to the bottom, the scroll position is moved to the new
+    /// end of the document so new content is visible. Only applies when
+    /// the tab has no unsaved edits. Default: false.
+    /// </summary>
+    public bool TailFile { get; set; }
+
+    /// <summary>
+    /// Minimum time in milliseconds between auto-reload completions.
+    /// Prevents runaway reloads when an external process writes to a
+    /// file faster than we can read it. Hidden setting (not in the
+    /// Settings UI). Default: 500.
+    /// </summary>
+    public int TailReloadCooldownMs { get; set; } = 500;
+
     // -----------------------------------------------------------------
     // Editor font
     // -----------------------------------------------------------------

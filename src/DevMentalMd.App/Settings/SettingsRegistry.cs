@@ -49,6 +49,10 @@ public static class SettingsRegistry {
             "Keep a .bak copy of the previous version when saving.",
             "Editor", SettingKind.Bool, false),
 
+        new("TailFile", "Tail File",
+            "When a file is reloaded and the editor is scrolled to the bottom, automatically scroll to show new content.",
+            "Editor", SettingKind.Bool, false),
+
         new("ExpandSelectionMode", "Expand Selection Mode",
             "Controls how Expand Selection grows the selection. " +
             "'SubwordFirst' starts at camelCase/underscore boundaries; 'Word' starts at whitespace boundaries.",

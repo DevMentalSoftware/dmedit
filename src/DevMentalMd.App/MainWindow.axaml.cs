@@ -1087,6 +1087,9 @@ public partial class MainWindow : Window {
         StatusLineEnding.Foreground = theme.StatusBarForeground;
         StatusSep4.Foreground = theme.StatusBarForeground;
         StatusIndent.Foreground = theme.StatusBarForeground;
+        StatusSep5.Foreground = theme.StatusBarForeground;
+        // StatusTailGlyph foreground is set dynamically in UpdateStatusBar
+        // based on active/inactive state.
     }
 
     // -------------------------------------------------------------------------
@@ -1097,8 +1100,13 @@ public partial class MainWindow : Window {
         // Give the editor a reference so it can drive middle-drag visuals.
         Editor.ScrollBar = ScrollBar;
 
-        // Editor → ScrollBar: push scroll state whenever it changes
-        Editor.ScrollChanged += (_, _) => SyncScrollBarFromEditor();
+        // ScrollBar reads scroll state directly from the editor —
+        // single source of truth, no sync needed.
+        ScrollBar.ScrollSource = Editor;
+
+        // Invalidate the scrollbar visual whenever the editor's scroll
+        // state changes (value, extent, viewport).
+        Editor.ScrollChanged += (_, _) => ScrollBar.InvalidateVisual();
 
         // Overwrite mode → status bar
         Editor.OverwriteModeChanged += (_, _) => UpdateStatusBar();
@@ -1126,14 +1134,6 @@ public partial class MainWindow : Window {
 
         // Show caret immediately when any scrollbar interaction ends
         ScrollBar.InteractionEnded += () => Editor.ResetCaretBlink();
-    }
-
-    private void SyncScrollBarFromEditor() {
-        ScrollBar.Maximum = Editor.ScrollMaximum;
-        ScrollBar.Value = Editor.ScrollValue;
-        ScrollBar.ViewportSize = Editor.ScrollViewportHeight;
-        ScrollBar.ExtentSize = Editor.ScrollExtentHeight;
-        ScrollBar.RowHeight = Editor.RowHeightValue;
     }
 
     // -------------------------------------------------------------------------
@@ -1334,6 +1334,23 @@ public partial class MainWindow : Window {
             flyout.ShowAt(BtnLineEnding);
         };
 
+        // -- Tail → toggle by moving caret --
+        WireHover(BtnTail);
+        BtnTail.PointerPressed += (_, e) => {
+            if (e.GetCurrentPoint(BtnTail).Properties.IsLeftButtonPressed) {
+                e.Handled = true;
+                if (_activeTab is { } tab) {
+                    if (IsCaretOnLastLine(tab)) {
+                        // Disengage: move caret up one line.
+                        _commands.Execute("Nav.MoveUp");
+                    } else {
+                        // Engage: move caret to end of document.
+                        _commands.Execute("Nav.MoveDocEnd");
+                    }
+                }
+            }
+        };
+
         // -- Indent → flyout --
         BtnIndent.PointerPressed += (_, e) => {
             e.Handled = true;
@@ -1437,6 +1454,41 @@ public partial class MainWindow : Window {
             }
 
         }
+
+        UpdateTailButton();
+    }
+
+    /// <summary>
+    /// Dimmed brush for the tail icon when the caret is not on the last
+    /// line (tail is enabled but currently disengaged).
+    /// </summary>
+    private static readonly IBrush TailInactiveBrush =
+        new SolidColorBrush(Color.FromArgb(0x60, 0x80, 0x80, 0x80));
+
+    /// <summary>
+    /// Updates the tail button visibility and active/inactive state.
+    /// Visible only when the TailFile setting is enabled. Shows full
+    /// opacity when tailing is engaged (caret at end, not paused),
+    /// dimmed when paused or the caret is elsewhere.
+    /// </summary>
+    private void UpdateTailButton() {
+        var show = _settings.TailFile;
+        BtnTail.IsVisible = show;
+        StatusSep5.Text = show ? "|" : "";
+
+        if (!show) return;
+
+        var tab = _activeTab;
+        var active = tab is not null
+            && !tab.IsDirty
+            && IsCaretOnLastLine(tab)
+            && Editor.IsScrolledToEnd;
+
+        StatusTailGlyph.Foreground = active
+            ? _theme.StatusBarForeground
+            : TailInactiveBrush;
+
+        ToolTip.SetTip(BtnTail, "Tail");
     }
 
     private static void SetText(TextBlock tb, string text) {
@@ -1951,6 +2003,28 @@ public partial class MainWindow : Window {
     }
 
     /// <summary>
+    /// Wraps a reload delegate with re-entrancy guard and cooldown
+    /// tracking. Sets <see cref="TabState.ReloadInProgress"/> while
+    /// the delegate runs and stamps <see cref="TabState.LastReloadFinishedUtc"/>
+    /// when it completes, so that <see cref="OnFileChanged"/> can
+    /// throttle rapid-fire external changes.
+    /// </summary>
+    private async Task ThrottledReloadAsync(
+        TabState tab, Func<TabState, Task> reloadFunc) {
+        tab.ReloadInProgress = true;
+        try {
+            await reloadFunc(tab);
+        } finally {
+            // The tab may have been replaced by the reload. Find the
+            // current tab at the same index to stamp the cooldown.
+            var current = _tabs.FirstOrDefault(t => t.FilePath == tab.FilePath)
+                ?? tab;
+            current.ReloadInProgress = false;
+            current.LastReloadFinishedUtc = DateTime.UtcNow;
+        }
+    }
+
+    /// <summary>
     /// Reloads a tab's file from disk without removing/re-adding the tab
     /// in the tab bar, producing a smooth visual transition. The old tab
     /// is replaced at the same index with a new tab backed by the fresh
@@ -1962,45 +2036,123 @@ public partial class MainWindow : Window {
 
         _watcher.Unwatch(tab);
 
+        // ---- Background: load file and wait for scan to finish ----
+        var sw = Stopwatch.StartNew();
         LoadResult result;
         try {
             result = await FileLoader.LoadAsync(path);
         } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+            _watcher.Watch(tab);
             StatusLeft.Text = $"Reload failed: {ex.Message}";
             return;
         }
+        try {
+            if (result.Loaded is not null) await result.Loaded;
+        } catch {
+            // Scan failed — proceed with whatever content is available.
+        }
+        sw.Stop();
+
+        // ---- UI thread: atomic swap ----
+        // The user may have done anything during the load — scrolled,
+        // moved the caret, started a column selection, or even begun
+        // typing. We read ALL state right now and transfer it in one
+        // tight block. No pre-await snapshots.
 
         var idx = _tabs.IndexOf(tab);
-        if (idx < 0) return;
+        if (idx < 0 || !_tabs.Contains(tab)) return;
 
-        var sw = Stopwatch.StartNew();
+        // User started editing → abort, don't discard their work.
+        if (tab.IsDirty) {
+            _watcher.Watch(tab);
+            return;
+        }
+
+        // Build the replacement tab with fully-loaded content.
         var newTab = new TabState(result.Document, path, result.DisplayName) {
             LoadResult = result,
-            IsLoading = true,
-            // Preserve scroll position — caret/scroll are clamped
-            // by RestoreScrollState and the layout engine.
-            ScrollOffsetY = tab.ScrollOffsetY,
-            WinTopLine = tab.WinTopLine,
-            WinScrollOffset = tab.WinScrollOffset,
-            WinRenderOffsetY = tab.WinRenderOffsetY,
-            WinFirstLineHeight = tab.WinFirstLineHeight,
         };
+        newTab.BaseSha1 = result.BaseSha1;
+        newTab.Document.LineEndingInfo = result.Document.LineEndingInfo;
+        newTab.Document.IndentInfo = result.Document.IndentInfo;
+        newTab.Document.EncodingInfo = result.Document.EncodingInfo;
+        if (result.Buffer is PagedFileBuffer paged) {
+            var lengths = paged.TakeLineLengths();
+            if (lengths is { Count: > 0 }) {
+                newTab.Document.Table.InstallLineTree(
+                    CollectionsMarshal.AsSpan(lengths));
+            }
+        }
 
-        // Replace in-place so the tab bar doesn't flicker.
+        // ---- Transfer live editor state → new document ----
+        var newLen = newTab.Document.Table.Length;
+        var isActive = tab == _activeTab;
+
+        if (isActive) {
+            Editor.SaveScrollState(tab);
+        }
+
+        var shouldTail = _settings.TailFile
+            && isActive
+            && Editor.IsScrolledToEnd
+            && IsCaretOnLastLine(tab);
+
+        if (shouldTail) {
+            newTab.ScrollOffsetY = double.MaxValue;
+            newTab.WinTopLine = int.MaxValue;
+            newTab.WinScrollOffset = double.MaxValue;
+            newTab.Document.Selection = Core.Documents.Selection.Collapsed(newLen);
+        } else {
+            newTab.ScrollOffsetY = tab.ScrollOffsetY;
+            newTab.WinTopLine = tab.WinTopLine;
+            newTab.WinScrollOffset = tab.WinScrollOffset;
+            newTab.WinRenderOffsetY = tab.WinRenderOffsetY;
+            newTab.WinFirstLineHeight = tab.WinFirstLineHeight;
+
+            var oldSel = tab.Document.Selection;
+            newTab.Document.Selection = new Core.Documents.Selection(
+                Math.Min(oldSel.Anchor, newLen),
+                Math.Min(oldSel.Active, newLen));
+
+            if (tab.Document.ColumnSel is { } colSel) {
+                var maxLine = (int)Math.Max(0, newTab.Document.Table.LineCount - 1);
+                newTab.Document.ColumnSel = colSel with {
+                    AnchorLine = Math.Min(colSel.AnchorLine, maxLine),
+                    ActiveLine = Math.Min(colSel.ActiveLine, maxLine),
+                };
+            }
+        }
+
+        // ---- Swap ----
         _tabs[idx] = newTab;
-        if (_activeTab == tab) {
+        if (isActive) {
             _activeTab = newTab;
-            Editor.Document = newTab.Document;
-            Editor.IsInputBlocked = true;
-            Editor.RestoreScrollState(newTab);
+            Editor.ReplaceDocument(newTab.Document, newTab);
+            Editor.PerfStats.FirstChunkTimeMs = 0;
+            Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
         }
         if (_findBarTab == tab) {
             _findBarTab = newTab;
         }
-        UpdateTabBar();
 
-        WireStreamingProgress(sw, newTab);
-        WireFileLoadCompletion(newTab);
+        SnapshotFileStats(newTab);
+        _watcher.Watch(newTab);
+        UpdateTabBar();
+    }
+
+    /// <summary>
+    /// Returns true when the caret is on the last line of the document.
+    /// Used by tail-file logic: the caret being at the end is a strong
+    /// signal the user is actively watching new output, whereas being
+    /// scrolled to the bottom alone is not sufficient (the user may have
+    /// scrolled up and then back).
+    /// </summary>
+    private static bool IsCaretOnLastLine(TabState tab) {
+        var table = tab.Document.Table;
+        var lineCount = table.LineCount;
+        if (lineCount <= 0) return true;
+        var caretLine = table.LineFromOfs(tab.Document.Selection.Caret);
+        return caretLine >= lineCount - 1;
     }
 
     // -------------------------------------------------------------------------
@@ -2114,6 +2266,9 @@ public partial class MainWindow : Window {
                 case "DevMode":
                     UpdateStatusBarVisibility();
                     RebuildRecentMenu();
+                    break;
+                case "TailFile":
+                    UpdateTailButton();
                     break;
             }
         };
@@ -2499,13 +2654,27 @@ public partial class MainWindow : Window {
         // Clean tabs: allow re-entry so we can flash the spinner on each new change.
         if (tab.Conflict is not null && tab.IsDirty) return;
 
-        // Active, clean, modified tab with auto-reload: reload in-place
-        // without ever showing a conflict icon.
+        // Active, clean, modified tab with auto-reload.
         if (tab == _activeTab
             && kind == FileChangeKind.Modified
             && !tab.IsDirty
             && _settings.AutoReloadExternalChanges) {
-            _ = ReloadFileInPlaceAsync(tab);
+            // Throttle: skip if a reload is already in progress or the
+            // cooldown since the last reload hasn't elapsed. Update
+            // baseline stats so the watcher doesn't re-fire for this
+            // change — the next external change after cooldown will
+            // trigger a proper reload.
+            if (tab.ReloadInProgress) {
+                SnapshotFileStats(tab);
+                return;
+            }
+            var elapsed = (DateTime.UtcNow - tab.LastReloadFinishedUtc).TotalMilliseconds;
+            if (elapsed < _settings.TailReloadCooldownMs) {
+                SnapshotFileStats(tab);
+                return;
+            }
+
+            _ = ThrottledReloadAsync(tab, ReloadFileInPlaceAsync);
             return;
         }
 
