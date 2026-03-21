@@ -24,7 +24,7 @@
 						        ClipToBounds="True"
 						        IsVisible="False"
 						        ToolTip.Tip="Clear">
-							<TextBlock Text="&#xF369;"
+							<TextBlock Text="&#xF367;"
 							           VerticalAlignment="Center"
 							           HorizontalAlignment="Center" />
 						</Button>

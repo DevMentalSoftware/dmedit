@@ -192,7 +192,7 @@ public partial class FindBarControl : UserControl {
 
     private void UpdateExpandGlyph() {
         // Down chevron when expanded, right chevron when collapsed
-        ExpandGlyph.Text = _isReplaceMode ? "\uF2A3" : "\uF2B1";
+        ExpandGlyph.Text = _isReplaceMode ? "\uF2A1" : "\uF2B1";
     }
 
     // -----------------------------------------------------------------

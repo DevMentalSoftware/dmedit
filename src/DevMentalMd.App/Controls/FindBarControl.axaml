@@ -77,7 +77,7 @@
                             IsTabStop="False"
                             ToolTip.Tip="Find in current direction">
                         <TextBlock x:Name="DirectionGlyph"
-                                   Text="&#xF181;"
+                                   Text="&#xF182;"
                                    FontFamily="{DynamicResource ControlButtonIconFont}"
                                    FontSize="{DynamicResource ControlButtonIconSize}"
                                    VerticalAlignment="Center"
@@ -117,7 +117,7 @@
                         Width="24" Height="24" Padding="0"
                         IsTabStop="False"
                         VerticalContentAlignment="Center">
-                    <TextBlock Text="&#xF369;"
+                    <TextBlock Text="&#xF367;"
                                FontFamily="{DynamicResource ControlButtonIconFont}"
                                FontSize="{DynamicResource ControlButtonIconSize}"
                                VerticalAlignment="Center"

@@ -23,7 +23,7 @@
 					        Margin="0,1,0,1"
 					        ClipToBounds="True"
 					        IsVisible="False">
-						<TextBlock Text="&#xF369;"
+						<TextBlock Text="&#xF367;"
 						           VerticalAlignment="Center"
 						           HorizontalAlignment="Center" />
 					</Button>
