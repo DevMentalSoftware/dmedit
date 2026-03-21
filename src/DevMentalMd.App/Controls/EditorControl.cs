@@ -345,6 +345,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// <summary>Fired after each render with updated stats.</summary>
     public event Action? StatusUpdated;
 
+    /// <summary>
+    /// Fired when a document property (line ending, encoding, etc.) changes
+    /// without a content edit. The tab should be marked dirty.
+    /// </summary>
+    public event Action? MetadataChanged;
+
     /// <summary>Whether overwrite mode is active (toggled by Insert key).</summary>
     public bool OverwriteMode {
         get => _overwriteMode;
@@ -1981,20 +1987,17 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         // -- Line ending, indent conversion --
 
-        Reg("Edit.LineEndingLF", "Convert Line Endings to LF", doc => {
-            FlushCompound();
+        Reg("Edit.LineEndingLF", "Set Line Endings to LF", doc => {
             doc.ConvertLineEndings(Core.Documents.LineEnding.LF);
-            InvalidateLayout();
+            MetadataChanged?.Invoke();
         });
-        Reg("Edit.LineEndingCRLF", "Convert Line Endings to CRLF", doc => {
-            FlushCompound();
+        Reg("Edit.LineEndingCRLF", "Set Line Endings to CRLF", doc => {
             doc.ConvertLineEndings(Core.Documents.LineEnding.CRLF);
-            InvalidateLayout();
+            MetadataChanged?.Invoke();
         });
-        Reg("Edit.LineEndingCR", "Convert Line Endings to CR", doc => {
-            FlushCompound();
+        Reg("Edit.LineEndingCR", "Set Line Endings to CR", doc => {
             doc.ConvertLineEndings(Core.Documents.LineEnding.CR);
-            InvalidateLayout();
+            MetadataChanged?.Invoke();
         });
         Reg("Edit.IndentToSpaces", "Convert Indentation to Spaces", doc => {
             FlushCompound();
@@ -2009,12 +2012,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         // -- Encoding --
 
-        Reg("Edit.EncodingUtf8", "Set Encoding to UTF-8", doc => doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf8));
-        Reg("Edit.EncodingUtf8Bom", "Set Encoding to UTF-8 with BOM", doc => doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf8Bom));
-        Reg("Edit.EncodingUtf16Le", "Set Encoding to UTF-16 LE", doc => doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf16Le));
-        Reg("Edit.EncodingUtf16Be", "Set Encoding to UTF-16 BE", doc => doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf16Be));
-        Reg("Edit.EncodingWin1252", "Set Encoding to Windows-1252", doc => doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Windows1252));
-        Reg("Edit.EncodingAscii", "Set Encoding to ASCII", doc => doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Ascii));
+        Reg("Edit.EncodingUtf8", "Set Encoding to UTF-8", doc => { doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf8); MetadataChanged?.Invoke(); });
+        Reg("Edit.EncodingUtf8Bom", "Set Encoding to UTF-8 with BOM", doc => { doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf8Bom); MetadataChanged?.Invoke(); });
+        Reg("Edit.EncodingUtf16Le", "Set Encoding to UTF-16 LE", doc => { doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf16Le); MetadataChanged?.Invoke(); });
+        Reg("Edit.EncodingUtf16Be", "Set Encoding to UTF-16 BE", doc => { doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Utf16Be); MetadataChanged?.Invoke(); });
+        Reg("Edit.EncodingWin1252", "Set Encoding to Windows-1252", doc => { doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Windows1252); MetadataChanged?.Invoke(); });
+        Reg("Edit.EncodingAscii", "Set Encoding to ASCII", doc => { doc.EncodingInfo = new Core.Documents.EncodingInfo(Core.Documents.FileEncoding.Ascii); MetadataChanged?.Invoke(); });
 
         // -- Scroll without moving caret --
 

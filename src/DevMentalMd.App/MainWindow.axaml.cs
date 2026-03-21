@@ -1131,6 +1131,15 @@ public partial class MainWindow : Window {
         // state changes (value, extent, viewport).
         Editor.ScrollChanged += (_, _) => ScrollBar.InvalidateVisual();
 
+        // Document metadata (line ending, encoding) changed without a content edit.
+        Editor.MetadataChanged += () => {
+            if (_activeTab is { } tab) {
+                tab.IsDirty = true;
+                UpdateTabBar();
+            }
+            UpdateStatusBar();
+        };
+
         // Overwrite mode → status bar
         Editor.OverwriteModeChanged += (_, _) => UpdateStatusBar();
 

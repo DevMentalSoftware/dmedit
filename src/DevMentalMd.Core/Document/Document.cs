@@ -18,6 +18,9 @@ public sealed class Document {
 
     public Document(string initialContent = "") {
         _table = new PieceTable(initialContent);
+        if (initialContent.Length > 0) {
+            LineEndingInfo = LineEndingInfo.Detect(initialContent);
+        }
     }
 
     /// <summary>
@@ -768,64 +771,13 @@ public sealed class Document {
     /// Converts all line endings in the document to the specified style.
     /// Replaces the entire document content in a single compound edit.
     /// </summary>
+    /// <summary>
+    /// Sets the document's line ending style. No physical edit is performed —
+    /// the actual conversion happens at save time in <see cref="IO.FileSaver"/>.
+    /// New lines typed by the user already use <see cref="LineEndingInfo.NewlineString"/>.
+    /// </summary>
     public void ConvertLineEndings(LineEnding target) {
-        var nl = target switch {
-            LineEnding.LF => "\n",
-            LineEnding.CRLF => "\r\n",
-            LineEnding.CR => "\r",
-            _ => "\n",
-        };
-
-        // Stream through pieces to build the normalized content.
-        var sb = new StringBuilder((int)Math.Min(_table.Length * 2, int.MaxValue));
-        var prevCr = false;
-        var changed = false;
-        _table.ForEachPiece(0, _table.Length, span => {
-            foreach (var ch in span) {
-                if (prevCr) {
-                    prevCr = false;
-                    if (ch == '\n') {
-                        // \r\n pair — already emitted nl at the \r
-                        if (nl != "\r\n") changed = true;
-                        continue;
-                    }
-                }
-                if (ch == '\r') {
-                    sb.Append(nl);
-                    prevCr = true;
-                    if (nl != "\r") changed = true;
-                } else if (ch == '\n') {
-                    sb.Append(nl);
-                    if (nl != "\n") changed = true;
-                } else {
-                    sb.Append(ch);
-                }
-            }
-        });
-        if (prevCr && nl != "\r") changed = true;
-
-        if (!changed) {
-            LineEndingInfo = new LineEndingInfo(target, false);
-            return;
-        }
-        var normalized = sb.ToString();
-
-        var originalLen = _table.Length;
-        var pieces = _table.CapturePieces(0, originalLen);
-        var lineInfo = _table.CaptureLineInfo(0, originalLen);
-        var savedCaret = Selection.Caret;
-
-        _history.BeginCompound();
-        var deleteEdit = lineInfo is var (sl, ll)
-            ? new DeleteEdit(0, originalLen, pieces, sl, ll)
-            : new DeleteEdit(0, originalLen, pieces);
-        _history.Push(deleteEdit, _table, Selection);
-        _history.Push(new InsertEdit(0, normalized), _table, Selection);
-        _history.EndCompound();
-
-        Selection = Selection.Collapsed(Math.Min(savedCaret, _table.Length));
         LineEndingInfo = new LineEndingInfo(target, false);
-        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
