@@ -15,14 +15,14 @@ public enum ThemeMode {
 }
 
 /// <summary>
-/// Application settings persisted to <c>%APPDATA%/DevMentalMD/settings.json</c>.
+/// Application settings persisted to <c>%APPDATA%/DMEdit/settings.json</c>.
 /// Add new properties as the app evolves — unknown keys in the JSON are silently
 /// ignored, and missing keys fall back to defaults.
 /// </summary>
 public sealed class AppSettings {
     private static readonly string StorePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "DevMentalMD", "settings.json");
+        "DMEdit", "settings.json");
 
     // WhenWritingNull (not WhenWritingDefault) so that value-type properties
     // at their CLR default (e.g. bool false) are always serialized.

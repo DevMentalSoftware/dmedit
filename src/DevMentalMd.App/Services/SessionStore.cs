@@ -13,12 +13,12 @@ namespace DevMentalMd.App.Services;
 /// <summary>
 /// Persists and restores the set of open tabs (including dirty documents'
 /// edit history) across application restarts.
-/// Storage location: <c>%LOCALAPPDATA%/DevMentalMD/session/</c>.
+/// Storage location: <c>%LOCALAPPDATA%/DMEdit/session/</c>.
 /// </summary>
 public static class SessionStore {
     private static readonly string SessionDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "DevMentalMD", "session");
+        "DMEdit", "session");
 
     private static readonly string ManifestPath = Path.Combine(SessionDir, "manifest.json");
 

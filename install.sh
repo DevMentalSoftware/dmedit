@@ -16,7 +16,7 @@ chmod +x /opt/dmedit/dmedit
 cat > /usr/local/share/applications/dmedit.desktop << 'DESKTOP'
 [Desktop Entry]
 Name=DevMental Edit
-Exec=env DEVMENTALMD_DEV=1 /opt/dmedit/dmedit %F
+Exec=/opt/dmedit/dmedit %F
 Icon=/opt/dmedit/dev_mental_head.svg
 Type=Application
 Categories=TextEditor;Development;

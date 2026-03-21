@@ -1411,6 +1411,7 @@ public partial class MainWindow : Window {
             var isRo = _activeTab is { IsReadOnly: true };
             SetText(StatusSep5, isRo ? "|" : "");
             SetText(StatusReadOnly, isRo ? "RO" : "");
+            BtnReadOnly.IsVisible = isRo;
         }
     }
 

@@ -10,7 +10,7 @@ public sealed class RecentFilesStore {
 
     private static readonly string StorePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "DevMentalMD", "recentfiles.json");
+        "DMEdit", "recentfiles.json");
 
     private readonly List<string> _paths;
 

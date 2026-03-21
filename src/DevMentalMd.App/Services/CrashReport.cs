@@ -12,7 +12,7 @@ namespace DevMentalMd.App.Services;
 public static class CrashReport {
     private static readonly string SessionDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "DevMentalMD", "session");
+        "DMEdit", "session");
 
     /// <summary>
     /// Writes a crash report for a failed save operation.
@@ -26,7 +26,7 @@ public static class CrashReport {
             var version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "unknown";
 
             var content = $"""
-                DevMentalMD Crash Report
+                DMEdit Crash Report
                 ========================
                 Time:       {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}
                 Version:    {version}

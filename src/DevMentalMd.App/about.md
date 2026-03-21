@@ -1,4 +1,4 @@
-# DevMental Edit
+# DMEdit
 
 Version 1.0
 
