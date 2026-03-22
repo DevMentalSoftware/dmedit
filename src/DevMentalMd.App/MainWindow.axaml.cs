@@ -81,17 +81,18 @@ public partial class MainWindow : Window {
 
         // On Linux the WM ignores ExtendClientAreaToDecorationsHint and draws
         // its own title bar. Remove it so we can draw custom chrome buttons
-        // in our tab bar, matching the Windows experience. Transparency lets
-        // the rounded corner clip show through. BorderOnly removes the title
-        // bar but also loses WM resize handles, so we add an invisible
-        // transparent margin around the visible content and handle resize
-        // ourselves in that margin — mimicking the Windows invisible border.
+        // in our tab bar, matching the Windows experience. BorderOnly removes
+        // the title bar but also loses WM resize handles, so we add a
+        // rounded, colored border (matching the tab bar) around the content
+        // and handle resize ourselves. The window itself is transparent so
+        // the rounded corners clip cleanly against the desktop.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
             SystemDecorations = SystemDecorations.BorderOnly;
             TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
             Background = Brushes.Transparent;
             WindowBorder.CornerRadius = new CornerRadius(8);
-            WindowBorder.Margin = new Thickness(EdgeGrip);
+            WindowBorder.Padding = new Thickness(EdgeGrip);
+            StatusBar.CornerRadius = new CornerRadius(0, 0, 6, 6);
             AddHandler(PointerPressedEvent, OnEdgePointerPressed,
                 RoutingStrategies.Tunnel);
             AddHandler(PointerMovedEvent, OnEdgePointerMoved,
@@ -1098,6 +1099,11 @@ public partial class MainWindow : Window {
 
         // Tab bar
         TabBar.ApplyTheme(theme);
+
+        // On Linux the resize border is visible — color it to match the tab bar.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
+            WindowBorder.Background = theme.TabBarBackground;
+        }
 
         // Menu / toolbar bar — background on the outer border so the
         // entire bar (menus, toolbar buttons, gear icon) is uniform.
@@ -2609,10 +2615,12 @@ public partial class MainWindow : Window {
             if (e.Property == WindowStateProperty) {
                 var maximized = WindowState == WindowState.Maximized;
                 TabBar.IsMaximized = maximized;
-                // Square corners and collapse resize margin when maximized (Linux).
+                // Square corners and collapse resize border when maximized (Linux).
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
                     WindowBorder.CornerRadius = new CornerRadius(maximized ? 0 : 8);
-                    WindowBorder.Margin = new Thickness(maximized ? 0 : EdgeGrip);
+                    WindowBorder.Padding = new Thickness(maximized ? 0 : EdgeGrip);
+                    StatusBar.CornerRadius = new CornerRadius(0, 0,
+                        maximized ? 0 : 6, maximized ? 0 : 6);
                 }
             }
         };

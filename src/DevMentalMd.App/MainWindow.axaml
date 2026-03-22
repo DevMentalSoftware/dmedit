@@ -117,7 +117,7 @@
 					<TextBlock x:Name="GearGlyph"
 							   Text="&#xF6A9;"
 							   FontFamily="avares://dmedit/Resources/FluentSystemIcons-Regular.ttf#FluentSystemIcons-Regular"
-							   FontSize="20"
+							   FontSize="18"
 							   HorizontalAlignment="Center"
 							   VerticalAlignment="Center" />
 				</Button>
