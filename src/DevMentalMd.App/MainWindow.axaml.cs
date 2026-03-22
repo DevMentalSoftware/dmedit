@@ -82,12 +82,20 @@ public partial class MainWindow : Window {
         // On Linux the WM ignores ExtendClientAreaToDecorationsHint and draws
         // its own title bar. Remove it so we can draw custom chrome buttons
         // in our tab bar, matching the Windows experience. Transparency lets
-        // the rounded corner clip show through.
+        // the rounded corner clip show through. BorderOnly removes the title
+        // bar but also loses WM resize handles, so we add an invisible
+        // transparent margin around the visible content and handle resize
+        // ourselves in that margin — mimicking the Windows invisible border.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
             SystemDecorations = SystemDecorations.BorderOnly;
             TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
             Background = Brushes.Transparent;
             WindowBorder.CornerRadius = new CornerRadius(8);
+            WindowBorder.Margin = new Thickness(EdgeGrip);
+            AddHandler(PointerPressedEvent, OnEdgePointerPressed,
+                RoutingStrategies.Tunnel);
+            AddHandler(PointerMovedEvent, OnEdgePointerMoved,
+                RoutingStrategies.Tunnel);
         }
 
         RestoreWindowSize();
@@ -1676,6 +1684,53 @@ public partial class MainWindow : Window {
     }
 
     // -----------------------------------------------------------------
+    // Linux edge resize (SystemDecorations.BorderOnly loses WM handles)
+    // -----------------------------------------------------------------
+
+    private const double EdgeGrip = 6;
+
+    private void OnEdgePointerPressed(object? sender, PointerPressedEventArgs e) {
+        if (WindowState != WindowState.Normal) return;
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        var pt = e.GetPosition(this);
+        var edge = DetectEdge(pt, Bounds.Width, Bounds.Height);
+        if (edge is null) return;
+        BeginResizeDrag(edge.Value, e);
+        e.Handled = true;
+    }
+
+    private void OnEdgePointerMoved(object? sender, PointerEventArgs e) {
+        if (WindowState != WindowState.Normal) return;
+        var pt = e.GetPosition(this);
+        var edge = DetectEdge(pt, Bounds.Width, Bounds.Height);
+        Cursor = edge switch {
+            WindowEdge.North or WindowEdge.South => new Cursor(StandardCursorType.SizeNorthSouth),
+            WindowEdge.West or WindowEdge.East => new Cursor(StandardCursorType.SizeWestEast),
+            WindowEdge.NorthWest or WindowEdge.SouthEast => new Cursor(StandardCursorType.TopLeftCorner),
+            WindowEdge.NorthEast or WindowEdge.SouthWest => new Cursor(StandardCursorType.TopRightCorner),
+            _ => Cursor.Default,
+        };
+    }
+
+    private static WindowEdge? DetectEdge(Point pt, double w, double h) {
+        var left = pt.X < EdgeGrip;
+        var right = pt.X >= w - EdgeGrip;
+        var top = pt.Y < EdgeGrip;
+        var bottom = pt.Y >= h - EdgeGrip;
+        return (top, bottom, left, right) switch {
+            (true, _, true, _) => WindowEdge.NorthWest,
+            (true, _, _, true) => WindowEdge.NorthEast,
+            (_, true, true, _) => WindowEdge.SouthWest,
+            (_, true, _, true) => WindowEdge.SouthEast,
+            (true, _, _, _) => WindowEdge.North,
+            (_, true, _, _) => WindowEdge.South,
+            (_, _, true, _) => WindowEdge.West,
+            (_, _, _, true) => WindowEdge.East,
+            _ => null,
+        };
+    }
+
+    // -----------------------------------------------------------------
     // Drag-and-drop
     // -----------------------------------------------------------------
 
@@ -2554,9 +2609,10 @@ public partial class MainWindow : Window {
             if (e.Property == WindowStateProperty) {
                 var maximized = WindowState == WindowState.Maximized;
                 TabBar.IsMaximized = maximized;
-                // Square corners when maximized, rounded when normal (Linux).
+                // Square corners and collapse resize margin when maximized (Linux).
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
                     WindowBorder.CornerRadius = new CornerRadius(maximized ? 0 : 8);
+                    WindowBorder.Margin = new Thickness(maximized ? 0 : EdgeGrip);
                 }
             }
         };

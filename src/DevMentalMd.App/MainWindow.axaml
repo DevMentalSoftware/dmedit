@@ -213,6 +213,9 @@
 							           Padding="6,5,6,5"
 							           Text="&#xF126;" />
 						</Border>
+						<!-- Spacer matching scrollbar width so the rightmost
+						     status item doesn't sit in the resize corner. -->
+						<Border Width="17" />
 					</StackPanel>
 				</Grid>
 			</StackPanel>
