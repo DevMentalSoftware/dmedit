@@ -164,6 +164,10 @@ public partial class MainWindow : Window {
             if (_altPressedClean) _altPressedClean = false;
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
+        // File drag-and-drop: open dropped files in new tabs.
+        AddHandler(DragDrop.DragOverEvent, OnDragOver);
+        AddHandler(DragDrop.DropEvent, OnDrop);
+
         // When all menus close, return focus to the editor.
         MenuBar.Closed += (_, _) => {
             if (_activeTab is not { IsSettings: true }) {
@@ -1671,10 +1675,42 @@ public partial class MainWindow : Window {
         }
     }
 
+    // -----------------------------------------------------------------
+    // Drag-and-drop
+    // -----------------------------------------------------------------
+
+#pragma warning disable CS0618 // Data/DataFormats.Files deprecated but IDataTransfer replacement lacks GetFiles
+    private void OnDragOver(object? sender, DragEventArgs e) {
+        e.DragEffects = e.Data.Contains(DataFormats.Files)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void OnDrop(object? sender, DragEventArgs e) {
+        if (!e.Data.Contains(DataFormats.Files)) {
+            return;
+        }
+        e.Handled = true;
+        var items = e.Data.GetFiles();
+        if (items is null) {
+            return;
+        }
+#pragma warning restore CS0618
+        foreach (var item in items) {
+            if (item is IStorageFile file) {
+                var path = file.Path.LocalPath;
+                if (!string.IsNullOrEmpty(path)) {
+                    await OpenFileInTabAsync(path);
+                }
+            }
+        }
+    }
+
     /// <summary>
     /// Opens a file in a new tab, or switches to an existing tab if the file
-    /// is already open. Used by File > Open, recent files, and any other path
-    /// that opens a file by path.
+    /// is already open. Used by File > Open, recent files, drag-and-drop, and
+    /// any other path that opens a file by path.
     /// </summary>
     private async Task OpenFileInTabAsync(string path) {
         if (!File.Exists(path)) {

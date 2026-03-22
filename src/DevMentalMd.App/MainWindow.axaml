@@ -12,7 +12,8 @@
 		Icon="avares://dmedit/app_icon.ico"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaChromeHints="NoChrome"
-        ExtendClientAreaTitleBarHeightHint="38">
+        ExtendClientAreaTitleBarHeightHint="38"
+        DragDrop.AllowDrop="True">
 	<Border x:Name="WindowBorder" ClipToBounds="True">
 	<DockPanel>
 		<!-- Tab bar (custom-drawn, sits in title bar area) -->
