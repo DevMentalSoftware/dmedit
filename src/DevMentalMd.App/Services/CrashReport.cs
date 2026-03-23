@@ -15,10 +15,11 @@ public static class CrashReport {
         "DMEdit", "session");
 
     /// <summary>
-    /// Writes a crash report for a failed save operation.
+    /// Writes a crash report for a failed operation with document context.
     /// Returns the full path to the report file, or null if writing failed.
     /// </summary>
-    public static async Task<string?> WriteAsync(Exception ex, string? filePath, Document? doc) {
+    public static async Task<string?> WriteAsync(
+        Exception ex, string operation, string? filePath = null, Document? doc = null) {
         try {
             Directory.CreateDirectory(SessionDir);
             var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff");
@@ -30,16 +31,24 @@ public static class CrashReport {
                 ========================
                 Time:       {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}
                 Version:    {version}
-                Operation:  Save
+                Operation:  {operation}
 
-                File
-                ----
-                Path:       {filePath ?? "(none)"}
-                Lines:      {doc?.Table.LineCount.ToString() ?? "?"}
-                Length:     {doc?.Table.Length.ToString() ?? "?"} chars
-                Buffer:     {doc?.Table.Buffer?.GetType().Name ?? "?"}
-                Encoding:   {doc?.EncodingInfo.ToString() ?? "?"}
+                """;
 
+            if (filePath is not null || doc is not null) {
+                content += $"""
+                    File
+                    ----
+                    Path:       {filePath ?? "(none)"}
+                    Lines:      {doc?.Table.LineCount.ToString() ?? "?"}
+                    Length:     {doc?.Table.Length.ToString() ?? "?"} chars
+                    Buffer:     {doc?.Table.Buffer?.GetType().Name ?? "?"}
+                    Encoding:   {doc?.EncodingInfo.ToString() ?? "?"}
+
+                    """;
+            }
+
+            content += $"""
                 Exception
                 ---------
                 Type:       {ex.GetType().FullName}
@@ -66,6 +75,56 @@ public static class CrashReport {
             }
 
             await File.WriteAllTextAsync(reportPath, content);
+            return reportPath;
+        } catch {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Synchronous crash report writer for use in global exception handlers
+    /// where async may not be safe.
+    /// </summary>
+    public static string? Write(Exception ex, string operation) {
+        try {
+            Directory.CreateDirectory(SessionDir);
+            var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff");
+            var reportPath = Path.Combine(SessionDir, $"crash-{timestamp}.txt");
+            var version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "unknown";
+
+            var content = $"""
+                DMEdit Crash Report
+                ========================
+                Time:       {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}
+                Version:    {version}
+                Operation:  {operation}
+
+                Exception
+                ---------
+                Type:       {ex.GetType().FullName}
+                Message:    {ex.Message}
+
+                Stack Trace
+                -----------
+                {ex.StackTrace}
+                """;
+
+            if (ex.InnerException is { } inner) {
+                content += $"""
+
+
+                    Inner Exception
+                    ---------------
+                    Type:       {inner.GetType().FullName}
+                    Message:    {inner.Message}
+
+                    Stack Trace
+                    -----------
+                    {inner.StackTrace}
+                    """;
+            }
+
+            File.WriteAllText(reportPath, content);
             return reportPath;
         } catch {
             return null;

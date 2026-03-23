@@ -43,6 +43,7 @@ public partial class MainWindow : Window {
     private TabState? _findBarTab;
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
     private readonly AppSettings _settings = AppSettings.Load();
+    public AppSettings Settings => _settings;
     private readonly CommandRegistry _commands = new();
     private readonly KeyBindingService _keyBindings;
     private int _staticMenuItemCount;
@@ -1941,10 +1942,17 @@ public partial class MainWindow : Window {
             Editor.PerfStats.SaveTimeMs = sw.Elapsed.TotalMilliseconds;
             return sha1;
         } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-            var dialog = new SaveErrorDialog(path, ex.Message, _theme);
+            var dialog = new ErrorDialog(
+                "Could Not Save",
+                "Could not save the file.",
+                $"File: {path}\n\n{ex.Message}",
+                [ErrorDialogButton.SaveAs, ErrorDialogButton.OK],
+                stackTrace: ex.ToString(),
+                devMode: _settings.DevMode,
+                theme: _theme);
             await dialog.ShowDialog(this);
 
-            if (dialog.Result == SaveErrorChoice.SaveAs) {
+            if (dialog.Result == ErrorDialogButton.SaveAs) {
                 await SaveAsAsync();
                 if (_activeTab?.FilePath is not null && !_activeTab.IsDirty) {
                     return _activeTab.BaseSha1;
@@ -1953,11 +1961,19 @@ public partial class MainWindow : Window {
             return null;
         } catch (Exception ex) {
             // Unexpected failure — write crash report and show error dialog.
-            var reportPath = await CrashReport.WriteAsync(ex, path, Editor.Document);
-            var dialog = new SaveFailedDialog(path, ex.Message, reportPath, _theme);
+            var reportPath = await CrashReport.WriteAsync(ex, "Save", path, Editor.Document);
+            var dialog = new ErrorDialog(
+                "Save Failed",
+                "Save failed. The file may be corrupted.",
+                $"File: {path}\n\n{ex.Message}",
+                [ErrorDialogButton.SaveAs, ErrorDialogButton.CloseTab],
+                crashReportPath: reportPath,
+                stackTrace: ex.ToString(),
+                devMode: _settings.DevMode,
+                theme: _theme);
             await dialog.ShowDialog(this);
 
-            if (dialog.Result == SaveFailedChoice.SaveAs) {
+            if (dialog.Result == ErrorDialogButton.SaveAs) {
                 await SaveAsAsync();
                 if (_activeTab?.FilePath is not null && !_activeTab.IsDirty) {
                     return _activeTab.BaseSha1;
@@ -2106,7 +2122,31 @@ public partial class MainWindow : Window {
 
         if (path is null) return;
 
-        PdfGenerator.RenderToPdf(_activeTab.Document, _activeTab.Document.PrintSettings, path);
+        try {
+            PdfGenerator.RenderToPdf(_activeTab.Document, _activeTab.Document.PrintSettings, path);
+        } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+            var dialog = new ErrorDialog(
+                "Could Not Save PDF",
+                "Could not save the PDF file.",
+                $"File: {path}\n\n{ex.Message}",
+                [ErrorDialogButton.OK],
+                stackTrace: ex.ToString(),
+                devMode: _settings.DevMode,
+                theme: _theme);
+            await dialog.ShowDialog(this);
+        } catch (Exception ex) {
+            var reportPath = await CrashReport.WriteAsync(ex, "Save As PDF", path);
+            var dialog = new ErrorDialog(
+                "PDF Export Failed",
+                "An unexpected error occurred while exporting to PDF.",
+                ex.Message,
+                [ErrorDialogButton.OK],
+                crashReportPath: reportPath,
+                stackTrace: ex.ToString(),
+                devMode: _settings.DevMode,
+                theme: _theme);
+            await dialog.ShowDialog(this);
+        }
     }
 
     /// <summary>
@@ -2875,20 +2915,10 @@ public partial class MainWindow : Window {
     /// Saves the current session (open tabs, edit history, scroll/caret state)
     /// so it can be restored on next launch.
     /// </summary>
-    private void SaveSession() {
+    public void SaveSession() {
         // Save scroll state for the active tab before serializing.
         if (_activeTab is { IsSettings: false }) {
             Editor.SaveScrollState(_activeTab);
-        }
-
-        // Flush pending compound edits on ALL tabs so undo stacks are complete.
-        // Editor.FlushCompound() only flushes the active document; inactive tabs
-        // may still have uncommitted compounds from earlier editing.
-        Editor.FlushCompound();
-        foreach (var tab in _tabs) {
-            if (!tab.IsSettings) {
-                tab.Document.EndCompound();
-            }
         }
 
         var activeIdx = _activeTab is not null ? _tabs.IndexOf(_activeTab) : 0;
@@ -2897,6 +2927,16 @@ public partial class MainWindow : Window {
 
     protected override void OnClosing(WindowClosingEventArgs e) {
         _watcher.Dispose();
+
+        // Flush pending compound edits on ALL tabs so undo stacks are
+        // complete before the final session write.
+        Editor.FlushCompound();
+        foreach (var tab in _tabs) {
+            if (!tab.IsSettings) {
+                tab.Document.EndCompound();
+            }
+        }
+
         SaveSession();
         base.OnClosing(e);
     }
