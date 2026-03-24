@@ -86,7 +86,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// When true, the editor ignores text input, keyboard commands, and
     /// mouse editing. Set while the tab's file is still loading.
     /// </summary>
-    public bool IsInputBlocked { get; set; }
+    /// <summary>
+    /// When true, editing commands (typing, delete, paste, undo/redo) are blocked
+    /// but navigation commands (arrow keys, Page Up/Down, Home/End, click-to-position)
+    /// are allowed.  Set during file loading so users can browse while content streams in.
+    /// </summary>
+    public bool IsEditBlocked { get; set; }
 
     /// <summary>True when the document has an active selection or column selection.</summary>
     private bool HasSelection() {
@@ -756,6 +761,18 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
 
         var len = (int)(endOfs - startOfs);
+
+        // Sanity check: a visible window of ~100 lines should never exceed
+        // a few hundred KB.  If len is larger, the line tree and piece table
+        // are in an inconsistent state (e.g. intermediate state during undo).
+        // Skip this layout pass — the next one will see the consistent state.
+        const int MaxLayoutBytes = 512 * 1024;
+        if (len > MaxLayoutBytes) {
+            _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, maxWidth, 0);
+            _extent = new Size(extentWidth, totalVisualRows * rh);
+            RenderOffsetY = 0;
+            return;
+        }
 
         // Evicted pages are loaded synchronously by GetText → CopyTo →
         // EnsurePageLoaded (~1 ms/page from SSD).  This avoids the blank
@@ -1593,7 +1610,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     protected override void OnTextInput(TextInputEventArgs e) {
         base.OnTextInput(e);
-        if (IsInputBlocked) { e.Handled = true; return; }
+        if (IsEditBlocked) { e.Handled = true; return; }
         if (_inIncrementalSearch) {
             HandleIncrementalSearchChar(e.Text ?? "");
             e.Handled = true;
@@ -1783,7 +1800,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                  bool showInPalette = true, bool isVerticalNav = false,
                  bool isColumnAware = false, Func<bool>? canExecute = null) {
             registry.Register(id, displayName, () => {
-                if (IsInputBlocked) return;
+                if (IsEditBlocked && id.StartsWith("Edit.")) return;
                 var doc = Document;
                 if (doc == null) return;
                 if (_isClipboardCycling && id != "Edit.PasteMore") ConfirmClipboardCycle();
@@ -2797,11 +2814,6 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         base.OnPointerPressed(e);
         var props = e.GetCurrentPoint(this).Properties;
 
-        // Allow middle-click scroll while loading, block everything else.
-        if (IsInputBlocked && !props.IsMiddleButtonPressed) {
-            e.Handled = true;
-            return;
-        }
 
         _preferredCaretX = -1;
         FlushCompound();
@@ -2938,7 +2950,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     protected override void OnGotFocus(GotFocusEventArgs e) {
         base.OnGotFocus(e);
-        if (IsInputBlocked) return; // no caret until loaded
+        // Show caret even during loading — user can navigate and position caret.
         ResetCaretBlink();
     }
 

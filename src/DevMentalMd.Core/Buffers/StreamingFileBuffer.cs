@@ -28,7 +28,7 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
 
     // Line index — built incrementally as chunks arrive.
     private long[] _lineStarts = null!; // initialized by InitBuffers, called from all constructors
-    private volatile int _lineCount;    // number of valid entries in _lineStarts
+    private int _lineCount;    // number of valid entries in _lineStarts; accessed via Interlocked
     private bool _prevWasCr;         // \r at end of previous chunk (background thread only)
 
     // Line ending counters (accumulated during scan)
@@ -122,12 +122,17 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
 
     public bool LengthIsKnown => _done;
 
-    public long LineCount => _lineCount;
+    /// <summary>
+    /// Non-null if the background scan terminated with an error.
+    /// </summary>
+    public Exception? ScanError { get; private set; }
+
+    public long LineCount => Volatile.Read(ref _lineCount);
 
     public int LongestLine => 10_000;
 
     public long GetLineStart(long lineIdx) {
-        var count = _lineCount; // snapshot volatile
+        var count = Volatile.Read(ref _lineCount);
         if (lineIdx < 0 || lineIdx >= count) {
             return -1L;
         }
@@ -253,8 +258,9 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
         } catch (OperationCanceledException) {
             // Loading was cancelled (Dispose or external token). Mark as done with partial data.
             _done = true;
-        } catch (Exception) {
+        } catch (Exception ex) when (ex is not OperationCanceledException) {
             // On any I/O error, mark as done with whatever we have.
+            ScanError = ex;
             _done = true;
         } finally {
             _loadedEvent.Set();
@@ -423,7 +429,7 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
             }
             _lineStarts[_lineCount] = offset;
         }
-        // Update count AFTER the data is written (volatile write).
-        _lineCount = _lineCount + 1;
+        // Update count AFTER the data is written (atomic increment with memory barrier).
+        Interlocked.Increment(ref _lineCount);
     }
 }

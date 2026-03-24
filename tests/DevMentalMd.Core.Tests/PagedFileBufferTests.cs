@@ -495,6 +495,7 @@ public class PagedFileBufferTests : IDisposable {
         using var buf = LoadAndWait(path);
 
         var table = new PieceTable(buf);
+        table.EnsureLineTree();
         table.Insert(3, "XYZ");
         Assert.Equal("ABCXYZDEF", table.GetText());
     }

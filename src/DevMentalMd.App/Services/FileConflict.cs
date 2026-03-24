@@ -8,6 +8,8 @@ public enum FileConflictKind {
     Missing,
     /// <summary>The file has been modified externally since it was last loaded or saved.</summary>
     Changed,
+    /// <summary>Session edit replay failed — document shows the last-saved base content.</summary>
+    EditReplayFailed,
 }
 
 /// <summary>

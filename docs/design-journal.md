@@ -30,6 +30,15 @@ small one — it is the primary way a fresh session recovers context.
 
 ### Recently completed
 
+- **Global Error Handling** (2026-03-23) — replaced SaveErrorDialog and SaveFailedDialog
+  with a single general-purpose `ErrorDialog` (resizable, themed, configurable buttons).
+  Dev mode adds a collapsed expander showing the full stack trace. Global exception handlers
+  installed in Program.cs: `AppDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException`,
+  and `Dispatcher.UIThread.UnhandledException` — all write a crash report to disk and show
+  the ErrorDialog. `CrashReport` generalized to accept any operation name (not just "Save")
+  with a synchronous overload for global handlers. `SaveAsPdfAsync` wrapped in try/catch
+  with ErrorDialog (was previously unprotected — caused silent crash on Linux).
+
 - **Theme Refinements** (2026-03-20) — consistent light/dark theming across all controls.
   Design rules: foreground always black/white (state via background only), border = background
   (invisible border for corner rounding only), hover = background tint, focus = background

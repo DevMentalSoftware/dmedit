@@ -182,6 +182,9 @@ public sealed class EditHistory {
         _redoStack.Clear();
 
         // Apply undo entries in order (oldest first) to build up to the edited state.
+        // DeleteEdits that were serialized without text (oversized deletes)
+        // recapture their piece descriptors inside Apply, at the exact moment
+        // the table is in the correct pre-delete state.
         foreach (var entry in undoEntries) {
             entry.Edit.Apply(table);
             _undoStack.Push(new Entry(entry.Edit, entry.SelectionBefore));

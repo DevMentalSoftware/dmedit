@@ -187,6 +187,7 @@ public class LargeDocumentTests {
         // Before the fix, Length was over-counted and VisitPieces read past the split boundary.
         using var buf = MakeBuffer(100);
         var table = new PieceTable(buf);
+        table.EnsureLineTree();
 
         var originalLen = table.Length;
         var originalText = table.GetText();
@@ -213,6 +214,7 @@ public class LargeDocumentTests {
         // Verify that GetText(start, len) works correctly after a split of a WholeBufSentinel piece.
         using var buf = MakeBuffer(50);
         var table = new PieceTable(buf);
+        table.EnsureLineTree();
 
         // Insert "INSERTED" in the middle
         var midpoint = table.Length / 2;
@@ -356,6 +358,7 @@ public class LargeDocumentTests {
         try {
             using var buf = new ProceduralBuffer(lineCount, i => $"Line number {i:D6}", stride: 100);
             var table = new PieceTable(buf);
+            table.EnsureLineTree();
             table.Insert(0, "# Edited\n");
             var doc = new Document(table);
 

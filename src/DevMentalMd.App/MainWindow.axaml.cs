@@ -251,9 +251,16 @@ public partial class MainWindow : Window {
         UpdateStatusBarVisibility();
 
         if (!isSettings) {
-            Editor.Document = tab.Document;
-            Editor.IsInputBlocked = tab.IsLoading;
-            Editor.RestoreScrollState(tab);
+            // When a tab has pending session edits, don't show the base file
+            // content — it would flash the pre-edit state. Assign the real
+            // document only after edits are replayed in FinishLoad.
+            if (!tab.HasPendingEdits) {
+                Editor.Document = tab.Document;
+                Editor.RestoreScrollState(tab);
+            } else {
+                Editor.Document = null;
+            }
+            Editor.IsEditBlocked = tab.IsLoading;
             Editor.Focus();
 
             // When a loading tab finishes, unblock the editor if it's
@@ -261,7 +268,9 @@ public partial class MainWindow : Window {
             if (tab.IsLoading) {
                 tab.LoadCompleted += () => {
                     if (_activeTab == tab) {
-                        Editor.IsInputBlocked = false;
+                        Editor.Document = tab.Document;
+                        Editor.RestoreScrollState(tab);
+                        Editor.IsEditBlocked = false;
                         Editor.ResetCaretBlink();
                         Editor.InvalidateLayout();
                     }
@@ -1899,6 +1908,23 @@ public partial class MainWindow : Window {
             return;
         }
 
+        // Prevent overwriting a file that is already open in another tab.
+        var normalizedPath = Path.GetFullPath(path);
+        var conflict = _tabs.FirstOrDefault(t =>
+            t != _activeTab && !t.IsSettings && t.FilePath is not null &&
+            string.Equals(Path.GetFullPath(t.FilePath), normalizedPath,
+                StringComparison.OrdinalIgnoreCase));
+        if (conflict is not null) {
+            var errorDialog = new ErrorDialog(
+                "Cannot Save",
+                "File already open",
+                $"{conflict.DisplayName} is already open in another tab. Close it first, or choose a different file name.",
+                [ErrorDialogButton.OK],
+                theme: _theme);
+            await errorDialog.ShowDialog(this);
+            return;
+        }
+
         UpdateLastFileDialogDir(path);
         _watcher.Unwatch(_activeTab); // Old path no longer relevant.
         var sha1 = await SaveToAsync(path);
@@ -2718,6 +2744,11 @@ public partial class MainWindow : Window {
         if (tab.Document.Table.Buffer is IProgressBuffer buf) {
             var layoutPending = 0;
             buf.ProgressChanged += () => {
+                // Suppress incremental rendering when session edits are pending —
+                // showing the base file content before edits are replayed would
+                // flash stale/wrong content.
+                if (tab.HasPendingEdits) return;
+
                 if (Interlocked.CompareExchange(ref layoutPending, 1, 0) == 0) {
                     Dispatcher.UIThread.Post(() => {
                         Interlocked.Exchange(ref layoutPending, 0);
@@ -2743,6 +2774,17 @@ public partial class MainWindow : Window {
                 // Tab may have been closed while loading.
                 if (!_tabs.Contains(tab)) return;
 
+                // Install the line tree from the paged buffer scan before
+                // replaying edits — edit replay needs the tree for correct
+                // line-tree maintenance during Insert/Delete/CaptureLineInfo.
+                if (tab.LoadResult?.Buffer is PagedFileBuffer paged) {
+                    var lengths = paged.TakeLineLengths();
+                    if (lengths is { Count: > 0 }) {
+                        tab.Document.Table.InstallLineTree(
+                            CollectionsMarshal.AsSpan(lengths));
+                    }
+                }
+
                 // Conflict detection + edit replay (Loaded already completed).
                 SessionStore.FinishLoad(tab, entry);
 
@@ -2751,7 +2793,7 @@ public partial class MainWindow : Window {
 
                 UpdateTabBar();
                 if (_activeTab == tab) {
-                    Editor.IsInputBlocked = false;
+                    Editor.IsEditBlocked = false;
                     Editor.InvalidateLayout();
                 }
             });
@@ -2799,7 +2841,7 @@ public partial class MainWindow : Window {
                 tab.FinishLoading();
                 UpdateTabBar();
                 if (_activeTab == tab) {
-                    Editor.IsInputBlocked = false;
+                    Editor.IsEditBlocked = false;
                     Editor.InvalidateLayout();
                 }
             });
@@ -2926,8 +2968,6 @@ public partial class MainWindow : Window {
     }
 
     protected override void OnClosing(WindowClosingEventArgs e) {
-        _watcher.Dispose();
-
         // Flush pending compound edits on ALL tabs so undo stacks are
         // complete before the final session write.
         Editor.FlushCompound();
@@ -2937,6 +2977,7 @@ public partial class MainWindow : Window {
             }
         }
 
+        _watcher.Dispose();
         SaveSession();
         base.OnClosing(e);
     }

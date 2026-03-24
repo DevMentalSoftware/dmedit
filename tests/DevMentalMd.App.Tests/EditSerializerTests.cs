@@ -5,6 +5,8 @@ using DevMentalMd.Core.Documents.History;
 namespace DevMentalMd.App.Tests;
 
 public class EditSerializerTests {
+    private static readonly PieceTable EmptyTable = new("");
+
     [Fact]
     public void RoundTrip_InsertEdit() {
         var undo = new List<EditHistory.HistoryEntry> {
@@ -12,7 +14,7 @@ public class EditSerializerTests {
         };
         var redo = new List<EditHistory.HistoryEntry>();
 
-        var json = EditSerializer.Serialize(undo, redo);
+        var json = EditSerializer.Serialize(undo, redo, EmptyTable);
         var (u, r) = EditSerializer.Deserialize(json);
 
         Assert.Single(u);
@@ -31,7 +33,7 @@ public class EditSerializerTests {
         };
         var redo = new List<EditHistory.HistoryEntry>();
 
-        var json = EditSerializer.Serialize(undo, redo);
+        var json = EditSerializer.Serialize(undo, redo, EmptyTable);
         var (u, _) = EditSerializer.Deserialize(json);
 
         var del = Assert.IsType<DeleteEdit>(u[0].Edit);
@@ -51,7 +53,7 @@ public class EditSerializerTests {
         };
         var redo = new List<EditHistory.HistoryEntry>();
 
-        var json = EditSerializer.Serialize(undo, redo);
+        var json = EditSerializer.Serialize(undo, redo, EmptyTable);
         var (u, _) = EditSerializer.Deserialize(json);
 
         var comp = Assert.IsType<CompoundEdit>(u[0].Edit);
@@ -73,7 +75,7 @@ public class EditSerializerTests {
             new(outer, Selection.Collapsed(0)),
         };
 
-        var json = EditSerializer.Serialize(undo, new List<EditHistory.HistoryEntry>());
+        var json = EditSerializer.Serialize(undo, new List<EditHistory.HistoryEntry>(), EmptyTable);
         var (u, _) = EditSerializer.Deserialize(json);
 
         var outerR = Assert.IsType<CompoundEdit>(u[0].Edit);
@@ -92,11 +94,44 @@ public class EditSerializerTests {
             new(new InsertEdit(2, "C"), Selection.Collapsed(2)),
         };
 
-        var json = EditSerializer.Serialize(undo, redo);
+        var json = EditSerializer.Serialize(undo, redo, EmptyTable);
         var (u, r) = EditSerializer.Deserialize(json);
 
         Assert.Equal(2, u.Count);
         Assert.Single(r);
+    }
+
+    [Fact]
+    public void RoundTrip_DeleteEdit_PreservesLenWhenTextEmpty() {
+        // Simulates an oversized delete where text was omitted during serialization.
+        // The deserialized DeleteEdit must still have the correct Len for Apply.
+        var del = new DeleteEdit(100, 5_000_000, "");
+        var undo = new List<EditHistory.HistoryEntry> {
+            new(del, Selection.Collapsed(100)),
+        };
+
+        var json = EditSerializer.Serialize(undo, new List<EditHistory.HistoryEntry>(), EmptyTable);
+        var (u, _) = EditSerializer.Deserialize(json);
+
+        var restored = Assert.IsType<DeleteEdit>(u[0].Edit);
+        Assert.Equal(100, restored.Ofs);
+        Assert.Equal(5_000_000, restored.Len);
+        Assert.Equal("", restored.DeletedText);
+    }
+
+    [Fact]
+    public void RoundTrip_DeleteEdit_PreservesLenWithText() {
+        // Normal case: text is present, Len should match text length.
+        var undo = new List<EditHistory.HistoryEntry> {
+            new(new DeleteEdit(5, "world"), Selection.Collapsed(5)),
+        };
+
+        var json = EditSerializer.Serialize(undo, new List<EditHistory.HistoryEntry>(), EmptyTable);
+        var (u, _) = EditSerializer.Deserialize(json);
+
+        var del = Assert.IsType<DeleteEdit>(u[0].Edit);
+        Assert.Equal(5, del.Len);
+        Assert.Equal("world", del.DeletedText);
     }
 
     [Fact]
@@ -106,7 +141,7 @@ public class EditSerializerTests {
                 Selection.Collapsed(0)),
         };
 
-        var json = EditSerializer.Serialize(undo, new List<EditHistory.HistoryEntry>());
+        var json = EditSerializer.Serialize(undo, new List<EditHistory.HistoryEntry>(), EmptyTable);
         var (u, _) = EditSerializer.Deserialize(json);
 
         var ins = Assert.IsType<InsertEdit>(u[0].Edit);

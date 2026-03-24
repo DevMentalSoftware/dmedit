@@ -38,6 +38,10 @@ public sealed class PieceTable {
     /// <summary>Constructs a piece-table from an in-memory string.</summary>
     /// Used only for testing edge cases
     public PieceTable(string originalContent) : this(new StringBuffer(originalContent)) {
+        // Eagerly build the line tree so that Insert/Delete always have
+        // correct line-tree maintenance.  Paged-buffer tables get the tree
+        // installed externally via InstallLineTree after the scan completes.
+        BuildLineTree();
     }
 
     /// <summary>
@@ -147,6 +151,23 @@ public sealed class PieceTable {
         }
     }
 
+    /// <summary>
+    /// Atomically re-inserts pieces and restores line tree entries.
+    /// Used by <see cref="DeleteEdit.Revert"/> to guarantee the piece list
+    /// and line tree are never in an inconsistent state.
+    /// </summary>
+    public void InsertPiecesAndRestoreLines(
+        CharOffset ofs, Piece[] pieces,
+        int lineInfoStart, int[]? lineInfoLengths, long len) {
+
+        InsertPieces(ofs, pieces);
+        if (lineInfoLengths != null) {
+            RestoreLines(lineInfoStart, lineInfoLengths);
+        } else {
+            ReinsertedNonNewlineChars(ofs, len);
+        }
+    }
+
     /// <summary>Inserts <paramref name="text"/> at logical offset <paramref name="ofs"/>.</summary>
     public void Insert(CharOffset ofs, string text) {
         if (text.Length == 0) {
@@ -205,7 +226,9 @@ public sealed class PieceTable {
             // Newlines inserted: splice line lengths array, O(L) rebuild.
             SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs, text);
         } else {
-            // Tree not yet built: will be built lazily when needed.
+            // affectedLine < 0 means _lineTree was null when we checked above.
+            // This should never happen once the tree is installed.
+            Debug.Assert(false, "Insert called without a line tree.");
             _maxLineLen = -1;
         }
         AssertLineTreeValid();
@@ -232,7 +255,7 @@ public sealed class PieceTable {
             // Check if the deletion extends past the end of startLine.
             var lineEnd = (startLine == 0 ? 0L : _lineTree.PrefixSum(startLine - 1))
                         + _lineTree.ValueAt(startLine);
-            if (ofs + len > lineEnd) {
+            if (ofs + len >= lineEnd) {
                 hasNewline = true;
                 endLine = (LineIndex)LineFromOfs(Math.Min(ofs + len, Length));
             }
@@ -278,7 +301,10 @@ public sealed class PieceTable {
             // Newlines deleted: merge lines, O(L) rebuild.
             SpliceDeleteLines(startLine, endLine, ofs, len);
         } else {
-            _lineTree = null;
+            // startLine < 0 means _lineTree was null when we checked above.
+            // This should never happen once the tree is installed — edits
+            // require a built tree for correct line-tree maintenance.
+            Debug.Assert(false, "Delete called without a line tree.");
             _maxLineLen = -1;
         }
         AssertLineTreeValid();
@@ -508,6 +534,13 @@ public sealed class PieceTable {
         AssertLineTreeValid();
     }
 
+    /// <summary>
+    /// Ensures the line tree is built.  Call before any operation sequence
+    /// (such as session edit replay) that requires line-tree maintenance
+    /// to be active during Insert/Delete/CaptureLineInfo.
+    /// </summary>
+    public void EnsureLineTree() => _ = LineTree;
+
     private LineIndexTree LineTree {
         get {
             if (_lineTree != null) return _lineTree;
@@ -635,16 +668,17 @@ public sealed class PieceTable {
 
     /// <summary>
     /// Captures line tree information for the range [ofs, ofs+len) so undo can
-    /// restore the line tree without scanning characters.  Returns null if the
-    /// tree isn't built yet (small-file / test path).
+    /// restore the line tree without scanning characters.  Returns null when
+    /// the delete is within a single line (no line structure change).
     /// </summary>
     public (int StartLine, int[] LineLengths)? CaptureLineInfo(CharOffset ofs, long len) {
-        if (_lineTree == null) return null;
+        Debug.Assert(_lineTree != null, "CaptureLineInfo called without a line tree.");
+        if (_lineTree == null) return null; // Release safety net
         var startLine = (int)LineFromOfs(ofs);
         // Check if the deletion crosses line boundaries.
         var lineEnd = (startLine == 0 ? 0L : _lineTree.PrefixSum(startLine - 1))
                     + _lineTree.ValueAt(startLine);
-        if (ofs + len <= lineEnd) {
+        if (ofs + len < lineEnd) {
             // Single-line delete — no line structure change.
             return null;
         }
@@ -664,7 +698,8 @@ public sealed class PieceTable {
     /// original lines.
     /// </summary>
     public void RestoreLines(int startLine, int[] lineLengths) {
-        if (_lineTree == null) return;
+        Debug.Assert(_lineTree != null, "RestoreLines called without a line tree.");
+        if (_lineTree == null) return; // Release safety net
         // Remove the merged line that SpliceDeleteLines created.
         _lineTree.RemoveAt(startLine);
         // Re-insert the original lines.
@@ -678,7 +713,8 @@ public sealed class PieceTable {
     /// the line just got shorter and needs its length restored.
     /// </summary>
     public void ReinsertedNonNewlineChars(CharOffset ofs, long len) {
-        if (_lineTree == null) return;
+        Debug.Assert(_lineTree != null, "ReinsertedNonNewlineChars called without a line tree.");
+        if (_lineTree == null) return; // Release safety net
         var line = (int)LineFromOfs(ofs);
         _lineTree.Update(line, (int)len);
         var newLen = _lineTree.ValueAt(line);
@@ -752,7 +788,7 @@ public sealed class PieceTable {
     /// </summary>
     [Conditional("DEBUG")]
     private void AssertLineTreeValid() {
-        if (_lineTree == null) return;
+        Debug.Assert(_lineTree != null);
         var docLen = Length;
         var treeTotal = _lineTree.TotalSum();
         Debug.Assert(treeTotal == docLen,

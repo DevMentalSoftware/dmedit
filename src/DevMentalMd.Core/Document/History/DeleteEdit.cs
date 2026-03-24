@@ -8,9 +8,9 @@ namespace DevMentalMd.Core.Documents.History;
 /// regardless of the size of the deleted range.
 /// </remarks>
 public sealed class DeleteEdit : IDocumentEdit {
-    private readonly Piece[] _pieces;
-    private readonly int _lineInfoStart;
-    private readonly int[]? _lineInfoLengths;
+    private Piece[] _pieces;
+    private int _lineInfoStart;
+    private int[]? _lineInfoLengths;
     private string? _text; // only set for small deletes or session deserialization
 
     public long Ofs { get; }
@@ -40,6 +40,20 @@ public sealed class DeleteEdit : IDocumentEdit {
     }
 
     /// <summary>
+    /// Session-restore constructor: explicit length with optional text.
+    /// When <paramref name="deletedText"/> is shorter than <paramref name="len"/>
+    /// (e.g. empty for oversized deletes), Apply still deletes the correct range
+    /// but Revert cannot fully restore the content.
+    /// </summary>
+    public DeleteEdit(long ofs, long len, string deletedText) {
+        Ofs = ofs;
+        Len = len;
+        _pieces = [];
+        _text = deletedText;
+        _lineInfoStart = -1;
+    }
+
+    /// <summary>
     /// The deleted text, or null if not yet materialized.
     /// </summary>
     public string? DeletedText => _text;
@@ -50,18 +64,29 @@ public sealed class DeleteEdit : IDocumentEdit {
     /// </summary>
     public string MaterializeText(PieceTable table) => _text ??= table.ReadPieces(_pieces);
 
-    public void Apply(PieceTable table) => table.Delete(Ofs, Len);
+    public void Apply(PieceTable table) {
+        // If this edit was deserialized without piece descriptors (oversized
+        // delete whose text was omitted from the session file), capture them
+        // now while the table is in the correct pre-delete state.  This
+        // enables Revert (undo) to restore the deleted content.
+        if (_pieces.Length == 0 && Len > 0 && (_text is null or { Length: 0 })) {
+            _pieces = table.CapturePieces(Ofs, Len);
+            var lineInfo = table.CaptureLineInfo(Ofs, Len);
+            if (lineInfo is { } info) {
+                _lineInfoStart = info.StartLine;
+                _lineInfoLengths = info.LineLengths;
+            }
+        }
+        table.Delete(Ofs, Len);
+    }
 
     public void Revert(PieceTable table) {
         if (_pieces.Length > 0) {
-            // Re-insert saved pieces directly — no string allocation.
-            table.InsertPieces(Ofs, _pieces);
-            if (_lineInfoLengths != null) {
-                table.RestoreLines(_lineInfoStart, _lineInfoLengths);
-            } else {
-                // Single-line delete: the line just got shorter; update length.
-                table.ReinsertedNonNewlineChars(Ofs, Len);
-            }
+            // Re-insert saved pieces and restore line tree atomically so
+            // no observer can see an inconsistent state (pieces restored
+            // but line tree still reflecting the deleted range).
+            table.InsertPiecesAndRestoreLines(
+                Ofs, _pieces, _lineInfoStart, _lineInfoLengths, Len);
         } else {
             // Small delete with pre-materialized text — use string Insert.
             table.Insert(Ofs, _text!);

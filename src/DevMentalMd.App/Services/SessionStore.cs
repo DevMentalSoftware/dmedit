@@ -98,7 +98,6 @@ public static class SessionStore {
 
                 // Persist only edits above the save point — the saved file
                 // on disk is the correct base for replay on next restore.
-                // Pre-save undo history is not recoverable across sessions.
                 var savePointDepth = tab.Document.History.SavePointDepth;
                 var undoEntries = tab.Document.History.GetUndoEntries();
                 var redoEntries = tab.Document.History.GetRedoEntries();
@@ -107,28 +106,22 @@ public static class SessionStore {
                 IReadOnlyList<EditHistory.HistoryEntry> persistRedo;
 
                 if (savePointDepth > 0 && undoEntries.Count >= savePointDepth) {
-                    // Common case: trim pre-save edits, keep only unsaved changes.
                     persistUndo = undoEntries.Skip(savePointDepth).ToList();
                     persistRedo = redoEntries;
                     entry.SavePointDepth = 0;
                 } else if (savePointDepth > 0 && undoEntries.Count < savePointDepth) {
-                    // Rare: user undid past the save point. Can't represent
-                    // as a delta from the disk file — drop edit history.
-                    // Document will open in the saved (disk) state.
                     persistUndo = Array.Empty<EditHistory.HistoryEntry>();
                     persistRedo = Array.Empty<EditHistory.HistoryEntry>();
                     entry.SavePointDepth = 0;
                     entry.IsDirty = false;
                 } else {
-                    // Never saved (savePointDepth == 0): full history starts
-                    // from the original base (disk file or empty for untitled).
                     persistUndo = undoEntries;
                     persistRedo = redoEntries;
                 }
 
                 var editsPath = Path.Combine(SessionDir, $"{tab.Id}.edits.json");
                 if (persistUndo.Count > 0 || persistRedo.Count > 0) {
-                    var editsJson = EditSerializer.Serialize(persistUndo, persistRedo);
+                    var editsJson = EditSerializer.Serialize(persistUndo, persistRedo, tab.Document.Table);
                     File.WriteAllText(editsPath, editsJson);
                 } else if (File.Exists(editsPath)) {
                     File.Delete(editsPath);
@@ -212,7 +205,7 @@ public static class SessionStore {
         } else {
             // Untitled tab — replay edits from empty, no loading needed.
             doc = new Document();
-            ReplayEdits(doc, entry);
+            conflict = ReplayEdits(doc, entry);
             RestoreSelection(doc, entry);
         }
 
@@ -224,6 +217,9 @@ public static class SessionStore {
             }
         }
 
+        var hasPendingEdits = isLoading &&
+            File.Exists(Path.Combine(SessionDir, $"{entry.Id}.edits.json"));
+
         return new TabState(doc, entry.FilePath, entry.DisplayName) {
             Id = entry.Id,
             BaseSha1 = entry.BaseSha1,
@@ -231,6 +227,7 @@ public static class SessionStore {
             IsReadOnly = ro,
             Conflict = conflict,
             IsLoading = isLoading,
+            HasPendingEdits = hasPendingEdits,
             LoadResult = loadResult,
             ScrollOffsetY = entry.ScrollOffsetY,
             WinTopLine = entry.WinTopLine,
@@ -279,10 +276,14 @@ public static class SessionStore {
         } else {
             // SHA-1 match — safe to replay edits.
             tab.BaseSha1 = currentSha1 ?? entry.BaseSha1;
-            ReplayEdits(tab.Document, entry);
+            var replayConflict = ReplayEdits(tab.Document, entry);
+            if (replayConflict != null) {
+                tab.Conflict = replayConflict;
+            }
         }
 
         RestoreSelection(tab.Document, entry);
+        tab.HasPendingEdits = false;
         tab.FinishLoading();
     }
 
@@ -293,17 +294,32 @@ public static class SessionStore {
             Math.Clamp(entry.CaretActive, 0, len));
     }
 
-    private static void ReplayEdits(Document doc, TabEntry entry) {
+    /// <summary>
+    /// Replays serialized edits onto the document.  Returns a <see cref="FileConflict"/>
+    /// if replay fails (so the caller can surface it to the user), or null on success.
+    /// </summary>
+    private static FileConflict? ReplayEdits(Document doc, TabEntry entry) {
         var editsPath = Path.Combine(SessionDir, $"{entry.Id}.edits.json");
         if (!File.Exists(editsPath)) {
-            return;
+            return null;
         }
         try {
             var json = File.ReadAllText(editsPath);
             var (undo, redo) = EditSerializer.Deserialize(json);
+            // The line tree must already be installed before we get here.
+            // MainWindow installs it from the paged buffer scan results
+            // before calling FinishLoad.  If the tree isn't present,
+            // Insert/Delete/CaptureLineInfo silently skip line-tree
+            // maintenance, corrupting undo state.
             doc.History.RestoreEntries(doc.Table, undo, redo, entry.SavePointDepth);
+            return null;
         } catch {
             // Edit replay failed — document stays at base content.
+            return new FileConflict {
+                Kind = FileConflictKind.EditReplayFailed,
+                FilePath = entry.FilePath ?? "(untitled)",
+                ExpectedSha1 = entry.BaseSha1,
+            };
         }
     }
 

@@ -64,6 +64,13 @@ public sealed class TabState {
     public bool IsLoading { get; set; }
 
     /// <summary>
+    /// True when the tab has session edits waiting to be replayed after load.
+    /// Suppresses incremental rendering so the user doesn't see the base file
+    /// content flash before edits are applied.
+    /// </summary>
+    public bool HasPendingEdits { get; set; }
+
+    /// <summary>
     /// Fires on the UI thread when loading finishes and the tab becomes
     /// interactive (conflict detection and edit replay are complete).
     /// </summary>

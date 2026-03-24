@@ -171,6 +171,12 @@ public sealed class PagedFileBuffer : IProgressBuffer {
 
     public bool LengthIsKnown => _done;
 
+    /// <summary>
+    /// Non-null if the background scan terminated with an error.
+    /// Checked by the UI after <see cref="LoadComplete"/> fires.
+    /// </summary>
+    public Exception? ScanError { get; private set; }
+
     public long LineCount => Interlocked.Read(ref _lineCount);
 
     public int LongestLine => _longestLine;
@@ -183,13 +189,16 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         if (lineIdx == 0) return 0;
 
         // Sum line lengths [0..lineIdx-1] to get the char offset.
-        var lengths = _lineLengths;
-        if (lengths == null || lineIdx > lengths.Count) return -1L;
-        var sum = 0L;
-        for (var i = 0; i < (int)lineIdx; i++) {
-            sum += lengths[i];
+        // Lock protects against concurrent _lineLengths mutations by ScanNewlines.
+        lock (_lock) {
+            var lengths = _lineLengths;
+            if (lengths == null || lineIdx > lengths.Count) return -1L;
+            var sum = 0L;
+            for (var i = 0; i < (int)lineIdx; i++) {
+                sum += lengths[i];
+            }
+            return sum;
         }
-        return sum;
     }
 
     public char this[long offset] {
@@ -402,7 +411,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
             }
 
             // Add the final line (content after the last newline, may be empty).
-            _lineLengths.Add(_currentLineLen);
+            lock (_lock) { _lineLengths.Add(_currentLineLen); }
 
             Interlocked.Exchange(ref _totalChars, cumulativeChars);
             _sha1 = Convert.ToHexStringLower(hasher.GetHashAndReset());
@@ -410,7 +419,8 @@ public sealed class PagedFileBuffer : IProgressBuffer {
             LoadComplete?.Invoke();
         } catch (OperationCanceledException) {
             _done = true;
-        } catch {
+        } catch (Exception ex) when (ex is not OperationCanceledException) {
+            ScanError = ex;
             _done = true;
         } finally {
             _loadedEvent.Set();
@@ -437,14 +447,14 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                     // \r\n — already counted the line at the \r; add the \n to its length.
                     // Don't increment _currentLineLen — the \n belongs to the previous line.
                     _crlfCount++;
-                    _lineLengths[^1] = _lineLengths[^1] + 1; // extend \r to \r\n
+                    lock (_lock) { _lineLengths[^1] = _lineLengths[^1] + 1; } // extend \r to \r\n
                     prevWasCr = false;
                     _atLineStart = true;
                     continue;
                 }
                 _lfCount++;
                 _currentLineLen++; // include the \n in this line's length
-                _lineLengths.Add(_currentLineLen);
+                lock (_lock) { _lineLengths.Add(_currentLineLen); }
                 currentLine++;
                 Interlocked.Exchange(ref _lineCount, currentLine + 1);
                 long charOffset = charBase + i + 1;
@@ -456,7 +466,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                     _crCount++;
                 }
                 _currentLineLen++; // include the \r in this line's length
-                _lineLengths.Add(_currentLineLen);
+                lock (_lock) { _lineLengths.Add(_currentLineLen); }
                 currentLine++;
                 Interlocked.Exchange(ref _lineCount, currentLine + 1);
                 long charOffset = charBase + i + 1;
@@ -488,13 +498,14 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         if (_longestLine >= MAX_LONGEST_LINE) {
             return;
         }
-        lock (_lock) {
-            int lx = (int) Math.Min(MAX_LONGEST_LINE, charOffset - _lastLineStart);
-            if (lx > _longestLine) {
-                _longestLine = lx;
-            }
-            _lastLineStart = charOffset;
+        // Single-writer (scan worker) + multi-reader (UI thread) pattern:
+        // volatile on _longestLine provides the cross-thread visibility
+        // guarantee.  No lock needed since only the scan worker writes.
+        int lx = (int)Math.Min(MAX_LONGEST_LINE, charOffset - _lastLineStart);
+        if (lx > _longestLine) {
+            _longestLine = lx;
         }
+        _lastLineStart = charOffset;
     }
 
     /// <summary>
@@ -503,9 +514,11 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     /// The caller takes ownership; the buffer clears its reference.
     /// </summary>
     public List<int>? TakeLineLengths() {
-        var result = _lineLengths;
-        _lineLengths = null!;
-        return result;
+        lock (_lock) {
+            var result = _lineLengths;
+            _lineLengths = null!;
+            return result;
+        }
     }
 
     // -----------------------------------------------------------------
@@ -518,6 +531,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     /// </summary>
     private int FindPageForCharOffset(long charOfs) {
         var count = _pageCount; // snapshot volatile
+        var pages = _pages;     // snapshot reference (atomic in .NET)
         if (count == 0 || charOfs < 0) {
             return -1;
         }
@@ -526,14 +540,14 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         var hi = count - 1;
         while (lo < hi) {
             var mid = (lo + hi + 1) / 2;
-            if (_pages[mid].CharStart <= charOfs) {
+            if (pages[mid].CharStart <= charOfs) {
                 lo = mid;
             } else {
                 hi = mid - 1;
             }
         }
         // Verify the offset is actually within this page.
-        var page = _pages[lo];
+        var page = pages[lo];
         if (charOfs >= page.CharStart && charOfs < page.CharStart + page.CharCount) {
             return lo;
         }
@@ -635,12 +649,12 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         var newLen = Math.Max(_pages.Length * 2, needed);
         var newPages = new PageInfo[newLen];
         Array.Copy(_pages, newPages, _pageCount);
-        _pages = newPages;
 
         var newData = new char[]?[newLen];
         lock (_lock) {
             Array.Copy(_pageData, newData, _pageCount);
-            _pageData = newData;
+            _pages = newPages;   // assign inside lock so FindPageForCharOffset
+            _pageData = newData; // snapshots a consistent reference
         }
     }
 
