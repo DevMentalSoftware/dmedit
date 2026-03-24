@@ -35,14 +35,22 @@ public sealed class PieceTable {
     // Construction
     // -------------------------------------------------------------------------
 
-    /// <summary>Constructs a piece-table from an in-memory string.</summary>
-    /// Used only for testing edge cases
-    public PieceTable(string originalContent) : this(new StringBuffer(originalContent)) {
-        // Eagerly build the line tree so that Insert/Delete always have
-        // correct line-tree maintenance.  Paged-buffer tables get the tree
-        // installed externally via InstallLineTree after the scan completes.
+    /// <summary>Creates an empty piece-table (for untitled/new documents).</summary>
+    public PieceTable() : this(EmptyBuffer.Instance) {
         BuildLineTree();
     }
+
+    /// <summary>Constructs a piece-table from an in-memory string (tests only).</summary>
+    internal PieceTable(string originalContent) : this(new StringBuffer(originalContent)) {
+        BuildLineTree();
+    }
+
+    /// <summary>Constructs a piece-table from an <see cref="IBuffer"/>.</summary>
+    /// <remarks>
+    /// For paged file content, pass a <see cref="PagedFileBuffer"/>.
+    /// Call <see cref="InstallLineTree"/> or <see cref="EnsureLineTree"/> after
+    /// the buffer is fully loaded and before any edits.
+    /// </remarks>
 
     /// <summary>
     /// Constructs a piece-table from an <see cref="IBuffer"/>.
@@ -793,5 +801,21 @@ public sealed class PieceTable {
         var treeTotal = _lineTree.TotalSum();
         Debug.Assert(treeTotal == docLen,
             $"Line tree total {treeTotal} != Length {docLen} (delta {treeTotal - docLen})");
+    }
+
+    /// <summary>
+    /// Minimal zero-length buffer for empty/untitled documents.
+    /// </summary>
+    private sealed class EmptyBuffer : IBuffer {
+        public static readonly EmptyBuffer Instance = new();
+        public long Length => 0;
+        public bool LengthIsKnown => true;
+        public long LineCount => 1;
+        public int LongestLine => 0;
+        public long GetLineStart(long lineIdx) => lineIdx == 0 ? 0 : -1;
+        public char this[long offset] => throw new ArgumentOutOfRangeException(nameof(offset));
+        public void CopyTo(long offset, Span<char> destination, int len) =>
+            throw new ArgumentOutOfRangeException(nameof(offset));
+        public void Dispose() { }
     }
 }

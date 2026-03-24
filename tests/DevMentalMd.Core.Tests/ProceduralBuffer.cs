@@ -1,4 +1,6 @@
-namespace DevMentalMd.Core.Buffers;
+using DevMentalMd.Core.Buffers;
+
+namespace DevMentalMd.Core.Tests;
 
 /// <summary>
 /// An <see cref="IBuffer"/> that generates content on-demand via a caller-supplied delegate,

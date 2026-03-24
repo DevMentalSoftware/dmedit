@@ -5,7 +5,7 @@ using DevMentalMd.Core.Documents.History;
 namespace DevMentalMd.App.Tests;
 
 public class EditSerializerTests {
-    private static readonly PieceTable EmptyTable = new("");
+    private static readonly PieceTable EmptyTable = new();
 
     [Fact]
     public void RoundTrip_InsertEdit() {

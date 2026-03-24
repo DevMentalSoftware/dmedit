@@ -16,7 +16,16 @@ public sealed class Document {
     // Construction
     // -------------------------------------------------------------------------
 
-    public Document(string initialContent = "") {
+    /// <summary>Creates an empty document (for untitled/new documents).</summary>
+    public Document() {
+        _table = new PieceTable();
+    }
+
+    /// <summary>
+    /// Creates a document from a string.  Used by tests; production code
+    /// uses the parameterless constructor or <see cref="Document(PieceTable)"/>.
+    /// </summary>
+    internal Document(string initialContent) {
         _table = new PieceTable(initialContent);
         if (initialContent.Length > 0) {
             LineEndingInfo = LineEndingInfo.Detect(initialContent);

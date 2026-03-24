@@ -2,10 +2,11 @@ namespace DevMentalMd.Core.Buffers;
 
 /// <summary>
 /// An <see cref="IBuffer"/> backed by a CLR <see langword="string"/>.
-/// Used for documents loaded entirely into memory (≤ 50 MB).
-/// Line starts are scanned once on construction and cached.
+/// Used by tests via <c>PieceTable(string)</c> and <c>Document(string)</c>.
+/// Not part of the public API — production code uses <see cref="PagedFileBuffer"/>
+/// or <see cref="PieceTable()"/> (empty document).
 /// </summary>
-public sealed class StringBuffer : IBuffer {
+internal sealed class StringBuffer : IBuffer {
     private readonly string _data;
     private readonly long[] _lineStarts;
     private readonly int _longestLine;

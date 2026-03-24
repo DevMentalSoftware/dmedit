@@ -1685,18 +1685,6 @@ public partial class MainWindow : Window {
             }
         }
 
-        if (_settings.DevMode) {
-            MenuFile.Items.Add(new Separator());
-            foreach (var sample in DevSamples.All) {
-                var captured = sample;
-                var item = new MenuItem { Header = sample.DisplayName };
-                item.Click += (_, _) => {
-                    MenuBar.Close();
-                    OpenDevSample(captured);
-                };
-                MenuFile.Items.Add(item);
-            }
-        }
     }
 
     // -----------------------------------------------------------------
@@ -1824,18 +1812,6 @@ public partial class MainWindow : Window {
         WireFileLoadCompletion(tab);
 
         PushRecentFile(path);
-        TryCloseEmptyUntitled(tab);
-    }
-
-    private void OpenDevSample(ProceduralSample sample) {
-        var sw = Stopwatch.StartNew();
-        var doc = sample.CreateDocument();
-        sw.Stop();
-
-        var tab = new TabState(doc, null, sample.DisplayName);
-        AddTab(tab);
-        SwitchToTab(tab);
-        Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
         TryCloseEmptyUntitled(tab);
     }
 
