@@ -322,8 +322,12 @@ public sealed class PieceTable {
     // Text access
     // -------------------------------------------------------------------------
 
-    /// <summary>Returns the full document text as a string.</summary>
-    public string GetText() {
+    /// <summary>
+    /// Returns the full document text as a string.
+    /// Test-only — production code must use <see cref="GetText(long, int)"/>
+    /// or <see cref="ForEachPiece"/> to avoid materializing the entire document.
+    /// </summary>
+    internal string GetText() {
         var len = Length;
         var sb = new StringBuilder((int)Math.Min(len, int.MaxValue));
         foreach (var p in _pieces) {
@@ -485,6 +489,9 @@ public sealed class PieceTable {
         return (_pieces.Count, 0L); // ofs == Length
     }
 
+    /// <summary>Maximum char[] allocation per visitor callback (1 MB of chars = 2 MB).</summary>
+    private const int MaxVisitChunk = 1024 * 1024;
+
     private void VisitPieces(long start, long len, Action<ReadOnlySpan<char>> visitor) {
         if (len == 0) {
             return;
@@ -496,31 +503,40 @@ public sealed class PieceTable {
             var pieceOfs = i == startPiece ? startOfsInPiece : 0L;
 
             if (p.Len == WholeBufSentinel) {
-                // Unknown-length IBuffer piece: read directly without materialising the whole buffer.
-                // After a split, the piece covers [p.Start .. end-of-buffer), so clamp to actual available chars.
                 var bufAvail = _buf!.Length - (p.Start + pieceOfs);
-                var take = (int)Math.Min(remaining, bufAvail);
-                if (take > 0) {
+                var pieceRemaining = Math.Min(remaining, bufAvail);
+                while (pieceRemaining > 0) {
+                    var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
                     var chars = new char[take];
                     _buf.CopyTo(p.Start + pieceOfs, chars, take);
                     visitor(chars);
+                    pieceOfs += take;
+                    pieceRemaining -= take;
+                    remaining -= take;
                 }
-                remaining -= take;
             } else if (p.Which == BufferKind.Original) {
-                // Read directly from the buffer — avoids materializing the entire
-                // buffer as a string (which would double memory for large files).
                 var avail = p.Len - pieceOfs;
-                var take = (int)Math.Min(avail, remaining);
-                var chars = new char[take];
-                _buf.CopyTo(p.Start + pieceOfs, chars, take);
-                visitor(chars);
-                remaining -= take;
+                var pieceRemaining = Math.Min(avail, remaining);
+                while (pieceRemaining > 0) {
+                    var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
+                    var chars = new char[take];
+                    _buf.CopyTo(p.Start + pieceOfs, chars, take);
+                    visitor(chars);
+                    pieceOfs += take;
+                    pieceRemaining -= take;
+                    remaining -= take;
+                }
             } else {
                 var avail = p.Len - pieceOfs;
-                var take = (int)Math.Min(avail, remaining);
-                var buf = BufFor(p.Which).AsSpan((int)(p.Start + pieceOfs), take);
-                visitor(buf);
-                remaining -= take;
+                var pieceRemaining = (int)Math.Min(avail, remaining);
+                while (pieceRemaining > 0) {
+                    var take = Math.Min(pieceRemaining, MaxVisitChunk);
+                    var buf = BufFor(p.Which).AsSpan((int)(p.Start + pieceOfs), take);
+                    visitor(buf);
+                    pieceOfs += take;
+                    pieceRemaining -= take;
+                    remaining -= take;
+                }
             }
         }
     }
@@ -765,11 +781,19 @@ public sealed class PieceTable {
         var sb = new StringBuilder((int)Math.Min(totalLen, int.MaxValue));
         foreach (var p in pieces) {
             if (p.Which == BufferKind.Original) {
-                var chars = new char[(int)p.Len];
-                _buf.CopyTo(p.Start, chars, (int)p.Len);
-                sb.Append(chars);
+                // Read in chunks to avoid single huge char[] allocation.
+                var ofs = p.Start;
+                var pieceRemaining = p.Len;
+                while (pieceRemaining > 0) {
+                    var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
+                    var chars = new char[take];
+                    _buf.CopyTo(ofs, chars, take);
+                    sb.Append(chars);
+                    ofs += take;
+                    pieceRemaining -= take;
+                }
             } else {
-                sb.Append(_addBuf.ToString(), (int)p.Start, (int)p.Len);
+                sb.Append(BufFor(p.Which), (int)p.Start, (int)p.Len);
             }
         }
         return sb.ToString();

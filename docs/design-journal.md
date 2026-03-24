@@ -21,14 +21,23 @@ small one — it is the primary way a fresh session recovers context.
 | [07-commands](design-journal/07-commands.md) | 2026-03-06 – 2026-03-07 | Command registry, key binding profiles, 21 new commands, command palette |
 | [08-status-bar](design-journal/08-status-bar.md) | 2026-03-14 | Interactive status bar buttons, indent detection, GoTo Line, file locking fix, file watching notes |
 | [09-storage-and-history](design-journal/09-storage-and-history.md) | 2026-03-22 | Storage-backed edits, file history, checkpoints, projects, git integration roadmap |
+| [10-session-and-reliability](design-journal/10-session-and-reliability.md) | 2026-03-24 | Session persist bugs, edit serialization, line tree reliability, memory safety, buffer simplification |
 
 ---
 
 ## Current State
 
-**Test baseline: 449** (366 Core + 21 Rendering + 62 App)
+**Test baseline: 450** (366 Core + 21 Rendering + 63 App)
 
 ### Recently completed
+
+- **Session Persistence & Memory Safety** (2026-03-24) — major reliability pass fixing
+  edit serialization (MaterializeText, explicit delete length, recapture in Apply),
+  line tree reliability (InstallLineTree during load, CaptureLineInfo boundary fix,
+  atomic InsertPiecesAndRestoreLines), memory safety (VisitPieces/ReadPieces 1 MB chunk
+  cap, GetText internal), buffer simplification (removed ProceduralBuffer/StringBuffer/
+  StreamingFileBuffer/DevSamples from production).
+  See [10-session-and-reliability](design-journal/10-session-and-reliability.md).
 
 - **Global Error Handling** (2026-03-23) — replaced SaveErrorDialog and SaveFailedDialog
   with a single general-purpose `ErrorDialog` (resizable, themed, configurable buttons).
@@ -126,11 +135,10 @@ small one — it is the primary way a fresh session recovers context.
   (`LineIndexTree`) supporting O(log L) insert/remove of lines.  All edits (including
   Enter/Delete across lines) are O(log L) with no rebuild.  Line lengths built during
   `PagedFileBuffer.ScanWorker` (no post-load rescan).  Undo uses piece-based zero-copy
-  re-insertion (`InsertPieces` + `RestoreLines`).  **Known bug:** redo of a massive
-  delete (2.5M+ lines) causes 30 GB memory explosion and multi-minute freeze — needs
-  profiling to identify whether it's in `FreeSubtree`, `Merge`, `MaxLineLength`
-  recompute, or a treap corruption.  The issue does not appear in our Edit metric,
-  suggesting the cost is in layout/render or tree operations outside the timed window.
+  re-insertion (`InsertPieces` + `RestoreLines`).  The previously-known 30 GB memory
+  explosion on redo of massive deletes was fixed in the 2026-03-24 reliability pass —
+  root cause was VisitPieces allocating piece-sized char arrays and line tree / piece
+  table inconsistency during restore.
 - **Delayed clipboard rendering** — currently `GetSelectedText()` materializes the
   full selection as a `string` for the clipboard.  Windows supports delayed rendering
   via `IDataObject` / `OleSetClipboard`: the text is only materialized when the target
