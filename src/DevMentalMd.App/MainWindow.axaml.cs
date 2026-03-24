@@ -1959,6 +1959,15 @@ public partial class MainWindow : Window {
         if (Editor.Document is null) {
             return null;
         }
+
+        // Show the loading spinner and block editing while saving.
+        var tab = _activeTab;
+        if (tab != null) {
+            tab.IsLoading = true;
+            Editor.IsEditBlocked = true;
+            UpdateTabBar();
+        }
+
         try {
             var sw = Stopwatch.StartNew();
             var sha1 = await FileSaver.SaveAsync(Editor.Document, path,
@@ -2006,10 +2015,19 @@ public partial class MainWindow : Window {
             }
 
             // Save As failed or user chose Close Tab — close it.
-            if (_activeTab is { } tab) {
-                CloseTabDirect(tab);
+            if (_activeTab is { } current) {
+                CloseTabDirect(current);
             }
             return null;
+        } finally {
+            // Clear the loading spinner and unblock editing.
+            if (tab != null) {
+                tab.IsLoading = false;
+                if (_activeTab == tab) {
+                    Editor.IsEditBlocked = false;
+                }
+                UpdateTabBar();
+            }
         }
     }
 
