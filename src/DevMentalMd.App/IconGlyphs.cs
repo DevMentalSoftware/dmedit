@@ -29,11 +29,18 @@ static class IconGlyphs {
     public const string ArrowRight   = "\uF182";  // →  ic_fluent_arrow_right_20_regular
     public const string Dirty        = "\uF660";  // ●  ic_fluent_record_16_regular
 
+    public const string H1 = "\uF7EF";
+    public const string H2 = "\uF7F0";
+    public const string H3 = "\uF7F1";
+
     // Reset / undo
     public const string ArrowUndo    = "\uF199";  // ↺  TODO: verify codepoint against bundled font
 
     // Tail file indicator
     public const string ArrowDown    = "\uF126";  // ↓  ic_fluent_arrow_download_20_regular
+
+    // Remove / delete
+    public const string Delete       = "\uE4C4";  // TODO: verify codepoint against bundled font
 
     // Conflict / error indicators
     public const string ErrorCircle  = "\uF4A0";  // TODO: placeholder — pick a better error/warning glyph

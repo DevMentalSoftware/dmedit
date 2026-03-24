@@ -114,6 +114,26 @@ public static class SettingRowFactory {
         return btn;
     }
 
+    internal static Button CreateRemoveIconButton() {
+        var btn = new Button {
+            Width = 22, Height = 22,
+            Padding = new Thickness(0),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(4, 0, 0, 0),
+            Tag = "remove",
+            Content = new TextBlock {
+                Text = IconGlyphs.Delete,
+                FontFamily = IconGlyphs.Family,
+                FontSize = 14,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            },
+        };
+        ToolTip.SetTip(btn, "Remove shortcut");
+        return btn;
+    }
+
     /// <summary>
     /// Creates a horizontal row with a setting label and a reset button.
     /// Used by non-bool row types.

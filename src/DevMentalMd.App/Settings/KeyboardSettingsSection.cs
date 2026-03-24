@@ -26,6 +26,7 @@ public partial class KeyboardSettingsSection : UserControl {
     private string? _selectedCommandId;
     private ChordGesture? _captured;         // single key or chord
     private bool _showModifiedOnly;          // "M" toggle: show only customised rows
+    private bool _reservedConflict;           // captured gesture conflicts with a Menu.* reserved binding
     private EditorTheme _theme = EditorTheme.Light;
     private KeyGesture? _findFirstGesture;   // first key of a potential chord in FindShortcut
 
@@ -92,6 +93,15 @@ public partial class KeyboardSettingsSection : UserControl {
                 FindShortcut.InnerTextBox.ContextMenu = null;
         };
 
+        // Clear button on FindShortcut should reset chord state.
+        FindShortcut.PropertyChanged += (_, e) => {
+            if (e.Property == Controls.DMTextBox.TextProperty
+                && string.IsNullOrEmpty(FindShortcut.Text)
+                && _findFirstGesture != null) {
+                _findFirstGesture = null;
+            }
+        };
+
         ModifiedFilterBtn.IsCheckedChanged += (_, _) => {
             _showModifiedOnly = ModifiedFilterBtn.IsChecked == true;
             ApplyFilter();
@@ -107,8 +117,19 @@ public partial class KeyboardSettingsSection : UserControl {
                 CaptureBox.InnerTextBox.ContextMenu = null;
         };
 
+        // When the clear button empties the capture box, reset the captured
+        // gesture and conflict message so the next keypress starts fresh.
+        CaptureBox.PropertyChanged += (_, e) => {
+            if (e.Property == Controls.DMTextBox.TextProperty
+                && string.IsNullOrEmpty(CaptureBox.Text)
+                && _captured != null) {
+                _captured = null;
+                SetConflict(null);
+                UpdateButtonStates();
+            }
+        };
+
         AssignBtn.Click += OnAssign;
-        RemoveBtn.Click += OnRemove;
 
         // =====================================================================
         // Initial build
@@ -202,6 +223,7 @@ public partial class KeyboardSettingsSection : UserControl {
 
         var g1Modified = IsBindingModified(cmd.Id, 1);
         var g2Modified = IsBindingModified(cmd.Id, 2);
+        var isReserved = cmd.Id.StartsWith("Menu.", StringComparison.Ordinal);
 
         var nameText = new TextBlock {
             Text = cmd.DisplayName,
@@ -229,33 +251,27 @@ public partial class KeyboardSettingsSection : UserControl {
 
         var isModified = g1Modified || g2Modified;
 
-        // Per-row reset button — only visible when the command has overrides.
-        var resetBtn = SettingRowFactory.CreateResetIconButton();
-        resetBtn.IsVisible = isModified;
-        resetBtn.Margin = new Thickness(0);
-        resetBtn.Click += (_, _) => {
-            // Evict conflicts before resetting, same as OnReset.
-            for (var slot = 1; slot <= 2; slot++) {
-                var defaultGesture = _keyBindings.GetProfileDefault(cmd.Id, slot);
-                if (defaultGesture == null) continue;
-                RemoveConflict(defaultGesture, cmd.Id);
-            }
-            _keyBindings.ResetBinding(cmd.Id);
-            RefreshAfterChange();
-        };
+        // Per-slot action button: reset (undo) if modified, remove (trash)
+        // if bound but unmodified, hidden if empty. Reserved (Menu.*) rows
+        // never show buttons.
+        var btn1 = CreateSlotButton(cmd.Id, 1, g1Modified, gestureText, isReserved);
+        var btn2 = CreateSlotButton(cmd.Id, 2, g2Modified, gesture2Text, isReserved);
 
-        // 4-column grid: Name (flex) | Gesture (fixed) | Gesture2 (flex) | Reset (auto)
+        // 6-column grid: Name | Gesture1 | Btn1 | Gesture2 | Btn2
+        // All non-name columns are fixed width so columns stay aligned.
         var grid = new Grid {
-            ColumnDefinitions = ColumnDefinitions.Parse("*,130,*,Auto"),
+            ColumnDefinitions = ColumnDefinitions.Parse("*,104,26,104,26"),
         };
         Grid.SetColumn(nameText, 0);
         Grid.SetColumn(gestureLabel, 1);
-        Grid.SetColumn(gesture2Label, 2);
-        Grid.SetColumn(resetBtn, 3);
+        Grid.SetColumn(btn1, 2);
+        Grid.SetColumn(gesture2Label, 3);
+        Grid.SetColumn(btn2, 4);
         grid.Children.Add(nameText);
         grid.Children.Add(gestureLabel);
+        grid.Children.Add(btn1);
         grid.Children.Add(gesture2Label);
-        grid.Children.Add(resetBtn);
+        grid.Children.Add(btn2);
 
         var border = new Border {
             Child = grid,
@@ -278,6 +294,56 @@ public partial class KeyboardSettingsSection : UserControl {
         };
 
         return border;
+    }
+
+    /// <summary>
+    /// Creates the per-slot action button for a command row. Returns a reset
+    /// (undo) button if the slot is modified (even if cleared to empty), a
+    /// remove (trash) button if the slot has a binding but is unmodified, or
+    /// a hidden placeholder otherwise. Reserved (Menu.*) commands always get
+    /// a hidden placeholder.
+    /// </summary>
+    private Control CreateSlotButton(string cmdId, int slot, bool isModified,
+                                     string gestureText, bool isReserved) {
+        if (isReserved) {
+            // Hidden fixed-width placeholder so the column stays aligned.
+            return new Border { Width = 22, Height = 22 };
+        }
+
+        if (isModified) {
+            var btn = SettingRowFactory.CreateResetIconButton();
+            btn.Margin = new Thickness(0);
+            btn.Click += (_, _) => {
+                var defaultGesture = _keyBindings.GetProfileDefault(cmdId, slot);
+                if (defaultGesture != null) {
+                    RemoveConflict(defaultGesture, cmdId);
+                }
+                if (slot == 1) {
+                    _keyBindings.SetBinding(cmdId, _keyBindings.GetProfileDefault(cmdId, 1));
+                } else {
+                    _keyBindings.SetBinding2(cmdId, _keyBindings.GetProfileDefault(cmdId, 2));
+                }
+                RefreshAfterChange();
+            };
+            return btn;
+        }
+
+        if (string.IsNullOrEmpty(gestureText)) {
+            // No binding and not modified — hidden placeholder.
+            return new Border { Width = 22, Height = 22 };
+        }
+
+        var removeBtn = SettingRowFactory.CreateRemoveIconButton();
+        removeBtn.Margin = new Thickness(0);
+        removeBtn.Click += (_, _) => {
+            if (slot == 1) {
+                _keyBindings.SetBinding(cmdId, null);
+            } else {
+                _keyBindings.SetBinding2(cmdId, null);
+            }
+            RefreshAfterChange();
+        };
+        return removeBtn;
     }
 
     private void SelectCommand(string commandId) {
@@ -314,6 +380,14 @@ public partial class KeyboardSettingsSection : UserControl {
             or Key.LeftAlt or Key.RightAlt
             or Key.LWin or Key.RWin) {
             e.Handled = true;
+            return;
+        }
+
+        // Bare Enter triggers Assign; Enter with modifiers (e.g. Ctrl+Enter)
+        // is a valid shortcut and falls through to normal capture.
+        if (e.Key is Key.Return or Key.Enter && e.KeyModifiers == KeyModifiers.None) {
+            e.Handled = true;
+            OnAssign(sender, e);
             return;
         }
 
@@ -418,6 +492,8 @@ public partial class KeyboardSettingsSection : UserControl {
 
     private void OnAssign(object? sender, Avalonia.Interactivity.RoutedEventArgs e) {
         if (_selectedCommandId == null || _captured == null) return;
+        // Menu.* pseudo-commands have fixed bindings — cannot be reassigned.
+        if (_selectedCommandId.StartsWith("Menu.", StringComparison.Ordinal)) return;
 
         // If the captured gesture is already bound to another command, evict it.
         RemoveConflict(_captured, _selectedCommandId);
@@ -433,17 +509,6 @@ public partial class KeyboardSettingsSection : UserControl {
         RefreshAfterChange();
     }
 
-    private void OnRemove(object? sender, Avalonia.Interactivity.RoutedEventArgs e) {
-        if (_selectedCommandId == null) return;
-        // Remove the last-filled slot: secondary first, then primary.
-        var hasSecondary = _keyBindings.GetGesture2(_selectedCommandId) != null;
-        if (hasSecondary) {
-            _keyBindings.SetBinding2(_selectedCommandId, null);
-        } else {
-            _keyBindings.SetBinding(_selectedCommandId, null);
-        }
-        RefreshAfterChange();
-    }
 
     private void RefreshAfterChange() {
         // Rebuild the command list to reflect updated gesture text.
@@ -464,16 +529,9 @@ public partial class KeyboardSettingsSection : UserControl {
     }
 
     private void UpdateButtonStates() {
-        AssignBtn.IsEnabled = _selectedCommandId != null && _captured != null;
-
-        if (_selectedCommandId != null) {
-            var hasAny = _keyBindings.GetGesture(_selectedCommandId) != null
-                || _keyBindings.GetGesture2(_selectedCommandId) != null;
-            RemoveBtn.IsEnabled = hasAny;
-        } else {
-            RemoveBtn.IsEnabled = false;
-        }
-
+        AssignBtn.IsEnabled = _selectedCommandId != null && _captured != null
+            && !_reservedConflict
+            && !_selectedCommandId.StartsWith("Menu.", StringComparison.Ordinal);
     }
 
     // =====================================================================
@@ -669,10 +727,16 @@ public partial class KeyboardSettingsSection : UserControl {
     /// </summary>
     private void SetConflict(string? conflictingCommandId) {
         ConflictPanel.Children.Clear();
+        _reservedConflict = false;
         if (conflictingCommandId == null) return;
         var name = _keyBindings.GetCommand(conflictingCommandId)?.DisplayName
             ?? conflictingCommandId;
-        ConflictPanel.Children.Add(MakeWarnRun("Will replace the shortcut already assigned to", 11));
+        if (conflictingCommandId.StartsWith("Menu.", StringComparison.Ordinal)) {
+            _reservedConflict = true;
+            ConflictPanel.Children.Add(MakeWarnRun("This shortcut is reserved for", 11));
+        } else {
+            ConflictPanel.Children.Add(MakeWarnRun("Will replace the shortcut already assigned to", 11));
+        }
         ConflictPanel.Children.Add(MakeNameChip(name, 11));
     }
 

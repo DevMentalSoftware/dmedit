@@ -30,6 +30,15 @@ public class KeyBindingService {
     private HashSet<KeyGesture> _chordPrefixes = new(KeyGestureComparer.Instance);
     private Dictionary<(KeyGesture, KeyGesture), string> _chordToCommand = new(ChordTupleComparer.Instance);
 
+    // Reserved Alt+letter gestures for top-level menu access keys.
+    private static readonly (string CmdId, Key Key)[] MenuAccessKeys = [
+        ("Menu.File", Key.F),
+        ("Menu.Edit", Key.E),
+        ("Menu.Search", Key.S),
+        ("Menu.View", Key.V),
+        ("Menu.Help", Key.H),
+    ];
+
     public KeyBindingService(AppSettings settings, CommandRegistry commands) {
         _settings = settings;
         _commands = commands;
@@ -83,8 +92,20 @@ public class KeyBindingService {
         var overrides1 = _settings.KeyBindingOverrides;
         var overrides2 = _settings.KeyBinding2Overrides;
 
+        // Pass 0: reserve Alt+letter gestures for top-level menu access keys.
+        // These are registered in both gestureToCmd (for conflict detection)
+        // and cmdToGesture (for the settings UI). The dispatch code in
+        // MainWindow treats Menu.* commands specially — see TryOpenMenuAccessKey.
+        foreach (var (cmdId, key) in MenuAccessKeys) {
+            var g = new ChordGesture(new KeyGesture(key, KeyModifiers.Alt));
+            cmdToGesture[cmdId] = g;
+            RegisterGesture(g, cmdId, gestureToCmd, chordToCmd, chordPrefixes);
+        }
+
         // Pass 1: apply profile defaults for commands that have no user override.
+        // Skip Menu.* pseudo-commands — their bindings are fixed in pass 0.
         foreach (var cmd in _commands.All) {
+            if (cmd.Id.StartsWith("Menu.", StringComparison.Ordinal)) continue;
             if (overrides1 == null || !overrides1.ContainsKey(cmd.Id)) {
                 var gesture = GetProfileGesture(cmd.Id, slot: 1);
                 cmdToGesture[cmd.Id] = gesture;
@@ -102,6 +123,7 @@ public class KeyBindingService {
         // always win when a conflict exists.
         if (overrides1 != null) {
             foreach (var cmd in _commands.All) {
+                if (cmd.Id.StartsWith("Menu.", StringComparison.Ordinal)) continue;
                 if (!overrides1.TryGetValue(cmd.Id, out var str)) continue;
                 var gesture = string.IsNullOrEmpty(str) ? null : ChordGesture.Parse(str);
                 cmdToGesture[cmd.Id] = gesture;
@@ -111,6 +133,7 @@ public class KeyBindingService {
 
         if (overrides2 != null) {
             foreach (var cmd in _commands.All) {
+                if (cmd.Id.StartsWith("Menu.", StringComparison.Ordinal)) continue;
                 if (!overrides2.TryGetValue(cmd.Id, out var str)) continue;
                 var gesture = string.IsNullOrEmpty(str) ? null : ChordGesture.Parse(str);
                 cmdToGesture2[cmd.Id] = gesture;

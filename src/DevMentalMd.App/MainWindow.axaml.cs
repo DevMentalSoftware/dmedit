@@ -679,6 +679,13 @@ public partial class MainWindow : Window {
             return;
         }
 
+        // Menu.* pseudo-commands represent menu access keys (Alt+F, etc.).
+        // Open the corresponding menu instead of dispatching as a command.
+        if (commandId.StartsWith("Menu.", StringComparison.Ordinal)) {
+            TryOpenMenuAccessKey(e);
+            return;
+        }
+
         if (DispatchCommand(commandId)) {
             e.Handled = true;
         }
@@ -711,9 +718,13 @@ public partial class MainWindow : Window {
             if (wantMenu) {
                 MenuBar.Focus();
             } else {
-                // Avalonia / the platform may still activate the menu bar via
-                // native Alt handling (WM_SYSKEYUP on Windows). Post a
-                // deferred focus restore to undo it.
+                // Alt was consumed as a modifier (e.g. Alt+Up).  Clear the
+                // access-key underlines that Avalonia's AccessKeyHandler may
+                // have turned on when it saw the initial Alt press.
+                ((Avalonia.Input.IInputRoot)this).ShowAccessKeys = false;
+                // The platform may still activate the menu bar via native
+                // Alt handling (WM_SYSKEYUP on Windows). Post a deferred
+                // focus restore to undo it.
                 Dispatcher.UIThread.Post(() => {
                     if (MenuBar.IsKeyboardFocusWithin
                         && _activeTab is not { IsSettings: true }) {
@@ -737,6 +748,8 @@ public partial class MainWindow : Window {
     /// Called when Alt+letter is pressed and no command binding matches.
     /// </summary>
     private void TryOpenMenuAccessKey(KeyEventArgs e) {
+        // Menu bar is hidden while the settings tab is open.
+        if (_activeTab is { IsSettings: true }) return;
         var letter = e.Key.ToString();
         if (letter.Length != 1) return;
         foreach (var item in MenuBar.Items.OfType<MenuItem>()) {
@@ -840,6 +853,17 @@ public partial class MainWindow : Window {
             if (_activeTab is not { IsSettings: true }) Editor.Focus();
         });
         _commands.Register("Nav.GoToLine", "Go to Line", OpenGoToLine);
+
+        // Pseudo-commands for top-level menu access keys (Alt+letter).
+        // These are never executed directly — they exist so that the key
+        // binding UI shows conflicts when a user tries to bind Alt+F/E/S/V/H
+        // to a real command.
+        static void Noop() { }
+        _commands.Register("Menu.File", "File Menu", Noop, showInPalette: false);
+        _commands.Register("Menu.Edit", "Edit Menu", Noop, showInPalette: false);
+        _commands.Register("Menu.Search", "Search Menu", Noop, showInPalette: false);
+        _commands.Register("Menu.View", "View Menu", Noop, showInPalette: false);
+        _commands.Register("Menu.Help", "Help Menu", Noop, showInPalette: false);
     }
 
     private void CycleTab(int direction) {
@@ -1353,17 +1377,20 @@ public partial class MainWindow : Window {
             var doc = Editor.Document;
             if (doc == null) return;
             var flyout = new Avalonia.Controls.MenuFlyout();
-            foreach (var (label, cmdId) in new[] {
-                ("UTF-8", "Edit.EncodingUtf8"),
-                ("UTF-8 with BOM", "Edit.EncodingUtf8Bom"),
-                ("UTF-16 LE", "Edit.EncodingUtf16Le"),
-                ("UTF-16 BE", "Edit.EncodingUtf16Be"),
-                ("Windows-1252", "Edit.EncodingWin1252"),
-                ("ASCII", "Edit.EncodingAscii"),
+            foreach (var (label, enc) in new[] {
+                ("UTF-8", Core.Documents.FileEncoding.Utf8),
+                ("UTF-8 with BOM", Core.Documents.FileEncoding.Utf8Bom),
+                ("UTF-16 LE", Core.Documents.FileEncoding.Utf16Le),
+                ("UTF-16 BE", Core.Documents.FileEncoding.Utf16Be),
+                ("Windows-1252", Core.Documents.FileEncoding.Windows1252),
+                ("ASCII", Core.Documents.FileEncoding.Ascii),
             }) {
                 var item = new MenuItem { Header = label };
-                var cmd = cmdId;
-                item.Click += (_, _) => _commands.Execute(cmd);
+                var target = enc;
+                item.Click += (_, _) => {
+                    doc.EncodingInfo = new Core.Documents.EncodingInfo(target);
+                    Editor.RaiseMetadataChanged();
+                };
                 flyout.Items.Add(item);
             }
             flyout.ShowAt(BtnEncoding);
@@ -1374,7 +1401,6 @@ public partial class MainWindow : Window {
             e.Handled = true;
             var doc = Editor.Document;
             if (doc == null) return;
-            var lei = doc.LineEndingInfo;
             var flyout = new Avalonia.Controls.MenuFlyout();
             foreach (var (label, le) in new[] {
                 ("LF", Core.Documents.LineEnding.LF),
@@ -1383,11 +1409,8 @@ public partial class MainWindow : Window {
                 var item = new MenuItem { Header = label };
                 var target = le;
                 item.Click += (_, _) => {
-                    _commands.Execute(target switch {
-                        Core.Documents.LineEnding.LF => "Edit.LineEndingLF",
-                        Core.Documents.LineEnding.CRLF => "Edit.LineEndingCRLF",
-                        _ => "Edit.LineEndingCR",
-                    });
+                    doc.ConvertLineEndings(target);
+                    Editor.RaiseMetadataChanged();
                 };
                 flyout.Items.Add(item);
             }
