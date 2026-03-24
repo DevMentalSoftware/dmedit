@@ -147,6 +147,7 @@ public sealed class TabBarControl : Control {
     public event Action? DragAreaDoubleClicked;
     public event Action<int, FileConflictChoice>? ConflictResolutionClicked;
     public event Action<int>? RevealInExplorerClicked;
+    public event Action<int>? ToggleReadOnlyClicked;
 
     // Custom chrome (Linux only)
     public event Action? MinimizeClicked;
@@ -1178,6 +1179,24 @@ public sealed class TabBarControl : Control {
         var closeAll = new MenuItem { Header = "Close _All Tabs" };
         closeAll.Click += (_, _) => CloseAllTabsClicked?.Invoke();
         menu.Items.Add(closeAll);
+
+        if (tabIndex >= 0 && tabIndex < _tabs.Count && !_tabs[tabIndex].IsSettings) {
+            menu.Items.Add(new Separator());
+            var tab = _tabs[tabIndex];
+            var roItem = new MenuItem {
+                Header = "Read Only",
+                Icon = new TextBlock {
+                    Text = IconGlyphs.CheckMark,
+                    FontFamily = IconGlyphs.Family,
+                    FontSize = 14,
+                    Opacity = tab.IsReadOnly ? 1.0 : 0.0,
+                    Margin = new Thickness(0, 2, 0, 0),
+                },
+                IsEnabled = !tab.IsLocked,
+            };
+            roItem.Click += (_, _) => ToggleReadOnlyClicked?.Invoke(tabIndex);
+            menu.Items.Add(roItem);
+        }
 
         if (tabIndex >= 0 && tabIndex < _tabs.Count && _tabs[tabIndex].FilePath != null) {
             menu.Items.Add(new Separator());

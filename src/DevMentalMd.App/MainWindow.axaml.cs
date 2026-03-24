@@ -260,17 +260,17 @@ public partial class MainWindow : Window {
             } else {
                 Editor.Document = null;
             }
-            Editor.IsEditBlocked = tab.IsLoading;
+            Editor.IsEditBlocked = tab.IsLoading || tab.IsReadOnly || tab.IsLocked;
             Editor.Focus();
 
             // When a loading tab finishes, unblock the editor if it's
-            // still the active tab. One-shot — fires once per load.
+            // still the active tab — unless the tab is readonly or locked.
             if (tab.IsLoading) {
                 tab.LoadCompleted += () => {
                     if (_activeTab == tab) {
                         Editor.Document = tab.Document;
                         Editor.RestoreScrollState(tab);
-                        Editor.IsEditBlocked = false;
+                        Editor.IsEditBlocked = tab.IsReadOnly || tab.IsLocked;
                         Editor.ResetCaretBlink();
                         Editor.InvalidateLayout();
                     }
@@ -280,6 +280,7 @@ public partial class MainWindow : Window {
         // Show find bar only if this tab owns it.
         FindBar.IsVisible = (tab == _findBarTab);
         UpdateTabBar();
+        UpdateStatusBar();
 
         // If the tab has a conflict but no unsaved edits, silently
         // reload the disk version now that the user is looking at it.
@@ -493,6 +494,7 @@ public partial class MainWindow : Window {
         TabBar.ConflictResolutionClicked += HandleConflictResolution;
 
         TabBar.RevealInExplorerClicked += RevealInExplorer;
+        TabBar.ToggleReadOnlyClicked += ToggleReadOnly;
     }
 
     private void ShowOverflowMenu() {
@@ -539,6 +541,28 @@ public partial class MainWindow : Window {
         } catch {
             // Silently ignore — file manager may not be available
         }
+    }
+
+    private void ToggleReadOnly(int tabIndex) {
+        if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
+        var tab = _tabs[tabIndex];
+        if (tab.IsLocked || tab.IsSettings) return;
+        tab.IsReadOnly = !tab.IsReadOnly;
+        if (_activeTab == tab) {
+            Editor.IsEditBlocked = tab.IsReadOnly;
+        }
+        UpdateTabBar();
+    }
+
+    /// <summary>
+    /// Toggles read-only on the active tab. Bound as a command so it can
+    /// appear in the command palette and accept a keyboard shortcut.
+    /// </summary>
+    private void ToggleActiveReadOnly() {
+        if (_activeTab == null || _activeTab.IsLocked || _activeTab.IsSettings) return;
+        _activeTab.IsReadOnly = !_activeTab.IsReadOnly;
+        Editor.IsEditBlocked = _activeTab.IsReadOnly;
+        UpdateTabBar();
     }
 
     private async Task CloseTabsToRightAsync(int tabIndex) {
@@ -801,7 +825,7 @@ public partial class MainWindow : Window {
         _commands.Register("File.Save", "Save", () => OnSave(null, null!),
             canExecute: () => _activeTab is { IsSettings: false, IsReadOnly: false });
         _commands.Register("File.SaveAs", "Save As", () => OnSaveAs(null, null!),
-            canExecute: () => _activeTab is { IsSettings: false });
+            canExecute: () => _activeTab is { IsSettings: false, IsLocked: false });
         _commands.Register("File.SaveAll", "Save All", SaveAll);
         _commands.Register("File.Close", "Close",
             () => { if (_activeTab != null) _ = PromptAndCloseTabAsync(_activeTab); });
@@ -810,6 +834,8 @@ public partial class MainWindow : Window {
             () => { if (WindowsPrintService.IsAvailable) _ = PrintAsync(); });
         _commands.Register("File.SaveAsPdf", "Save As PDF", () => _ = SaveAsPdfAsync());
         _commands.Register("File.Exit", "Exit", Close);
+        _commands.Register("File.ToggleReadOnly", "Toggle Read Only", ToggleActiveReadOnly,
+            canExecute: () => _activeTab is { IsSettings: false, IsLocked: false });
         _commands.Register("File.RevertFile", "Revert File", () => _ = RevertFileAsync());
         _commands.Register("File.ReloadFile", "Reload File", () => _ = ReloadFileAsync(_activeTab));
         _commands.Register("File.ClearRecentFiles", "Clear Recent Files", () => {
@@ -1627,6 +1653,7 @@ public partial class MainWindow : Window {
                 LoadResult = result,
                 IsLoading = true,
                 IsReadOnly = true,
+                IsLocked = true,
             };
             AddTab(tab);
             SwitchToTab(tab);

@@ -23,6 +23,14 @@ public sealed class TabState {
     public LoadResult? LoadResult { get; set; }
     public bool IsDirty { get; set; }
     public bool IsReadOnly { get; set; }
+
+    /// <summary>
+    /// True for internal documents (Manual, About) that must never be edited
+    /// or saved. Unlike <see cref="IsReadOnly"/>, locked state cannot be
+    /// toggled off by the user.
+    /// </summary>
+    public bool IsLocked { get; init; }
+
     public bool IsSettings { get; init; }
 
     /// <summary>

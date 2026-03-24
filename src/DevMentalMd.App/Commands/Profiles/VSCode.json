@@ -14,6 +14,7 @@
     "File.ClearRecentFiles": "",
     "File.Print": "Ctrl+P",
     "File.SaveAsPdf": "",
+    "File.ToggleReadOnly": "",
     "Edit.Undo": "Ctrl+Z",
     "Edit.Redo": "Ctrl+Shift+Z",
     "Edit.Cut": "Ctrl+X",

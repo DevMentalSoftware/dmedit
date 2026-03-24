@@ -1803,7 +1803,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                  bool showInPalette = true, bool isVerticalNav = false,
                  bool isColumnAware = false, Func<bool>? canExecute = null) {
             registry.Register(id, displayName, () => {
-                if (IsEditBlocked && id.StartsWith("Edit.")) return;
+                if (IsEditBlocked && id.StartsWith("Edit.")
+                    && id is not ("Edit.SelectAll" or "Edit.SelectWord"
+                        or "Edit.ExpandSelection" or "Edit.Copy"
+                        or "Edit.ToggleOverwrite")) return;
                 var doc = Document;
                 if (doc == null) return;
                 if (_isClipboardCycling && id != "Edit.PasteMore") ConfirmClipboardCycle();

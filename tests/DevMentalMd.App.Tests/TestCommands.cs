@@ -23,6 +23,7 @@ static class TestCommands {
         r.Register("File.RevertFile", "Revert File", Noop);
         r.Register("File.ReloadFile", "Reload File", Noop);
         r.Register("File.ClearRecentFiles", "Clear Recent Files", Noop);
+        r.Register("File.ToggleReadOnly", "Toggle Read Only", Noop);
         // Edit
         r.Register("Edit.Undo", "Undo", Noop);
         r.Register("Edit.Redo", "Redo", Noop);
@@ -53,17 +54,8 @@ static class TestCommands {
         r.Register("Edit.Indent", "Indent", Noop);
         r.Register("Edit.Outdent", "Outdent", Noop);
         r.Register("Edit.ExpandSelection", "Expand Selection", Noop);
-        r.Register("Edit.LineEndingLF", "Convert Line Endings to LF", Noop);
-        r.Register("Edit.LineEndingCRLF", "Convert Line Endings to CRLF", Noop);
-        r.Register("Edit.LineEndingCR", "Convert Line Endings to CR", Noop);
         r.Register("Edit.IndentToSpaces", "Convert Indentation to Spaces", Noop);
         r.Register("Edit.IndentToTabs", "Convert Indentation to Tabs", Noop);
-        r.Register("Edit.EncodingUtf8", "Set Encoding to UTF-8", Noop);
-        r.Register("Edit.EncodingUtf8Bom", "Set Encoding to UTF-8 with BOM", Noop);
-        r.Register("Edit.EncodingUtf16Le", "Set Encoding to UTF-16 LE", Noop);
-        r.Register("Edit.EncodingUtf16Be", "Set Encoding to UTF-16 BE", Noop);
-        r.Register("Edit.EncodingWin1252", "Set Encoding to Windows-1252", Noop);
-        r.Register("Edit.EncodingAscii", "Set Encoding to ASCII", Noop);
         // Find
         r.Register("Find.Find", "Find", Noop);
         r.Register("Find.Replace", "Replace", Noop);
