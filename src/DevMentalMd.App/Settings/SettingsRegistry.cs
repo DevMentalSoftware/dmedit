@@ -20,6 +20,10 @@ public static class SettingsRegistry {
 
     public static readonly IReadOnlyList<SettingDescriptor> All = [
         // -- Display --
+        new("HideAdvancedMenus", "Hide Advanced Menus",
+            "Hide menu items and commands not typically found in simple text editors.",
+            "Display", SettingKind.Bool, true),
+
         new("WrapLinesAt", "Wrap Lines At",
             "When wrapping is enabled we can force wrapping at a particular width when the window is wider than that width.",
             "Display", SettingKind.Int, 100, Min: 0, Max: 10000),
@@ -56,7 +60,7 @@ public static class SettingsRegistry {
         new("ExpandSelectionMode", "Expand Selection Mode",
             "Controls how Expand Selection grows the selection. " +
             "'SubwordFirst' starts at camelCase/underscore boundaries; 'Word' starts at whitespace boundaries.",
-            "Editor", SettingKind.Enum, ExpandSelectionMode.SubwordFirst, EnumType: typeof(ExpandSelectionMode)),
+            "Editor", SettingKind.Enum, ExpandSelectionMode.Word, EnumType: typeof(ExpandSelectionMode)),
 
         // -- Advanced --
         new("RecentFileCount", "Recent File Count",
@@ -64,7 +68,7 @@ public static class SettingsRegistry {
             "Advanced", SettingKind.Int, 10, Min: 0, Max: 50),
 
         new("DevMode", "Developer Mode",
-            "Enable developer-mode features (performance stats, sample documents).",
+            "Enable developer-mode features (performance stats, detailed errors).",
             "Advanced", SettingKind.Bool, false),
 
         new("ShowStatistics", "Show Statistics",

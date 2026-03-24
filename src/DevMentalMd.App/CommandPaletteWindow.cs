@@ -183,6 +183,7 @@ public class CommandPaletteWindow : Window {
         var filtered = new List<Command>();
         foreach (var cmd in _commands.All) {
             if (!cmd.ShowInPalette) continue;
+            if (_settings.HideAdvancedMenus && cmd.IsAdvanced) continue;
             if (hasFilter) {
                 var matchesName = cmd.DisplayName.Contains(filter,
                     StringComparison.OrdinalIgnoreCase);

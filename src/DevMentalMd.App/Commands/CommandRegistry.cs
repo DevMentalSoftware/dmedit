@@ -15,9 +15,10 @@ public sealed class CommandRegistry {
 
     public void Register(string id, string displayName, Action execute,
                          Func<bool>? canExecute = null,
-                         bool showInPalette = true, bool requiresEditor = false) {
+                         bool showInPalette = true, bool requiresEditor = false,
+                         bool isAdvanced = false) {
         _commands[id] = new Command(id, displayName, execute, canExecute,
-                                    showInPalette, requiresEditor);
+                                    showInPalette, requiresEditor, isAdvanced);
     }
 
     /// <summary>

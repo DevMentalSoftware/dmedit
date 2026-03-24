@@ -122,10 +122,16 @@ public partial class MainWindow : Window {
         MenuManual.Click += (_, _) => OpenHelpDocumentAsync("manual.md", "Manual");
         MenuAbout.Click += (_, _) => OpenHelpDocumentAsync("about.md", "About");
 
-        // Bind menu items to commands so IsEnabled tracks CanExecute.
-        // State is refreshed lazily when the parent submenu opens.
+        // Bind menu items to their commands.  The unified list drives both
+        // IsEnabled refresh (on submenu open) and advanced-menu visibility.
+        // File:
         BindMenuToCommand(MenuSave, "File.Save");
         BindMenuToCommand(MenuSaveAs, "File.SaveAs");
+        BindMenuToCommand(MenuSaveAll, "File.SaveAll");
+        BindMenuToCommand(MenuRevertFile, "File.RevertFile");
+        BindMenuToCommand(MenuSaveAsPdf, "File.SaveAsPdf");
+        BindMenuToCommand(MenuCloseAll, "File.CloseAll");
+        // Edit:
         BindMenuToCommand(MenuUndo, "Edit.Undo");
         BindMenuToCommand(MenuRedo, "Edit.Redo");
         BindMenuToCommand(MenuCut, "Edit.Cut");
@@ -134,11 +140,32 @@ public partial class MainWindow : Window {
         BindMenuToCommand(MenuPasteMore, "Edit.PasteMore");
         BindMenuToCommand(MenuClipboardRing, "Edit.ClipboardRing");
         BindMenuToCommand(MenuDelete, "Edit.Delete");
+        BindMenuToCommand(MenuSelectWord, "Edit.SelectWord");
+        BindMenuToCommand(MenuDeleteLine, "Edit.DeleteLine");
+        BindMenuToCommand(MenuMoveLineUp, "Edit.MoveLineUp");
+        BindMenuToCommand(MenuMoveLineDown, "Edit.MoveLineDown");
+        BindMenuToCommand(MenuInsertLineBelow, "Edit.InsertLineBelow");
+        BindMenuToCommand(MenuInsertLineAbove, "Edit.InsertLineAbove");
+        BindMenuToCommand(MenuDuplicateLine, "Edit.DuplicateLine");
+        BindMenuToCommand(MenuDeleteWordLeft, "Edit.DeleteWordLeft");
+        BindMenuToCommand(MenuDeleteWordRight, "Edit.DeleteWordRight");
+        BindMenuToCommand(MenuIndent, "Edit.SmartIndent");
         BindMenuToCommand(MenuCaseUpper, "Edit.UpperCase");
         BindMenuToCommand(MenuCaseLower, "Edit.LowerCase");
         BindMenuToCommand(MenuCaseProper, "Edit.ProperCase");
+        // Search:
+        BindMenuToCommand(MenuIncrementalSearch, "Find.IncrementalSearch");
+        BindMenuToCommand(MenuCommandPalette, "Window.CommandPalette");
+        // View:
+        BindMenuToCommand(MenuLineNumbers, "View.LineNumbers");
+        BindMenuToCommand(MenuWhitespace, "View.Whitespace");
+        BindMenuToCommand(MenuScrollLineUp, "Nav.ScrollLineUp");
+        BindMenuToCommand(MenuScrollLineDown, "Nav.ScrollLineDown");
+
         MenuFile.SubmenuOpened += OnTopMenuOpened;
         MenuEdit.SubmenuOpened += OnTopMenuOpened;
+        MenuSearch.SubmenuOpened += OnTopMenuOpened;
+        MenuView.SubmenuOpened += OnTopMenuOpened;
 
         _staticMenuItemCount = MenuFile.Items.Count;
 
@@ -148,6 +175,7 @@ public partial class MainWindow : Window {
         WireEditMenu();
         WireSearchMenu();
         WireViewMenu();
+        ApplyAdvancedMenuVisibility();
         WireSettingsPanel();
         WireThemeSettings();
         WireTabBar();
@@ -826,28 +854,35 @@ public partial class MainWindow : Window {
             canExecute: () => _activeTab is { IsSettings: false, IsReadOnly: false });
         _commands.Register("File.SaveAs", "Save As", () => OnSaveAs(null, null!),
             canExecute: () => _activeTab is { IsSettings: false, IsLocked: false });
-        _commands.Register("File.SaveAll", "Save All", SaveAll);
+        _commands.Register("File.SaveAll", "Save All", SaveAll, isAdvanced: true);
         _commands.Register("File.Close", "Close",
             () => { if (_activeTab != null) _ = PromptAndCloseTabAsync(_activeTab); });
-        _commands.Register("File.CloseAll", "Close All", () => _ = CloseAllTabsAsync());
+        _commands.Register("File.CloseAll", "Close All", () => _ = CloseAllTabsAsync(),
+            isAdvanced: true);
         _commands.Register("File.Print", "Print",
             () => { if (WindowsPrintService.IsAvailable) _ = PrintAsync(); });
-        _commands.Register("File.SaveAsPdf", "Save As PDF", () => _ = SaveAsPdfAsync());
+        _commands.Register("File.SaveAsPdf", "Save As PDF", () => _ = SaveAsPdfAsync(),
+            isAdvanced: true);
         _commands.Register("File.Exit", "Exit", Close);
         _commands.Register("File.ToggleReadOnly", "Toggle Read Only", ToggleActiveReadOnly,
-            canExecute: () => _activeTab is { IsSettings: false, IsLocked: false });
-        _commands.Register("File.RevertFile", "Revert File", () => _ = RevertFileAsync());
-        _commands.Register("File.ReloadFile", "Reload File", () => _ = ReloadFileAsync(_activeTab));
+            canExecute: () => _activeTab is { IsSettings: false, IsLocked: false },
+            isAdvanced: true);
+        _commands.Register("File.RevertFile", "Revert File", () => _ = RevertFileAsync(),
+            isAdvanced: true);
+        _commands.Register("File.ReloadFile", "Reload File", () => _ = ReloadFileAsync(_activeTab),
+            isAdvanced: true);
         _commands.Register("File.ClearRecentFiles", "Clear Recent Files", () => {
             _recentFiles.Clear();
             _recentFiles.Save();
-        });
+        }, isAdvanced: true);
 
         // -- View --
-        _commands.Register("View.LineNumbers", "Line Numbers", ToggleLineNumbers);
+        _commands.Register("View.LineNumbers", "Line Numbers", ToggleLineNumbers,
+            isAdvanced: true);
         _commands.Register("View.StatusBar", "Status Bar", ToggleStatusBar);
         _commands.Register("View.WrapLines", "Wrap Lines", ToggleWrapLines);
-        _commands.Register("View.Whitespace", "Show Whitespace", ToggleWhitespace);
+        _commands.Register("View.Whitespace", "Show Whitespace", ToggleWhitespace,
+            isAdvanced: false);
         _commands.Register("View.ZoomIn", "Zoom In",
             () => Editor.FontSize = Math.Min(Editor.FontSize + 1, 72));
         _commands.Register("View.ZoomOut", "Zoom Out",
@@ -859,20 +894,24 @@ public partial class MainWindow : Window {
         _commands.Register("Window.NextTab", "Next Tab", () => CycleTab(+1));
         _commands.Register("Window.PrevTab", "Previous Tab", () => CycleTab(-1));
         _commands.Register("Window.Settings", "Settings", OpenSettings);
-        _commands.Register("Window.CommandPalette", "Command Palette", OpenCommandPalette);
+        _commands.Register("Window.CommandPalette", "Command Palette", OpenCommandPalette,
+            isAdvanced: true);
 
         // -- Edit: Clipboard Ring popup (window-level because it opens a dialog) --
         _commands.Register("Edit.ClipboardRing", "Clipboard Ring", () => _ = OpenClipboardRing(),
-            canExecute: () => Editor._clipboardRing.Count > 1);
+            canExecute: () => Editor._clipboardRing.Count > 1, isAdvanced: true);
 
         // -- Find --
         _commands.Register("Find.Find", "Find", () => OpenFindBar(replaceMode: false));
         _commands.Register("Find.Replace", "Replace", () => OpenFindBar(replaceMode: true));
         _commands.Register("Find.FindNext", "Find Next", () => Editor.FindNext());
         _commands.Register("Find.FindPrevious", "Find Previous", () => Editor.FindPrevious());
-        _commands.Register("Find.FindNextSelection", "Find Next Selection", () => Editor.FindNextSelection());
-        _commands.Register("Find.FindPreviousSelection", "Find Previous Selection", () => Editor.FindPreviousSelection());
-        _commands.Register("Find.IncrementalSearch", "Incremental Search", () => Editor.StartIncrementalSearch());
+        _commands.Register("Find.FindNextSelection", "Find Next Selection", () => Editor.FindNextSelection(),
+            isAdvanced: true);
+        _commands.Register("Find.FindPreviousSelection", "Find Previous Selection", () => Editor.FindPreviousSelection(),
+            isAdvanced: true);
+        _commands.Register("Find.IncrementalSearch", "Incremental Search", () => Editor.StartIncrementalSearch(),
+            isAdvanced: true);
 
         // -- Focus / Nav (window-level) --
         _commands.Register("Nav.FocusEditor", "Focus Editor", () => {
@@ -1087,6 +1126,67 @@ public partial class MainWindow : Window {
             var cmd = _commands.TryGet(id);
             item.IsEnabled = cmd?.IsEnabled ?? true;
         }
+    }
+
+    /// <summary>
+    /// Hides or shows menu items marked as advanced, based on the current
+    /// <see cref="AppSettings.HideAdvancedMenus"/> setting.  After toggling
+    /// individual items, cleans up separators so there are no leading,
+    /// trailing, or consecutive separators in any submenu.
+    /// </summary>
+    private void ApplyAdvancedMenuVisibility() {
+        var hide = _settings.HideAdvancedMenus;
+        foreach (var (item, id) in _menuCommandBindings) {
+            var cmd = _commands.TryGet(id);
+            if (cmd is { IsAdvanced: true })
+                item.IsVisible = !hide;
+        }
+
+        // Hide the Transform Case submenu when all children are hidden.
+        MenuTransformCase.IsVisible = MenuCaseUpper.IsVisible
+            || MenuCaseLower.IsVisible || MenuCaseProper.IsVisible;
+
+        // Clean up separators in each top-level menu.
+        CleanupSeparators(MenuFile);
+        CleanupSeparators(MenuEdit);
+        CleanupSeparators(MenuSearch);
+        CleanupSeparators(MenuView);
+    }
+
+    private static void CleanupSeparators(MenuItem parent) {
+        // First, reset all separators to visible so toggling the setting
+        // off restores them.  Then hide any that would be leading,
+        // trailing, or consecutive (with no visible non-separator item
+        // between them).
+        foreach (var c in parent.Items.Cast<Control>())
+            if (c is Separator) c.IsVisible = true;
+
+        // Single pass: a separator is shown only when there is at least
+        // one visible non-separator item before it AND at least one after.
+        // We track the last separator we tentatively kept; if another
+        // separator or the end of the list follows without an intervening
+        // visible item, we hide it.
+        var seenItem = false;          // any visible non-separator seen?
+        Separator? pending = null;     // separator awaiting confirmation
+        foreach (var child in parent.Items.Cast<Control>()) {
+            if (child is Separator sep) {
+                if (!seenItem) {
+                    // Leading separator — hide.
+                    sep.IsVisible = false;
+                } else if (pending != null) {
+                    // Consecutive separator — hide the earlier one.
+                    pending.IsVisible = false;
+                    pending = sep;
+                } else {
+                    pending = sep;
+                }
+            } else if (child.IsVisible) {
+                seenItem = true;
+                pending = null;        // confirmed the pending separator
+            }
+        }
+        // Hide trailing separator.
+        if (pending != null) pending.IsVisible = false;
     }
 
     // -------------------------------------------------------------------------
@@ -2505,10 +2605,12 @@ public partial class MainWindow : Window {
                     break;
                 case "DevMode":
                     UpdateStatusBarVisibility();
-                    RebuildRecentMenu();
                     break;
                 case "TailFile":
                     UpdateTailButton();
+                    break;
+                case "HideAdvancedMenus":
+                    ApplyAdvancedMenuVisibility();
                     break;
             }
         };

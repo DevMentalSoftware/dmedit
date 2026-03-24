@@ -16,10 +16,12 @@ public sealed class Command {
     public Func<bool>? CanExecute { get; }
     public bool ShowInPalette { get; }
     public bool RequiresEditor { get; }
+    public bool IsAdvanced { get; }
 
     public Command(string id, string displayName, Action execute,
                    Func<bool>? canExecute = null,
-                   bool showInPalette = true, bool requiresEditor = false) {
+                   bool showInPalette = true, bool requiresEditor = false,
+                   bool isAdvanced = false) {
         Id = id;
         Category = id[..id.IndexOf('.')];
         DisplayName = displayName;
@@ -27,6 +29,7 @@ public sealed class Command {
         CanExecute = canExecute;
         ShowInPalette = showInPalette;
         RequiresEditor = requiresEditor;
+        IsAdvanced = isAdvanced;
     }
 
     /// <summary>

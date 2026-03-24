@@ -1801,7 +1801,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Local helper: wraps each editor command with the standard preamble.
         void Reg(string id, string displayName, Action<Document> action,
                  bool showInPalette = true, bool isVerticalNav = false,
-                 bool isColumnAware = false, Func<bool>? canExecute = null) {
+                 bool isColumnAware = false, Func<bool>? canExecute = null,
+                 bool isAdvanced = false) {
             registry.Register(id, displayName, () => {
                 if (IsEditBlocked && id.StartsWith("Edit.")
                     && id is not ("Edit.SelectAll" or "Edit.SelectWord"
@@ -1831,7 +1832,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 }
 
                 action(doc);
-            }, canExecute: canExecute, showInPalette: showInPalette, requiresEditor: true);
+            }, canExecute: canExecute, showInPalette: showInPalette, requiresEditor: true,
+               isAdvanced: isAdvanced);
         }
 
         // -- Edit commands --
@@ -1858,23 +1860,24 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         Reg("Edit.Paste", "Paste", doc => { _ = PasteAsync(); }, isColumnAware: true,
             canExecute: () => _clipboardRing.Count > 0);
         Reg("Edit.PasteMore", "Paste More", _ => PasteMore(),
-            canExecute: () => _clipboardRing.Count > 1);
+            canExecute: () => _clipboardRing.Count > 1, isAdvanced: true);
         Reg("Edit.SelectAll", "Select All", _ => PerformSelectAll());
-        Reg("Edit.SelectWord", "Select Word", _ => PerformSelectWord());
-        Reg("Edit.ExpandSelection", "Expand Selection", _ => PerformExpandSelection());
-        Reg("Edit.DeleteLine", "Delete Line", _ => PerformDeleteLine());
-        Reg("Edit.MoveLineUp", "Move Line Up", _ => PerformMoveLineUp());
-        Reg("Edit.MoveLineDown", "Move Line Down", _ => PerformMoveLineDown());
+        Reg("Edit.SelectWord", "Select Word", _ => PerformSelectWord(), isAdvanced: true);
+        Reg("Edit.ExpandSelection", "Expand Selection", _ => PerformExpandSelection(),
+            isAdvanced: true);
+        Reg("Edit.DeleteLine", "Delete Line", _ => PerformDeleteLine(), isAdvanced: true);
+        Reg("Edit.MoveLineUp", "Move Line Up", _ => PerformMoveLineUp(), isAdvanced: true);
+        Reg("Edit.MoveLineDown", "Move Line Down", _ => PerformMoveLineDown(), isAdvanced: true);
         Reg("Edit.UpperCase", "Upper Case", _ => PerformTransformCase(CaseTransform.Upper),
-            canExecute: HasSelection);
+            canExecute: HasSelection, isAdvanced: true);
         Reg("Edit.LowerCase", "Lower Case", _ => PerformTransformCase(CaseTransform.Lower),
-            canExecute: HasSelection);
+            canExecute: HasSelection, isAdvanced: true);
         Reg("Edit.ProperCase", "Proper Case", _ => PerformTransformCase(CaseTransform.Proper),
-            canExecute: HasSelection);
+            canExecute: HasSelection, isAdvanced: true);
 
         Reg("Edit.ToggleOverwrite", "Toggle Overwrite Mode", _ => {
             OverwriteMode = !OverwriteMode;
-        });
+        }, isAdvanced: true);
 
         Reg("Edit.Newline", "Insert Newline", doc => {
             FlushCompound();
@@ -1983,7 +1986,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             ScrollCaretIntoView();
             InvalidateLayout();
             ResetCaretBlink();
-        }, isColumnAware: true);
+        }, isColumnAware: true, isAdvanced: true);
 
         Reg("Edit.DeleteWordRight", "Delete Word Right", doc => {
             FlushCompound();
@@ -1999,14 +2002,20 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             ScrollCaretIntoView();
             InvalidateLayout();
             ResetCaretBlink();
-        }, isColumnAware: true);
+        }, isColumnAware: true, isAdvanced: true);
 
-        Reg("Edit.InsertLineBelow", "Insert Line Below", _ => PerformInsertLineBelow());
-        Reg("Edit.InsertLineAbove", "Insert Line Above", _ => PerformInsertLineAbove());
-        Reg("Edit.DuplicateLine", "Duplicate Line", _ => PerformDuplicateLine());
-        Reg("Edit.SmartIndent", "Smart Indent", _ => { FlushCompound(); PerformSmartIndent(); });
-        Reg("Edit.Indent", "Indent", _ => { FlushCompound(); PerformSimpleIndent(); });
-        Reg("Edit.Outdent", "Outdent", _ => { FlushCompound(); PerformOutdent(); });
+        Reg("Edit.InsertLineBelow", "Insert Line Below", _ => PerformInsertLineBelow(),
+            isAdvanced: true);
+        Reg("Edit.InsertLineAbove", "Insert Line Above", _ => PerformInsertLineAbove(),
+            isAdvanced: true);
+        Reg("Edit.DuplicateLine", "Duplicate Line", _ => PerformDuplicateLine(),
+            isAdvanced: true);
+        Reg("Edit.SmartIndent", "Smart Indent", _ => { FlushCompound(); PerformSmartIndent(); },
+            isAdvanced: true);
+        Reg("Edit.Indent", "Indent", _ => { FlushCompound(); PerformSimpleIndent(); },
+            isAdvanced: true);
+        Reg("Edit.Outdent", "Outdent", _ => { FlushCompound(); PerformOutdent(); },
+            isAdvanced: true);
 
         // -- Indent conversion --
 
@@ -2014,12 +2023,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             FlushCompound();
             doc.ConvertIndentation(Core.Documents.IndentStyle.Spaces, _indentWidth);
             InvalidateLayout();
-        });
+        }, isAdvanced: true);
         Reg("Edit.IndentToTabs", "Convert Indentation to Tabs", doc => {
             FlushCompound();
             doc.ConvertIndentation(Core.Documents.IndentStyle.Tabs, _indentWidth);
             InvalidateLayout();
-        });
+        }, isAdvanced: true);
 
         // -- Scroll without moving caret --
 
@@ -2027,19 +2036,19 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             FlushCompound();
             ScrollValue -= GetRowHeight();
             InvalidateVisual();
-        }, isVerticalNav: true);
+        }, isVerticalNav: true, isAdvanced: true);
         Reg("Nav.ScrollLineDown", "Scroll Line Down", _ => {
             FlushCompound();
             ScrollValue += GetRowHeight();
             InvalidateVisual();
-        }, isVerticalNav: true);
+        }, isVerticalNav: true, isAdvanced: true);
 
         // -- Column selection commands (handled in preamble, register with empty action) --
 
-        Reg("Nav.ColumnSelectUp", "Column Select Up", _ => { }, isVerticalNav: true, isColumnAware: true);
-        Reg("Nav.ColumnSelectDown", "Column Select Down", _ => { }, isVerticalNav: true, isColumnAware: true);
-        Reg("Nav.ColumnSelectLeft", "Column Select Left", _ => { }, isColumnAware: true);
-        Reg("Nav.ColumnSelectRight", "Column Select Right", _ => { }, isColumnAware: true);
+        Reg("Nav.ColumnSelectUp", "Column Select Up", _ => { }, isVerticalNav: true, isColumnAware: true, isAdvanced: true);
+        Reg("Nav.ColumnSelectDown", "Column Select Down", _ => { }, isVerticalNav: true, isColumnAware: true, isAdvanced: true);
+        Reg("Nav.ColumnSelectLeft", "Column Select Left", _ => { }, isColumnAware: true, isAdvanced: true);
+        Reg("Nav.ColumnSelectRight", "Column Select Right", _ => { }, isColumnAware: true, isAdvanced: true);
 
         // -- Column-mode intercepts --
         // These replace the normal behavior of existing commands when a column

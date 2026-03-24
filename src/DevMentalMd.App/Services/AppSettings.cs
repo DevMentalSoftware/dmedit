@@ -37,10 +37,6 @@ public sealed class AppSettings {
     // Developer mode
     // -----------------------------------------------------------------
 
-    /// <summary>
-    /// Enables developer-mode features (perf stats, sample documents) in Release builds.
-    /// Always enabled in DEBUG builds regardless of this setting.
-    /// </summary>
     public bool DevMode { get; set; } = true;
 
     // -----------------------------------------------------------------
@@ -58,6 +54,13 @@ public sealed class AppSettings {
     // -----------------------------------------------------------------
     // Recent files
     // -----------------------------------------------------------------
+
+    /// <summary>
+    /// When true, hide menu items and command palette entries for features
+    /// not typically found in simple text editors (e.g. Clipboard Ring,
+    /// Incremental Search, line manipulation commands).
+    /// </summary>
+    public bool HideAdvancedMenus { get; set; } = true;
 
     /// <summary>
     /// Number of recent files to display in the File menu.
@@ -216,7 +219,7 @@ public sealed class AppSettings {
     /// <see cref="ExpandSelectionMode.SubwordFirst"/> starts with camelCase/underscore
     /// boundaries; <see cref="ExpandSelectionMode.Word"/> starts with whitespace boundaries.
     /// </summary>
-    public ExpandSelectionMode ExpandSelectionMode { get; set; } = ExpandSelectionMode.SubwordFirst;
+    public ExpandSelectionMode ExpandSelectionMode { get; set; } = ExpandSelectionMode.Word;
 
     // -----------------------------------------------------------------
     // Settings UI state
