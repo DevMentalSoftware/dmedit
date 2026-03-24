@@ -1278,17 +1278,17 @@ public partial class MainWindow : Window {
         StatsBarIO.Foreground = theme.StatusBarForeground;
         StatusLeft.Foreground = theme.StatusBarForeground;
         StatusLineCol.Foreground = theme.StatusBarForeground;
-        StatusSep1.Foreground = theme.StatusBarForeground;
+        StatusSep1.Background = theme.StatusBarForeground;
         StatusInsMode.Foreground = theme.StatusBarForeground;
-        StatusSep1b.Foreground = theme.StatusBarForeground;
+        StatusSep1b.Background = theme.StatusBarForeground;
         StatusLineCount.Foreground = theme.StatusBarForeground;
-        StatusSep2.Foreground = theme.StatusBarForeground;
+        StatusSep2.Background = theme.StatusBarForeground;
         StatusEncoding.Foreground = theme.StatusBarForeground;
-        StatusSep3.Foreground = theme.StatusBarForeground;
+        StatusSep3.Background = theme.StatusBarForeground;
         StatusLineEnding.Foreground = theme.StatusBarForeground;
-        StatusSep4.Foreground = theme.StatusBarForeground;
+        StatusSep4.Background = theme.StatusBarForeground;
         StatusIndent.Foreground = theme.StatusBarForeground;
-        StatusSep5.Foreground = theme.StatusBarForeground;
+        StatusSep5.Background = theme.StatusBarForeground;
         // StatusTailGlyph foreground is set dynamically in UpdateStatusBar
         // based on active/inactive state.
     }
@@ -1585,15 +1585,15 @@ public partial class MainWindow : Window {
         var doc = Editor.Document;
         if (doc == null) {
             SetText(StatusLineCol, "Ln 1 Ch 1");
-            SetText(StatusSep1, "");
+            StatusSep1.IsVisible = false;
             SetText(StatusInsMode, "INS");
-            SetText(StatusSep1b, "");
+            StatusSep1b.IsVisible = false;
             SetText(StatusLineCount, "");
-            SetText(StatusSep2, "");
+            StatusSep2.IsVisible = false;
             SetText(StatusEncoding, "");
-            SetText(StatusSep3, "");
+            StatusSep3.IsVisible = false;
             SetText(StatusLineEnding, "");
-            SetText(StatusSep4, "");
+            StatusSep4.IsVisible = false;
             SetText(StatusIndent, "");
             if (_chordFirst == null) SetText(StatusLeft, "");
         } else {
@@ -1622,24 +1622,24 @@ public partial class MainWindow : Window {
             }
 
             SetText(StatusLineCol, lineCol);
-            SetText(StatusSep1, "|");
+            StatusSep1.IsVisible = true;
             SetText(StatusInsMode, Editor.OverwriteMode ? "OVR" : "INS");
 
             if (stillLoading) {
-                SetText(StatusSep1b, "|");
+                StatusSep1b.IsVisible = true;
                 SetText(StatusLineCount, $"{lcText} lines");
-                SetText(StatusSep2, "|");
+                StatusSep2.IsVisible = true;
                 SetText(StatusEncoding, "loading\u2026");
-                SetText(StatusSep3, "");
+                StatusSep3.IsVisible = false;
                 SetText(StatusLineEnding, "");
-                SetText(StatusSep4, "");
+                StatusSep4.IsVisible = false;
                 SetText(StatusIndent, "");
             } else {
-                SetText(StatusSep1b, "|");
+                StatusSep1b.IsVisible = true;
                 SetText(StatusLineCount, $"{lcText} lines");
-                SetText(StatusSep2, "|");
+                StatusSep2.IsVisible = true;
                 SetText(StatusEncoding, doc.EncodingInfo.Label);
-                SetText(StatusSep3, "|");
+                StatusSep3.IsVisible = true;
 
                 var lei = doc.LineEndingInfo;
                 SetText(StatusLineEnding, lei.Label);
@@ -1658,7 +1658,7 @@ public partial class MainWindow : Window {
                     ToolTip.SetTip(BtnLineEnding, null);
                 }
 
-                SetText(StatusSep4, "|");
+                StatusSep4.IsVisible = true;
                 SetText(StatusIndent, doc.IndentInfo.Label);
             }
 
@@ -1683,7 +1683,7 @@ public partial class MainWindow : Window {
     private void UpdateTailButton() {
         var show = _settings.TailFile;
         BtnTail.IsVisible = show;
-        StatusSep5.Text = show ? "|" : "";
+        StatusSep5.IsVisible = show;
 
         if (!show) return;
 
@@ -1730,6 +1730,9 @@ public partial class MainWindow : Window {
     /// Opens a bundled help document (e.g. manual.md, about.md) in a read-only tab.
     /// If already open, switches to the existing tab.
     /// </summary>
+    private static void OpenUrl(string url) =>
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+
     private async void OpenHelpDocumentAsync(string filename, string displayName) {
         var dir = AppDomain.CurrentDomain.BaseDirectory;
         var path = Path.Combine(dir, filename);

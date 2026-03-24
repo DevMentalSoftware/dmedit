@@ -159,21 +159,21 @@
 							           Padding="6,6,6,6"
 							           Text="" />
 						</Border>
-						<TextBlock x:Name="StatusSep1"
-						           FontFamily="Cascadia Code, Consolas, Courier New"
-						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<Border x:Name="StatusSep1"
+						        Width="1" VerticalAlignment="Stretch"
+						        Opacity="0.2" IsVisible="False" />
 						<TextBlock x:Name="StatusInsMode"
 						           FontFamily="Cascadia Code, Consolas, Courier New"
 						           FontSize="11" Padding="6,6,6,6" Text="INS" />
-						<TextBlock x:Name="StatusSep1b"
-						           FontFamily="Cascadia Code, Consolas, Courier New"
-						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<Border x:Name="StatusSep1b"
+						        Width="1" VerticalAlignment="Stretch"
+						        Opacity="0.2" IsVisible="False" />
 						<TextBlock x:Name="StatusLineCount"
 						           FontFamily="Cascadia Code, Consolas, Courier New"
-						           FontSize="11" Padding="0,6,0,6" Text="" />
-						<TextBlock x:Name="StatusSep2"
-						           FontFamily="Cascadia Code, Consolas, Courier New"
-						           FontSize="11" Padding="0,6,0,6" Text="" />
+						           FontSize="11" Padding="6,6,6,6" Text="" />
+						<Border x:Name="StatusSep2"
+						        Width="1" VerticalAlignment="Stretch"
+						        Opacity="0.2" IsVisible="False" />
 						<Border x:Name="BtnEncoding" Background="Transparent">
 							<TextBlock x:Name="StatusEncoding"
 							           FontFamily="Cascadia Code, Consolas, Courier New"
@@ -181,9 +181,9 @@
 							           Padding="6,6,6,6"
 							           Text="" />
 						</Border>
-						<TextBlock x:Name="StatusSep3"
-						           FontFamily="Cascadia Code, Consolas, Courier New"
-						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<Border x:Name="StatusSep3"
+						        Width="1" VerticalAlignment="Stretch"
+						        Opacity="0.2" IsVisible="False" />
 						<Border x:Name="BtnLineEnding" Background="Transparent">
 							<TextBlock x:Name="StatusLineEnding"
 							           FontFamily="Cascadia Code, Consolas, Courier New"
@@ -191,9 +191,9 @@
 							           Padding="6,6,6,6"
 							           Text="" />
 						</Border>
-						<TextBlock x:Name="StatusSep4"
-						           FontFamily="Cascadia Code, Consolas, Courier New"
-						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<Border x:Name="StatusSep4"
+						        Width="1" VerticalAlignment="Stretch"
+						        Opacity="0.2" IsVisible="False" />
 						<Border x:Name="BtnIndent" Background="Transparent">
 							<TextBlock x:Name="StatusIndent"
 							           FontFamily="Cascadia Code, Consolas, Courier New"
@@ -201,9 +201,9 @@
 							           Padding="6,6,6,6"
 							           Text="" />
 						</Border>
-						<TextBlock x:Name="StatusSep5"
-						           FontFamily="Cascadia Code, Consolas, Courier New"
-						           FontSize="11" Padding="0,6,0,6" Text="" />
+						<Border x:Name="StatusSep5"
+						        Width="1" VerticalAlignment="Stretch"
+						        Opacity="0.2" IsVisible="False" />
 						<Border x:Name="BtnTail" Background="Transparent"
 						        IsVisible="False"
 						        ToolTip.Tip="Tail File">
