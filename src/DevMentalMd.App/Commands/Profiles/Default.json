@@ -63,7 +63,7 @@
     "Window.NextTab": "Ctrl+Tab",
     "Window.PrevTab": "Ctrl+Shift+Tab",
     "Window.Settings": "",
-    "Window.CommandPalette": "F1",
+    "Window.CommandPalette": "Ctrl+,",
     "Nav.MoveLeft": "Left",
     "Nav.MoveRight": "Right",
     "Nav.MoveUp": "Up",
@@ -96,8 +96,5 @@
     "Nav.ColumnSelectDown": "Alt+Shift+Down",
     "Nav.ColumnSelectLeft": "Alt+Shift+Left",
     "Nav.ColumnSelectRight": "Alt+Shift+Right"
-  },
-  "bindings2": {
-    "File.Exit": "Ctrl+Q"
   }
 }
