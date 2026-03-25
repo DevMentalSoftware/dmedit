@@ -39,8 +39,18 @@ static class IconGlyphs {
     // Tail file indicator
     public const string ArrowDown    = "\uF126";  // ↓  ic_fluent_arrow_download_20_regular
 
-    // Remove / delete
-    public const string Delete       = "\uE4C4";  // TODO: verify codepoint against bundled font
+
+
+    public const string Undo = "\uE127"; //F199
+    public const string Redo = "\uE0E5";//F16E
+    public const string Cut = "\uF33A"; //F33B
+    public const string Copy = "\uEEB5"; //
+    public const string Paste = "\uE342";
+    public const string Delete = "\uE47B"; //EEA5,EEA6  
+    public const string Wrap = "\uEF28"; //F80E
+
+    public const string Save = "\uEA28";
+    public const string Search = "\uEA7C";
 
     // Conflict / error indicators
     public const string ErrorCircle  = "\uF4A0";  // TODO: placeholder — pick a better error/warning glyph

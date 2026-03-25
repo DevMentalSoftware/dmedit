@@ -23,7 +23,7 @@
                                 IsHitTestVisible="True" />
 
 		<Border DockPanel.Dock="Top" x:Name="MenuBarBorder" BorderThickness="0,0,0,1">
-			<Grid ColumnDefinitions="*,Auto">
+			<Grid ColumnDefinitions="Auto,*,Auto">
 				<Menu x:Name="MenuBar" Grid.Column="0" FontSize="12" Background="Transparent">
 					<MenuItem Header="_File" x:Name="MenuFile">
 						<MenuItem Header="_New" x:Name="MenuNew" />
@@ -109,7 +109,11 @@
 						<MenuItem Header="_About" x:Name="MenuAbout" />
 					</MenuItem>
 				</Menu>
-				<Button x:Name="GearButton" Grid.Column="1"
+				<controls:ToolbarControl x:Name="Toolbar" Grid.Column="1"
+					HorizontalAlignment="Stretch"
+					VerticalAlignment="Stretch"
+					IsHitTestVisible="True" />
+			<Button x:Name="GearButton" Grid.Column="2"
 					   Width="36" Height="26"
 					   VerticalAlignment="Center"
 					   Margin="2,0,6,0"

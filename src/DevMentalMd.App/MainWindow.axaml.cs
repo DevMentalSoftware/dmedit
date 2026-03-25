@@ -175,6 +175,7 @@ public partial class MainWindow : Window {
         WireEditMenu();
         WireSearchMenu();
         WireViewMenu();
+        InitializeToolbar();
         ApplyAdvancedMenuVisibility();
         WireSettingsPanel();
         WireThemeSettings();
@@ -1256,6 +1257,7 @@ public partial class MainWindow : Window {
         ScrollBar.ApplyTheme(theme);
         SettingsPanel.ApplyTheme(theme);
         FindBar.ApplyTheme(theme);
+        Toolbar.ApplyTheme(theme);
 
         // Tab bar
         TabBar.ApplyTheme(theme);
@@ -1406,6 +1408,52 @@ public partial class MainWindow : Window {
         UpdateStatusBarVisibility();
     }
 
+    private void InitializeToolbar() {
+        var items = new[] {
+            new ToolbarItem { CommandId = "Edit.Undo", Glyph = IconGlyphs.Undo, Tooltip = "Undo" },
+            new ToolbarItem { CommandId = "Edit.Redo", Glyph = IconGlyphs.Redo, Tooltip = "Redo" },
+            new ToolbarItem { CommandId = "Edit.Cut", Glyph = IconGlyphs.Cut, Tooltip = "Cut" },
+            new ToolbarItem { CommandId = "Edit.Copy", Glyph = IconGlyphs.Copy, Tooltip = "Copy" },
+            new ToolbarItem { CommandId = "Edit.Paste", Glyph = IconGlyphs.Paste, Tooltip = "Paste" },
+            new ToolbarItem {
+                CommandId = "View.WrapLines", Glyph = IconGlyphs.Wrap, Tooltip = "Wrap Lines",
+                IsToggle = true, IsChecked = () => _settings.WrapLines,
+            }
+        };
+        Toolbar.SetItems(items, _commands);
+        Toolbar.ButtonClicked += commandId => {
+            _commands.Execute(commandId);
+            Toolbar.Refresh();
+        };
+        Toolbar.OverflowClicked += ShowToolbarOverflowMenu;
+    }
+
+    private void ShowToolbarOverflowMenu() {
+        var overflow = Toolbar.GetOverflowItems();
+        if (overflow.Count == 0) return;
+
+        var menu = new ContextMenu {
+            PlacementTarget = Toolbar,
+            Placement = PlacementMode.Bottom,
+            PlacementRect = Toolbar.OverflowButtonRect,
+        };
+        foreach (var item in overflow) {
+            var captured = item;
+            var mi = new MenuItem { Header = captured.Tooltip };
+            if (captured.IsToggle && captured.IsChecked?.Invoke() == true) {
+                mi.Icon = CreateMenuCheckGlyph(true);
+            }
+            var cmd = _commands.TryGet(captured.CommandId);
+            mi.IsEnabled = cmd?.IsEnabled ?? true;
+            mi.Click += (_, _) => {
+                _commands.Execute(captured.CommandId);
+                Toolbar.Refresh();
+            };
+            menu.Items.Add(mi);
+        }
+        menu.Open(Toolbar);
+    }
+
     private void WireSearchMenu() {
         MenuFind.Click += (_, _) => _commands.Execute("Find.Find");
         MenuReplace.Click += (_, _) => _commands.Execute("Find.Replace");
@@ -1457,6 +1505,9 @@ public partial class MainWindow : Window {
             if (_settings.ShowStatusBar) {
                 Dispatcher.UIThread.Post(UpdateStatusBar);
             }
+            // Toolbar enabled states depend on selection, undo history, etc.
+            // Post to avoid InvalidateVisual during the active render pass.
+            Dispatcher.UIThread.Post(Toolbar.Refresh);
         };
     }
 
@@ -2575,10 +2626,12 @@ public partial class MainWindow : Window {
                 case "WrapLines":
                     Editor.WrapLines = _settings.WrapLines;
                     _wrapLinesGlyph!.Opacity = _settings.WrapLines ? 1.0 : 0.0;
+                    Toolbar.Refresh();
                     break;
                 case "ShowWhitespace":
                     Editor.ShowWhitespace = _settings.ShowWhitespace;
                     _whitespaceGlyph!.Opacity = _settings.ShowWhitespace ? 1.0 : 0.0;
+                    Toolbar.Refresh();
                     break;
                 case "WrapLinesAt":
                     Editor.WrapLinesAt = _settings.WrapLinesAt;
