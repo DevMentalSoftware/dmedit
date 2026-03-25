@@ -3,26 +3,25 @@ using System.Linq;
 using Avalonia.Input;
 using DevMentalMd.App.Commands;
 using DevMentalMd.App.Services;
+using Cmd = DevMentalMd.App.Commands.Commands;
 
 namespace DevMentalMd.App.Tests;
 
 public class CommandRegistryTests {
-    private static CommandRegistry CreateRegistry() => TestCommands.CreateRegistry();
+    public CommandRegistryTests() => TestCommands.WireAll();
 
     [Fact]
     public void AllCommandIdsAreUnique() {
-        var registry = CreateRegistry();
-        var ids = registry.All.Select(c => c.Id).ToList();
+        var ids = Cmd.All.Select(c => c.Id).ToList();
         Assert.Equal(ids.Count, ids.Distinct().Count());
     }
 
     [Fact]
     public void AllDefaultGesturesAreUnique() {
-        var registry = CreateRegistry();
-        var svc = new KeyBindingService(new AppSettings(), registry);
+        var svc = new KeyBindingService(new AppSettings());
         var entries = new List<(string Id, KeyGesture Gesture)>();
 
-        foreach (var cmd in registry.All) {
+        foreach (var cmd in Cmd.All) {
             var g1 = svc.GetGesture(cmd.Id);
             if (g1 is { IsChord: false }) {
                 entries.Add((cmd.Id + " (Gesture)", g1.First));
@@ -49,12 +48,11 @@ public class CommandRegistryTests {
 
     [Fact]
     public void AllDefaultChordsAreUnique() {
-        var registry = CreateRegistry();
-        var svc = new KeyBindingService(new AppSettings(), registry);
+        var svc = new KeyBindingService(new AppSettings());
         var seen = new HashSet<(int, int, int, int)>();
         var duplicates = new List<string>();
 
-        foreach (var cmd in registry.All) {
+        foreach (var cmd in Cmd.All) {
             CheckChord(cmd.Id, svc.GetGesture(cmd.Id), seen, duplicates);
             CheckChord(cmd.Id, svc.GetGesture2(cmd.Id), seen, duplicates);
         }
@@ -76,26 +74,48 @@ public class CommandRegistryTests {
 
     [Fact]
     public void AllCommandsHaveNonEmptyDisplayName() {
-        var registry = CreateRegistry();
-        foreach (var cmd in registry.All) {
+        foreach (var cmd in Cmd.All) {
             Assert.False(string.IsNullOrWhiteSpace(cmd.DisplayName),
                 $"Command {cmd.Id} has empty display name");
         }
     }
 
     [Fact]
-    public void AllCommandCategoriesAreValid() {
-        var registry = CreateRegistry();
-        foreach (var cmd in registry.All) {
-            Assert.Contains(cmd.Category, registry.Categories);
+    public void AllCommandIdsContainDot() {
+        foreach (var cmd in Cmd.All) {
+            Assert.Contains('.', cmd.Id);
         }
     }
 
+    // =================================================================
+    // Command system validation tests
+    // =================================================================
+
     [Fact]
-    public void AllCommandIdsContainDot() {
-        var registry = CreateRegistry();
-        foreach (var cmd in registry.All) {
-            Assert.Contains('.', cmd.Id);
+    public void MenuCommandsHaveMenuDisplayName() {
+        var missing = Cmd.All
+            .Where(c => c.Menu != CommandMenu.None && string.IsNullOrEmpty(c.MenuDisplayName))
+            .Select(c => c.Id)
+            .ToList();
+        Assert.True(missing.Count == 0,
+            $"Menu commands with empty MenuDisplayName: {string.Join(", ", missing)}");
+    }
+
+    [Fact]
+    public void ToolbarCommandsHaveGlyph() {
+        var missing = Cmd.All
+            .Where(c => c.DefaultInToolbar && c.ToolbarGlyph == null)
+            .Select(c => c.Id)
+            .ToList();
+        Assert.True(missing.Count == 0,
+            $"Commands with DefaultInToolbar but no ToolbarGlyph: {string.Join(", ", missing)}");
+    }
+
+    [Fact]
+    public void CategoriesMatchIdPrefix() {
+        foreach (var cmd in Cmd.All) {
+            var expected = cmd.Id[..cmd.Id.IndexOf('.')];
+            Assert.Equal(expected, cmd.Category);
         }
     }
 }

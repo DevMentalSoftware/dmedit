@@ -17,7 +17,6 @@ namespace DevMentalMd.App.Commands;
 /// </summary>
 public class KeyBindingService {
     private readonly AppSettings _settings;
-    private readonly CommandRegistry _commands;
     private ProfileData _activeProfile;
     private string _activeProfileId;
 
@@ -39,9 +38,8 @@ public class KeyBindingService {
         ("Menu.Help", Key.H),
     ];
 
-    public KeyBindingService(AppSettings settings, CommandRegistry commands) {
+    public KeyBindingService(AppSettings settings) {
         _settings = settings;
-        _commands = commands;
         _activeProfileId = settings.ActiveProfile ?? "Default";
         _activeProfile = ProfileLoader.Load(_activeProfileId);
         Rebuild();
@@ -54,8 +52,6 @@ public class KeyBindingService {
     /// <summary>
     /// The identifier of the currently active profile (e.g. "Default", "VSCode").
     /// </summary>
-    public CommandRegistry Registry => _commands;
-
     public string ActiveProfileId => _activeProfileId;
 
     /// <summary>
@@ -104,7 +100,7 @@ public class KeyBindingService {
 
         // Pass 1: apply profile defaults for commands that have no user override.
         // Skip Menu.* pseudo-commands — their bindings are fixed in pass 0.
-        foreach (var cmd in _commands.All) {
+        foreach (var cmd in Commands.All) {
             if (cmd.Id.StartsWith("Menu.", StringComparison.Ordinal)) continue;
             if (overrides1 == null || !overrides1.ContainsKey(cmd.Id)) {
                 var gesture = GetProfileGesture(cmd.Id, slot: 1);
@@ -122,7 +118,7 @@ public class KeyBindingService {
         // Pass 2: apply user overrides. These are processed last so they
         // always win when a conflict exists.
         if (overrides1 != null) {
-            foreach (var cmd in _commands.All) {
+            foreach (var cmd in Commands.All) {
                 if (cmd.Id.StartsWith("Menu.", StringComparison.Ordinal)) continue;
                 if (!overrides1.TryGetValue(cmd.Id, out var str)) continue;
                 var gesture = string.IsNullOrEmpty(str) ? null : ChordGesture.Parse(str);
@@ -132,7 +128,7 @@ public class KeyBindingService {
         }
 
         if (overrides2 != null) {
-            foreach (var cmd in _commands.All) {
+            foreach (var cmd in Commands.All) {
                 if (cmd.Id.StartsWith("Menu.", StringComparison.Ordinal)) continue;
                 if (!overrides2.TryGetValue(cmd.Id, out var str)) continue;
                 var gesture = string.IsNullOrEmpty(str) ? null : ChordGesture.Parse(str);
@@ -339,7 +335,7 @@ public class KeyBindingService {
     /// Returns the <see cref="Command"/> for the given command ID,
     /// or null if not found.
     /// </summary>
-    public Command? GetCommand(string commandId) => _commands.TryGet(commandId);
+    public Command? GetCommand(string commandId) => Commands.TryGet(commandId);
 
     /// <summary>
     /// Equality comparer for <c>(KeyGesture, KeyGesture)</c> tuples used

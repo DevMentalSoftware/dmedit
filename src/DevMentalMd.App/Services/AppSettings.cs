@@ -56,11 +56,23 @@ public sealed class AppSettings {
     // -----------------------------------------------------------------
 
     /// <summary>
-    /// When true, hide menu items and command palette entries for features
-    /// not typically found in simple text editors (e.g. Clipboard Ring,
-    /// Incremental Search, line manipulation commands).
+    /// When true, hide menu items marked as advanced (e.g. Clipboard Ring,
+    /// Incremental Search, line manipulation commands). Does NOT affect the
+    /// command palette or toolbar — only menus.
     /// </summary>
     public bool HideAdvancedMenus { get; set; } = true;
+
+    /// <summary>
+    /// Per-command overrides for menu inclusion. Maps command ID to bool.
+    /// When a key is present, it overrides the manifest default.
+    /// </summary>
+    public Dictionary<string, bool>? MenuOverrides { get; set; }
+
+    /// <summary>
+    /// Per-command overrides for toolbar inclusion. Maps command ID to bool.
+    /// When a key is present, it overrides the manifest default.
+    /// </summary>
+    public Dictionary<string, bool>? ToolbarOverrides { get; set; }
 
     /// <summary>
     /// Number of recent files to display in the File menu.

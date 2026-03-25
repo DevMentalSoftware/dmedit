@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:DevMentalMd.App.Controls"
-             x:Class="DevMentalMd.App.Settings.KeyboardSettingsSection">
+             x:Class="DevMentalMd.App.Settings.CommandsSettingsSection">
 	<!-- StackPanel stacks items at their natural height — no fill element and
 	     no dead space.  MaxHeight on CommandScroll (set from code) caps the
 	     inner scroll area so the full list scrolls internally. -->
@@ -15,7 +15,7 @@
 
 		<!-- Filter row: fixed column widths (230 name, 160 shortcut filter, * remainder)
 		     tuned to visually align with the command list columns below. -->
-		<Border Width="580"
+		<Border Width="624"
 		        HorizontalAlignment="Left">
 			<Grid ColumnDefinitions="226,160,*" ColumnSpacing="8">
 				<controls:DMTextBox x:Name="NameFilter"
@@ -53,7 +53,7 @@
 		        BorderThickness="1"
 		        CornerRadius="3"
 		        Margin="0,6,0,6"
-		        Width="600"
+		        Width="644"
 		        HorizontalAlignment="Left">
 			<ScrollViewer x:Name="CommandScroll"
 			              HorizontalScrollBarVisibility="Disabled"

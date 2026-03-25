@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Avalonia.Input;
 using DevMentalMd.App.Commands;
+using Cmd = DevMentalMd.App.Commands.Commands;
 
 namespace DevMentalMd.App.Tests;
 
@@ -31,7 +32,7 @@ public class ProfileLoaderTests {
 
     [Fact]
     public void AllProfileCommandIdsAreValid() {
-        var validIds = TestCommands.CreateRegistry().All.Select(c => c.Id).ToHashSet();
+        var validIds = Cmd.All.Select(c => c.Id).ToHashSet();
 
         foreach (var id in ProfileLoader.ProfileIds) {
             var profile = ProfileLoader.Load(id);
@@ -134,7 +135,7 @@ public class ProfileLoaderTests {
 
         // At minimum, all File, Edit, Nav commands (minus exclusions) should be bound.
         var expectedCategories = new[] { "File", "Edit", "Nav" };
-        var allIds = TestCommands.CreateRegistry().All.Select(c => c.Id).ToHashSet();
+        var allIds = Cmd.All.Select(c => c.Id).ToHashSet();
         foreach (var cat in expectedCategories) {
             var catCommands = allIds
                 .Where(id => id.StartsWith(cat + "."))
@@ -154,7 +155,7 @@ public class ProfileLoaderTests {
     /// </summary>
     [Fact]
     public void AllProfilesContainEveryCommandId() {
-        var allIds = TestCommands.CreateRegistry().All.Select(c => c.Id).ToList();
+        var allIds = Cmd.All.Select(c => c.Id).ToList();
         var failures = new StringBuilder();
 
         foreach (var profileId in ProfileLoader.ProfileIds) {
@@ -185,7 +186,7 @@ public class ProfileLoaderTests {
     /// </summary>
     [Fact(Skip = "Manual helper — remove Skip to auto-fix profile JSONs")]
     public void FixProfiles_AddMissingCommandIds() {
-        var allIds = TestCommands.CreateRegistry().All.Select(c => c.Id).ToList();
+        var allIds = Cmd.All.Select(c => c.Id).ToList();
 
         // Walk up from the test output directory to the repo root.
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

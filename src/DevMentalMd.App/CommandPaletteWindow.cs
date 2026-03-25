@@ -9,6 +9,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Controls.Documents;
 using DevMentalMd.App.Commands;
+using Cmd = DevMentalMd.App.Commands.Commands;
 using DevMentalMd.App.Controls;
 using DevMentalMd.App.Services;
 
@@ -21,7 +22,6 @@ namespace DevMentalMd.App;
 /// VS Code's Ctrl+Shift+P command palette.
 /// </summary>
 public class CommandPaletteWindow : Window {
-    private readonly CommandRegistry _commands;
     private readonly KeyBindingService _keyBindings;
     private readonly AppSettings _settings;
     private readonly DMTextBox _filterBox;
@@ -47,9 +47,8 @@ public class CommandPaletteWindow : Window {
     /// </summary>
     public string? SelectedCommandId { get; private set; }
 
-    public CommandPaletteWindow(CommandRegistry commands, KeyBindingService keyBindings,
+    public CommandPaletteWindow(KeyBindingService keyBindings,
                                 AppSettings settings, EditorTheme theme) {
-        _commands = commands;
         _keyBindings = keyBindings;
         _settings = settings;
         _theme = theme;
@@ -181,9 +180,8 @@ public class CommandPaletteWindow : Window {
 
         // Collect filtered commands.
         var filtered = new List<Command>();
-        foreach (var cmd in _commands.All) {
-            if (!cmd.ShowInPalette) continue;
-            if (_settings.HideAdvancedMenus && cmd.IsAdvanced) continue;
+        foreach (var cmd in Cmd.All) {
+            if (cmd.Category == "Menu") continue; // pseudo-commands for Alt access keys
             if (hasFilter) {
                 var matchesName = cmd.DisplayName.Contains(filter,
                     StringComparison.OrdinalIgnoreCase);

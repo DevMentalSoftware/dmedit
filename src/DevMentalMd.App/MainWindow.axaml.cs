@@ -18,6 +18,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using DevMentalMd.App.Commands;
+using Cmd = DevMentalMd.App.Commands.Commands;
 using DevMentalMd.App.Controls;
 using DevMentalMd.App.Services;
 using DevMentalMd.App.Settings;
@@ -44,7 +45,6 @@ public partial class MainWindow : Window {
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
     private readonly AppSettings _settings = AppSettings.Load();
     public AppSettings Settings => _settings;
-    private readonly CommandRegistry _commands = new();
     private readonly KeyBindingService _keyBindings;
     private int _staticMenuItemCount;
     private readonly DispatcherTimer _statsTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
@@ -52,7 +52,7 @@ public partial class MainWindow : Window {
     private bool _windowStateReady;
     private TabState? _settingsTab;
     private readonly FileWatcherService _watcher = new();
-    private readonly List<(MenuItem item, string commandId)> _menuCommandBindings = [];
+    private readonly List<(MenuItem item, Command cmd)> _menuCommandBindings = [];
     private TextBlock? _lineNumGlyph;
     private TextBlock? _statusBarGlyph;
     private TextBlock? _wrapLinesGlyph;
@@ -73,8 +73,8 @@ public partial class MainWindow : Window {
     public MainWindow() {
         InitializeComponent();
         RegisterWindowCommands();
-        Editor.RegisterCommands(_commands);
-        _keyBindings = new KeyBindingService(_settings, _commands);
+        Editor.RegisterCommands();
+        _keyBindings = new KeyBindingService(_settings);
         _chordTimer = new DispatcherTimer {
             Interval = TimeSpan.FromMilliseconds(_settings.ChordTimeoutMs),
         };
@@ -102,65 +102,70 @@ public partial class MainWindow : Window {
 
         RestoreWindowSize();
 
-        MenuNew.Click += OnNew;
-        MenuOpen.Click += OnOpen;
-        MenuSave.Click += OnSave;
-        MenuSaveAs.Click += OnSaveAs;
-        MenuSaveAll.Click += (_, _) => SaveAll();
-        MenuClose.Click += async (_, _) => { if (_activeTab != null) await PromptAndCloseTabAsync(_activeTab); };
-        MenuCloseAll.Click += async (_, _) => await CloseAllTabsAsync();
-        MenuExit.Click += (_, _) => Close();
-        MenuRevertFile.Click += (_, _) => _ = RevertFileAsync();
-        MenuPrint.Click += (_, _) => _ = PrintAsync();
-        MenuSaveAsPdf.Click += (_, _) => _ = SaveAsPdfAsync();
+        // Wire each XAML MenuItem to its Command — sets up click handler,
+        // IsEnabled tracking, gesture text, and advanced-menu visibility
+        // in one call per item.
+        // File:
+        WireMenu(MenuNew, Cmd.FileNew);
+        WireMenu(MenuOpen, Cmd.FileOpen);
+        WireMenu(MenuSave, Cmd.FileSave);
+        WireMenu(MenuSaveAs, Cmd.FileSaveAs);
+        WireMenu(MenuSaveAll, Cmd.FileSaveAll);
+        WireMenu(MenuRevertFile, Cmd.FileRevertFile);
+        WireMenu(MenuPrint, Cmd.FilePrint);
+        WireMenu(MenuSaveAsPdf, Cmd.FileSaveAsPdf);
+        WireMenu(MenuClose, Cmd.FileClose);
+        WireMenu(MenuCloseAll, Cmd.FileCloseAll);
+        WireMenu(MenuExit, Cmd.FileExit);
+        // Edit:
+        WireMenu(MenuUndo, Cmd.EditUndo);
+        WireMenu(MenuRedo, Cmd.EditRedo);
+        WireMenu(MenuCut, Cmd.EditCut);
+        WireMenu(MenuCopy, Cmd.EditCopy);
+        WireMenu(MenuPaste, Cmd.EditPaste);
+        WireMenu(MenuPasteMore, Cmd.EditPasteMore);
+        WireMenu(MenuClipboardRing, Cmd.EditClipboardRing);
+        WireMenu(MenuDelete, Cmd.EditDelete);
+        WireMenu(MenuSelectAll, Cmd.EditSelectAll);
+        WireMenu(MenuSelectWord, Cmd.EditSelectWord);
+        WireMenu(MenuDeleteLine, Cmd.EditDeleteLine);
+        WireMenu(MenuMoveLineUp, Cmd.EditMoveLineUp);
+        WireMenu(MenuMoveLineDown, Cmd.EditMoveLineDown);
+        WireMenu(MenuInsertLineBelow, Cmd.EditInsertLineBelow);
+        WireMenu(MenuInsertLineAbove, Cmd.EditInsertLineAbove);
+        WireMenu(MenuDuplicateLine, Cmd.EditDuplicateLine);
+        WireMenu(MenuDeleteWordLeft, Cmd.EditDeleteWordLeft);
+        WireMenu(MenuDeleteWordRight, Cmd.EditDeleteWordRight);
+        WireMenu(MenuIndent, Cmd.EditSmartIndent);
+        WireMenu(MenuCaseUpper, Cmd.EditUpperCase);
+        WireMenu(MenuCaseLower, Cmd.EditLowerCase);
+        WireMenu(MenuCaseProper, Cmd.EditProperCase);
+        // Search:
+        WireMenu(MenuFind, Cmd.SearchFind);
+        WireMenu(MenuReplace, Cmd.SearchReplace);
+        WireMenu(MenuFindNext, Cmd.SearchFindNext);
+        WireMenu(MenuFindPrevious, Cmd.SearchFindPrevious);
+        WireMenu(MenuIncrementalSearch, Cmd.SearchIncrementalSearch);
+        WireMenu(MenuGoToLine, Cmd.SearchGoToLine);
+        WireMenu(MenuCommandPalette, Cmd.SearchCommandPalette);
+        // View:
+        WireMenu(MenuLineNumbers, Cmd.ViewLineNumbers);
+        WireMenu(MenuStatusBar, Cmd.ViewStatusBar);
+        WireMenu(MenuWrapLines, Cmd.ViewWrapLines);
+        WireMenu(MenuWhitespace, Cmd.ViewWhitespace);
+        WireMenu(MenuZoomIn, Cmd.ViewZoomIn);
+        WireMenu(MenuZoomOut, Cmd.ViewZoomOut);
+        WireMenu(MenuZoomReset, Cmd.ViewZoomReset);
+        WireMenu(MenuScrollLineUp, Cmd.ViewScrollLineUp);
+        WireMenu(MenuScrollLineDown, Cmd.ViewScrollLineDown);
 
         // Print is only available on Windows when the WPF DLL is present.
-        // Hide and disable so the keyboard shortcut is also inert.
         MenuPrint.IsVisible = WindowsPrintService.IsAvailable;
         MenuPrint.IsEnabled = WindowsPrintService.IsAvailable;
 
+        // Help items don't have commands.
         MenuManual.Click += (_, _) => OpenHelpDocumentAsync("manual.md", "Manual");
         MenuAbout.Click += (_, _) => OpenHelpDocumentAsync("about.md", "About");
-
-        // Bind menu items to their commands.  The unified list drives both
-        // IsEnabled refresh (on submenu open) and advanced-menu visibility.
-        // File:
-        BindMenuToCommand(MenuSave, "File.Save");
-        BindMenuToCommand(MenuSaveAs, "File.SaveAs");
-        BindMenuToCommand(MenuSaveAll, "File.SaveAll");
-        BindMenuToCommand(MenuRevertFile, "File.RevertFile");
-        BindMenuToCommand(MenuSaveAsPdf, "File.SaveAsPdf");
-        BindMenuToCommand(MenuCloseAll, "File.CloseAll");
-        // Edit:
-        BindMenuToCommand(MenuUndo, "Edit.Undo");
-        BindMenuToCommand(MenuRedo, "Edit.Redo");
-        BindMenuToCommand(MenuCut, "Edit.Cut");
-        BindMenuToCommand(MenuCopy, "Edit.Copy");
-        BindMenuToCommand(MenuPaste, "Edit.Paste");
-        BindMenuToCommand(MenuPasteMore, "Edit.PasteMore");
-        BindMenuToCommand(MenuClipboardRing, "Edit.ClipboardRing");
-        BindMenuToCommand(MenuDelete, "Edit.Delete");
-        BindMenuToCommand(MenuSelectWord, "Edit.SelectWord");
-        BindMenuToCommand(MenuDeleteLine, "Edit.DeleteLine");
-        BindMenuToCommand(MenuMoveLineUp, "Edit.MoveLineUp");
-        BindMenuToCommand(MenuMoveLineDown, "Edit.MoveLineDown");
-        BindMenuToCommand(MenuInsertLineBelow, "Edit.InsertLineBelow");
-        BindMenuToCommand(MenuInsertLineAbove, "Edit.InsertLineAbove");
-        BindMenuToCommand(MenuDuplicateLine, "Edit.DuplicateLine");
-        BindMenuToCommand(MenuDeleteWordLeft, "Edit.DeleteWordLeft");
-        BindMenuToCommand(MenuDeleteWordRight, "Edit.DeleteWordRight");
-        BindMenuToCommand(MenuIndent, "Edit.SmartIndent");
-        BindMenuToCommand(MenuCaseUpper, "Edit.UpperCase");
-        BindMenuToCommand(MenuCaseLower, "Edit.LowerCase");
-        BindMenuToCommand(MenuCaseProper, "Edit.ProperCase");
-        // Search:
-        BindMenuToCommand(MenuIncrementalSearch, "Find.IncrementalSearch");
-        BindMenuToCommand(MenuCommandPalette, "Window.CommandPalette");
-        // View:
-        BindMenuToCommand(MenuLineNumbers, "View.LineNumbers");
-        BindMenuToCommand(MenuWhitespace, "View.Whitespace");
-        BindMenuToCommand(MenuScrollLineUp, "Nav.ScrollLineUp");
-        BindMenuToCommand(MenuScrollLineDown, "Nav.ScrollLineDown");
 
         MenuFile.SubmenuOpened += OnTopMenuOpened;
         MenuEdit.SubmenuOpened += OnTopMenuOpened;
@@ -172,9 +177,7 @@ public partial class MainWindow : Window {
         PruneRecentFiles();
         RebuildRecentMenu();
         WireScrollBar();
-        WireEditMenu();
-        WireSearchMenu();
-        WireViewMenu();
+        WireViewMenuState();
         InitializeToolbar();
         ApplyAdvancedMenuVisibility();
         WireSettingsPanel();
@@ -749,15 +752,14 @@ public partial class MainWindow : Window {
     /// commands that require the editor to be active and focused.
     /// </summary>
     private bool DispatchCommand(string commandId) {
-        var cmd = _commands.TryGet(commandId);
+        var cmd = Cmd.TryGet(commandId);
         if (cmd == null) return false;
         if (!cmd.IsEnabled) return false;
         if (cmd.RequiresEditor) {
             if (_activeTab is { IsSettings: true }) return false;
             if (FindBar.IsVisible && FindBar.IsKeyboardFocusWithin) return false;
         }
-        cmd.Execute();
-        return true;
+        return cmd.Run();
     }
 
     protected override void OnKeyUp(KeyEventArgs e) {
@@ -849,87 +851,77 @@ public partial class MainWindow : Window {
 
     private void RegisterWindowCommands() {
         // -- File --
-        _commands.Register("File.New", "New", () => OnNew(null, null!));
-        _commands.Register("File.Open", "Open", () => OnOpen(null, null!));
-        _commands.Register("File.Save", "Save", () => OnSave(null, null!),
+        Cmd.FileNew.Wire(() => OnNew(null, null!));
+        Cmd.FileOpen.Wire(() => OnOpen(null, null!));
+        Cmd.FileSave.Wire(() => OnSave(null, null!),
             canExecute: () => _activeTab is { IsSettings: false, IsReadOnly: false });
-        _commands.Register("File.SaveAs", "Save As", () => OnSaveAs(null, null!),
+        Cmd.FileSaveAs.Wire(() => OnSaveAs(null, null!),
             canExecute: () => _activeTab is { IsSettings: false, IsLocked: false });
-        _commands.Register("File.SaveAll", "Save All", SaveAll, isAdvanced: true);
-        _commands.Register("File.Close", "Close",
+        Cmd.FileSaveAll.Wire(SaveAll);
+        Cmd.FileClose.Wire(
             () => { if (_activeTab != null) _ = PromptAndCloseTabAsync(_activeTab); });
-        _commands.Register("File.CloseAll", "Close All", () => _ = CloseAllTabsAsync(),
-            isAdvanced: true);
-        _commands.Register("File.Print", "Print",
+        Cmd.FileCloseAll.Wire(() => _ = CloseAllTabsAsync());
+        Cmd.FilePrint.Wire(
             () => { if (WindowsPrintService.IsAvailable) _ = PrintAsync(); });
-        _commands.Register("File.SaveAsPdf", "Save As PDF", () => _ = SaveAsPdfAsync(),
-            isAdvanced: true);
-        _commands.Register("File.Exit", "Exit", Close);
-        _commands.Register("File.ToggleReadOnly", "Toggle Read Only", ToggleActiveReadOnly,
-            canExecute: () => _activeTab is { IsSettings: false, IsLocked: false },
-            isAdvanced: true);
-        _commands.Register("File.RevertFile", "Revert File", () => _ = RevertFileAsync(),
-            isAdvanced: true);
-        _commands.Register("File.ReloadFile", "Reload File", () => _ = ReloadFileAsync(_activeTab),
-            isAdvanced: true);
-        _commands.Register("File.ClearRecentFiles", "Clear Recent Files", () => {
+        Cmd.FileSaveAsPdf.Wire(() => _ = SaveAsPdfAsync());
+        Cmd.FileExit.Wire(Close);
+        Cmd.FileToggleReadOnly.Wire(ToggleActiveReadOnly,
+            canExecute: () => _activeTab is { IsSettings: false, IsLocked: false });
+        Cmd.FileRevertFile.Wire(() => _ = RevertFileAsync());
+        Cmd.FileReloadFile.Wire(() => _ = ReloadFileAsync(_activeTab));
+        Cmd.FileClearRecentFiles.Wire(() => {
             _recentFiles.Clear();
             _recentFiles.Save();
-        }, isAdvanced: true);
+            RebuildRecentMenu();
+        });
 
         // -- View --
-        _commands.Register("View.LineNumbers", "Line Numbers", ToggleLineNumbers,
-            isAdvanced: true);
-        _commands.Register("View.StatusBar", "Status Bar", ToggleStatusBar);
-        _commands.Register("View.WrapLines", "Wrap Lines", ToggleWrapLines);
-        _commands.Register("View.Whitespace", "Show Whitespace", ToggleWhitespace,
-            isAdvanced: false);
-        _commands.Register("View.ZoomIn", "Zoom In",
+        Cmd.ViewLineNumbers.Wire(ToggleLineNumbers);
+        Cmd.ViewStatusBar.Wire(ToggleStatusBar);
+        Cmd.ViewWrapLines.Wire(ToggleWrapLines);
+        Cmd.ViewWhitespace.Wire(ToggleWhitespace);
+        Cmd.ViewZoomIn.Wire(
             () => Editor.FontSize = Math.Min(Editor.FontSize + 1, 72));
-        _commands.Register("View.ZoomOut", "Zoom Out",
+        Cmd.ViewZoomOut.Wire(
             () => Editor.FontSize = Math.Max(Editor.FontSize - 1, 6));
-        _commands.Register("View.ZoomReset", "Zoom Reset",
+        Cmd.ViewZoomReset.Wire(
             () => Editor.FontSize = _settings.EditorFontSize.ToPixels());
 
         // -- Window --
-        _commands.Register("Window.NextTab", "Next Tab", () => CycleTab(+1));
-        _commands.Register("Window.PrevTab", "Previous Tab", () => CycleTab(-1));
-        _commands.Register("Window.Settings", "Settings", OpenSettings);
-        _commands.Register("Window.CommandPalette", "Command Palette", OpenCommandPalette,
-            isAdvanced: true);
+        Cmd.WindowNextTab.Wire(() => CycleTab(+1));
+        Cmd.WindowPrevTab.Wire(() => CycleTab(-1));
+        Cmd.WindowSettings.Wire(OpenSettings);
+        Cmd.SearchCommandPalette.Wire(OpenCommandPalette);
 
         // -- Edit: Clipboard Ring popup (window-level because it opens a dialog) --
-        _commands.Register("Edit.ClipboardRing", "Clipboard Ring", () => _ = OpenClipboardRing(),
-            canExecute: () => Editor._clipboardRing.Count > 1, isAdvanced: true);
+        Cmd.EditClipboardRing.Wire(() => _ = OpenClipboardRing(),
+            canExecute: () => Editor._clipboardRing.Count > 1);
 
-        // -- Find --
-        _commands.Register("Find.Find", "Find", () => OpenFindBar(replaceMode: false));
-        _commands.Register("Find.Replace", "Replace", () => OpenFindBar(replaceMode: true));
-        _commands.Register("Find.FindNext", "Find Next", () => Editor.FindNext());
-        _commands.Register("Find.FindPrevious", "Find Previous", () => Editor.FindPrevious());
-        _commands.Register("Find.FindNextSelection", "Find Next Selection", () => Editor.FindNextSelection(),
-            isAdvanced: true);
-        _commands.Register("Find.FindPreviousSelection", "Find Previous Selection", () => Editor.FindPreviousSelection(),
-            isAdvanced: true);
-        _commands.Register("Find.IncrementalSearch", "Incremental Search", () => Editor.StartIncrementalSearch(),
-            isAdvanced: true);
+        // -- Search --
+        Cmd.SearchFind.Wire(() => OpenFindBar(replaceMode: false));
+        Cmd.SearchReplace.Wire(() => OpenFindBar(replaceMode: true));
+        Cmd.SearchFindNext.Wire(() => Editor.FindNext());
+        Cmd.SearchFindPrevious.Wire(() => Editor.FindPrevious());
+        Cmd.SearchFindNextSelection.Wire(() => Editor.FindNextSelection());
+        Cmd.SearchFindPreviousSelection.Wire(() => Editor.FindPreviousSelection());
+        Cmd.SearchIncrementalSearch.Wire(() => Editor.StartIncrementalSearch());
 
         // -- Focus / Nav (window-level) --
-        _commands.Register("Nav.FocusEditor", "Focus Editor", () => {
+        Cmd.NavFocusEditor.Wire(() => {
             if (_activeTab is not { IsSettings: true }) Editor.Focus();
         });
-        _commands.Register("Nav.GoToLine", "Go to Line", OpenGoToLine);
+        Cmd.SearchGoToLine.Wire(OpenGoToLine);
 
         // Pseudo-commands for top-level menu access keys (Alt+letter).
         // These are never executed directly — they exist so that the key
         // binding UI shows conflicts when a user tries to bind Alt+F/E/S/V/H
         // to a real command.
         static void Noop() { }
-        _commands.Register("Menu.File", "File Menu", Noop, showInPalette: false);
-        _commands.Register("Menu.Edit", "Edit Menu", Noop, showInPalette: false);
-        _commands.Register("Menu.Search", "Search Menu", Noop, showInPalette: false);
-        _commands.Register("Menu.View", "View Menu", Noop, showInPalette: false);
-        _commands.Register("Menu.Help", "Help Menu", Noop, showInPalette: false);
+        Cmd.PseudoMenuFile.Wire(Noop);
+        Cmd.PseudoMenuEdit.Wire(Noop);
+        Cmd.PseudoMenuSearch.Wire(Noop);
+        Cmd.PseudoMenuView.Wire(Noop);
+        Cmd.PseudoMenuHelp.Wire(Noop);
     }
 
     private void CycleTab(int direction) {
@@ -992,53 +984,9 @@ public partial class MainWindow : Window {
     /// Called after construction and after any binding change in settings.
     /// </summary>
     private void SyncMenuGestures() {
-        SetMenuGesture(MenuNew, "File.New");
-        SetMenuGesture(MenuOpen, "File.Open");
-        SetMenuGesture(MenuSave, "File.Save");
-        SetMenuGesture(MenuSaveAs, "File.SaveAs");
-        SetMenuGesture(MenuSaveAll, "File.SaveAll");
-        SetMenuGesture(MenuClose, "File.Close");
-        SetMenuGesture(MenuCloseAll, "File.CloseAll");
-        SetMenuGesture(MenuExit, "File.Exit");
-        SetMenuGesture(MenuUndo, "Edit.Undo");
-        SetMenuGesture(MenuRedo, "Edit.Redo");
-        SetMenuGesture(MenuCut, "Edit.Cut");
-        SetMenuGesture(MenuCopy, "Edit.Copy");
-        SetMenuGesture(MenuPaste, "Edit.Paste");
-        SetMenuGesture(MenuPasteMore, "Edit.PasteMore");
-        SetMenuGesture(MenuClipboardRing, "Edit.ClipboardRing");
-        SetMenuGesture(MenuDelete, "Edit.Delete");
-        SetMenuGesture(MenuSelectAll, "Edit.SelectAll");
-        SetMenuGesture(MenuSelectWord, "Edit.SelectWord");
-        SetMenuGesture(MenuDeleteLine, "Edit.DeleteLine");
-        SetMenuGesture(MenuMoveLineUp, "Edit.MoveLineUp");
-        SetMenuGesture(MenuMoveLineDown, "Edit.MoveLineDown");
-        SetMenuGesture(MenuCaseUpper, "Edit.UpperCase");
-        SetMenuGesture(MenuCaseLower, "Edit.LowerCase");
-        SetMenuGesture(MenuCaseProper, "Edit.ProperCase");
-        SetMenuGesture(MenuInsertLineBelow, "Edit.InsertLineBelow");
-        SetMenuGesture(MenuInsertLineAbove, "Edit.InsertLineAbove");
-        SetMenuGesture(MenuDuplicateLine, "Edit.DuplicateLine");
-        SetMenuGesture(MenuDeleteWordLeft, "Edit.DeleteWordLeft");
-        SetMenuGesture(MenuDeleteWordRight, "Edit.DeleteWordRight");
-        SetMenuGesture(MenuIndent, "Edit.SmartIndent");
-        SetMenuGesture(MenuFind, "Find.Find");
-        SetMenuGesture(MenuReplace, "Find.Replace");
-        SetMenuGesture(MenuFindNext, "Find.FindNext");
-        SetMenuGesture(MenuFindPrevious, "Find.FindPrevious");
-        SetMenuGesture(MenuIncrementalSearch, "Find.IncrementalSearch");
-        SetMenuGesture(MenuGoToLine, "Nav.GoToLine");
-        SetMenuGesture(MenuLineNumbers, "View.LineNumbers");
-        SetMenuGesture(MenuStatusBar, "View.StatusBar");
-        SetMenuGesture(MenuWrapLines, "View.WrapLines");
-        SetMenuGesture(MenuWhitespace, "View.Whitespace");
-        SetMenuGesture(MenuZoomIn, "View.ZoomIn");
-        SetMenuGesture(MenuZoomOut, "View.ZoomOut");
-        SetMenuGesture(MenuZoomReset, "View.ZoomReset");
-        SetMenuGesture(MenuScrollLineUp, "Nav.ScrollLineUp");
-        SetMenuGesture(MenuScrollLineDown, "Nav.ScrollLineDown");
-        SetMenuGesture(MenuRevertFile, "File.RevertFile");
-        SetMenuGesture(MenuCommandPalette, "Window.CommandPalette");
+        foreach (var (item, cmd) in _menuCommandBindings) {
+            SetMenuGesture(item, cmd.Id);
+        }
     }
 
     private void SetMenuGesture(MenuItem item, string commandId) {
@@ -1085,37 +1033,19 @@ public partial class MainWindow : Window {
     // Edit menu wiring
     // -------------------------------------------------------------------------
 
-    private void WireEditMenu() {
-        MenuUndo.Click += (_, _) => _commands.Execute("Edit.Undo");
-        MenuRedo.Click += (_, _) => _commands.Execute("Edit.Redo");
-        MenuCut.Click += (_, _) => _commands.Execute("Edit.Cut");
-        MenuCopy.Click += (_, _) => _commands.Execute("Edit.Copy");
-        MenuPaste.Click += (_, _) => _commands.Execute("Edit.Paste");
-        MenuPasteMore.Click += (_, _) => _commands.Execute("Edit.PasteMore");
-        MenuClipboardRing.Click += (_, _) => _commands.Execute("Edit.ClipboardRing");
-        MenuDelete.Click += (_, _) => _commands.Execute("Edit.Delete");
-        MenuSelectAll.Click += (_, _) => _commands.Execute("Edit.SelectAll");
-        MenuSelectWord.Click += (_, _) => _commands.Execute("Edit.SelectWord");
-        MenuDeleteLine.Click += (_, _) => _commands.Execute("Edit.DeleteLine");
-        MenuMoveLineUp.Click += (_, _) => _commands.Execute("Edit.MoveLineUp");
-        MenuMoveLineDown.Click += (_, _) => _commands.Execute("Edit.MoveLineDown");
-        MenuCaseUpper.Click += (_, _) => _commands.Execute("Edit.UpperCase");
-        MenuCaseLower.Click += (_, _) => _commands.Execute("Edit.LowerCase");
-        MenuCaseProper.Click += (_, _) => _commands.Execute("Edit.ProperCase");
-        MenuInsertLineBelow.Click += (_, _) => _commands.Execute("Edit.InsertLineBelow");
-        MenuInsertLineAbove.Click += (_, _) => _commands.Execute("Edit.InsertLineAbove");
-        MenuDuplicateLine.Click += (_, _) => _commands.Execute("Edit.DuplicateLine");
-        MenuDeleteWordLeft.Click += (_, _) => _commands.Execute("Edit.DeleteWordLeft");
-        MenuDeleteWordRight.Click += (_, _) => _commands.Execute("Edit.DeleteWordRight");
-        MenuIndent.Click += (_, _) => _commands.Execute("Edit.SmartIndent");
+    // -------------------------------------------------------------------------
+    // Menu-to-command wiring
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Wires a XAML MenuItem to a Command — click handler, IsEnabled tracking,
+    /// gesture text display, and advanced-menu visibility. One call replaces
+    /// the old separate BindMenuToCommand, Click handler, and SetMenuGesture.
+    /// </summary>
+    private void WireMenu(MenuItem item, Command cmd) {
+        item.Click += (_, _) => cmd.Run();
+        _menuCommandBindings.Add((item, cmd));
     }
-
-    // -------------------------------------------------------------------------
-    // Menu-to-command enable/disable tracking
-    // -------------------------------------------------------------------------
-
-    private void BindMenuToCommand(MenuItem item, string commandId) =>
-        _menuCommandBindings.Add((item, commandId));
 
     /// <summary>
     /// Refreshes <see cref="MenuItem.IsEnabled"/> for every bound menu item.
@@ -1123,9 +1053,8 @@ public partial class MainWindow : Window {
     /// lazily, right before the user sees the menu.
     /// </summary>
     private void OnTopMenuOpened(object? sender, RoutedEventArgs e) {
-        foreach (var (item, id) in _menuCommandBindings) {
-            var cmd = _commands.TryGet(id);
-            item.IsEnabled = cmd?.IsEnabled ?? true;
+        foreach (var (item, cmd) in _menuCommandBindings) {
+            item.IsEnabled = cmd.IsEnabled;
         }
     }
 
@@ -1137,10 +1066,13 @@ public partial class MainWindow : Window {
     /// </summary>
     private void ApplyAdvancedMenuVisibility() {
         var hide = _settings.HideAdvancedMenus;
-        foreach (var (item, id) in _menuCommandBindings) {
-            var cmd = _commands.TryGet(id);
-            if (cmd is { IsAdvanced: true })
+        foreach (var (item, cmd) in _menuCommandBindings) {
+            // Per-command MenuOverrides take precedence over IsAdvanced.
+            if (_settings.MenuOverrides?.TryGetValue(cmd.Id, out var userVisible) == true) {
+                item.IsVisible = userVisible;
+            } else if (cmd.IsAdvanced) {
                 item.IsVisible = !hide;
+            }
         }
 
         // Hide the Transform Case submenu when all children are hidden.
@@ -1360,17 +1292,19 @@ public partial class MainWindow : Window {
         Margin = new Thickness(0, 2, 0, 0),
     };
 
-    private void WireViewMenu() {
+    /// <summary>
+    /// Initializes View menu toggle state (check glyphs, editor settings).
+    /// Click handlers are wired by <see cref="WireMenu"/>.
+    /// </summary>
+    private void WireViewMenuState() {
         // Line Numbers
         Editor.ShowLineNumbers = _settings.ShowLineNumbers;
         _lineNumGlyph = CreateMenuCheckGlyph(_settings.ShowLineNumbers);
         MenuLineNumbers.Icon = _lineNumGlyph;
-        MenuLineNumbers.Click += (_, _) => ToggleLineNumbers();
 
         // Status Bar
         _statusBarGlyph = CreateMenuCheckGlyph(_settings.ShowStatusBar);
         MenuStatusBar.Icon = _statusBarGlyph;
-        MenuStatusBar.Click += (_, _) => ToggleStatusBar();
 
         // Editor font — always apply the resolved font so it matches the
         // settings preview exactly (avoids subtle differences from the
@@ -1384,20 +1318,11 @@ public partial class MainWindow : Window {
         Editor.WrapLinesAt = _settings.WrapLinesAt;
         _wrapLinesGlyph = CreateMenuCheckGlyph(_settings.WrapLines);
         MenuWrapLines.Icon = _wrapLinesGlyph;
-        MenuWrapLines.Click += (_, _) => ToggleWrapLines();
 
         // Show Whitespace
         Editor.ShowWhitespace = _settings.ShowWhitespace;
         _whitespaceGlyph = CreateMenuCheckGlyph(_settings.ShowWhitespace);
         MenuWhitespace.Icon = _whitespaceGlyph;
-        MenuWhitespace.Click += (_, _) => ToggleWhitespace();
-
-        // Zoom
-        MenuZoomIn.Click += (_, _) => _commands.Execute("View.ZoomIn");
-        MenuZoomOut.Click += (_, _) => _commands.Execute("View.ZoomOut");
-        MenuZoomReset.Click += (_, _) => _commands.Execute("View.ZoomReset");
-        MenuScrollLineUp.Click += (_, _) => _commands.Execute("Nav.ScrollLineUp");
-        MenuScrollLineDown.Click += (_, _) => _commands.Execute("Nav.ScrollLineDown");
 
         // Undo coalesce idle timer (settings-only, no menu item)
         Editor.CoalesceTimerMs = _settings.CoalesceTimerMs;
@@ -1409,24 +1334,42 @@ public partial class MainWindow : Window {
     }
 
     private void InitializeToolbar() {
-        var items = new[] {
-            new ToolbarItem { CommandId = "Edit.Undo", Glyph = IconGlyphs.Undo, Tooltip = "Undo" },
-            new ToolbarItem { CommandId = "Edit.Redo", Glyph = IconGlyphs.Redo, Tooltip = "Redo" },
-            new ToolbarItem { CommandId = "Edit.Cut", Glyph = IconGlyphs.Cut, Tooltip = "Cut" },
-            new ToolbarItem { CommandId = "Edit.Copy", Glyph = IconGlyphs.Copy, Tooltip = "Copy" },
-            new ToolbarItem { CommandId = "Edit.Paste", Glyph = IconGlyphs.Paste, Tooltip = "Paste" },
-            new ToolbarItem {
-                CommandId = "View.WrapLines", Glyph = IconGlyphs.Wrap, Tooltip = "Wrap Lines",
-                IsToggle = true, IsChecked = () => _settings.WrapLines,
-            }
-        };
-        Toolbar.SetItems(items, _commands);
+        // Toolbar order = position in Commands.All (the master list).
+        var items = Cmd.All
+            .Where(c => IsInToolbar(c) && c.ToolbarGlyph != null)
+            .Select(c => new ToolbarItem {
+                CommandId = c.Id,
+                Glyph = c.ToolbarGlyph!,
+                Tooltip = c.ToolbarTooltip ?? c.DisplayName,
+                IsToggle = c.IsToolbarToggle,
+                IsChecked = GetToolbarToggleFunc(c.Id),
+            })
+            .ToArray();
+        Toolbar.SetItems(items);
         Toolbar.ButtonClicked += commandId => {
-            _commands.Execute(commandId);
+            Cmd.Execute(commandId);
             Toolbar.Refresh();
         };
         Toolbar.OverflowClicked += ShowToolbarOverflowMenu;
     }
+
+    /// <summary>
+    /// Returns whether the command should appear in the toolbar, checking
+    /// user overrides first, then falling back to the manifest default.
+    /// </summary>
+    private bool IsInToolbar(Command cmd) {
+        if (_settings.ToolbarOverrides?.TryGetValue(cmd.Id, out var v) == true) return v;
+        return cmd.DefaultInToolbar;
+    }
+
+    /// <summary>
+    /// Returns the IsChecked func for toolbar toggle buttons, or null for
+    /// non-toggle commands.
+    /// </summary>
+    private Func<bool>? GetToolbarToggleFunc(string id) => id switch {
+        "View.WrapLines" => () => _settings.WrapLines,
+        _ => null,
+    };
 
     private void ShowToolbarOverflowMenu() {
         var overflow = Toolbar.GetOverflowItems();
@@ -1443,10 +1386,10 @@ public partial class MainWindow : Window {
             if (captured.IsToggle && captured.IsChecked?.Invoke() == true) {
                 mi.Icon = CreateMenuCheckGlyph(true);
             }
-            var cmd = _commands.TryGet(captured.CommandId);
+            var cmd = Cmd.TryGet(captured.CommandId);
             mi.IsEnabled = cmd?.IsEnabled ?? true;
             mi.Click += (_, _) => {
-                _commands.Execute(captured.CommandId);
+                Cmd.Execute(captured.CommandId);
                 Toolbar.Refresh();
             };
             menu.Items.Add(mi);
@@ -1454,15 +1397,6 @@ public partial class MainWindow : Window {
         menu.Open(Toolbar);
     }
 
-    private void WireSearchMenu() {
-        MenuFind.Click += (_, _) => _commands.Execute("Find.Find");
-        MenuReplace.Click += (_, _) => _commands.Execute("Find.Replace");
-        MenuFindNext.Click += (_, _) => _commands.Execute("Find.FindNext");
-        MenuFindPrevious.Click += (_, _) => _commands.Execute("Find.FindPrevious");
-        MenuIncrementalSearch.Click += (_, _) => _commands.Execute("Find.IncrementalSearch");
-        MenuGoToLine.Click += (_, _) => _commands.Execute("Nav.GoToLine");
-        MenuCommandPalette.Click += (_, _) => _commands.Execute("Window.CommandPalette");
-    }
 
     // -------------------------------------------------------------------------
     // Stats / status bar
@@ -1602,10 +1536,10 @@ public partial class MainWindow : Window {
                 if (_activeTab is { } tab) {
                     if (IsCaretOnLastLine(tab)) {
                         // Disengage: move caret up one line.
-                        _commands.Execute("Nav.MoveUp");
+                        Cmd.Execute("Nav.MoveUp");
                     } else {
                         // Engage: move caret to end of document.
-                        _commands.Execute("Nav.MoveDocEnd");
+                        Cmd.Execute("Nav.MoveDocEnd");
                     }
                 }
             }
@@ -1619,9 +1553,9 @@ public partial class MainWindow : Window {
             var ii = doc.IndentInfo;
             var flyout = new Avalonia.Controls.MenuFlyout();
             var spItem = new MenuItem { Header = "Convert Indentation to Spaces" };
-            spItem.Click += (_, _) => _commands.Execute("Edit.IndentToSpaces");
+            spItem.Click += (_, _) => Cmd.Execute("Edit.IndentToSpaces");
             var tabItem = new MenuItem { Header = "Convert Indentation to Tabs" };
-            tabItem.Click += (_, _) => _commands.Execute("Edit.IndentToTabs");
+            tabItem.Click += (_, _) => Cmd.Execute("Edit.IndentToTabs");
             flyout.Items.Add(spItem);
             flyout.Items.Add(tabItem);
             flyout.ShowAt(BtnIndent);
@@ -2607,6 +2541,10 @@ public partial class MainWindow : Window {
     private void WireSettingsPanel() {
         SettingsPanel.Initialize(_settings, _keyBindings);
         SettingsPanel.KeyBindingChanged += () => SyncMenuGestures();
+        SettingsPanel.MenuOrToolbarChanged += () => {
+            ApplyAdvancedMenuVisibility();
+            InitializeToolbar();
+        };
         GearButton.Click += (_, _) => OpenSettings();
 
         SettingsPanel.SettingChanged += key => {
@@ -2685,7 +2623,7 @@ public partial class MainWindow : Window {
     }
 
     private async void OpenCommandPalette() {
-        var palette = new CommandPaletteWindow(_commands, _keyBindings, _settings, _theme);
+        var palette = new CommandPaletteWindow(_keyBindings, _settings, _theme);
         await palette.ShowDialog(this);
 
         if (palette.SelectedCommandId is { } cmdId) {

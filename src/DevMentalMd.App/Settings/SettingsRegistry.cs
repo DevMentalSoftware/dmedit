@@ -15,7 +15,7 @@ public static class SettingsRegistry {
         "Editor",
         "Scrollbar",
         "Advanced",
-        "Keyboard",
+        "Commands",
     ];
 
     public static readonly IReadOnlyList<SettingDescriptor> All = [
@@ -75,11 +75,11 @@ public static class SettingsRegistry {
             "Show developer performance statistics on the Status Bar.",
             "Advanced", SettingKind.Bool, true),
 
-        // -- Keyboard --
+        // -- Commands --
         new("ChordTimeoutMs", "Chord Timeout (ms)",
             "Time in milliseconds before a pending chord prefix is cancelled. " +
             "Press the first key of a chord, then the second key within this timeout.",
-            "Keyboard", SettingKind.Int, 3000, Min: 500, Max: 10000),
+            "Commands", SettingKind.Int, 3000, Min: 500, Max: 10000),
 
     ];
 }

@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using DevMentalMd.App.Commands;
+using Cmd = DevMentalMd.App.Commands.Commands;
 using DevMentalMd.App.Services;
 
 namespace DevMentalMd.App.Controls;
@@ -74,7 +75,6 @@ public sealed class ToolbarControl : Control {
     // -------------------------------------------------------------------------
 
     private IReadOnlyList<ToolbarItem> _items = Array.Empty<ToolbarItem>();
-    private CommandRegistry? _commands;
     private int _visibleCount;     // how many buttons fit (left-to-right)
     private bool _showOverflow;    // true when some buttons are hidden
     private double _contentOffsetX; // horizontal offset to center buttons
@@ -90,9 +90,8 @@ public sealed class ToolbarControl : Control {
     // Public API
     // -------------------------------------------------------------------------
 
-    public void SetItems(IReadOnlyList<ToolbarItem> items, CommandRegistry commands) {
+    public void SetItems(IReadOnlyList<ToolbarItem> items) {
         _items = items;
-        _commands = commands;
         ComputeLayout();
         InvalidateVisual();
     }
@@ -188,7 +187,7 @@ public sealed class ToolbarControl : Control {
 
     private void DrawButton(DrawingContext ctx, int index, double x, double y) {
         var item = _items[index];
-        var isEnabled = _commands?.TryGet(item.CommandId)?.IsEnabled ?? true;
+        var isEnabled = Cmd.TryGet(item.CommandId)?.IsEnabled ?? true;
         var isHovered = _hoverIndex == index && isEnabled;
         var isChecked = item.IsToggle && item.IsChecked?.Invoke() == true;
 

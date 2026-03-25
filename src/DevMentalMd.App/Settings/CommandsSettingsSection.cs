@@ -8,17 +8,18 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using DevMentalMd.App.Commands;
+using Cmd = DevMentalMd.App.Commands.Commands;
 using DevMentalMd.App.Services;
 
 namespace DevMentalMd.App.Settings;
 
 /// <summary>
 /// Custom settings section for keyboard shortcut configuration. Layout is
-/// defined in KeyboardSettingsSection.axaml — profile selector, name/shortcut
+/// defined in CommandsSettingsSection.axaml — profile selector, name/shortcut
 /// filter row, scrollable 3-column command list, and a bottom row with key
 /// capture box, conflict label, and assign/remove/reset buttons.
 /// </summary>
-public partial class KeyboardSettingsSection : UserControl {
+public partial class CommandsSettingsSection : UserControl {
     private readonly KeyBindingService _keyBindings;
     private readonly AppSettings _settings;
 
@@ -40,14 +41,19 @@ public partial class KeyboardSettingsSection : UserControl {
     /// </summary>
     public event Action? BindingChanged;
 
+    /// <summary>
+    /// Fired when a menu or toolbar checkbox changes.
+    /// </summary>
+    public event Action? MenuOrToolbarChanged;
+
     /// <summary>Design-time constructor for AXAML previewer.</summary>
-    public KeyboardSettingsSection() {
+    public CommandsSettingsSection() {
         _keyBindings = null!;
         _settings = null!;
         InitializeComponent();
     }
 
-    public KeyboardSettingsSection(KeyBindingService keyBindings, AppSettings settings) {
+    public CommandsSettingsSection(KeyBindingService keyBindings, AppSettings settings) {
         _keyBindings = keyBindings;
         _settings = settings;
         InitializeComponent();
@@ -187,8 +193,9 @@ public partial class KeyboardSettingsSection : UserControl {
         _commandRows.Clear();
         _categoryGroups.Clear();
 
-        foreach (var category in _keyBindings.Registry.Categories) {
-            var commands = _keyBindings.Registry.All
+        var categories = Cmd.All.Select(c => c.Category).Distinct().OrderBy(c => c);
+        foreach (var category in categories) {
+            var commands = Cmd.All
                 .Where(c => c.Category == category)
                 .ToList();
             if (commands.Count == 0) {
@@ -225,6 +232,47 @@ public partial class KeyboardSettingsSection : UserControl {
         var g2Modified = IsBindingModified(cmd.Id, 2);
         var isReserved = cmd.Id.StartsWith("Menu.", StringComparison.Ordinal);
 
+        // -- Menu checkbox --
+        var menuCb = new CheckBox {
+            IsChecked = GetMenuChecked(cmd),
+            IsEnabled = cmd.Menu != CommandMenu.None,
+            MinWidth = 0, MinHeight = 0,
+            Padding = new Thickness(0),
+            Margin = new Thickness(0, 0, 2, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(menuCb, "Show in menu");
+        menuCb.IsCheckedChanged += (_, _) => {
+            _settings.MenuOverrides ??= new();
+            _settings.MenuOverrides[cmd.Id] = menuCb.IsChecked == true;
+            _settings.ScheduleSave();
+            MenuOrToolbarChanged?.Invoke();
+        };
+        // Left-click only guard.
+        menuCb.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, (_, e) => {
+            if (!e.GetCurrentPoint(menuCb).Properties.IsLeftButtonPressed) e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
+        // -- Toolbar checkbox --
+        var toolbarCb = new CheckBox {
+            IsChecked = GetToolbarChecked(cmd),
+            IsEnabled = cmd.ToolbarGlyph != null,
+            MinWidth = 0, MinHeight = 0,
+            Padding = new Thickness(0),
+            Margin = new Thickness(0, 0, 2, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(toolbarCb, "Show in toolbar");
+        toolbarCb.IsCheckedChanged += (_, _) => {
+            _settings.ToolbarOverrides ??= new();
+            _settings.ToolbarOverrides[cmd.Id] = toolbarCb.IsChecked == true;
+            _settings.ScheduleSave();
+            MenuOrToolbarChanged?.Invoke();
+        };
+        toolbarCb.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, (_, e) => {
+            if (!e.GetCurrentPoint(toolbarCb).Properties.IsLeftButtonPressed) e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
         var nameText = new TextBlock {
             Text = cmd.DisplayName,
             FontSize = 13,
@@ -257,16 +305,19 @@ public partial class KeyboardSettingsSection : UserControl {
         var btn1 = CreateSlotButton(cmd.Id, 1, g1Modified, gestureText, isReserved);
         var btn2 = CreateSlotButton(cmd.Id, 2, g2Modified, gesture2Text, isReserved);
 
-        // 6-column grid: Name | Gesture1 | Btn1 | Gesture2 | Btn2
-        // All non-name columns are fixed width so columns stay aligned.
+        // 8-column grid: MenuCb | ToolbarCb | Name | Gesture1 | Btn1 | Gesture2 | Btn2
         var grid = new Grid {
-            ColumnDefinitions = ColumnDefinitions.Parse("*,104,26,104,26"),
+            ColumnDefinitions = ColumnDefinitions.Parse("22,22,*,104,26,104,26"),
         };
-        Grid.SetColumn(nameText, 0);
-        Grid.SetColumn(gestureLabel, 1);
-        Grid.SetColumn(btn1, 2);
-        Grid.SetColumn(gesture2Label, 3);
-        Grid.SetColumn(btn2, 4);
+        Grid.SetColumn(menuCb, 0);
+        Grid.SetColumn(toolbarCb, 1);
+        Grid.SetColumn(nameText, 2);
+        Grid.SetColumn(gestureLabel, 3);
+        Grid.SetColumn(btn1, 4);
+        Grid.SetColumn(gesture2Label, 5);
+        Grid.SetColumn(btn2, 6);
+        grid.Children.Add(menuCb);
+        grid.Children.Add(toolbarCb);
         grid.Children.Add(nameText);
         grid.Children.Add(gestureLabel);
         grid.Children.Add(btn1);
@@ -294,6 +345,16 @@ public partial class KeyboardSettingsSection : UserControl {
         };
 
         return border;
+    }
+
+    private bool GetMenuChecked(Command cmd) {
+        if (_settings.MenuOverrides?.TryGetValue(cmd.Id, out var v) == true) return v;
+        return cmd.Menu != CommandMenu.None;
+    }
+
+    private bool GetToolbarChecked(Command cmd) {
+        if (_settings.ToolbarOverrides?.TryGetValue(cmd.Id, out var v) == true) return v;
+        return cmd.DefaultInToolbar;
     }
 
     /// <summary>

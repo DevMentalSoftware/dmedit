@@ -12,7 +12,7 @@ namespace DevMentalMd.App.Settings;
 public partial class SettingsControl : UserControl {
     private AppSettings? _settings;
     private KeyBindingService? _keyBindings;
-    private KeyboardSettingsSection? _keyboardSection;
+    private CommandsSettingsSection? _commandsSection;
     private readonly Dictionary<string, List<Border>> _rowsByCategory = new();
     private readonly Dictionary<string, TextBlock> _headersByCategory = new();
     private readonly List<Border> _allRows = [];
@@ -28,6 +28,11 @@ public partial class SettingsControl : UserControl {
     /// Fired when any keyboard binding changes.
     /// </summary>
     public event Action? KeyBindingChanged;
+
+    /// <summary>
+    /// Fired when a menu or toolbar checkbox changes in the Commands section.
+    /// </summary>
+    public event Action? MenuOrToolbarChanged;
 
     public SettingsControl() {
         InitializeComponent();
@@ -46,7 +51,7 @@ public partial class SettingsControl : UserControl {
 
         ContentScroll.PropertyChanged += (_, e) => {
             if (e.Property == BoundsProperty) {
-                UpdateKeyboardSectionHeight();
+                UpdateCommandsSectionHeight();
             }
         };
     }
@@ -79,8 +84,8 @@ public partial class SettingsControl : UserControl {
         if (_settings is null) return;
 
         foreach (var cat in SettingsRegistry.Categories) {
-            // "Keyboard" category gets a custom section instead of standard rows.
-            if (cat == "Keyboard") {
+            // "Commands" category gets a custom section instead of standard rows.
+            if (cat == "Commands") {
                 _rowsByCategory[cat] = [];
                 var kbHeader = new TextBlock {
                     Text = cat,
@@ -93,10 +98,11 @@ public partial class SettingsControl : UserControl {
                 _headersByCategory[cat] = kbHeader;
                 SettingsContent.Children.Add(kbHeader);
                 if (_keyBindings != null) {
-                    _keyboardSection = new KeyboardSettingsSection(_keyBindings, _settings);
-                    _keyboardSection.IsVisible = false;
-                    _keyboardSection.BindingChanged += () => KeyBindingChanged?.Invoke();
-                    SettingsContent.Children.Add(_keyboardSection);
+                    _commandsSection = new CommandsSettingsSection(_keyBindings, _settings);
+                    _commandsSection.IsVisible = false;
+                    _commandsSection.BindingChanged += () => KeyBindingChanged?.Invoke();
+                    _commandsSection.MenuOrToolbarChanged += () => MenuOrToolbarChanged?.Invoke();
+                    SettingsContent.Children.Add(_commandsSection);
                 }
                 continue;
             }
@@ -149,23 +155,23 @@ public partial class SettingsControl : UserControl {
     private void ApplyFilter() {
         var search = SearchBox.Text?.Trim() ?? "";
         var showAllCategories = _selectedCategory == "All Settings";
-        var isKeyboardSelected = _selectedCategory == "Keyboard";
+        var isCommandsSelected = _selectedCategory == "Commands";
 
         // Hide/show the keyboard section and its header based on category selection.
-        var showKeyboard = isKeyboardSelected
+        var showCommands = isCommandsSelected
             || (showAllCategories && string.IsNullOrEmpty(search));
-        if (_keyboardSection != null)
-            _keyboardSection.IsVisible = showKeyboard;
-        if (_headersByCategory.TryGetValue("Keyboard", out var kbH))
-            kbH.IsVisible = showKeyboard;
-        if (showKeyboard && _keyboardSection != null)
-            Dispatcher.UIThread.Post(UpdateKeyboardSectionHeight);
+        if (_commandsSection != null)
+            _commandsSection.IsVisible = showCommands;
+        if (_headersByCategory.TryGetValue("Commands", out var kbH))
+            kbH.IsVisible = showCommands;
+        if (showCommands && _commandsSection != null)
+            Dispatcher.UIThread.Post(UpdateCommandsSectionHeight);
 
         // Hide/show standard settings rows.
         foreach (var cat in SettingsRegistry.Categories) {
-            if (cat == "Keyboard") continue;
+            if (cat == "Commands") continue;
 
-            var showCategory = (showAllCategories || _selectedCategory == cat) && !isKeyboardSelected;
+            var showCategory = (showAllCategories || _selectedCategory == cat) && !isCommandsSelected;
             var anyVisible = false;
 
             if (_rowsByCategory.TryGetValue(cat, out var rows)) {
@@ -187,18 +193,18 @@ public partial class SettingsControl : UserControl {
         }
     }
 
-    private void UpdateKeyboardSectionHeight() {
-        if (_keyboardSection == null || !_keyboardSection.IsVisible) return;
+    private void UpdateCommandsSectionHeight() {
+        if (_commandsSection == null || !_commandsSection.IsVisible) return;
 
         var viewportHeight = ContentScroll.Viewport.Height;
         if (viewportHeight <= 0) return;
 
-        var headerHeight = _headersByCategory.TryGetValue("Keyboard", out var kbH)
+        var headerHeight = _headersByCategory.TryGetValue("Commands", out var kbH)
             ? kbH.Bounds.Height + kbH.Margin.Top + kbH.Margin.Bottom : 0;
-        var sectionMargin = _keyboardSection.Margin.Top + _keyboardSection.Margin.Bottom;
+        var sectionMargin = _commandsSection.Margin.Top + _commandsSection.Margin.Bottom;
         var available = viewportHeight - headerHeight - sectionMargin
             - SettingsContent.Margin.Bottom;
-        _keyboardSection.SetAvailableHeight(available);
+        _commandsSection.SetAvailableHeight(available);
     }
 
     /// <summary>
@@ -208,7 +214,7 @@ public partial class SettingsControl : UserControl {
     public void ResetState() {
         SearchBox.Text = "";
         ContentScroll.Offset = default;
-        _keyboardSection?.ResetState();
+        _commandsSection?.ResetState();
     }
 
     /// <summary>
@@ -233,7 +239,7 @@ public partial class SettingsControl : UserControl {
             ThemeSettingRow(row, theme);
         }
 
-        _keyboardSection?.ApplyTheme(theme);
+        _commandsSection?.ApplyTheme(theme);
     }
 
     /// <summary>

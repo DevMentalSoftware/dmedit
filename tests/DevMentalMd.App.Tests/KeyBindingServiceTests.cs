@@ -5,8 +5,10 @@ using DevMentalMd.App.Services;
 namespace DevMentalMd.App.Tests;
 
 public class KeyBindingServiceTests {
+    public KeyBindingServiceTests() => TestCommands.WireAll();
+
     private static KeyBindingService CreateService(AppSettings? settings = null) =>
-        new(settings ?? new AppSettings(), TestCommands.CreateRegistry());
+        new(settings ?? new AppSettings());
 
     // =================================================================
     // Primary gesture (existing tests)
@@ -152,6 +154,7 @@ public class KeyBindingServiceTests {
     [Fact]
     public void ResolveGesture2() {
         var svc = CreateService();
+        svc.SetBinding2("File.Exit", new KeyGesture(Key.Q, KeyModifiers.Control));
         var id = svc.Resolve(Key.Q, KeyModifiers.Control);
         Assert.Equal("File.Exit", id);
     }
@@ -159,6 +162,7 @@ public class KeyBindingServiceTests {
     [Fact]
     public void GetGesture2ReturnsSecondary() {
         var svc = CreateService();
+        svc.SetBinding2("File.Exit", new KeyGesture(Key.Q, KeyModifiers.Control));
         var g2 = svc.GetGesture2("File.Exit");
         Assert.NotNull(g2);
         Assert.Equal(Key.Q, g2.First.Key);
@@ -168,6 +172,7 @@ public class KeyBindingServiceTests {
     [Fact]
     public void GetGesture2TextFormatsCorrectly() {
         var svc = CreateService();
+        svc.SetBinding2("File.Exit", new KeyGesture(Key.Q, KeyModifiers.Control));
         var text = svc.GetGesture2Text("File.Exit");
         Assert.NotNull(text);
         Assert.Contains("Q", text, StringComparison.OrdinalIgnoreCase);
@@ -213,22 +218,33 @@ public class KeyBindingServiceTests {
         svc.SetBinding2("File.Exit", new KeyGesture(Key.W, KeyModifiers.Control));
         svc.ResetBinding("File.Exit");
 
+        // Primary restored to default (Alt+F4).
         Assert.Equal("File.Exit", svc.Resolve(Key.F4, KeyModifiers.Alt));
-        Assert.Equal("File.Exit", svc.Resolve(Key.Q, KeyModifiers.Control));
+        // Gesture2 override cleared — Default profile has no gesture2 for File.Exit,
+        // so Ctrl+W reverts to whatever its default owner is (not File.Exit).
+        Assert.NotEqual("File.Exit", svc.Resolve(Key.W, KeyModifiers.Control));
+        Assert.Null(svc.GetGesture2("File.Exit"));
     }
 
     [Fact]
     public void ResetAllRestoresGesture2Defaults() {
         var svc = CreateService();
-        svc.SetBinding2("File.Exit", null);
-        svc.ResetAll();
-
+        // Set a gesture2 override, then reset — should return to profile default
+        // (which is no gesture2 for File.Exit in Default profile).
+        svc.SetBinding2("File.Exit", new KeyGesture(Key.Q, KeyModifiers.Control));
         Assert.Equal("File.Exit", svc.Resolve(Key.Q, KeyModifiers.Control));
+
+        svc.ResetAll();
+        Assert.Null(svc.Resolve(Key.Q, KeyModifiers.Control));
+        Assert.Null(svc.GetGesture2("File.Exit"));
     }
 
     [Fact]
     public void ConflictDetectedAcrossSlots() {
         var svc = CreateService();
+        // Set a gesture2 on File.Exit, then check that binding Ctrl+Q to
+        // another command detects the conflict.
+        svc.SetBinding2("File.Exit", new KeyGesture(Key.Q, KeyModifiers.Control));
         var conflict = svc.FindConflict(
             new KeyGesture(Key.Q, KeyModifiers.Control), "Edit.Undo");
         Assert.Equal("File.Exit", conflict);
