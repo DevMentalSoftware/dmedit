@@ -8,10 +8,21 @@
 	<!-- No duplicate hover style needed — FluentTextBoxButton handles it. -->
 	<StackPanel Margin="12,8,12,8">
 
-		<!-- Profile selector -->
-		<ComboBox x:Name="ProfileCombo"
-		          Margin="0,0,0,6"
-		          MinWidth="130" />
+		<Border x:Name="HideAdvancedRow"
+		        Margin="0,0,0,6"
+		        Padding="9,4,4,4"
+		        BorderThickness="3,0,0,0" />
+		
+		<!-- Profile selector and reset-all button -->
+		<StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+			<ComboBox x:Name="ProfileCombo"
+			          MinWidth="130" />
+			<Button x:Name="ResetAllBtn"
+			        Margin="8,0,0,0"
+			        VerticalAlignment="Center"
+			        ToolTip.Tip="Reset all commands to defaults" />
+		</StackPanel>
+
 
 		<!-- Filter row: fixed column widths (230 name, 160 shortcut filter, * remainder)
 		     tuned to visually align with the command list columns below. -->
@@ -28,7 +39,7 @@
 				                    IsReadOnly="True" />
 				<ToggleButton x:Name="ModifiedFilterBtn"
 				              Grid.Column="2"
-				              Content="M"
+				              Content="S"
 				              FontSize="16"
 				              FontWeight="SemiBold"
 				              Padding="7,3"

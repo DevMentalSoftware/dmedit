@@ -16,21 +16,41 @@ public static class Commands {
     // File
     // =================================================================
 
-    public static readonly Command FileNew = new("File", "New", "_New");
-    public static readonly Command FileOpen = new("File", "Open", "_Open\u2026");
+    public static readonly Command FileNew = new("File", "New", "_New") {
+        ToolbarGlyph = IconGlyphs.New, ToolbarTooltip = "New",
+    };
+    public static readonly Command FileOpen = new("File", "Open", "_Open\u2026") {
+        ToolbarGlyph = IconGlyphs.Open, ToolbarTooltip = "Open",
+    };
     public static readonly Command FileSave = new("File", "Save", "_Save") {
         ToolbarGlyph = IconGlyphs.Save, ToolbarTooltip = "Save",
     };
-    public static readonly Command FileSaveAs = new("File", "SaveAs", "Save _As\u2026");
+    public static readonly Command FileSaveAs = new("File", "SaveAs", "Save _As\u2026") {
+        ToolbarGlyph = IconGlyphs.SaveAs, ToolbarTooltip = "Save As",
+    };
     public static readonly Command FileSaveAll = new("File", "SaveAll", "Save A_ll") { IsAdvanced = true };
-    public static readonly Command FileRevertFile = new("File", "RevertFile", "_Revert File") { IsAdvanced = true };
-    public static readonly Command FilePrint = new("File", "Print", "_Print\u2026");
-    public static readonly Command FileSaveAsPdf = new("File", "SaveAsPdf", "Save As P_DF\u2026") { IsAdvanced = true };
+    public static readonly Command FileRevertFile = new("File", "RevertFile", "_Revert File") {
+        IsAdvanced = true,
+        ToolbarGlyph = IconGlyphs.RevertFile, ToolbarTooltip = "Revert File",
+    };
+    public static readonly Command FilePrint = new("File", "Print", "_Print\u2026") {
+        ToolbarGlyph = IconGlyphs.Print, ToolbarTooltip = "Print",
+    };
+    public static readonly Command FileSaveAsPdf = new("File", "SaveAsPdf", "Save As P_DF\u2026") {
+        IsAdvanced = true,
+        ToolbarGlyph = IconGlyphs.SaveAsPdf, ToolbarTooltip = "Save As PDF",
+    };
     public static readonly Command FileClose = new("File", "Close", "_Close");
     public static readonly Command FileCloseAll = new("File", "CloseAll", "Close A_ll") { IsAdvanced = true };
     public static readonly Command FileExit = new("File", "Exit", "E_xit");
-    public static readonly Command FileToggleReadOnly = new("File", "ToggleReadOnly", "Toggle Read Only") { IsAdvanced = true };
-    public static readonly Command FileReloadFile = new("File", "ReloadFile", "Reload File") { IsAdvanced = true };
+    public static readonly Command FileToggleReadOnly = new("File", "ToggleReadOnly", "Toggle Read _Only") {
+        IsAdvanced = true,
+        ToolbarGlyph = IconGlyphs.ToggleReadOnly, ToolbarTooltip = "Toggle Read Only",
+    };
+    public static readonly Command FileReloadFile = new("File", "ReloadFile", "Re_load File") {
+        IsAdvanced = true,
+        ToolbarGlyph = IconGlyphs.ReloadFile, ToolbarTooltip = "Reload File",
+    };
     public static readonly Command FileClearRecentFiles = new("File", "ClearRecentFiles", "Clear Recent Files") { IsAdvanced = true };
 
     // =================================================================
@@ -62,6 +82,7 @@ public static class Commands {
     };
     public static readonly Command EditClipboardRing = new("Edit", "ClipboardRing", "Clipboard _Ring") {
         IsAdvanced = true,
+        ToolbarGlyph = IconGlyphs.ClipboardRing, ToolbarTooltip = "Clipboard Ring",
     };
     public static readonly Command EditDelete = new("Edit", "Delete", "De_lete") { RequiresEditor = true };
     public static readonly Command EditSelectAll = new("Edit", "SelectAll", "Select _All") { RequiresEditor = true };
@@ -131,37 +152,53 @@ public static class Commands {
     public static readonly Command SearchFind = new("Search", "Find", "_Find") {
         ToolbarGlyph = IconGlyphs.Search, ToolbarTooltip = "Find",
     };
-    public static readonly Command SearchReplace = new("Search", "Replace", "_Replace");
+    public static readonly Command SearchReplace = new("Search", "Replace", "_Replace") {
+        ToolbarGlyph = IconGlyphs.Replace, ToolbarTooltip = "Replace",
+    };
     public static readonly Command SearchFindNext = new("Search", "FindNext", "Find _Next");
     public static readonly Command SearchFindPrevious = new("Search", "FindPrevious", "Find _Previous");
-    public static readonly Command SearchFindNextSelection = new("Search", "FindNextSelection", "Find Next Selection") {
+    public static readonly Command SearchFindNextSelection = new("Search", "FindNextSelection", "Find Next _Selection") {
         IsAdvanced = true,
     };
-    public static readonly Command SearchFindPreviousSelection = new("Search", "FindPreviousSelection", "Find Previous Selection") {
+    public static readonly Command SearchFindPreviousSelection = new("Search", "FindPreviousSelection", "Find Previous Se_lection") {
         IsAdvanced = true,
     };
     public static readonly Command SearchIncrementalSearch = new("Search", "IncrementalSearch", "_Incremental Search") {
         IsAdvanced = true,
     };
-    public static readonly Command SearchGoToLine = new("Search", "GoToLine", "_Go to Line");
+    public static readonly Command SearchGoToLine = new("Search", "GoToLine", "_Go to Line") {
+        ToolbarGlyph = IconGlyphs.GoToLine, ToolbarTooltip = "Go to Line",
+    };
     public static readonly Command SearchCommandPalette = new("Search", "CommandPalette", "Command _Palette") {
         IsAdvanced = true,
+        ToolbarGlyph = IconGlyphs.CommandPalette, ToolbarTooltip = "Command Palette",
     };
 
     // =================================================================
     // View
     // =================================================================
 
-    public static readonly Command ViewLineNumbers = new("View", "LineNumbers", "_Line Numbers") { IsAdvanced = true };
+    public static readonly Command ViewLineNumbers = new("View", "LineNumbers", "_Line Numbers") {
+        IsAdvanced = true,
+        ToolbarGlyph = IconGlyphs.LineNumbers, ToolbarTooltip = "Line Numbers",
+    };
     public static readonly Command ViewStatusBar = new("View", "StatusBar", "_Status Bar");
     public static readonly Command ViewWrapLines = new("View", "WrapLines", "_Wrap Lines") {
         DefaultInToolbar = true, ToolbarGlyph = IconGlyphs.Wrap, ToolbarTooltip = "Wrap Lines",
         IsToolbarToggle = true,
     };
-    public static readonly Command ViewWhitespace = new("View", "Whitespace", "Show W_hitespace");
-    public static readonly Command ViewZoomIn = new("View", "ZoomIn", "Zoom _In");
-    public static readonly Command ViewZoomOut = new("View", "ZoomOut", "Zoom _Out");
-    public static readonly Command ViewZoomReset = new("View", "ZoomReset", "Zoom _Reset");
+    public static readonly Command ViewWhitespace = new("View", "Whitespace", "Show W_hitespace") {
+        ToolbarGlyph = IconGlyphs.Whitespace, ToolbarTooltip = "Show Whitespace",
+    };
+    public static readonly Command ViewZoomIn = new("View", "ZoomIn", "Zoom _In") {
+        ToolbarGlyph = IconGlyphs.ZoomIn, ToolbarTooltip = "Zoom In",
+    };
+    public static readonly Command ViewZoomOut = new("View", "ZoomOut", "Zoom _Out") {
+        ToolbarGlyph = IconGlyphs.ZoomOut, ToolbarTooltip = "Zoom Out",
+    };
+    public static readonly Command ViewZoomReset = new("View", "ZoomReset", "Zoom _Reset") {
+        ToolbarGlyph = IconGlyphs.ZoomReset, ToolbarTooltip = "Zoom Reset",
+    };
 
     // =================================================================
     // Nav
@@ -229,7 +266,10 @@ public static class Commands {
 
     public static readonly Command WindowNextTab = new("Window", "NextTab", "Next Tab");
     public static readonly Command WindowPrevTab = new("Window", "PrevTab", "Previous Tab");
-    public static readonly Command WindowSettings = new("Window", "Settings");
+    public static readonly Command WindowSettings = new("Window", "Settings") {
+        DefaultInToolbar = true, ToolbarFixed = true,
+        ToolbarGlyph = IconGlyphs.Settings, ToolbarTooltip = "Settings",
+    };
 
     // =================================================================
     // Menu pseudo-commands (Alt+letter access keys)
@@ -302,6 +342,8 @@ public static class Commands {
         Item(FileSaveAs);
         Item(FileSaveAll);
         Item(FileRevertFile);
+        Item(FileReloadFile);
+        Item(FileToggleReadOnly);
         Sep();
         Item(FilePrint);
         Item(FileSaveAsPdf);
@@ -349,6 +391,8 @@ public static class Commands {
         Sep();
         Item(SearchFindNext);
         Item(SearchFindPrevious);
+        Item(SearchFindNextSelection);
+        Item(SearchFindPreviousSelection);
         Sep();
         Item(SearchIncrementalSearch);
         Sep();
@@ -372,8 +416,6 @@ public static class Commands {
         Item(ViewScrollLineDown);
 
         // -- Non-menu commands --
-        Add(FileToggleReadOnly);
-        Add(FileReloadFile);
         Add(FileClearRecentFiles);
 
         Add(EditBackspace);
@@ -386,8 +428,7 @@ public static class Commands {
         Add(EditIndentToSpaces);
         Add(EditIndentToTabs);
 
-        Add(SearchFindNextSelection);
-        Add(SearchFindPreviousSelection);
+
 
         Add(NavFocusEditor);
         Add(NavMoveLeft);

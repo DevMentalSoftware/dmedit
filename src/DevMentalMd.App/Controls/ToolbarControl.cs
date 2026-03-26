@@ -169,6 +169,9 @@ public sealed class ToolbarControl : Control {
 
     public override void Render(DrawingContext ctx) {
         base.Render(ctx);
+        // Fill the full bounds so Avalonia treats the entire surface as hit-testable.
+        // Without this, pointer events only fire over rendered glyph pixels.
+        ctx.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
         if (_items.Count == 0) return;
 
         var h = Bounds.Height;

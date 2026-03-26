@@ -34,6 +34,8 @@
 						<MenuItem Header="Save A_ll" x:Name="MenuSaveAll" />
 						<Separator />
 						<MenuItem Header="_Revert File" x:Name="MenuRevertFile" />
+						<MenuItem Header="Re_load File" x:Name="MenuReloadFile" />
+						<MenuItem Header="Toggle Read _Only" x:Name="MenuToggleReadOnly" />
 						<Separator />
 						<MenuItem Header="_Print…" x:Name="MenuPrint" />
 						<MenuItem Header="Save As P_DF…" x:Name="MenuSaveAsPdf" />
@@ -81,6 +83,8 @@
 						<Separator />
 						<MenuItem Header="Find _Next" x:Name="MenuFindNext" />
 						<MenuItem Header="Find _Previous" x:Name="MenuFindPrevious" />
+						<MenuItem Header="Find Next _Selection" x:Name="MenuFindNextSelection" />
+						<MenuItem Header="Find Previous Se_lection" x:Name="MenuFindPreviousSelection" />
 						<Separator />
 						<MenuItem Header="_Incremental Search" x:Name="MenuIncrementalSearch" />
 						<Separator />

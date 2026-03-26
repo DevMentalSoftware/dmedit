@@ -112,6 +112,8 @@ public partial class MainWindow : Window {
         WireMenu(MenuSaveAs, Cmd.FileSaveAs);
         WireMenu(MenuSaveAll, Cmd.FileSaveAll);
         WireMenu(MenuRevertFile, Cmd.FileRevertFile);
+        WireMenu(MenuReloadFile, Cmd.FileReloadFile);
+        WireMenu(MenuToggleReadOnly, Cmd.FileToggleReadOnly);
         WireMenu(MenuPrint, Cmd.FilePrint);
         WireMenu(MenuSaveAsPdf, Cmd.FileSaveAsPdf);
         WireMenu(MenuClose, Cmd.FileClose);
@@ -145,6 +147,8 @@ public partial class MainWindow : Window {
         WireMenu(MenuReplace, Cmd.SearchReplace);
         WireMenu(MenuFindNext, Cmd.SearchFindNext);
         WireMenu(MenuFindPrevious, Cmd.SearchFindPrevious);
+        WireMenu(MenuFindNextSelection, Cmd.SearchFindNextSelection);
+        WireMenu(MenuFindPreviousSelection, Cmd.SearchFindPreviousSelection);
         WireMenu(MenuIncrementalSearch, Cmd.SearchIncrementalSearch);
         WireMenu(MenuGoToLine, Cmd.SearchGoToLine);
         WireMenu(MenuCommandPalette, Cmd.SearchCommandPalette);
@@ -336,7 +340,8 @@ public partial class MainWindow : Window {
         }
         var closedIdx = _tabs.IndexOf(tab);
         _tabs.Remove(tab);
-        if (_tabs.Count == 0) {
+        var hasDocumentTab = _tabs.Any(t => !t.IsSettings);
+        if (!hasDocumentTab) {
             var newTab = AddTab(TabState.CreateUntitled(_tabs));
             SwitchToTab(newTab);
         } else if (_activeTab == tab) {
@@ -1067,9 +1072,11 @@ public partial class MainWindow : Window {
     private void ApplyAdvancedMenuVisibility() {
         var hide = _settings.HideAdvancedMenus;
         foreach (var (item, cmd) in _menuCommandBindings) {
-            // Per-command MenuOverrides take precedence over IsAdvanced.
-            if (_settings.MenuOverrides?.TryGetValue(cmd.Id, out var userVisible) == true) {
-                item.IsVisible = userVisible;
+            // Explicit per-command overrides (true/false) take precedence.
+            // null = use default behavior.
+            if (_settings.MenuOverrides?.TryGetValue(cmd.Id, out var userVisible) == true
+                && userVisible.HasValue) {
+                item.IsVisible = userVisible.Value;
             } else if (cmd.IsAdvanced) {
                 item.IsVisible = !hide;
             }
@@ -1336,7 +1343,7 @@ public partial class MainWindow : Window {
     private void InitializeToolbar() {
         // Toolbar order = position in Commands.All (the master list).
         var items = Cmd.All
-            .Where(c => IsInToolbar(c) && c.ToolbarGlyph != null)
+            .Where(c => IsInToolbar(c) && c.ToolbarGlyph != null && !c.ToolbarFixed)
             .Select(c => new ToolbarItem {
                 CommandId = c.Id,
                 Glyph = c.ToolbarGlyph!,
@@ -1372,11 +1379,16 @@ public partial class MainWindow : Window {
     };
 
     private void ShowToolbarOverflowMenu() {
+        // If the menu is already open, close it (toggle behavior).
+        if (Toolbar.ContextMenu is { IsOpen: true }) {
+            Toolbar.ContextMenu.Close();
+            return;
+        }
+
         var overflow = Toolbar.GetOverflowItems();
         if (overflow.Count == 0) return;
 
         var menu = new ContextMenu {
-            PlacementTarget = Toolbar,
             Placement = PlacementMode.Bottom,
             PlacementRect = Toolbar.OverflowButtonRect,
         };
@@ -1394,6 +1406,8 @@ public partial class MainWindow : Window {
             };
             menu.Items.Add(mi);
         }
+        // Assign as ContextMenu for proper light-dismiss behavior.
+        Toolbar.ContextMenu = menu;
         menu.Open(Toolbar);
     }
 

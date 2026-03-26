@@ -20,10 +20,6 @@ public static class SettingsRegistry {
 
     public static readonly IReadOnlyList<SettingDescriptor> All = [
         // -- Display --
-        new("HideAdvancedMenus", "Hide Advanced Menus",
-            "Hide menu items and commands not typically found in simple text editors.",
-            "Display", SettingKind.Bool, true),
-
         new("WrapLinesAt", "Wrap Lines At",
             "When wrapping is enabled we can force wrapping at a particular width when the window is wider than that width.",
             "Display", SettingKind.Int, 100, Min: 0, Max: 10000),

@@ -52,6 +52,25 @@ static class IconGlyphs {
     public const string Save = "\uEA28";
     public const string Search = "\uEA7C";
 
+    // Placeholder toolbar icons (TODO: assign real glyphs)
+    public const string ClipboardRing  = "\uE331";
+    public const string New            = "\uE331";
+    public const string Open           = "\uE331";
+    public const string SaveAs         = "\uE331";
+    public const string RevertFile     = "\uE331";
+    public const string Print          = "\uE331";
+    public const string SaveAsPdf      = "\uE331";
+    public const string ToggleReadOnly = "\uE331";
+    public const string ReloadFile     = "\uE331";
+    public const string Replace        = "\uE331";
+    public const string GoToLine       = "\uE331";
+    public const string CommandPalette = "\uE331";
+    public const string LineNumbers    = "\uE331";
+    public const string Whitespace     = "\uE331";
+    public const string ZoomIn         = "\uE331";
+    public const string ZoomOut        = "\uE331";
+    public const string ZoomReset      = "\uE331";
+
     // Conflict / error indicators
     public const string ErrorCircle  = "\uF4A0";  // TODO: placeholder — pick a better error/warning glyph
 

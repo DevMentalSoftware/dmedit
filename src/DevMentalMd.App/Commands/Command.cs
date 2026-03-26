@@ -51,6 +51,10 @@ public sealed class Command {
     public string? ToolbarTooltip { get; init; }
     public bool IsToolbarToggle { get; init; }
 
+    /// <summary>When true the command is always shown in the toolbar and the user
+    /// cannot disable it via Settings (e.g. the Settings gear icon).</summary>
+    public bool ToolbarFixed { get; init; }
+
     // -- Menu placement (set by Commands.DefineMenus) --
 
     /// <summary>Submenu name (e.g. "Transform Case", "Zoom"), or null for top-level items.</summary>

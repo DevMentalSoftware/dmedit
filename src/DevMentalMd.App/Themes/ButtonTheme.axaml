@@ -19,8 +19,8 @@
 			<SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
 			<SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="Transparent" />
 			<SolidColorBrush x:Key="ToggleButtonBackground" Color="Transparent" />
-			<SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#20808080" />
-			<SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="#30808080" />
+			<SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#D9D9D9" />
+			<SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="#D9D9D9" />
 			<SolidColorBrush x:Key="ToggleButtonBorderBrush" Color="Transparent" />
 			<SolidColorBrush x:Key="ToggleButtonBorderBrushPointerOver" Color="Transparent" />
 			<SolidColorBrush x:Key="ToggleButtonBorderBrushPressed" Color="Transparent" />
@@ -39,8 +39,8 @@
 			<SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
 			<SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="Transparent" />
 			<SolidColorBrush x:Key="ToggleButtonBackground" Color="Transparent" />
-			<SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#20808080" />
-			<SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="#30808080" />
+			<SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#4A4A4A" />
+			<SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="#4A4A4A" />
 			<SolidColorBrush x:Key="ToggleButtonBorderBrush" Color="Transparent" />
 			<SolidColorBrush x:Key="ToggleButtonBorderBrushPointerOver" Color="Transparent" />
 			<SolidColorBrush x:Key="ToggleButtonBorderBrushPressed" Color="Transparent" />

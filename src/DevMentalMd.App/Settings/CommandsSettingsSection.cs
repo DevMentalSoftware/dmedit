@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Controls.Primitives;
 using Avalonia.Threading;
 using DevMentalMd.App.Commands;
 using Cmd = DevMentalMd.App.Commands.Commands;
@@ -30,6 +31,8 @@ public partial class CommandsSettingsSection : UserControl {
     private bool _reservedConflict;           // captured gesture conflicts with a Menu.* reserved binding
     private EditorTheme _theme = EditorTheme.Light;
     private KeyGesture? _findFirstGesture;   // first key of a potential chord in FindShortcut
+
+    private TextBlock? _hideAdvancedGlyph;     // checkmark glyph for "Hide Advanced Menus"
 
     // Tracks all command row borders for selection highlighting.
     private readonly List<(Border border, string commandId)> _commandRows = [];
@@ -108,6 +111,8 @@ public partial class CommandsSettingsSection : UserControl {
             }
         };
 
+        BuildHideAdvancedRow();
+
         ModifiedFilterBtn.IsCheckedChanged += (_, _) => {
             _showModifiedOnly = ModifiedFilterBtn.IsChecked == true;
             ApplyFilter();
@@ -138,12 +143,32 @@ public partial class CommandsSettingsSection : UserControl {
         AssignBtn.Click += OnAssign;
 
         // =====================================================================
+        // Reset-all button: clears all bindings + menu/toolbar overrides
+        // =====================================================================
+        ResetAllBtn.Content = new TextBlock {
+            Text = IconGlyphs.ArrowUndo,
+            FontFamily = IconGlyphs.Family,
+            FontSize = 14,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+        };
+        ResetAllBtn.Click += (_, _) => {
+            _keyBindings.ResetAll();
+            _settings.MenuOverrides = null;
+            _settings.ToolbarOverrides = null;
+            _settings.ScheduleSave();
+            MenuOrToolbarChanged?.Invoke();
+            RefreshAfterChange();
+        };
+
+        // =====================================================================
         // Initial build
         // =====================================================================
         BuildCommandList();
         UpdateButtonStates();
+        UpdateResetAllVisibility();
         ApplyTheme(_theme);
-        
+
         // Guard against an unbounded layout before SetAvailableHeight is first called.
         CommandScroll.MaxHeight = 500;
         CommandScroll.MinHeight = 500;
@@ -232,46 +257,75 @@ public partial class CommandsSettingsSection : UserControl {
         var g2Modified = IsBindingModified(cmd.Id, 2);
         var isReserved = cmd.Id.StartsWith("Menu.", StringComparison.Ordinal);
 
-        // -- Menu checkbox --
-        var menuCb = new CheckBox {
-            IsChecked = GetMenuChecked(cmd),
-            IsEnabled = cmd.Menu != CommandMenu.None,
-            MinWidth = 0, MinHeight = 0,
-            Padding = new Thickness(0),
-            Margin = new Thickness(0, 0, 2, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        ToolTip.SetTip(menuCb, "Show in menu");
-        menuCb.IsCheckedChanged += (_, _) => {
-            _settings.MenuOverrides ??= new();
-            _settings.MenuOverrides[cmd.Id] = menuCb.IsChecked == true;
-            _settings.ScheduleSave();
-            MenuOrToolbarChanged?.Invoke();
-        };
-        // Left-click only guard.
-        menuCb.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, (_, e) => {
-            if (!e.GetCurrentPoint(menuCb).Properties.IsLeftButtonPressed) e.Handled = true;
-        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        // -- Menu toggle button (hidden if command has no menu) --
+        Control menuCb;
+        if (cmd.Menu != CommandMenu.None) {
+            var btn = new ToggleButton {
+                Width = 22, Height = 22,
+                Padding = new Thickness(0),
+                IsChecked = GetMenuChecked(cmd),
+                VerticalContentAlignment = VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Content = new TextBlock {
+                    Text = "M",
+                    FontSize = 12,
+                    FontWeight = FontWeight.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                },
+            };
+            if (cmd.IsAdvanced && _settings.HideAdvancedMenus && !IsMenuModified(cmd.Id)) {
+                ToolTip.SetTip(btn, "Hidden by \u2018Hide Advanced Menus\u2019 \u2014 click to override");
+            } else {
+                ToolTip.SetTip(btn, "Show in menu");
+            }
+            btn.IsCheckedChanged += (_, _) => {
+                _settings.MenuOverrides ??= new();
+                _settings.MenuOverrides[cmd.Id] = btn.IsChecked == true;
+                _settings.ScheduleSave();
+                MenuOrToolbarChanged?.Invoke();
+                RefreshAfterChange();
+            };
+            menuCb = btn;
+        } else {
+            menuCb = new Border { Width = 22, Height = 22 };
+        }
 
-        // -- Toolbar checkbox --
-        var toolbarCb = new CheckBox {
-            IsChecked = GetToolbarChecked(cmd),
-            IsEnabled = cmd.ToolbarGlyph != null,
-            MinWidth = 0, MinHeight = 0,
-            Padding = new Thickness(0),
-            Margin = new Thickness(0, 0, 2, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        ToolTip.SetTip(toolbarCb, "Show in toolbar");
-        toolbarCb.IsCheckedChanged += (_, _) => {
-            _settings.ToolbarOverrides ??= new();
-            _settings.ToolbarOverrides[cmd.Id] = toolbarCb.IsChecked == true;
-            _settings.ScheduleSave();
-            MenuOrToolbarChanged?.Invoke();
-        };
-        toolbarCb.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, (_, e) => {
-            if (!e.GetCurrentPoint(toolbarCb).Properties.IsLeftButtonPressed) e.Handled = true;
-        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        // -- Toolbar toggle button (hidden if command has no toolbar glyph) --
+        Control toolbarCb;
+        if (cmd.ToolbarGlyph != null) {
+            var btn = new ToggleButton {
+                Width = 22, Height = 22,
+                Padding = new Thickness(0),
+                IsChecked = GetToolbarChecked(cmd),
+                VerticalContentAlignment = VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Content = new TextBlock {
+                    Text = "T",
+                    FontSize = 12,
+                    FontWeight = FontWeight.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                },
+            };
+            if (cmd.ToolbarFixed) {
+                btn.IsChecked = true;
+                btn.IsEnabled = false;
+                ToolTip.SetTip(btn, "Always shown in toolbar");
+            } else {
+                ToolTip.SetTip(btn, "Show in toolbar");
+                btn.IsCheckedChanged += (_, _) => {
+                    _settings.ToolbarOverrides ??= new();
+                    _settings.ToolbarOverrides[cmd.Id] = btn.IsChecked == true;
+                    _settings.ScheduleSave();
+                    MenuOrToolbarChanged?.Invoke();
+                    RefreshAfterChange();
+                };
+            }
+            toolbarCb = btn;
+        } else {
+            toolbarCb = new Border { Width = 22, Height = 22 };
+        }
 
         var nameText = new TextBlock {
             Text = cmd.DisplayName,
@@ -297,7 +351,26 @@ public partial class CommandsSettingsSection : UserControl {
             Tag = g2Modified ? "modified" : "dim",
         };
 
-        var isModified = g1Modified || g2Modified;
+        var mtModified = IsMenuModified(cmd.Id) || IsToolbarModified(cmd.Id);
+        var isModified = g1Modified || g2Modified || mtModified;
+
+        // -- M/T reset button (visible only when menu or toolbar is overridden) --
+        Control mtResetBtn;
+        if (mtModified) {
+            var btn = SettingRowFactory.CreateResetIconButton();
+            btn.Margin = new Thickness(0);
+            ToolTip.SetTip(btn, "Reset menu/toolbar to default");
+            btn.Click += (_, _) => {
+                _settings.MenuOverrides?.Remove(cmd.Id);
+                _settings.ToolbarOverrides?.Remove(cmd.Id);
+                _settings.ScheduleSave();
+                MenuOrToolbarChanged?.Invoke();
+                RefreshAfterChange();
+            };
+            mtResetBtn = btn;
+        } else {
+            mtResetBtn = new Border { Width = 22, Height = 22 };
+        }
 
         // Per-slot action button: reset (undo) if modified, remove (trash)
         // if bound but unmodified, hidden if empty. Reserved (Menu.*) rows
@@ -305,17 +378,19 @@ public partial class CommandsSettingsSection : UserControl {
         var btn1 = CreateSlotButton(cmd.Id, 1, g1Modified, gestureText, isReserved);
         var btn2 = CreateSlotButton(cmd.Id, 2, g2Modified, gesture2Text, isReserved);
 
-        // 8-column grid: MenuCb | ToolbarCb | Name | Gesture1 | Btn1 | Gesture2 | Btn2
+        // 8-column grid: MtReset | MenuCb | ToolbarCb | Name | Gesture1 | Btn1 | Gesture2 | Btn2
         var grid = new Grid {
-            ColumnDefinitions = ColumnDefinitions.Parse("22,22,*,104,26,104,26"),
+            ColumnDefinitions = ColumnDefinitions.Parse("26,26,26,*,104,26,104,26"),
         };
-        Grid.SetColumn(menuCb, 0);
-        Grid.SetColumn(toolbarCb, 1);
-        Grid.SetColumn(nameText, 2);
-        Grid.SetColumn(gestureLabel, 3);
-        Grid.SetColumn(btn1, 4);
-        Grid.SetColumn(gesture2Label, 5);
-        Grid.SetColumn(btn2, 6);
+        Grid.SetColumn(mtResetBtn, 0);
+        Grid.SetColumn(menuCb, 1);
+        Grid.SetColumn(toolbarCb, 2);
+        Grid.SetColumn(nameText, 3);
+        Grid.SetColumn(gestureLabel, 4);
+        Grid.SetColumn(btn1, 5);
+        Grid.SetColumn(gesture2Label, 6);
+        Grid.SetColumn(btn2, 7);
+        grid.Children.Add(mtResetBtn);
         grid.Children.Add(menuCb);
         grid.Children.Add(toolbarCb);
         grid.Children.Add(nameText);
@@ -347,14 +422,102 @@ public partial class CommandsSettingsSection : UserControl {
         return border;
     }
 
+    private void BuildHideAdvancedRow() {
+        _hideAdvancedGlyph = new TextBlock {
+            Text = IconGlyphs.CheckMark,
+            FontFamily = IconGlyphs.Family,
+            FontSize = 18,
+            Width = 20,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            Opacity = _settings.HideAdvancedMenus ? 1.0 : 0.0,
+            Margin = new Thickness(0, 1, 0, 0),
+        };
+
+        var contentStack = new StackPanel { Spacing = 1 };
+        contentStack.Children.Add(new TextBlock {
+            Text = "Hide Advanced Menus",
+            FontSize = 13,
+        });
+        contentStack.Children.Add(new TextBlock {
+            Text = "Hide menu items and commands not typically found in simple text editors.",
+            FontSize = 11,
+            Foreground = _theme.SettingsDimForeground,
+            TextWrapping = TextWrapping.Wrap,
+            Tag = "dim",
+        });
+
+        var row = new StackPanel {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+        };
+        row.Children.Add(_hideAdvancedGlyph);
+        row.Children.Add(contentStack);
+
+        var hitArea = new Border {
+            Child = row,
+            Background = Brushes.Transparent,
+        };
+        hitArea.PointerPressed += (_, e) => {
+            if (!e.GetCurrentPoint(hitArea).Properties.IsLeftButtonPressed) return;
+            _settings.HideAdvancedMenus = !_settings.HideAdvancedMenus;
+            _hideAdvancedGlyph.Opacity = _settings.HideAdvancedMenus ? 1.0 : 0.0;
+            UpdateHideAdvancedModifiedBar();
+            _settings.ScheduleSave();
+            MenuOrToolbarChanged?.Invoke();
+            RefreshAfterChange();
+            e.Handled = true;
+        };
+
+        HideAdvancedRow.Child = hitArea;
+        UpdateHideAdvancedModifiedBar();
+    }
+
+    private void UpdateHideAdvancedModifiedBar() {
+        const bool defaultValue = true;
+        var isModified = _settings.HideAdvancedMenus != defaultValue;
+        HideAdvancedRow.BorderBrush = isModified ? _theme.SettingsAccent : Brushes.Transparent;
+    }
+
     private bool GetMenuChecked(Command cmd) {
-        if (_settings.MenuOverrides?.TryGetValue(cmd.Id, out var v) == true) return v;
+        if (_settings.MenuOverrides?.TryGetValue(cmd.Id, out var v) == true && v.HasValue)
+            return v.Value;
+        // Default: visible unless advanced + hidden.
+        if (cmd.IsAdvanced && _settings.HideAdvancedMenus) return false;
         return cmd.Menu != CommandMenu.None;
     }
 
     private bool GetToolbarChecked(Command cmd) {
         if (_settings.ToolbarOverrides?.TryGetValue(cmd.Id, out var v) == true) return v;
         return cmd.DefaultInToolbar;
+    }
+
+    private bool IsMenuModified(string cmdId) =>
+        _settings.MenuOverrides?.TryGetValue(cmdId, out var v) == true && v.HasValue;
+
+    private bool IsToolbarModified(string cmdId) =>
+        _settings.ToolbarOverrides?.ContainsKey(cmdId) == true;
+
+    private bool IsRowModified(string cmdId) =>
+        IsBindingModified(cmdId, 1) || IsBindingModified(cmdId, 2)
+        || IsMenuModified(cmdId) || IsToolbarModified(cmdId);
+
+    /// <summary>
+    /// Recalculates the modified state for a single command row and updates
+    /// the left accent bar. Also re-applies the filter so the modified-only
+    /// toggle stays in sync.
+    /// </summary>
+    private void UpdateRowModifiedBar(string cmdId) {
+        foreach (var (_, _, rows) in _categoryGroups) {
+            foreach (var row in rows) {
+                if (row.Tag is string id && id == cmdId) {
+                    row.BorderBrush = IsRowModified(cmdId)
+                        ? _theme.SettingsAccent : Brushes.Transparent;
+                    ApplyFilter();
+                    return;
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -585,8 +748,18 @@ public partial class CommandsSettingsSection : UserControl {
         CaptureBox.Text = "";
         SetConflict(null);
         UpdateButtonStates();
+        UpdateResetAllVisibility();
 
         BindingChanged?.Invoke();
+    }
+
+    private void UpdateResetAllVisibility() {
+        var hasAny = _settings.KeyBindingOverrides is { Count: > 0 }
+            || _settings.KeyBinding2Overrides is { Count: > 0 }
+            || _settings.MenuOverrides is { Count: > 0 }
+            || _settings.ToolbarOverrides is { Count: > 0 };
+        ResetAllBtn.Opacity = hasAny ? 1 : 0;
+        ResetAllBtn.IsHitTestVisible = hasAny;
     }
 
     private void UpdateButtonStates() {
@@ -620,10 +793,10 @@ public partial class CommandsSettingsSection : UserControl {
                                     StringComparison.OrdinalIgnoreCase));
                     }
 
-                    // Modified filter: only show rows with at least one customised slot.
+                    // Modified filter: only show rows with at least one customised
+                    // binding, menu override, or toolbar override.
                     if (visible && _showModifiedOnly) {
-                        visible = IsBindingModified(commandId, 1)
-                            || IsBindingModified(commandId, 2);
+                        visible = IsRowModified(commandId);
                     }
 
                     row.IsVisible = visible;
@@ -712,10 +885,9 @@ public partial class CommandsSettingsSection : UserControl {
     /// Called by <see cref="SettingsControl"/> when the viewport changes.
     /// </summary>
     public void SetAvailableHeight(double height) {
-        // Subtract a fixed estimate of the non-list elements (profile combo,
-        // filter row, buttons, labels, margins ≈ 150px) so the list fills the
-        // available space without overflowing.
-        var max = Math.Max(100, height - 150);
+        // Subtract the height of non-list elements (HideAdvanced row, profile
+        // combo, filter row, capture box, conflict panel, margins).
+        var max = Math.Max(100, height - 180);
         CommandScroll.MaxHeight = max;
         CommandScroll.MinHeight = max;
         UpdateScrollHintVisibility();
@@ -857,6 +1029,24 @@ public partial class CommandsSettingsSection : UserControl {
     /// </summary>
     public void ApplyTheme(EditorTheme theme) {
         _theme = theme;
+
+        // Hide Advanced Menus row — re-theme text and modified bar
+        UpdateHideAdvancedModifiedBar();
+        if (HideAdvancedRow.Child is Border hitArea && hitArea.Child is StackPanel row) {
+            foreach (var child in row.Children) {
+                if (child is TextBlock tb) {
+                    tb.Foreground = theme.EditorForeground;
+                } else if (child is StackPanel stack) {
+                    foreach (var sc in stack.Children) {
+                        if (sc is TextBlock stb) {
+                            stb.Foreground = stb.Tag is "dim"
+                                ? theme.SettingsDimForeground
+                                : theme.EditorForeground;
+                        }
+                    }
+                }
+            }
+        }
 
         // Category headers
         foreach (var (header, _, _) in _categoryGroups) {

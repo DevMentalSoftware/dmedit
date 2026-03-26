@@ -63,10 +63,11 @@ public sealed class AppSettings {
     public bool HideAdvancedMenus { get; set; } = true;
 
     /// <summary>
-    /// Per-command overrides for menu inclusion. Maps command ID to bool.
-    /// When a key is present, it overrides the manifest default.
+    /// Per-command overrides for menu inclusion. Maps command ID to nullable bool:
+    /// true = always show, false = always hide, null = use default (which depends
+    /// on <see cref="HideAdvancedMenus"/> for advanced commands).
     /// </summary>
-    public Dictionary<string, bool>? MenuOverrides { get; set; }
+    public Dictionary<string, bool?>? MenuOverrides { get; set; }
 
     /// <summary>
     /// Per-command overrides for toolbar inclusion. Maps command ID to bool.
