@@ -1183,6 +1183,11 @@ public partial class MainWindow : Window {
         return isDark ? EditorTheme.Dark : EditorTheme.Light;
     }
 
+    private void ApplySelectionBrushes() {
+        Editor.SelectionBrush = _settings.BrightSelection
+            ? _theme.BrightSelectionBrush : _theme.SelectionBrush;
+    }
+
     /// <summary>
     /// Pushes theme colors to all custom-drawn controls and XAML elements.
     /// Call <see cref="SyncRequestedThemeVariant"/> before this so that
@@ -1193,9 +1198,7 @@ public partial class MainWindow : Window {
 
         // Custom-drawn controls
         Editor.ApplyTheme(theme);
-        if (_settings.BrightSelection) {
-            Editor.SelectionBrush = theme.BrightSelectionBrush;
-        }
+        ApplySelectionBrushes();
         ScrollBar.ApplyTheme(theme);
         SettingsPanel.ApplyTheme(theme);
         FindBar.ApplyTheme(theme);
@@ -2601,8 +2604,8 @@ public partial class MainWindow : Window {
                     Editor.WrapLinesAt = _settings.WrapLinesAt;
                     break;
                 case "BrightSelection":
-                    Editor.SelectionBrush = _settings.BrightSelection
-                        ? _theme.BrightSelectionBrush : _theme.SelectionBrush;
+                    ApplySelectionBrushes();
+                    SettingsPanel.ApplyTheme(_theme);
                     break;
                 case "ThemeMode":
                     SyncRequestedThemeVariant();

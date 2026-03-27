@@ -304,6 +304,8 @@ public partial class SettingsControl : UserControl {
             if (child is TextBox txb && txb.Tag is "preview") {
                 txb.Foreground = theme.EditorForeground;
                 txb.CaretBrush = theme.EditorForeground;
+                if (_settings != null)
+                    txb.SelectionBrush = SettingRowFactory.GetSelectionBrush(_settings);
             }
             if (child is Border b && b.Tag is "previewBorder") {
                 b.Background = theme.EditorBackground;

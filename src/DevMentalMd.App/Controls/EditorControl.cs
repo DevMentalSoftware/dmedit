@@ -1062,29 +1062,72 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return;
         }
 
-        // Round a corner only when it is truly "exposed" — the adjacent
-        // rect doesn't cover it.  A corner is covered when the neighbour
-        // extends at least as far in that direction.
-        //   TL: covered when above.Left  <= cur.Left   (above reaches left)
-        //   TR: covered when above.Right >= cur.Right   (above reaches right)
-        //   BL: covered when below.Left  <= cur.Left
-        //   BR: covered when below.Right >= cur.Right
-        const double r = SelCornerRadius;
-        const double eps = 0.5;
-        for (var i = 0; i < rects.Count; i++) {
-            var cur = rects[i];
-            var hasAbove = i > 0;
-            var hasBelow = i < rects.Count - 1;
-            var above = hasAbove ? rects[i - 1] : default;
-            var below = hasBelow ? rects[i + 1] : default;
-
-            var tl = !hasAbove || above.Left  > cur.Left  + eps ? r : 0;
-            var tr = !hasAbove || above.Right < cur.Right - eps ? r : 0;
-            var bl = !hasBelow || below.Left  > cur.Left  + eps ? r : 0;
-            var br = !hasBelow || below.Right < cur.Right - eps ? r : 0;
-
-            FillRoundedRect(context, SelectionBrush, cur, tl, tr, br, bl);
+        if (rects.Count == 1) {
+            const double r = SelCornerRadius;
+            FillRoundedRect(context, SelectionBrush, rects[0], r, r, r, r);
+        } else {
+            // Build a single outline path for all contiguous rects so there
+            // are no internal horizontal edges (which cause sub-pixel seams).
+            FillSelectionPath(context, SelectionBrush, rects);
         }
+    }
+
+    /// <summary>
+    /// Traces the outer contour of a contiguous list of rects as a single
+    /// filled path.  Rounded corners are applied only at the four outermost
+    /// corners (top of first rect, bottom of last rect).
+    /// </summary>
+    private static void FillSelectionPath(
+        DrawingContext ctx, IBrush brush, List<Rect> rects) {
+        const double r = SelCornerRadius;
+        var first = rects[0];
+        var last = rects[^1];
+
+        var g = new StreamGeometry();
+        using (var c = g.Open()) {
+            // Start at top-left of first rect, trace clockwise.
+
+            // ── Top edge ──
+            c.BeginFigure(new Point(first.Left + r, first.Top), true);
+            c.LineTo(new Point(first.Right - r, first.Top));
+            c.ArcTo(new Point(first.Right, first.Top + r),
+                new Size(r, r), 0, false, SweepDirection.Clockwise);
+
+            // ── Right edge (top → bottom) ──
+            for (var i = 0; i < rects.Count - 1; i++) {
+                var cur = rects[i];
+                var next = rects[i + 1];
+                c.LineTo(new Point(cur.Right, cur.Bottom));
+                if (Math.Abs(cur.Right - next.Right) > 0.5) {
+                    c.LineTo(new Point(next.Right, next.Top));
+                }
+            }
+
+            // ── Bottom edge ──
+            c.LineTo(new Point(last.Right, last.Bottom - r));
+            c.ArcTo(new Point(last.Right - r, last.Bottom),
+                new Size(r, r), 0, false, SweepDirection.Clockwise);
+            c.LineTo(new Point(last.Left + r, last.Bottom));
+            c.ArcTo(new Point(last.Left, last.Bottom - r),
+                new Size(r, r), 0, false, SweepDirection.Clockwise);
+
+            // ── Left edge (bottom → top) ──
+            for (var i = rects.Count - 1; i > 0; i--) {
+                var cur = rects[i];
+                var prev = rects[i - 1];
+                c.LineTo(new Point(cur.Left, cur.Top));
+                if (Math.Abs(cur.Left - prev.Left) > 0.5) {
+                    c.LineTo(new Point(prev.Left, cur.Top));
+                }
+            }
+
+            // ── Close at top-left ──
+            c.LineTo(new Point(first.Left, first.Top + r));
+            c.ArcTo(new Point(first.Left + r, first.Top),
+                new Size(r, r), 0, false, SweepDirection.Clockwise);
+            c.EndFigure(true);
+        }
+        ctx.DrawGeometry(brush, null, g);
     }
 
     /// <summary>Fills a rectangle with individually rounded corners.</summary>
@@ -1161,6 +1204,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var table = doc.Table;
         var sels = colSel.Materialize(table, _indentWidth);
         var rh = layout.RowHeight;
+        var totalChars = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
+        var rects = new List<Rect>();
 
         for (var i = 0; i < sels.Count; i++) {
             var s = sels[i];
@@ -1169,7 +1214,6 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             }
             var localStart = (int)(s.Start - layout.ViewportBase);
             var localEnd = (int)(s.End - layout.ViewportBase);
-            var totalChars = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
             if (localEnd < 0 || localStart > totalChars) {
                 continue;
             }
@@ -1194,10 +1238,19 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                     continue;
                 }
                 foreach (var rect in line.Layout.HitTestTextRange(rangeStart, rangeLen)) {
-                    context.FillRectangle(SelectionBrush,
-                        new Rect(rect.X + _gutterWidth, lineY + rect.Y, rect.Width, rect.Height));
+                    rects.Add(new Rect(rect.X + _gutterWidth, lineY + rect.Y, rect.Width, rect.Height));
                 }
             }
+        }
+
+        if (rects.Count == 0) {
+            return;
+        }
+        if (rects.Count == 1) {
+            const double r = SelCornerRadius;
+            FillRoundedRect(context, SelectionBrush, rects[0], r, r, r, r);
+        } else {
+            FillSelectionPath(context, SelectionBrush, rects);
         }
     }
 

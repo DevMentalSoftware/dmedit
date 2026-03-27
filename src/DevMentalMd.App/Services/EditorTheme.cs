@@ -13,9 +13,9 @@ public sealed class EditorTheme {
     public IBrush EditorForeground { get; init; } = Brushes.Black;
     public IBrush CaretBrush { get; init; } = Brushes.Black;
     public IBrush SelectionBrush { get; init; } =
-        new SolidColorBrush(Color.FromArgb(255, 0x99, 0xc9, 0xee));
-    public IBrush BrightSelectionBrush { get; init; } =
         new SolidColorBrush(Color.FromArgb(255, 0x97, 0xc6, 0xea));
+    public IBrush BrightSelectionBrush { get; init; } =
+        new SolidColorBrush(Color.FromArgb(255, 0x99, 0xd7, 0xFF));
 
     // -- Gutter --
     public IBrush GutterBackground { get; init; } =

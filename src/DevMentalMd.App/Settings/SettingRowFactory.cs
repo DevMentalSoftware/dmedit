@@ -579,6 +579,7 @@ public static class SettingRowFactory {
         };
         var displayFont = GetDisplayFontFamily(settings);
         ApplyFontToPreview(previewBox, displayFont);
+        previewBox.SelectionBrush = GetSelectionBrush(settings);
         UpdateFontBoxForeground(fontBox, displayFont);
 
         // Save custom preview text (debounced via ScheduleSave).
@@ -714,6 +715,15 @@ public static class SettingRowFactory {
             : new FontFamily(GetDefaultFontFamily()));
         preview.SetValue(TextBlock.ForegroundProperty, CurrentTheme.EditorForeground);
     }
+
+    /// <summary>
+    /// Returns the appropriate selection brush based on the current theme
+    /// and the <see cref="AppSettings.BrightSelection"/> setting.
+    /// </summary>
+    internal static IBrush GetSelectionBrush(AppSettings settings) =>
+        settings.BrightSelection
+            ? CurrentTheme.BrightSelectionBrush
+            : CurrentTheme.SelectionBrush;
 
     /// <summary>
     /// Turns the font picker text red when the font name is not installed,
