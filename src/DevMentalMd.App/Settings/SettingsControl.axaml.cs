@@ -17,6 +17,7 @@ public partial class SettingsControl : UserControl {
     private readonly Dictionary<string, TextBlock> _headersByCategory = new();
     private readonly List<Border> _allRows = [];
     private readonly List<TextBlock> _allHeaders = [];
+    private readonly Dictionary<string, List<Border>> _dependentRows = new();
     private string _selectedCategory = "All Settings";
 
     /// <summary>
@@ -136,12 +137,37 @@ public partial class SettingsControl : UserControl {
             foreach (var desc in descriptors) {
                 var row = SettingRowFactory.CreateRow(desc, _settings, key => {
                     SettingChanged?.Invoke(key);
+                    UpdateDependentRows(key);
                 });
                 _rowsByCategory[cat].Add(row);
                 _allRows.Add(row);
                 SettingsContent.Children.Add(row);
+
+                if (desc.EnabledWhenKey is { } depKey) {
+                    if (!_dependentRows.TryGetValue(depKey, out var list)) {
+                        list = [];
+                        _dependentRows[depKey] = list;
+                    }
+                    list.Add(row);
+                    UpdateRowEnabled(row, depKey);
+                }
             }
         }
+    }
+
+    private void UpdateDependentRows(string changedKey) {
+        if (!_dependentRows.TryGetValue(changedKey, out var rows)) return;
+        foreach (var row in rows) {
+            UpdateRowEnabled(row, changedKey);
+        }
+    }
+
+    private void UpdateRowEnabled(Border row, string depKey) {
+        if (_settings is null) return;
+        var prop = typeof(AppSettings).GetProperty(depKey);
+        var enabled = prop?.GetValue(_settings) is true;
+        row.IsEnabled = enabled;
+        row.Opacity = enabled ? 1.0 : 0.4;
     }
 
     private void WireSearch() {

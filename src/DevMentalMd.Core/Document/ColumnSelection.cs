@@ -199,6 +199,30 @@ public readonly record struct ColumnSelection(int AnchorLine, int AnchorCol, int
         }
     }
 
+    /// <summary>
+    /// Returns the column reached by moving one character left or right from
+    /// <paramref name="currentCol"/> on <paramref name="line"/>. Tabs are
+    /// treated as a single character so the caret jumps across the full tab
+    /// width. In virtual space (past end of content) the shift is always 1.
+    /// </summary>
+    public static int NextCharCol(PieceTable table, int line, int currentCol, int direction, int tabSize) {
+        var lineStart = table.LineStartOfs(line);
+        var lineEnd = LineContentEnd(table, line);
+        var lineLen = (int)(lineEnd - lineStart);
+        var endCol = EndOfLineCol(table, line, tabSize);
+
+        // In virtual space — shift by 1 column.
+        if (currentCol >= endCol) {
+            return Math.Max(0, currentCol + direction);
+        }
+
+        var charIdx = ColToCharIdx(table, lineStart, lineLen, currentCol, tabSize);
+        var newCharIdx = charIdx + direction;
+        if (newCharIdx < 0) return 0;
+        if (newCharIdx >= lineLen) return endCol;
+        return OfsToCol(table, lineStart + newCharIdx, tabSize);
+    }
+
     // -----------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------

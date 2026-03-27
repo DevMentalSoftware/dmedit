@@ -1193,6 +1193,9 @@ public partial class MainWindow : Window {
 
         // Custom-drawn controls
         Editor.ApplyTheme(theme);
+        if (_settings.BrightSelection) {
+            Editor.SelectionBrush = theme.BrightSelectionBrush;
+        }
         ScrollBar.ApplyTheme(theme);
         SettingsPanel.ApplyTheme(theme);
         FindBar.ApplyTheme(theme);
@@ -1576,9 +1579,6 @@ public partial class MainWindow : Window {
         };
     }
 
-    private static readonly Avalonia.Media.IBrush MixedLineEndingBrush =
-        new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(0xE0, 0x40, 0x40));
-
     private void UpdateStatusBar() {
         // -- Permanent status bar (always visible) --
         var doc = Editor.Document;
@@ -1643,7 +1643,7 @@ public partial class MainWindow : Window {
                 var lei = doc.LineEndingInfo;
                 SetText(StatusLineEnding, lei.Label);
 
-                var leBrush = lei.IsMixed ? MixedLineEndingBrush : _theme.StatusBarForeground;
+                var leBrush = lei.IsMixed ? _theme.StatusBarWarning : _theme.StatusBarForeground;
                 if (StatusLineEnding.Foreground != leBrush) StatusLineEnding.Foreground = leBrush;
 
                 // Tooltip for mixed line endings showing counts.
@@ -1659,6 +1659,18 @@ public partial class MainWindow : Window {
 
                 StatusSep4.IsVisible = true;
                 SetText(StatusIndent, doc.IndentInfo.Label);
+
+                var indBrush = doc.IndentInfo.IsMixed ? _theme.StatusBarWarning : _theme.StatusBarForeground;
+                if (StatusIndent.Foreground != indBrush) StatusIndent.Foreground = indBrush;
+
+                if (doc.IndentInfo.IsMixed) {
+                    var parts = new List<string>();
+                    if (doc.IndentInfo.SpaceCount > 0) parts.Add($"{doc.IndentInfo.SpaceCount:N0} Spaces");
+                    if (doc.IndentInfo.TabCount > 0) parts.Add($"{doc.IndentInfo.TabCount:N0} Tabs");
+                    ToolTip.SetTip(BtnIndent, $"Mixed: {string.Join(", ", parts)}");
+                } else {
+                    ToolTip.SetTip(BtnIndent, null);
+                }
             }
 
         }
@@ -2587,6 +2599,10 @@ public partial class MainWindow : Window {
                     break;
                 case "WrapLinesAt":
                     Editor.WrapLinesAt = _settings.WrapLinesAt;
+                    break;
+                case "BrightSelection":
+                    Editor.SelectionBrush = _settings.BrightSelection
+                        ? _theme.BrightSelectionBrush : _theme.SelectionBrush;
                     break;
                 case "ThemeMode":
                     SyncRequestedThemeVariant();

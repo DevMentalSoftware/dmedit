@@ -17,4 +17,5 @@ public sealed record SettingDescriptor(
     object DefaultValue,
     object? Min = null,
     object? Max = null,
-    Type? EnumType = null);
+    Type? EnumType = null,
+    string? EnabledWhenKey = null);

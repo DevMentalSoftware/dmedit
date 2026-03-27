@@ -13,7 +13,9 @@ public sealed class EditorTheme {
     public IBrush EditorForeground { get; init; } = Brushes.Black;
     public IBrush CaretBrush { get; init; } = Brushes.Black;
     public IBrush SelectionBrush { get; init; } =
-        new SolidColorBrush(Color.FromArgb(80, 0, 120, 215));
+        new SolidColorBrush(Color.FromArgb(255, 0x99, 0xc9, 0xee));
+    public IBrush BrightSelectionBrush { get; init; } =
+        new SolidColorBrush(Color.FromArgb(255, 0x97, 0xc6, 0xea));
 
     // -- Gutter --
     public IBrush GutterBackground { get; init; } =
@@ -71,6 +73,8 @@ public sealed class EditorTheme {
         new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
     public IBrush StatusBarForeground { get; init; } =
         new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
+    public IBrush StatusBarWarning { get; init; } =
+        new SolidColorBrush(Color.FromRgb(0xC8, 0xA0, 0x30));
 
     // -- Scrollbar --
     public IBrush ScrollTrack { get; init; } =
@@ -125,9 +129,10 @@ public sealed class EditorTheme {
     public static EditorTheme Dark { get; } = new() {
         // Editor surface
         EditorBackground = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x25)),
-        EditorForeground = new SolidColorBrush(Color.FromRgb(0xD4, 0xD4, 0xD4)),
+        EditorForeground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE4, 0xE4)),
         CaretBrush = new SolidColorBrush(Color.FromRgb(0xD4, 0xD4, 0xD4)),
-        SelectionBrush = new SolidColorBrush(Color.FromArgb(80, 51, 153, 255)),
+        SelectionBrush = new SolidColorBrush(Color.FromArgb(255, 0x26, 0x4F, 0x78)),
+        BrightSelectionBrush = new SolidColorBrush(Color.FromArgb(255, 0, 0x78, 0xD4)),
 
         // Gutter
         GutterBackground = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x25)),
@@ -163,6 +168,7 @@ public sealed class EditorTheme {
         StatusBarBackground = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
         StatusBarBorder = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D)),
         StatusBarForeground = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90)),
+        StatusBarWarning = new SolidColorBrush(Color.FromRgb(0xD4, 0xA8, 0x30)),
 
         // Scrollbar
         ScrollTrack = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)),

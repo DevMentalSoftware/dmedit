@@ -871,7 +871,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         DrawGutter(context, layout);
 
         // Column guide line
-        if (_wrapLinesAt >= 1) {
+        if (_wrapLines && _wrapLinesAt >= 1) {
             var guideX = 2 + _gutterWidth + _wrapLinesAt * GetCharWidth();
             if (guideX < Bounds.Width) {
                 context.DrawLine(_theme.GuideLinePen, new Point(guideX, 0), new Point(guideX, Bounds.Height));
@@ -1699,14 +1699,15 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (_wrapLines) return; // Column mode disabled when wrapping is on.
         FlushCompound();
         if (doc.ColumnSel is { } colSel) {
-            var newCol = Math.Max(0, colSel.ActiveCol + delta);
+            var newCol = ColumnSelection.NextCharCol(
+                doc.Table, colSel.ActiveLine, colSel.ActiveCol, delta, _indentWidth);
             doc.ColumnSel = colSel.ExtendTo(colSel.ActiveLine, newCol);
         } else {
             // Enter column mode from current caret.
             var caret = doc.Selection.Caret;
             var line = (int)doc.Table.LineFromOfs(caret);
             var col = ColumnSelection.OfsToCol(doc.Table, caret, _indentWidth);
-            var newCol = Math.Max(0, col + delta);
+            var newCol = ColumnSelection.NextCharCol(doc.Table, line, col, delta, _indentWidth);
             doc.ColumnSel = new ColumnSelection(line, col, line, newCol);
         }
         ScrollCaretIntoView();
@@ -1724,7 +1725,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             // Has selection → collapse to the edge in the movement direction.
             doc.ColumnSel = delta < 0 ? colSel.CollapseToLeft() : colSel.CollapseToRight();
         } else {
-            doc.ColumnSel = colSel.ShiftColumns(delta);
+            var newCol = ColumnSelection.NextCharCol(
+                doc.Table, colSel.ActiveLine, colSel.ActiveCol, delta, _indentWidth);
+            doc.ColumnSel = colSel.MoveColumnsTo(newCol);
         }
         ScrollCaretIntoView();
         InvalidateVisual();
@@ -1892,10 +1895,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         Reg(Cmd.EditTab, doc => {
             Coalesce("tab");
             _editSw.Restart();
-            var tabText = doc.IndentInfo.Dominant == Core.Documents.IndentStyle.Tabs
-                ? "\t"
-                : new string(' ', _indentWidth);
-            doc.Insert(tabText);
+            doc.Insert("\t");
             ScrollCaretIntoView();
             _editSw.Stop();
             PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
@@ -2103,12 +2103,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return true;
         });
         ColIntercept(Cmd.EditTab, doc => {
-            var tabText = doc.IndentInfo.Dominant == Core.Documents.IndentStyle.Tabs
-                ? "\t"
-                : new string(' ', _indentWidth);
             Coalesce("col-tab");
             _editSw.Restart();
-            doc.InsertAtCursors(tabText, _indentWidth);
+            doc.InsertAtCursors("\t", _indentWidth);
             ScrollCaretIntoView();
             _editSw.Stop();
             PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);

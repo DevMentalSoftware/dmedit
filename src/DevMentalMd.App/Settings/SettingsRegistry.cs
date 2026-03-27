@@ -24,6 +24,10 @@ public static class SettingsRegistry {
             "When wrapping is enabled we can force wrapping at a particular width when the window is wider than that width.",
             "Display", SettingKind.Int, 100, Min: 0, Max: 10000),
 
+        new("BrightSelection", "Bright Selection",
+            "Use a brighter, more visible selection highlight. Useful on monitors with limited contrast.",
+            "Display", SettingKind.Bool, false),
+
         new("ThemeMode", "Theme",
             "Select the theme for the display.",
             "Display", SettingKind.Enum, ThemeMode.System, EnumType: typeof(ThemeMode)),
@@ -69,7 +73,7 @@ public static class SettingsRegistry {
 
         new("ShowStatistics", "Show Statistics",
             "Show developer performance statistics on the Status Bar.",
-            "Advanced", SettingKind.Bool, true),
+            "Advanced", SettingKind.Bool, true, EnabledWhenKey: "DevMode"),
 
         // -- Commands --
         new("ChordTimeoutMs", "Chord Timeout (ms)",

@@ -14,7 +14,8 @@ public enum IndentStyle {
 /// <summary>
 /// Result of detecting indentation style in a text buffer.
 /// </summary>
-public readonly record struct IndentInfo(IndentStyle Dominant, bool IsMixed) {
+public readonly record struct IndentInfo(IndentStyle Dominant, bool IsMixed,
+    int SpaceCount = 0, int TabCount = 0) {
     /// <summary>Display label for the status bar.</summary>
     public string Label => Dominant switch {
         IndentStyle.Spaces => "Spaces",
@@ -37,6 +38,6 @@ public readonly record struct IndentInfo(IndentStyle Dominant, bool IsMixed) {
 
         var dominant = tabs > spaces ? IndentStyle.Tabs : IndentStyle.Spaces;
         var mixed = spaces > 0 && tabs > 0;
-        return new IndentInfo(dominant, mixed);
+        return new IndentInfo(dominant, mixed, spaces, tabs);
     }
 }

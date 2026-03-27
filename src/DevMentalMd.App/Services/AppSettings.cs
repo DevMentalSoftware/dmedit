@@ -115,6 +115,12 @@ public sealed class AppSettings {
     public bool ShowWhitespace { get; set; }
 
     /// <summary>
+    /// Use a brighter, more visible selection highlight color instead of the
+    /// default subtle tint. Useful on monitors with limited contrast.
+    /// </summary>
+    public bool BrightSelection { get; set; }
+
+    /// <summary>
     /// Wrap long lines at the viewport edge. When false, lines extend beyond
     /// the visible area (horizontal scrolling planned for a future release).
     /// </summary>
