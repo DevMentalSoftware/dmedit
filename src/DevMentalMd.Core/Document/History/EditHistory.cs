@@ -22,7 +22,7 @@ public sealed class EditHistory {
     // Undo / Redo state
     // -------------------------------------------------------------------------
 
-    public bool CanUndo => _undoStack.Count > 0;
+    public bool CanUndo => _undoStack.Count > 0 || _compound?.Count > 0;
     public bool CanRedo => _redoStack.Count > 0;
 
     // Save-point: the undo-stack depth at the last save.
