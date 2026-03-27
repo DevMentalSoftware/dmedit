@@ -233,19 +233,25 @@
 		<Grid>
 			<settings:SettingsControl x:Name="SettingsPanel"
 			                          IsVisible="False" />
-			<Grid ColumnDefinitions="*,Auto" x:Name="EditorGrid">
+			<Grid RowDefinitions="*,Auto" ColumnDefinitions="*,Auto" x:Name="EditorGrid">
 				<controls:EditorControl x:Name="Editor"
-				                        Grid.Column="0"
+				                        Grid.Row="0" Grid.Column="0"
 				                        HorizontalAlignment="Stretch" />
 				<controls:FindBarControl x:Name="FindBar"
-				                         Grid.Column="0"
+				                         Grid.Row="0" Grid.Column="0"
 				                         HorizontalAlignment="Right"
 				                         VerticalAlignment="Top"
 				                         Margin="0,-1,20,0"
 				                         IsVisible="False" />
 				<controls:DualZoneScrollBar x:Name="ScrollBar"
-				                            Grid.Column="1"
+				                            Grid.Row="0" Grid.Column="1"
 				                            Focusable="False" />
+				<ScrollBar x:Name="HScrollBar"
+				           Grid.Row="1" Grid.Column="0"
+				           Orientation="Horizontal"
+				           IsVisible="False"
+				           Focusable="False"
+				           Minimum="0" />
 			</Grid>
 		</Grid>
 	</DockPanel>

@@ -170,8 +170,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (_wrapLines == value) return;
             _wrapLines = value;
             // Column mode is incompatible with wrapping — exit if active.
-            if (_wrapLines && Document?.ColumnSel != null) {
-                Document.ClearColumnSelection(_indentWidth);
+            if (_wrapLines) {
+                // Column mode is incompatible with wrapping — exit if active.
+                if (Document?.ColumnSel != null) {
+                    Document.ClearColumnSelection(_indentWidth);
+                }
+                // Reset horizontal scroll when wrapping is enabled.
+                HScrollValue = 0;
             }
             InvalidateLayout();
         }
@@ -247,6 +252,28 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     }
     private EventHandler? _scrollInvalidated;
 
+    /// <summary>
+    /// X origin for text drawing, accounting for gutter and horizontal scroll.
+    /// </summary>
+    private double TextOriginX => _gutterWidth - _scrollOffset.X;
+
+    /// <summary>Current horizontal scroll offset in pixels.</summary>
+    public double HScrollValue {
+        get => _scrollOffset.X;
+        set {
+            var clamped = Math.Clamp(value, 0, HScrollMaximum);
+            if (Math.Abs(_scrollOffset.X - clamped) < 0.01) return;
+            _scrollOffset = new Vector(clamped, _scrollOffset.Y);
+            InvalidateVisual();
+        }
+    }
+
+    /// <summary>Maximum horizontal scroll value.</summary>
+    public double HScrollMaximum => Math.Max(0, _extent.Width - _viewport.Width);
+
+    /// <summary>Raised when the horizontal extent or scroll changes.</summary>
+    public event Action? HScrollChanged;
+
     // Word wrap
     private bool _wrapLines = true;
     private int _wrapLinesAt = 100;
@@ -260,6 +287,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     // Line number gutter
     private bool _showLineNumbers = true;
     private double _gutterWidth;
+    public double GutterWidth => _gutterWidth;
+    public double CharWidth => GetCharWidth();
     private int _gutterDigitCnt;
     private const double GutterPadLeft = 4;
     private const double GutterPadRight = 12;
@@ -792,7 +821,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var extentHeight = (topLine == 0 && bottomLine >= lineCount)
             ? _layout.TotalHeight
             : totalVisualRows * rh;
-        _extent = new Size(extentWidth, extentHeight);
+        var contentWidth = !_wrapLines
+            ? _gutterWidth + doc.Table.MaxLineLength * GetCharWidth()
+            : extentWidth;
+        var oldHMax = HScrollMaximum;
+        _extent = new Size(Math.Max(extentWidth, contentWidth), extentHeight);
+        if (Math.Abs(HScrollMaximum - oldHMax) > 0.5) HScrollChanged?.Invoke();
 
         // Compute render offset.  For small topLine changes (arrow keys, wheel)
         // use an incremental offset based on the actual cached line height so
@@ -870,9 +904,14 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Gutter (line numbers)
         DrawGutter(context, layout);
 
+        // Clip text area so horizontally-scrolled content doesn't paint over the gutter.
+        using var _ = _scrollOffset.X > 0
+            ? context.PushClip(new Rect(_gutterWidth, 0, Bounds.Width - _gutterWidth, Bounds.Height))
+            : default;
+
         // Column guide line
         if (_wrapLines && _wrapLinesAt >= 1) {
-            var guideX = 2 + _gutterWidth + _wrapLinesAt * GetCharWidth();
+            var guideX = 2 + TextOriginX + _wrapLinesAt * GetCharWidth();
             if (guideX < Bounds.Width) {
                 context.DrawLine(_theme.GuideLinePen, new Point(guideX, 0), new Point(guideX, Bounds.Height));
             }
@@ -897,7 +936,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (y > Bounds.Height) {
                 break; // below viewport
             }
-            line.Layout.Draw(context, new Point(_gutterWidth, y));
+            line.Layout.Draw(context, new Point(TextOriginX, y));
             if (_showWhitespace) {
                 DrawWhitespace(context, layout, line, y, rh);
             }
@@ -963,13 +1002,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (ch != ' ' && ch != '\t' && ch != '\u00A0') continue;
 
             var hit = line.Layout.HitTestTextPosition(i);
-            var x = _gutterWidth + hit.X;
+            var x = TextOriginX + hit.X;
 
             if (ch == '\t') {
                 // Draw arrow spanning the tab's width
                 var hitNext = line.Layout.HitTestTextPosition(i + 1);
-                var x1 = _gutterWidth + hit.X;
-                var x2 = _gutterWidth + hitNext.X;
+                var x1 = TextOriginX + hit.X;
+                var x2 = TextOriginX + hitNext.X;
                 if (x2 <= x1) continue;
 
                 const double pad = 2;
@@ -1048,13 +1087,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 // Blank line fully inside selection: show a 1-char-wide placeholder
                 // so the user can see that the selection spans across it.
                 if (line.CharLen == 0) {
-                    rects.Add(new Rect(_gutterWidth, lineY, GetCharWidth(), rh));
+                    rects.Add(new Rect(TextOriginX, lineY, GetCharWidth(), rh));
                 }
                 continue;
             }
 
             foreach (var rect in line.Layout.HitTestTextRange(rangeStart, rangeLen)) {
-                rects.Add(new Rect(rect.X + _gutterWidth, lineY + rect.Y, rect.Width, rect.Height));
+                rects.Add(new Rect(rect.X + TextOriginX, lineY + rect.Y, rect.Width, rect.Height));
             }
         }
 
@@ -1186,9 +1225,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 ? Color.FromArgb(100, scb.Color.R, scb.Color.G, scb.Color.B)
                 : Color.FromArgb(100, 0, 0, 0);
             context.FillRectangle(new SolidColorBrush(caretColor),
-                new Rect(rect.X + _gutterWidth, y, caretWidth, rect.Height));
+                new Rect(rect.X + TextOriginX, y, caretWidth, rect.Height));
         } else {
-            context.FillRectangle(CaretBrush, new Rect(rect.X + _gutterWidth, y, 1.5, rect.Height));
+            context.FillRectangle(CaretBrush, new Rect(rect.X + TextOriginX, y, 1.5, rect.Height));
         }
     }
 
@@ -1238,7 +1277,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                     continue;
                 }
                 foreach (var rect in line.Layout.HitTestTextRange(rangeStart, rangeLen)) {
-                    rects.Add(new Rect(rect.X + _gutterWidth, lineY + rect.Y, rect.Width, rect.Height));
+                    rects.Add(new Rect(rect.X + TextOriginX, lineY + rect.Y, rect.Width, rect.Height));
                 }
             }
         }
@@ -2747,6 +2786,20 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (_scrollOffset.Y > ScrollMaximum) {
             ScrollValue = ScrollMaximum;
         }
+
+        // Horizontal: estimate caret X from its column within the line.
+        if (!_wrapLines && HScrollMaximum > 0) {
+            var lineStart = table.LineStartOfs(caretLine);
+            var caretCol = (int)(caret - lineStart);
+            var cw = GetCharWidth();
+            var caretX = caretCol * cw;
+            var textAreaW = _viewport.Width - _gutterWidth;
+            if (caretX < _scrollOffset.X) {
+                HScrollValue = caretX;
+            } else if (caretX + cw > _scrollOffset.X + textAreaW) {
+                HScrollValue = caretX + cw - textAreaW;
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -2875,7 +2928,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
         var layout = EnsureLayout();
         var pt = e.GetPosition(this);
-        var layoutPt = new Point(pt.X - _gutterWidth, pt.Y - RenderOffsetY);
+        var layoutPt = new Point(pt.X - _gutterWidth + _scrollOffset.X, pt.Y - RenderOffsetY);
         var localOfs = _layoutEngine.HitTest(layoutPt, layout);
         var ofs = layout.ViewportBase + localOfs;
         var isLeft = props.IsLeftButtonPressed;
@@ -2955,7 +3008,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
         var layout = EnsureLayout();
         var pt = e.GetPosition(this);
-        var layoutPt = new Point(pt.X - _gutterWidth, pt.Y - RenderOffsetY);
+        var layoutPt = new Point(pt.X - _gutterWidth + _scrollOffset.X, pt.Y - RenderOffsetY);
         var localOfs = _layoutEngine.HitTest(layoutPt, layout);
         var ofs = layout.ViewportBase + localOfs;
         if (_columnDrag && doc.ColumnSel is { } colSel) {

@@ -1200,6 +1200,7 @@ public partial class MainWindow : Window {
         Editor.ApplyTheme(theme);
         ApplySelectionBrushes();
         ScrollBar.ApplyTheme(theme);
+        ApplyHScrollBarTheme(theme);
         SettingsPanel.ApplyTheme(theme);
         FindBar.ApplyTheme(theme);
         Toolbar.ApplyTheme(theme);
@@ -1291,6 +1292,43 @@ public partial class MainWindow : Window {
 
         // Show caret immediately when any scrollbar interaction ends
         ScrollBar.InteractionEnded += () => Editor.ResetCaretBlink();
+
+        // Horizontal scrollbar
+        HScrollBar.Scroll += (_, e) => {
+            Editor.HScrollValue = e.NewValue;
+        };
+        Editor.HScrollChanged += UpdateHScrollBar;
+    }
+
+    private void UpdateHScrollBar() {
+        var max = Editor.HScrollMaximum;
+        var show = max > 0;
+        HScrollBar.IsVisible = show;
+        if (show) {
+            HScrollBar.Maximum = max;
+            HScrollBar.ViewportSize = Editor.Bounds.Width - Editor.GutterWidth;
+            HScrollBar.SmallChange = Editor.CharWidth;
+            HScrollBar.LargeChange = HScrollBar.ViewportSize;
+            HScrollBar.Value = Editor.HScrollValue;
+        }
+    }
+
+    private void ApplyHScrollBarTheme(EditorTheme theme) {
+        var r = HScrollBar.Resources;
+        r["ScrollBarTrackFill"] = theme.ScrollTrack;
+        r["ScrollBarTrackFillPointerOver"] = theme.ScrollTrack;
+        r["ScrollBarBackground"] = theme.ScrollTrack;
+        r["ScrollBarBackgroundPointerOver"] = theme.ScrollTrack;
+        r["ScrollBarPanningThumbBackground"] = theme.ScrollInnerThumbNormal;
+        r["ScrollBarThumbFillPointerOver"] = theme.ScrollInnerThumbHover;
+        r["ScrollBarThumbFillPressed"] = theme.ScrollInnerThumbPress;
+        r["ScrollBarButtonBackground"] = theme.ScrollArrowBg;
+        r["ScrollBarButtonBackgroundPointerOver"] = theme.ScrollArrowBgHover;
+        r["ScrollBarButtonBackgroundPressed"] = theme.ScrollArrowBgPress;
+        r["ScrollBarButtonArrowForeground"] = theme.ScrollArrowGlyph;
+        r["ScrollBarButtonArrowForegroundPointerOver"] = theme.ScrollArrowGlyph;
+        r["ScrollBarButtonArrowForegroundPressed"] = theme.ScrollArrowGlyph;
+        HScrollBar.InvalidateVisual();
     }
 
     // -------------------------------------------------------------------------
@@ -2880,6 +2918,8 @@ public partial class MainWindow : Window {
         }
 
         var (entries, activeIdx) = session.Value;
+        var sessionSw = Stopwatch.StartNew();
+        var loadingRemaining = new int[] { 0 };
 
         // Phase 1: create all tabs instantly from the manifest.
         // File-backed tabs start background scans but don't wait.
@@ -2889,6 +2929,7 @@ public partial class MainWindow : Window {
             AddTab(tab);
             if (tab.IsLoading) {
                 loadingPairs.Add((tab, entry));
+                loadingRemaining[0]++;
             }
         }
 
@@ -2899,7 +2940,13 @@ public partial class MainWindow : Window {
         // Phase 2: finish loading each file asynchronously.
         // All scans run concurrently; smaller files naturally complete first.
         foreach (var (tab, entry) in loadingPairs) {
-            WireLoadCompletion(tab, entry);
+            WireLoadCompletion(tab, entry, sessionSw, loadingRemaining);
+        }
+
+        if (loadingRemaining[0] == 0) {
+            // All tabs were non-file (untitled) — record immediately.
+            sessionSw.Stop();
+            Editor.PerfStats.LoadTimeMs = sessionSw.Elapsed.TotalMilliseconds;
         }
 
         return true;
@@ -2909,8 +2956,11 @@ public partial class MainWindow : Window {
     /// Wires streaming progress for a session-restored tab and launches
     /// the async completion (conflict detection + edit replay) as
     /// fire-and-forget. The tab's spinner clears when loading finishes.
+    /// When <paramref name="sessionSw"/> is provided, the Load stat is
+    /// updated as the session progresses and stamped when the last tab finishes.
     /// </summary>
-    private void WireLoadCompletion(TabState tab, SessionStore.TabEntry entry) {
+    private void WireLoadCompletion(TabState tab, SessionStore.TabEntry entry,
+        Stopwatch? sessionSw = null, int[]? loadingRemaining = null) {
         // Wire streaming progress so the active tab re-layouts incrementally.
         // Throttle: only one post is queued at a time so we don't saturate
         // the dispatcher and starve the spinner timer.
@@ -2968,6 +3018,17 @@ public partial class MainWindow : Window {
                 if (_activeTab == tab) {
                     Editor.IsEditBlocked = false;
                     Editor.InvalidateLayout();
+                }
+
+                // Session load timing: update as each tab finishes so the
+                // stat shows progress, and stamp the final time when the
+                // last tab completes.
+                if (sessionSw != null) {
+                    Editor.PerfStats.LoadTimeMs = sessionSw.Elapsed.TotalMilliseconds;
+                    if (loadingRemaining != null
+                        && Interlocked.Decrement(ref loadingRemaining[0]) == 0) {
+                        sessionSw.Stop();
+                    }
                 }
             });
         });
