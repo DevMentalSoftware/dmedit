@@ -347,10 +347,23 @@ public sealed class PieceTable {
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Maximum length allowed for <see cref="GetText"/>.  Guards against
+    /// accidental materialization of multi-GB documents into a single string.
+    /// Code that needs larger ranges should use <see cref="ForEachPiece"/>.
+    /// </summary>
+    public const int MaxGetTextLength = 5 * 1024;
+
     /// <summary>Returns a substring of the document.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="len"/> exceeds <see cref="MaxGetTextLength"/>.
+    /// </exception>
     public string GetText(CharOffset start, int len) {
         ArgumentOutOfRangeException.ThrowIfNegative(start);
         ArgumentOutOfRangeException.ThrowIfNegative(len);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(len, MaxGetTextLength,
+            $"GetText len ({len}) exceeds MaxGetTextLength ({MaxGetTextLength}). " +
+            "Use ForEachPiece for large ranges.");
         if (_buf.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(start + len, Length);
         }

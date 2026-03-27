@@ -42,6 +42,7 @@ public partial class MainWindow : Window {
     private readonly List<TabState> _tabs = [];
     private TabState? _activeTab;
     private TabState? _findBarTab;
+    private CancellationTokenSource? _matchCountCts;
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
     private readonly AppSettings _settings = AppSettings.Load();
     public AppSettings Settings => _settings;
@@ -313,7 +314,13 @@ public partial class MainWindow : Window {
                 };
             }
         }
-        // Show find bar only if this tab owns it.
+        // Show find bar only if this tab owns it.  Clear the search text
+        // when switching away so the old term doesn't trigger an expensive
+        // search against a new (potentially large) document.
+        if (tab != _findBarTab) {
+            FindBar.SetSearchTerm("");
+            FindBar.ClearMatchInfo();
+        }
         FindBar.IsVisible = (tab == _findBarTab);
         UpdateTabBar();
         UpdateStatusBar();
@@ -1380,6 +1387,7 @@ public partial class MainWindow : Window {
         Editor._clipboardRing.MaxSize = Math.Max(1, _settings.ClipboardRingSize);
         Editor.ExpandSelectionMode = _settings.ExpandSelectionMode;
         Editor.IndentWidth = _settings.IndentWidth;
+        Editor.MaxRegexMatchLength = _settings.MaxRegexMatchLength;
 
         UpdateStatusBarVisibility();
     }
@@ -2759,10 +2767,10 @@ public partial class MainWindow : Window {
         FindBar.IsVisible = true;
         FindBar.ResetState();
 
-        // Initialize the search box with the current selection if any.
-        var doc = _activeTab is not { IsSettings: true } ? Editor.Document : null;
-        if (doc != null && !doc.Selection.IsEmpty) {
-            FindBar.SetSearchTerm(doc.GetSelectedText());
+        // Initialize the search box with the current selection (single line only).
+        var term = Editor.GetSelectionAsSearchTerm();
+        if (term != null) {
+            FindBar.SetSearchTerm(term);
         }
 
         // Focus must be deferred: the key event that triggered this command
@@ -2787,6 +2795,42 @@ public partial class MainWindow : Window {
         }
     }
 
+    private async void UpdateFindMatchInfo() {
+        // Cancel any in-flight count.
+        _matchCountCts?.Cancel();
+        _matchCountCts?.Dispose();
+
+        if (!FindBar.IsVisible) return;
+        var term = FindBar.SearchTerm;
+        if (term.Length == 0) {
+            FindBar.ClearMatchInfo();
+            _matchCountCts = null;
+            return;
+        }
+        Editor.LastSearchTerm = term;
+
+        var cts = new CancellationTokenSource();
+        _matchCountCts = cts;
+        try {
+            var (current, total, capped) = await Editor.GetMatchInfoAsync(
+                FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode,
+                cts.Token);
+            // Only update UI if this request wasn't superseded.
+            if (_matchCountCts == cts) {
+                FindBar.SetMatchInfo(current, total, capped);
+            }
+        } catch (OperationCanceledException) {
+            // Superseded by a newer request — ignore.
+        }
+    }
+
+    private void SaveFindBarToggles() {
+        _settings.FindSearchMode = FindBar.SearchMode;
+        _settings.FindMatchCase = FindBar.MatchCase;
+        _settings.FindWholeWord = FindBar.WholeWord;
+        _settings.ScheduleSave();
+    }
+
     private void WireFindBar() {
         FindBar.CloseRequested += CloseFindBar;
         FindBar.Resized += w => {
@@ -2797,6 +2841,19 @@ public partial class MainWindow : Window {
 
         // Provide history lists from settings.
         SyncFindBarHistory();
+
+        // Restore persisted find bar toggle state.
+        FindBar.SearchMode = _settings.FindSearchMode;
+        FindBar.MatchCaseBtn.IsChecked = _settings.FindMatchCase;
+        FindBar.WholeWordBtn.IsChecked = _settings.FindWholeWord;
+
+        // Persist toggle state changes.
+        FindBar.SearchTermChanged += () => {
+            SaveFindBarToggles();
+            UpdateFindMatchInfo();
+        };
+        FindBar.MatchCaseBtn.Click += (_, _) => { SaveFindBarToggles(); UpdateFindMatchInfo(); };
+        FindBar.WholeWordBtn.Click += (_, _) => { SaveFindBarToggles(); UpdateFindMatchInfo(); };
 
         // Find requested: Enter / Shift+Enter or direction button.
         FindBar.FindRequested += forward => {
@@ -2811,6 +2868,7 @@ public partial class MainWindow : Window {
                 } else {
                     Editor.FindPrevious(FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode);
                 }
+                UpdateFindMatchInfo();
             }
         };
 
@@ -2824,6 +2882,7 @@ public partial class MainWindow : Window {
             _settings.ScheduleSave();
             Editor.LastSearchTerm = searchTerm;
             Editor.ReplaceCurrent(replaceTerm, FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode);
+            UpdateFindMatchInfo();
         };
 
         // Replace all matches.
@@ -2836,8 +2895,8 @@ public partial class MainWindow : Window {
             SyncFindBarHistory();
             _settings.ScheduleSave();
             Editor.LastSearchTerm = searchTerm;
-            var count = Editor.ReplaceAll(replaceTerm, FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode);
-            FindBar.SetMatchInfo(0, count);
+            Editor.ReplaceAll(replaceTerm, FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode);
+            UpdateFindMatchInfo();
         };
 
         // Restore persisted width.

@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
+using DevMentalMd.Core.Documents;
 
 namespace DevMentalMd.Rendering.Layout;
 
@@ -21,32 +22,63 @@ public sealed class TextLayoutEngine {
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Lays out <paramref name="text"/> with the given font, foreground brush, and viewport width.
-    /// The caller must dispose the returned <see cref="LayoutResult"/> when it is no longer needed.
+    /// Creates a layout for an empty document (single empty line).
     /// </summary>
-    public LayoutResult Layout(
-        string text,
+    public LayoutResult LayoutEmpty(
+        Typeface typeface, double fontSize, IBrush foreground, double maxWidth) =>
+        LayoutLines(new PieceTable(), 0, 1, typeface, fontSize, foreground, maxWidth, 0);
+
+    /// <summary>
+    /// Lays out visible lines directly from the <see cref="PieceTable"/>,
+    /// reading one line at a time to avoid materializing multiple lines
+    /// into a single string.
+    /// </summary>
+    public LayoutResult LayoutLines(
+        PieceTable table,
+        long topLine,
+        long bottomLine,
         Typeface typeface,
         double fontSize,
         IBrush foreground,
         double maxWidth,
-        long viewportBase = 0L) {
+        long viewportBase) {
 
-        // Compute the pixel height of a single visual row from a space character.
         using var spaceLayout = MakeTextLayout(" ", typeface, fontSize, foreground, double.PositiveInfinity);
         var rowHeight = spaceLayout.Height;
 
         var lines = new List<LayoutLine>();
         var row = 0;
-        var charOfs = 0;
+        var lineCount = table.LineCount;
+        var charOfs = 0L;
 
-        foreach (var (lineText, newlineLen) in SplitLogicalLines(text)) {
+        for (var lineIdx = topLine; lineIdx < bottomLine && lineIdx < lineCount; lineIdx++) {
+            var lineStart = table.LineStartOfs(lineIdx);
+            var lineEnd = lineIdx + 1 < lineCount
+                ? table.LineStartOfs(lineIdx + 1)
+                : table.Length;
+
+            // Split the line text from its newline characters.
+            var fullLen = (int)(lineEnd - lineStart);
+            var nlLen = 0;
+            if (fullLen > 0) {
+                // Read the last 1-2 chars to detect newline type.
+                var tailStart = Math.Max(lineStart, lineEnd - 2);
+                var tail = table.GetText(tailStart, (int)(lineEnd - tailStart));
+                if (tail.Length > 0 && tail[^1] == '\n') {
+                    nlLen = (tail.Length >= 2 && tail[^2] == '\r') ? 2 : 1;
+                } else if (tail.Length > 0 && tail[^1] == '\r') {
+                    nlLen = 1;
+                }
+            }
+            var contentLen = fullLen - nlLen;
+            var lineText = contentLen > 0 ? table.GetText(lineStart, contentLen) : "";
+
             var layout = MakeTextLayout(lineText, typeface, fontSize, foreground, maxWidth);
             var h = layout.Height > 0 ? layout.Height : rowHeight;
             var heightInRows = Math.Max(1, (int)Math.Round(h / rowHeight));
-            lines.Add(new LayoutLine(charOfs, lineText.Length, row, heightInRows, layout));
+            lines.Add(new LayoutLine((int)charOfs, contentLen, row, heightInRows, layout));
             row += heightInRows;
-            charOfs += lineText.Length + newlineLen;
+            charOfs += fullLen;
         }
 
         if (lines.Count == 0) {
@@ -108,24 +140,6 @@ public sealed class TextLayoutEngine {
     // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------
-
-    private static List<(string lineText, int newlineLen)> SplitLogicalLines(string text) {
-        var result = new List<(string, int)>();
-        var start = 0;
-        for (var i = 0; i < text.Length; i++) {
-            if (text[i] == '\n') {
-                result.Add((text[start..i], 1));
-                start = i + 1;
-            } else if (text[i] == '\r') {
-                var nlLen = (i + 1 < text.Length && text[i + 1] == '\n') ? 2 : 1;
-                result.Add((text[start..i], nlLen));
-                i += nlLen - 1;
-                start = i + 1;
-            }
-        }
-        result.Add((text[start..], 0));
-        return result;
-    }
 
     private static TextLayout MakeTextLayout(
         string text,

@@ -1,7 +1,10 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -198,6 +201,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     /// <summary>Controls the hierarchy of levels used by Expand Selection.</summary>
     public ExpandSelectionMode ExpandSelectionMode { get; set; } = ExpandSelectionMode.SubwordFirst;
+
+    /// <summary>
+    /// Maximum assumed regex match length for chunked search overlap.
+    /// Set from <see cref="Services.AppSettings.MaxRegexMatchLength"/>.
+    /// </summary>
+    public int MaxRegexMatchLength { get; set; } = 1024;
 
     /// <summary>Number of spaces per indent level. Also controls tab display width.</summary>
     public int IndentWidth {
@@ -647,7 +656,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (doc != null && lineCount > 0) {
             LayoutWindowed(doc, lineCount, typeface, textW, extentW);
         } else {
-            _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, textW);
+            _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
         }
@@ -684,7 +693,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (doc != null && lineCount > 0) {
             LayoutWindowed(doc, lineCount, typeface, textW, extentW);
         } else {
-            _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, textW);
+            _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
         }
@@ -788,7 +797,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // required page isn't in memory yet. Layout empty text — the next
         // ProgressChanged event will trigger re-layout once data is available.
         if (startOfs < 0 || endOfs < 0) {
-            _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, maxWidth, 0);
+            _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, maxWidth);
             _extent = new Size(extentWidth, totalVisualRows * rh);
             RenderOffsetY = 0;
             return;
@@ -802,19 +811,17 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Skip this layout pass — the next one will see the consistent state.
         const int MaxLayoutBytes = 512 * 1024;
         if (len > MaxLayoutBytes) {
-            _layout = _layoutEngine.Layout(string.Empty, typeface, FontSize, ForegroundBrush, maxWidth, 0);
+            _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, maxWidth);
             _extent = new Size(extentWidth, totalVisualRows * rh);
             RenderOffsetY = 0;
             return;
         }
 
-        // Evicted pages are loaded synchronously by GetText → CopyTo →
-        // EnsurePageLoaded (~1 ms/page from SSD).  This avoids the blank
-        // frame that the previous async EnsureLoaded path produced, which
-        // was the main source of flicker during rapid scroll-thumb drags.
-        var text = len > 0 ? doc.Table.GetText(startOfs, len) : string.Empty;
-
-        _layout = _layoutEngine.Layout(text, typeface, FontSize, ForegroundBrush, maxWidth, startOfs);
+        // Layout one line at a time directly from the PieceTable so we
+        // never materialize multiple lines into a single string.
+        _layout = _layoutEngine.LayoutLines(
+            doc.Table, topLine, bottomLine, typeface, FontSize, ForegroundBrush,
+            maxWidth, startOfs);
 
         // When the layout covers the entire document, use exact height
         // instead of the estimate — gives pixel-perfect scrolling on small files.
@@ -994,6 +1001,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (table == null || line.CharLen == 0) return;
 
         var docOfs = layout.ViewportBase + line.CharStart;
+        if (line.CharLen > PieceTable.MaxGetTextLength) return;
         var text = table.GetText(docOfs, line.CharLen);
         var typeface = new Typeface(FontFamily);
 
@@ -2406,7 +2414,15 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         long lineEnd = lineIdx + 1 < table.LineCount
             ? table.LineStartOfs(lineIdx + 1)
             : table.Length;
-        var lineText = table.GetText(lineStart, (int)(lineEnd - lineStart));
+        var lineLen = (int)(lineEnd - lineStart);
+        string lineText;
+        if (lineLen <= PieceTable.MaxGetTextLength) {
+            lineText = table.GetText(lineStart, lineLen);
+        } else {
+            var sb = new StringBuilder(lineLen);
+            table.ForEachPiece(lineStart, lineLen, span => sb.Append(span));
+            lineText = sb.ToString();
+        }
 
         // If the line doesn't end with a newline (last line), prepend one.
         if (lineEnd == table.Length && (lineText.Length == 0 || lineText[^1] != '\n')) {
@@ -3274,18 +3290,45 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// Uses the current selection (or selects the word at the caret if collapsed)
     /// as the search term, then finds the next occurrence.
     /// </summary>
-    public bool FindNextSelection() {
+    /// <summary>Maximum length for a search term derived from the selection.</summary>
+    private const int MaxSearchTermLength = 1024;
+
+    /// <summary>
+    /// Returns the selected text if it is a single line and within
+    /// <see cref="MaxSearchTermLength"/>, or null otherwise.
+    /// Does not modify the selection.
+    /// </summary>
+    public string? GetSelectionAsSearchTerm() {
         var doc = Document;
-        if (doc == null) {
-            return false;
-        }
+        if (doc == null || doc.Selection.IsEmpty) return null;
+        var sel = doc.Selection;
+        if (sel.Len > MaxSearchTermLength) return null;
+        var table = doc.Table;
+        var startLine = table.LineFromOfs(sel.Start);
+        var endLine = table.LineFromOfs(sel.End - 1);
+        if (startLine != endLine) return null;
+        return doc.GetSelectedText();
+    }
+
+    /// <summary>
+    /// Returns the selected text as a search term, or null if the selection
+    /// is empty or spans more than one line.  When collapsed, selects the
+    /// word at the caret first.
+    /// </summary>
+    private string? GetSingleLineSelectionTerm() {
+        var doc = Document;
+        if (doc == null) return null;
         if (doc.Selection.IsEmpty) {
             doc.SelectWord();
-            if (doc.Selection.IsEmpty) {
-                return false;
-            }
+            if (doc.Selection.IsEmpty) return null;
         }
-        _lastSearchTerm = doc.GetSelectedText();
+        return GetSelectionAsSearchTerm();
+    }
+
+    public bool FindNextSelection() {
+        var term = GetSingleLineSelectionTerm();
+        if (term == null) return false;
+        _lastSearchTerm = term;
         return FindNext();
     }
 
@@ -3294,17 +3337,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// as the search term, then finds the previous occurrence.
     /// </summary>
     public bool FindPreviousSelection() {
-        var doc = Document;
-        if (doc == null) {
-            return false;
-        }
-        if (doc.Selection.IsEmpty) {
-            doc.SelectWord();
-            if (doc.Selection.IsEmpty) {
-                return false;
-            }
-        }
-        _lastSearchTerm = doc.GetSelectedText();
+        var term = GetSingleLineSelectionTerm();
+        if (term == null) return false;
+        _lastSearchTerm = term;
         return FindPrevious();
     }
 
@@ -3326,6 +3361,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Only replace if the current selection matches the search term.
         if (doc.Selection.IsEmpty) {
             // No selection — try to find the next match first.
+            FindNext(matchCase, wholeWord, mode);
+            return false;
+        }
+        // The selection should match the search term, so its length is bounded.
+        if (doc.Selection.Len > MaxSearchTermLength) {
             FindNext(matchCase, wholeWord, mode);
             return false;
         }
@@ -3357,37 +3397,143 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
         var table = doc.Table;
         var opts = new SearchOptions(_lastSearchTerm, matchCase, wholeWord, mode);
-        int count = 0;
+
+        // Phase 1: collect all match positions in a single forward pass.
+        // This is fast — chunked search with no document mutations.
+        var matches = new List<(long Pos, int Len)>();
+        long searchFrom = 0;
+        while (searchFrom <= table.Length) {
+            var found = SearchChunked(table, opts, searchFrom, MaxRegexMatchLength);
+            if (found < 0) break;
+            var matchLen = opts.CompiledRegex != null
+                ? RegexMatchLengthAt(table, opts, found)
+                : opts.Needle.Length;
+            matches.Add((found, matchLen));
+            searchFrom = found + Math.Max(matchLen, 1);
+        }
+        if (matches.Count == 0) return 0;
+
+        // Phase 2: apply replacements back-to-front so earlier offsets
+        // stay valid.  Single compound for undo.  Suppress per-edit
+        // Changed events — one fires when the scope is disposed.
         FlushCompound();
         doc.BeginCompound();
-        try {
-            // Search from start, replacing forward.  After each replacement the
-            // document shifts, so we continue searching from the end of the
-            // inserted replacement text.
-            long searchFrom = 0;
-            while (searchFrom <= table.Length) {
-                var found = SearchRange(table, opts, searchFrom, table.Length);
-                if (found < 0) {
-                    break;
-                }
-                var matchLen = opts.MatchLength(table, found);
-                doc.Selection = new Selection(found, found + matchLen);
+        using (doc.SuppressChangedEvents()) {
+            for (var i = matches.Count - 1; i >= 0; i--) {
+                var (pos, len) = matches[i];
+                doc.Selection = new Selection(pos, pos + len);
                 doc.Insert(replacement);
-                count++;
-                searchFrom = found + replacement.Length;
-                if (matchLen == 0) {
-                    // Zero-length regex match — advance past it to avoid infinite loop.
-                    searchFrom++;
+            }
+        }
+        doc.EndCompound();
+        ScrollCaretIntoView();
+        InvalidateVisual();
+        return matches.Count;
+    }
+
+    /// <summary>
+    /// Copies document text into a caller-owned array without allocating
+    /// a string.  Uses <see cref="PieceTable.ForEachPiece"/>.
+    /// </summary>
+    private static void CopyFromTable(PieceTable table, long start, char[] buf, int len) {
+        var pos = 0;
+        table.ForEachPiece(start, len, span => {
+            span.CopyTo(buf.AsSpan(pos));
+            pos += span.Length;
+        });
+    }
+
+    /// <summary>
+    /// Searches forward from <paramref name="start"/> in bounded chunks
+    /// so we never materialize the entire remaining document.
+    /// </summary>
+    private static long SearchChunked(PieceTable table, SearchOptions opts, long start,
+        int maxRegexMatchLen = 1024, long endLimit = -1) {
+        const int chunkSize = 64 * 1024;
+        var docLen = endLimit >= 0 ? Math.Min(endLimit, table.Length) : table.Length;
+        // Overlap by needle length (or maxRegexMatchLen for regex) so
+        // matches spanning chunk boundaries are found.
+        var overlap = opts.CompiledRegex != null
+            ? Math.Min(maxRegexMatchLen, (int)(docLen - start))
+            : opts.Needle.Length;
+
+        var bufLen = chunkSize + overlap;
+        var buf = ArrayPool<char>.Shared.Rent(bufLen);
+        try {
+            while (start < docLen) {
+                var readLen = (int)Math.Min(bufLen, docLen - start);
+                CopyFromTable(table, start, buf, readLen);
+                var dest = buf.AsSpan(0, readLen);
+                int idx;
+                if (opts.CompiledRegex != null) {
+                    var m = opts.CompiledRegex.Match(new string(dest));
+                    idx = m.Success ? m.Index : -1;
+                } else {
+                    idx = dest.IndexOf(opts.Needle.AsSpan(), opts.Comparison);
                 }
+                if (idx >= 0 && start + idx < docLen) return start + idx;
+                start += chunkSize;
             }
         } finally {
-            doc.EndCompound();
+            ArrayPool<char>.Shared.Return(buf);
         }
-        if (count > 0) {
-            ScrollCaretIntoView();
-            InvalidateVisual();
+        return -1;
+    }
+
+    /// <summary>
+    /// Counts all matches and determines the 1-based index of the match at the
+    /// current selection. Returns (0, 0) if there's no search term or no document.
+    /// </summary>
+    /// <summary>Maximum matches to count before returning a capped result.</summary>
+    private const int MaxMatchCount = 9999;
+
+    /// <summary>
+    /// Counts matches on a background thread.  The caller should cancel
+    /// <paramref name="ct"/> when the search term or document changes.
+    /// </summary>
+    public Task<(int Current, int Total, bool Capped)> GetMatchInfoAsync(
+            bool matchCase, bool wholeWord, SearchMode mode,
+            CancellationToken ct = default) {
+        var doc = Document;
+        if (doc == null || _lastSearchTerm.Length == 0)
+            return Task.FromResult((0, 0, false));
+        // Capture UI-thread state before offloading.
+        var table = doc.Table;
+        var opts = new SearchOptions(_lastSearchTerm, matchCase, wholeWord, mode);
+        var selStart = doc.Selection.Start;
+        var maxOverlap = MaxRegexMatchLength;
+        return Task.Run(() => CountMatches(table, opts, selStart, maxOverlap, ct), ct);
+    }
+
+    private static (int Current, int Total, bool Capped) CountMatches(
+            PieceTable table, SearchOptions opts, long selStart,
+            int maxOverlap, CancellationToken ct) {
+        int total = 0, current = 0;
+        long pos = 0;
+        while (pos <= table.Length) {
+            ct.ThrowIfCancellationRequested();
+            var found = SearchChunked(table, opts, pos, maxOverlap);
+            if (found < 0) break;
+            total++;
+            var matchLen = opts.CompiledRegex != null
+                ? RegexMatchLengthAt(table, opts, found)
+                : opts.Needle.Length;
+            if (found == selStart) current = total;
+            if (total >= MaxMatchCount) return (current, total, true);
+            pos = found + Math.Max(matchLen, 1);
         }
-        return count;
+        return (current, total, false);
+    }
+
+    /// <summary>
+    /// Returns the regex match length at an exact document position.
+    /// Reads only enough text to determine the match.
+    /// </summary>
+    private static int RegexMatchLengthAt(PieceTable table, SearchOptions opts, long pos) {
+        var remaining = (int)Math.Min(table.Length - pos, 1024);
+        var text = table.GetText(pos, remaining);
+        var m = opts.CompiledRegex!.Match(text);
+        return m.Success && m.Index == 0 ? m.Length : 0;
     }
 
     /// <summary>
@@ -3549,21 +3695,23 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     private static long FindInDocument(PieceTable table, string needle, long fromOfs) =>
         FindInDocument(table, new SearchOptions(needle, false, false, SearchMode.Normal), fromOfs);
 
-    private static long FindInDocument(PieceTable table, SearchOptions opts, long fromOfs) {
+    private static long FindInDocument(PieceTable table, SearchOptions opts, long fromOfs,
+                                       int maxOverlap = 1024) {
         var docLen = table.Length;
         if (opts.Needle.Length == 0 || docLen == 0) {
             return -1;
         }
 
-        var hit = SearchRange(table, opts, fromOfs, docLen);
+        // Search forward from caret to end (chunked).
+        var hit = SearchChunked(table, opts, fromOfs, maxOverlap);
         if (hit >= 0) {
             return hit;
         }
 
-        // Wrap around.
-        var wrapEnd = Math.Min(fromOfs + opts.Needle.Length - 1, docLen);
-        if (wrapEnd > 0) {
-            hit = SearchRange(table, opts, 0, wrapEnd);
+        // Wrap around: search from start up to fromOfs + needle overlap.
+        if (fromOfs > 0) {
+            var wrapEnd = Math.Min(fromOfs + opts.Needle.Length - 1, docLen);
+            hit = SearchChunked(table, opts, 0, maxOverlap, wrapEnd);
             if (hit >= 0) {
                 return hit;
             }
@@ -3572,55 +3720,71 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         return -1;
     }
 
-    private static long SearchRange(PieceTable table, SearchOptions opts, long start, long end) {
-        var rangeLen = (int)(end - start);
-        if (rangeLen < opts.Needle.Length) {
-            return -1;
-        }
-        var text = table.GetText(start, rangeLen);
-        if (opts.CompiledRegex != null) {
-            var m = opts.CompiledRegex.Match(text);
-            return m.Success ? start + m.Index : -1;
-        }
-        var idx = text.IndexOf(opts.Needle, opts.Comparison);
-        return idx >= 0 ? start + idx : -1;
-    }
-
     // -----------------------------------------------------------------
     // Backward search
     // -----------------------------------------------------------------
 
-    private static long FindInDocumentBackward(PieceTable table, SearchOptions opts, long beforeOfs) {
+    private static long FindInDocumentBackward(PieceTable table, SearchOptions opts,
+                                               long beforeOfs, int maxOverlap = 1024) {
         var docLen = table.Length;
         if (opts.Needle.Length == 0 || docLen == 0) {
             return -1;
         }
 
-        var hit = SearchRangeLast(table, opts, 0, beforeOfs);
+        var hit = SearchChunkedBackward(table, opts, 0, beforeOfs, maxOverlap);
         if (hit >= 0) {
             return hit;
         }
 
-        // Wrap around.
-        hit = SearchRangeLast(table, opts, beforeOfs, docLen);
+        // Wrap around: search backward from end to beforeOfs.
+        if (beforeOfs < docLen) {
+            hit = SearchChunkedBackward(table, opts, beforeOfs, docLen, maxOverlap);
+        }
         return hit;
     }
 
-    private static long SearchRangeLast(PieceTable table, SearchOptions opts, long start, long end) {
-        var rangeLen = (int)(end - start);
-        if (rangeLen < opts.Needle.Length) {
-            return -1;
-        }
-        var text = table.GetText(start, rangeLen);
-        if (opts.CompiledRegex != null) {
-            // Find last regex match by iterating all matches.
-            Match? last = null;
-            foreach (Match m in opts.CompiledRegex.Matches(text)) {
-                last = m;
+    /// <summary>
+    /// Searches backward from <paramref name="end"/> to <paramref name="start"/>
+    /// in bounded chunks, returning the last match position in the range.
+    /// </summary>
+    private static long SearchChunkedBackward(PieceTable table, SearchOptions opts,
+            long start, long end, int maxOverlap) {
+        const int chunkSize = 64 * 1024;
+        var overlap = opts.CompiledRegex != null
+            ? Math.Min(maxOverlap, (int)(end - start))
+            : opts.Needle.Length;
+
+        var bufLen = chunkSize + overlap;
+        var buf = ArrayPool<char>.Shared.Rent(bufLen);
+        try {
+            // Walk backward from end in chunks.
+            var chunkEnd = end;
+            while (chunkEnd > start) {
+                var chunkStart = Math.Max(start, chunkEnd - chunkSize - overlap);
+                var readLen = (int)(chunkEnd - chunkStart);
+                CopyFromTable(table, chunkStart, buf, readLen);
+                var dest = buf.AsSpan(0, readLen);
+
+                long hit;
+                if (opts.CompiledRegex != null) {
+                    var chunk = new string(dest);
+                    Match? last = null;
+                    foreach (Match m in opts.CompiledRegex.Matches(chunk)) {
+                        if (chunkStart + m.Index < end) last = m;
+                    }
+                    hit = last != null ? chunkStart + last.Index : -1;
+                } else {
+                    var idx = dest.LastIndexOf(opts.Needle.AsSpan(), opts.Comparison);
+                    hit = idx >= 0 ? chunkStart + idx : -1;
+                }
+                if (hit >= 0) return hit;
+
+                chunkEnd = chunkStart + overlap;
+                if (chunkEnd <= start) break;
             }
-            return last != null ? start + last.Index : -1;
+        } finally {
+            ArrayPool<char>.Shared.Return(buf);
         }
-        var idx = text.LastIndexOf(opts.Needle, opts.Comparison);
-        return idx >= 0 ? start + idx : -1;
+        return -1;
     }
 }

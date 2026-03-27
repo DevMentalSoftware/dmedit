@@ -34,12 +34,10 @@ static class IconGlyphs {
     public const string H3 = "\uF7F1";
 
     // Reset / undo
-    public const string ArrowUndo    = "\uF199";  // ↺  TODO: verify codepoint against bundled font
+    public const string ArrowUndo    = "\uF199";  // ↺  
 
     // Tail file indicator
     public const string ArrowDown    = "\uF126";  // ↓  ic_fluent_arrow_download_20_regular
-
-
 
     public const string Undo = "\uE127"; //F199
     public const string Redo = "\uE0E5";//F16E
@@ -52,7 +50,7 @@ static class IconGlyphs {
     public const string Save = "\uEA28";
     public const string Search = "\uEA7C";
 
-    // Placeholder toolbar icons (TODO: assign real glyphs)
+    // Placeholder toolbar icons
     public const string ClipboardRing  = "\uE331";
     public const string New            = "\uE331";
     public const string Open           = "\uE331";
@@ -72,7 +70,7 @@ static class IconGlyphs {
     public const string ZoomReset      = "\uE331";
 
     // Conflict / error indicators
-    public const string ErrorCircle  = "\uF4A0";  // TODO: placeholder — pick a better error/warning glyph
+    public const string ErrorCircle  = "\uF4A0";  
 
     // Window chrome glyphs (Linux custom title bar)
     public const string Minimize     = "\uEBD0";  // ─  ic_fluent_subtract_20_regular

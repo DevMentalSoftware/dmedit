@@ -90,7 +90,14 @@ public sealed class Document {
         if (Selection.IsEmpty) {
             return "";
         }
-        return _table.GetText(Selection.Start, (int)Selection.Len);
+        var len = (int)Selection.Len;
+        if (len <= PieceTable.MaxGetTextLength) {
+            return _table.GetText(Selection.Start, len);
+        }
+        // Large selection: build via ForEachPiece to avoid GetText guard.
+        var sb = new StringBuilder(len);
+        _table.ForEachPiece(Selection.Start, len, span => sb.Append(span));
+        return sb.ToString();
     }
 
     /// <summary>
@@ -111,6 +118,31 @@ public sealed class Document {
 
     /// <summary>Raised after any mutation to the document content.</summary>
     public event EventHandler? Changed;
+
+    private int _suppressChanged;
+
+    /// <summary>
+    /// Suppresses <see cref="Changed"/> events until the returned disposable
+    /// is disposed, then fires a single event.  Calls can be nested.
+    /// </summary>
+    public IDisposable SuppressChangedEvents() {
+        _suppressChanged++;
+        return new ChangedScope(this);
+    }
+
+    private void RaiseChanged() {
+        if (_suppressChanged == 0) Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private sealed class ChangedScope(Document doc) : IDisposable {
+        private bool _disposed;
+        public void Dispose() {
+            if (_disposed) return;
+            _disposed = true;
+            doc._suppressChanged--;
+            if (doc._suppressChanged == 0) doc.Changed?.Invoke(doc, EventArgs.Empty);
+        }
+    }
 
     // -------------------------------------------------------------------------
     // Edit operations
@@ -135,7 +167,7 @@ public sealed class Document {
             _history.EndCompound();
         }
         Selection = Selection.Collapsed(ofs + text.Length);
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>Deletes the current selection. No-op if selection is empty.</summary>
@@ -145,7 +177,7 @@ public sealed class Document {
         }
         DeleteRange(Selection.Start, Selection.Len);
         Selection = Selection.Collapsed(Selection.Start);
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>Deletes the character before the caret (like the Backspace key).</summary>
@@ -167,7 +199,7 @@ public sealed class Document {
         var pieces = _table.CapturePieces(delOfs, delLen);
         _history.Push(new DeleteEdit(delOfs, delLen, pieces), _table, Selection);
         Selection = Selection.Collapsed(delOfs);
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>Deletes the character after the caret (like the Delete key).</summary>
@@ -187,7 +219,7 @@ public sealed class Document {
         }
         var pieces = _table.CapturePieces(ofs, delLen);
         _history.Push(new DeleteEdit(ofs, delLen, pieces), _table, Selection);
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     // -------------------------------------------------------------------------
@@ -253,7 +285,7 @@ public sealed class Document {
         if (firstCaret.Count > 0) {
             Selection = Selection.Collapsed(firstCaret[0]);
         }
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>
@@ -304,7 +336,7 @@ public sealed class Document {
         if (newCarets.Count > 0) {
             Selection = Selection.Collapsed(newCarets[0]);
         }
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>
@@ -347,7 +379,7 @@ public sealed class Document {
         if (newCarets.Count > 0) {
             Selection = Selection.Collapsed(newCarets[0]);
         }
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>
@@ -381,7 +413,7 @@ public sealed class Document {
         if (newCarets.Count > 0) {
             Selection = Selection.Collapsed(newCarets[0]);
         }
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>
@@ -401,12 +433,15 @@ public sealed class Document {
             LineEnding.CR => "\r",
             _ => "\n",
         };
-        var parts = new string[sels.Count];
+        var sb = new StringBuilder();
         for (var i = 0; i < sels.Count; i++) {
+            if (i > 0) sb.Append(nl);
             var s = sels[i];
-            parts[i] = s.IsEmpty ? "" : _table.GetText(s.Start, (int)s.Len);
+            if (!s.IsEmpty) {
+                _table.ForEachPiece(s.Start, s.Len, span => sb.Append(span));
+            }
         }
-        return string.Join(nl, parts);
+        return sb.ToString();
     }
 
     /// <summary>
@@ -438,7 +473,7 @@ public sealed class Document {
         _history.EndCompound();
         ColumnSel = null;
         Selection = Selection.Collapsed(Selection.Caret);
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>
@@ -500,7 +535,7 @@ public sealed class Document {
         var dlPieces = _table.CapturePieces(deleteStart, len);
         _history.Push(new DeleteEdit(deleteStart, len, dlPieces), _table, Selection);
         Selection = Selection.Collapsed(Math.Min(deleteStart, _table.Length));
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>
@@ -550,36 +585,40 @@ public sealed class Document {
             return;
         }
 
-        // Get the line text (content only, no line ending).
-        var lineLen = (int)(lineEnd - lineStart);
-        if (lineLen == 0) {
+        // Work in a bounded window around the selection so we don't
+        // materialize an entire line (could be multi-GB for single-line files).
+        const int windowRadius = 1024;
+        var winStart = Math.Max(lineStart, Selection.Start - windowRadius);
+        var winEnd = Math.Min(lineEnd, Selection.End + windowRadius);
+        var winLen = (int)(winEnd - winStart);
+        if (winLen == 0) {
             return;
         }
-        var lineText = _table.GetText(lineStart, lineLen);
+        var winText = _table.GetText(winStart, winLen);
 
-        var selStartInLine = (int)(Selection.Start - lineStart);
-        var selEndInLine = (int)(Selection.End - lineStart);
+        var selStartInWin = (int)(Selection.Start - winStart);
+        var selEndInWin = (int)(Selection.End - winStart);
 
         // If selection contains a non-word character → no-op.
-        for (var i = selStartInLine; i < selEndInLine; i++) {
-            if (!IsWordChar(lineText[i])) {
+        for (var i = selStartInWin; i < selEndInWin; i++) {
+            if (!IsWordChar(winText[i])) {
                 return;
             }
         }
 
-        // Expand backward from selection start to non-word or line start.
-        var left = selStartInLine;
-        while (left > 0 && IsWordChar(lineText[left - 1])) {
+        // Expand backward from selection start to non-word or window start.
+        var left = selStartInWin;
+        while (left > 0 && IsWordChar(winText[left - 1])) {
             left--;
         }
 
-        // Expand forward from selection end to non-word or line end.
-        var right = selEndInLine;
-        while (right < lineLen && IsWordChar(lineText[right])) {
+        // Expand forward from selection end to non-word or window end.
+        var right = selEndInWin;
+        while (right < winLen && IsWordChar(winText[right])) {
             right++;
         }
 
-        Selection = new Selection(lineStart + left, lineStart + right);
+        Selection = new Selection(winStart + left, winStart + right);
     }
 
     /// <summary>
@@ -629,51 +668,55 @@ public sealed class Document {
             return;
         }
 
-        var lineLen = (int)(lineEnd - lineStart);
-        var lineText = lineLen > 0 ? _table.GetText(lineStart, lineLen) : "";
-        var selStartInLine = (int)(Selection.Start - lineStart);
-        var selEndInLine = (int)(Selection.End - lineStart);
+        // Use a bounded window to avoid materializing a multi-GB single line.
+        const int windowRadius = 1024;
+        var winStart = Math.Max(lineStart, Selection.Start - windowRadius);
+        var winEnd = Math.Min(lineEnd, Selection.End + windowRadius);
+        var winLen = (int)(winEnd - winStart);
+        var winText = winLen > 0 ? _table.GetText(winStart, winLen) : "";
+        var selStartInWin = (int)(Selection.Start - winStart);
+        var selEndInWin = (int)(Selection.End - winStart);
 
         // Compute whitespace-bounded range.
-        var wsLeft = selStartInLine;
-        while (wsLeft > 0 && !char.IsWhiteSpace(lineText[wsLeft - 1])) {
+        var wsLeft = selStartInWin;
+        while (wsLeft > 0 && !char.IsWhiteSpace(winText[wsLeft - 1])) {
             wsLeft--;
         }
-        var wsRight = selEndInLine;
-        while (wsRight < lineLen && !char.IsWhiteSpace(lineText[wsRight])) {
+        var wsRight = selEndInWin;
+        while (wsRight < winLen && !char.IsWhiteSpace(winText[wsRight])) {
             wsRight++;
         }
 
-        var atWhitespaceBoundary = selStartInLine == wsLeft && selEndInLine == wsRight;
+        var atWhitespaceBoundary = selStartInWin == wsLeft && selEndInWin == wsRight;
 
         if (mode == ExpandSelectionMode.SubwordFirst && !atWhitespaceBoundary) {
             // Try subword expansion, constrained within the whitespace-bounded word.
-            var subLeft = selStartInLine;
+            var subLeft = selStartInWin;
             if (subLeft > wsLeft) {
                 subLeft--;
-                while (subLeft > wsLeft && !IsSubwordBoundary(lineText, subLeft)) {
+                while (subLeft > wsLeft && !IsSubwordBoundary(winText, subLeft)) {
                     subLeft--;
                 }
             }
-            var subRight = selEndInLine;
+            var subRight = selEndInWin;
             if (subRight < wsRight) {
                 subRight++;
-                while (subRight < wsRight && !IsSubwordBoundary(lineText, subRight)) {
+                while (subRight < wsRight && !IsSubwordBoundary(winText, subRight)) {
                     subRight++;
                 }
             }
 
-            var expanded = subLeft != selStartInLine || subRight != selEndInLine;
+            var expanded = subLeft != selStartInWin || subRight != selEndInWin;
             var alreadyAtWhitespace = subLeft == wsLeft && subRight == wsRight;
             if (expanded && !alreadyAtWhitespace) {
-                Selection = new Selection(lineStart + subLeft, lineStart + subRight);
+                Selection = new Selection(winStart + subLeft, winStart + subRight);
                 return;
             }
         }
 
         // Whitespace boundary level.
         if (!atWhitespaceBoundary) {
-            Selection = new Selection(lineStart + wsLeft, lineStart + wsRight);
+            Selection = new Selection(winStart + wsLeft, winStart + wsRight);
             return;
         }
 
@@ -749,7 +792,9 @@ public sealed class Document {
         }
         var start = Selection.Start;
         var selLen = (int)Selection.Len;
-        var original = _table.GetText(start, selLen);
+        var sb = new StringBuilder(selLen);
+        _table.ForEachPiece(start, selLen, span => sb.Append(span));
+        var original = sb.ToString();
 
         var transformed = transform switch {
             CaseTransform.Upper => original.ToUpperInvariant(),
@@ -769,7 +814,7 @@ public sealed class Document {
 
         // Preserve selection over the transformed text
         Selection = new Selection(start, start + transformed.Length);
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     // -------------------------------------------------------------------------
@@ -864,7 +909,7 @@ public sealed class Document {
 
         Selection = Selection.Collapsed(Math.Min(savedCaret, _table.Length));
         IndentInfo = new IndentInfo(target, false);
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     // -------------------------------------------------------------------------
@@ -877,7 +922,7 @@ public sealed class Document {
             return;
         }
         Selection = result.Value.SelectionBefore;
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     public void Redo() {
@@ -886,7 +931,7 @@ public sealed class Document {
             return;
         }
         Selection = Selection.Collapsed(CaretAfterRedo(result.Value.Edit));
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>
@@ -947,13 +992,17 @@ public sealed class Document {
         var adjEnd = adjacentLine + 1 < lineCount
             ? _table.LineStartOfs(adjacentLine + 1)
             : _table.Length;
-        var adjText = _table.GetText(adjStart, (int)(adjEnd - adjStart));
+        var adjSb = new StringBuilder((int)(adjEnd - adjStart));
+        _table.ForEachPiece(adjStart, adjEnd - adjStart, span => adjSb.Append(span));
+        var adjText = adjSb.ToString();
 
         var selStart = _table.LineStartOfs(firstLine);
         var selEnd = lastLine + 1 < lineCount
             ? _table.LineStartOfs(lastLine + 1)
             : _table.Length;
-        var selText = _table.GetText(selStart, (int)(selEnd - selStart));
+        var selSb = new StringBuilder((int)(selEnd - selStart));
+        _table.ForEachPiece(selStart, selEnd - selStart, span => selSb.Append(span));
+        var selText = selSb.ToString();
 
         // Handle missing trailing newline on the last document line
         var selHasNl = selText.Length > 0 && selText[^1] == '\n';
@@ -972,7 +1021,9 @@ public sealed class Document {
         var blockStart = Math.Min(adjStart, selStart);
         var blockEnd = Math.Max(adjEnd, selEnd);
         var blockLen = (int)(blockEnd - blockStart);
-        var blockDeleted = _table.GetText(blockStart, blockLen);
+        var blockSb = new StringBuilder(blockLen);
+        _table.ForEachPiece(blockStart, blockLen, span => blockSb.Append(span));
+        var blockDeleted = blockSb.ToString();
 
         string newContent;
         long newSelStart;
@@ -993,7 +1044,7 @@ public sealed class Document {
         var anchorDelta = Selection.Anchor - selStart;
         var activeDelta = Selection.Active - selStart;
         Selection = new Selection(newSelStart + anchorDelta, newSelStart + activeDelta);
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';

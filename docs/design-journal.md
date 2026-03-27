@@ -114,6 +114,30 @@ small one — it is the primary way a fresh session recovers context.
 
 ### In progress
 
+- **ReplaceAll as a bulk PieceTable operation** — Current N-edit approach is too
+  slow for large documents.  Correct design: append replacement text once to the
+  add buffer, split existing pieces at match boundaries, substitute match regions
+  with a single add-buffer reference — same architecture as all other PT edits.
+  Undo entry stores match positions + original match length + replacement string;
+  undo reverses the piece substitutions.  Line tree rebuilt once at the end.
+  Makes ReplaceAll O(matches) in piece operations with no string materialization,
+  no per-edit line tree rebuilds, no per-edit undo captures.  Still needs a
+  progress dialog with cancel for the match-collection phase on huge documents.
+
+- **Search Within Selection** — When OpenFindBar is invoked with a multi-line
+  selection, the scope dropdown should auto-select "Current Selection" and all
+  Find/Replace/GetMatchInfo operations should be bounded to the selection's
+  start/end offsets. No text materialization — just integer range limiting.
+  The selection range must be preserved across ReplaceAll edits (adjust offsets
+  as replacements shift content). Single-line selections continue to populate
+  the search term as today.
+
+- **Pseudo-Newlines for Single-Line Files** — Inject synthetic line breaks at
+  a configurable MAX_LINE_LENGTH so the rest of the system (line counting,
+  windowed layout, word selection, etc.) never sees a line longer than that.
+  Eliminates the need for per-caller windowing workarounds for giant single-line
+  files (e.g. minified JSON). Affects LineStartOfs, LineFromOfs, LineCount, and
+  the line-tree building logic in PieceTable.
 
 ### Key deferred items
 

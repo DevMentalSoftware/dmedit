@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
+using DevMentalMd.Core.Documents;
 using DevMentalMd.Rendering.Layout;
 
 namespace DevMentalMd.Rendering.Tests;
@@ -12,9 +13,8 @@ public class TextLayoutEngineTests {
 
     private static TextLayoutEngine Engine() => new();
 
-    private static LayoutResult DoLayout(string text, double maxWidth = WideViewport) {
-        return Engine().Layout(text, DefaultTypeface, FontSize, Brushes.Black, maxWidth);
-    }
+    private static LayoutResult DoLayout(string text, double maxWidth = WideViewport) =>
+        DoLayoutLines(text, maxWidth);
 
     // -------------------------------------------------------------------------
     // Single line, no wrap
@@ -185,6 +185,122 @@ public class TextLayoutEngineTests {
         using var r = DoLayout(text);
         var eng = Engine();
         for (var ofs = 0; ofs <= text.Length; ofs++) {
+            var rect = eng.GetCaretBounds(ofs, r);
+            var hit = eng.HitTest(new Point(rect.X + 0.5, rect.Y + rect.Height / 2), r);
+            Assert.True(Math.Abs(hit - ofs) <= 1,
+                $"Round-trip failed at offset {ofs}: HitTest returned {hit}");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // LayoutLines — line-at-a-time from PieceTable
+    // -------------------------------------------------------------------------
+
+    private static PieceTable MakeTable(string text) {
+        var t = new PieceTable();
+        if (text.Length > 0) t.Insert(0, text);
+        return t;
+    }
+
+    private static LayoutResult DoLayoutLines(string text, double maxWidth = WideViewport) {
+        var table = MakeTable(text);
+        return Engine().LayoutLines(
+            table, 0, table.LineCount, DefaultTypeface, FontSize,
+            Brushes.Black, maxWidth, 0);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_SingleLine() {
+        using var r = DoLayoutLines("hello");
+        Assert.Single(r.Lines);
+        Assert.Equal(0, r.Lines[0].CharStart);
+        Assert.Equal(5, r.Lines[0].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_TwoLines_LF() {
+        using var r = DoLayoutLines("hello\nworld");
+        Assert.Equal(2, r.Lines.Count);
+        Assert.Equal(0, r.Lines[0].CharStart);
+        Assert.Equal(5, r.Lines[0].CharLen);
+        Assert.Equal(6, r.Lines[1].CharStart);
+        Assert.Equal(5, r.Lines[1].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_TwoLines_CRLF() {
+        using var r = DoLayoutLines("a\r\nb");
+        Assert.Equal(2, r.Lines.Count);
+        Assert.Equal(0, r.Lines[0].CharStart);
+        Assert.Equal(1, r.Lines[0].CharLen);
+        Assert.Equal(3, r.Lines[1].CharStart);
+        Assert.Equal(1, r.Lines[1].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_TwoLines_CR() {
+        using var r = DoLayoutLines("a\rb");
+        Assert.Equal(2, r.Lines.Count);
+        Assert.Equal(0, r.Lines[0].CharStart);
+        Assert.Equal(1, r.Lines[0].CharLen);
+        Assert.Equal(2, r.Lines[1].CharStart);
+        Assert.Equal(1, r.Lines[1].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_TrailingNewline_ProducesExtraEmptyLine() {
+        using var r = DoLayoutLines("hello\n");
+        Assert.Equal(2, r.Lines.Count);
+        Assert.Equal(0, r.Lines[1].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_EmptyString() {
+        using var r = DoLayoutLines("");
+        Assert.Single(r.Lines);
+        Assert.Equal(0, r.Lines[0].CharLen);
+        Assert.Equal(1, r.Lines[0].HeightInRows);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_ThreeLines_RowsIncrement() {
+        using var r = DoLayoutLines("a\nb\nc");
+        Assert.Equal(3, r.Lines.Count);
+        Assert.True(r.Lines[1].Row > r.Lines[0].Row);
+        Assert.True(r.Lines[2].Row > r.Lines[1].Row);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_MixedEndings() {
+        using var r = DoLayoutLines("a\nb\r\nc\rd");
+        Assert.Equal(4, r.Lines.Count);
+        Assert.Equal(0, r.Lines[0].CharStart);  // "a"
+        Assert.Equal(1, r.Lines[0].CharLen);
+        Assert.Equal(2, r.Lines[1].CharStart);  // "b"
+        Assert.Equal(1, r.Lines[1].CharLen);
+        Assert.Equal(5, r.Lines[2].CharStart);  // "c"
+        Assert.Equal(1, r.Lines[2].CharLen);
+        Assert.Equal(7, r.Lines[3].CharStart);  // "d"
+        Assert.Equal(1, r.Lines[3].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_PartialRange() {
+        // Layout only lines 1-2 out of 4
+        var table = MakeTable("aaa\nbbb\nccc\nddd");
+        using var r = Engine().LayoutLines(
+            table, 1, 3, DefaultTypeface, FontSize,
+            Brushes.Black, WideViewport, table.LineStartOfs(1));
+        Assert.Equal(2, r.Lines.Count);
+        Assert.Equal(3, r.Lines[0].CharLen); // "bbb"
+        Assert.Equal(3, r.Lines[1].CharLen); // "ccc"
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_HitTest_RoundTrip() {
+        using var r = DoLayoutLines("hello world");
+        var eng = Engine();
+        for (var ofs = 0; ofs <= 11; ofs++) {
             var rect = eng.GetCaretBounds(ofs, r);
             var hit = eng.HitTest(new Point(rect.X + 0.5, rect.Y + rect.Height / 2), r);
             Assert.True(Math.Abs(hit - ofs) <= 1,

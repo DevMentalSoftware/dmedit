@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
+using DevMentalMd.App.Controls;
 using DevMentalMd.Core.Documents;
 
 namespace DevMentalMd.App.Services;
@@ -253,6 +254,22 @@ public sealed class AppSettings {
     // -----------------------------------------------------------------
     // Find bar
     // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Maximum assumed regex match length for chunked search overlap.
+    /// Increase if Replace All misses very long regex matches near chunk
+    /// boundaries. Default 1024 characters.
+    /// </summary>
+    public int MaxRegexMatchLength { get; set; } = 1024;
+
+    /// <summary>Last search mode: Normal, Wildcard, or Regex.</summary>
+    public SearchMode FindSearchMode { get; set; } = SearchMode.Normal;
+
+    /// <summary>Last state of the Match Case toggle.</summary>
+    public bool FindMatchCase { get; set; }
+
+    /// <summary>Last state of the Whole Word toggle.</summary>
+    public bool FindWholeWord { get; set; }
 
     /// <summary>
     /// Remembered width of the find bar in DIPs. Null = use default MinWidth.

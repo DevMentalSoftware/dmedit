@@ -55,7 +55,8 @@
 
                 <!-- Col 2: SearchBox -->
                 <Grid Grid.Column="2" Grid.Row="0"
-                      ColumnDefinitions="*,Auto" Margin="0,0,4,0">
+                      ColumnDefinitions="*,Auto" Margin="0,0,4,0"
+                      ClipToBounds="True">
                     <controls:DMEditableCombo x:Name="SearchBox"
                                               Grid.ColumnSpan="2"
                                               TabIndex="0"
@@ -64,8 +65,9 @@
                                Grid.Column="1"
                                Text=""
                                FontSize="11"
+                               Opacity="0.6"
                                VerticalAlignment="Center"
-                               Margin="0,0,4,0"
+                               Margin="0,0,75,0"
                                IsHitTestVisible="False" />
                 </Grid>
 
@@ -150,23 +152,25 @@
                     <Border DockPanel.Dock="Left"
                             Width="1" Margin="8,2"
                             x:Name="OptionsSeparator" />
-                    <ComboBox x:Name="SearchModeBox"
-                              DockPanel.Dock="Left"
-                              SelectedIndex="0"
-                              MinWidth="100"
-                              TabIndex="6"
-                              ToolTip.Tip="Search mode">
-                        <ComboBoxItem Content="Normal" />
-                        <ComboBoxItem Content="Wildcard" />
-                        <ComboBoxItem Content="Regex" />
-                    </ComboBox>
+                    <ToggleButton x:Name="WildcardBtn"
+                                  DockPanel.Dock="Left"
+                                  Content="*" Height="24"
+                                  Width="24"
+                                  TabIndex="6"
+                                  ToolTip.Tip="Wildcard Search" />
+                    <ToggleButton x:Name="RegexBtn"
+                                  DockPanel.Dock="Left"
+                                  Content=".*" Height="24"
+                                  Margin="4,0,0,0"
+                                  TabIndex="7"
+                                  ToolTip.Tip="Regular Expression Search" />
                     <Border DockPanel.Dock="Left"
                             Width="1" Margin="8,2"
                             x:Name="OptionsSeparator2" />
                     <ComboBox x:Name="ScopeBox"
                               SelectedIndex="0"
                               HorizontalAlignment="Stretch"
-                              TabIndex="7"
+                              TabIndex="8"
                               ToolTip.Tip="Search scope">
                         <ComboBoxItem Content="Current document" />
                         <ComboBoxItem Content="Open documents" />

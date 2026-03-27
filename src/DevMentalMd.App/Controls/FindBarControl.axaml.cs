@@ -31,11 +31,15 @@ public partial class FindBarControl : UserControl {
     public bool MatchCase => MatchCaseBtn.IsChecked == true;
     public bool WholeWord => WholeWordBtn.IsChecked == true;
 
-    public SearchMode SearchMode => SearchModeBox.SelectedIndex switch {
-        1 => SearchMode.Wildcard,
-        2 => SearchMode.Regex,
-        _ => SearchMode.Normal,
-    };
+    public SearchMode SearchMode {
+        get => WildcardBtn.IsChecked == true ? SearchMode.Wildcard :
+               RegexBtn.IsChecked == true ? SearchMode.Regex :
+               SearchMode.Normal;
+        set {
+            WildcardBtn.IsChecked = value == SearchMode.Wildcard;
+            RegexBtn.IsChecked = value == SearchMode.Regex;
+        }
+    }
 
     private bool _isReplaceMode;
     public bool IsReplaceMode {
@@ -60,12 +64,19 @@ public partial class FindBarControl : UserControl {
 
         // Wire events
         CloseBtn.Click += (_, _) => CloseRequested?.Invoke();
-        ReplaceBtn.Click += (_, _) => ReplaceRequested?.Invoke(ReplaceTerm);
-        ReplaceAllBtn.Click += (_, _) => ReplaceAllRequested?.Invoke();
+        ReplaceBtn.Click += (_, _) => {
+            ReplaceRequested?.Invoke(ReplaceTerm);
+            SearchBox.InnerTextBox?.Focus();
+        };
+        ReplaceAllBtn.Click += (_, _) => {
+            ReplaceAllRequested?.Invoke();
+            SearchBox.InnerTextBox?.Focus();
+        };
 
         // Direction button: find in current direction
         FindDirectionBtn.Click += (_, _) => {
             FindRequested?.Invoke(_lastForward);
+            SearchBox.InnerTextBox?.Focus();
         };
 
         // Menu button: open flyout with Find Next / Find Previous
@@ -75,10 +86,12 @@ public partial class FindBarControl : UserControl {
         findNextItem.Click += (_, _) => {
             SetDirection(true);
             FindRequested?.Invoke(true);
+            SearchBox.InnerTextBox?.Focus();
         };
         findPrevItem.Click += (_, _) => {
             SetDirection(false);
             FindRequested?.Invoke(false);
+            SearchBox.InnerTextBox?.Focus();
         };
         menuFlyout.Items.Add(findNextItem);
         menuFlyout.Items.Add(findPrevItem);
@@ -87,6 +100,16 @@ public partial class FindBarControl : UserControl {
         ExpandBtn.Click += (_, _) => {
             _isReplaceMode = !_isReplaceMode;
             ApplyReplaceMode();
+        };
+
+        // Wildcard / Regex toggles: mutual exclusion — only one active at a time.
+        WildcardBtn.Click += (_, _) => {
+            if (WildcardBtn.IsChecked == true) RegexBtn.IsChecked = false;
+            SearchTermChanged?.Invoke();
+        };
+        RegexBtn.Click += (_, _) => {
+            if (RegexBtn.IsChecked == true) WildcardBtn.IsChecked = false;
+            SearchTermChanged?.Invoke();
         };
 
         // Search text changed → raise event
@@ -139,8 +162,14 @@ public partial class FindBarControl : UserControl {
         ReplaceBox.Text = text;
     }
 
-    public void SetMatchInfo(int current, int total) {
-        MatchCount.Text = total == 0 ? "" : $"{current} / {total}";
+    public void SetMatchInfo(int current, int total, bool capped = false) {
+        if (total == 0) {
+            MatchCount.Text = "";
+        } else if (capped) {
+            MatchCount.Text = current > 0 ? $"{current} / {total}+" : $"{total}+";
+        } else {
+            MatchCount.Text = $"{current} / {total}";
+        }
     }
 
     public void ClearMatchInfo() {
