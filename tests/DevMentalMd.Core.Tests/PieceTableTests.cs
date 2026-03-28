@@ -474,6 +474,46 @@ public class PieceTableTests {
         Assert.Equal("", t.GetLine(3));
     }
 
+    [Fact]
+    public void PseudoNewline_GetLineNeverExceedsMaxGetTextLength() {
+        // Simulates the session-restore scenario: a large single-line file
+        // where LineCount/LineStartOfs must never serve an unsplit line that
+        // exceeds MaxGetTextLength, even before the line tree is built.
+        var content = new string('n', M * 5 + 17);
+        var t = new PieceTable(content);
+        // Every line's content must fit in GetText.
+        for (var i = 0; i < t.LineCount; i++) {
+            var start = t.LineStartOfs(i);
+            var end = i + 1 < t.LineCount
+                ? t.LineStartOfs(i + 1)
+                : t.Length;
+            var len = (int)(end - start);
+            Assert.True(len <= PieceTable.MaxGetTextLength,
+                $"Line {i}: length {len} exceeds MaxGetTextLength ({PieceTable.MaxGetTextLength})");
+            // Also verify GetLine works without throwing.
+            var line = t.GetLine(i);
+            Assert.True(line.Length <= M);
+        }
+    }
+
+    [Fact]
+    public void PseudoNewline_ConsecutiveLineStartOfsNeverExceedsMaxPseudoLine() {
+        // No two consecutive LineStartOfs values should differ by more than
+        // MaxPseudoLine. Tests with various sizes including large single-line.
+        foreach (var size in new[] { M - 1, M, M + 1, M * 3, M * 5 + 17 }) {
+            var t = new PieceTable(new string('p', size));
+            var lc = t.LineCount;
+            for (long i = 0; i < lc; i++) {
+                var start = t.LineStartOfs(i);
+                var end = i + 1 < lc ? t.LineStartOfs(i + 1) : t.Length;
+                var gap = end - start;
+                Assert.True(gap <= M,
+                    $"Size {size}, line {i}: gap {gap} exceeds MaxPseudoLine ({M})");
+            }
+            Assert.Equal(new string('p', size), t.GetText());
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------

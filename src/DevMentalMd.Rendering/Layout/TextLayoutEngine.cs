@@ -41,24 +41,31 @@ public sealed class TextLayoutEngine {
         double fontSize,
         IBrush foreground,
         double maxWidth,
-        long viewportBase) {
+        long viewportBase,
+        long lineCount = -1,
+        long docLength = -1) {
 
         using var spaceLayout = MakeTextLayout(" ", typeface, fontSize, foreground, double.PositiveInfinity);
         var rowHeight = spaceLayout.Height;
 
         var lines = new List<LayoutLine>();
         var row = 0;
-        var lineCount = table.LineCount;
+        if (lineCount < 0) lineCount = table.LineCount;
+        if (docLength < 0) docLength = table.Length;
         var charOfs = 0L;
 
         for (var lineIdx = topLine; lineIdx < bottomLine && lineIdx < lineCount; lineIdx++) {
             var lineStart = table.LineStartOfs(lineIdx);
             var lineEnd = lineIdx + 1 < lineCount
                 ? table.LineStartOfs(lineIdx + 1)
-                : table.Length;
+                : docLength;
 
-            // Split the line text from its newline characters.
+            // Skip lines with inconsistent offsets — can happen during
+            // streaming load when the background scan mutates line data
+            // between reads.
+            if (lineStart < 0 || lineEnd < 0 || lineEnd < lineStart) continue;
             var fullLen = (int)(lineEnd - lineStart);
+            if (fullLen > PieceTable.MaxGetTextLength) continue;
             var nlLen = 0;
             if (fullLen > 0) {
                 // Read the last 1-2 chars to detect newline type.

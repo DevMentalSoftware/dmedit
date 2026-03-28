@@ -859,7 +859,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var startOfs = topLine > 0 ? doc.Table.LineStartOfs(topLine) : 0L;
         long endOfs;
         if (bottomLine >= lineCount) {
-            endOfs = doc.Table.Length;
+            endOfs = totalChars;
         } else {
             endOfs = doc.Table.LineStartOfs(bottomLine);
         }
@@ -889,11 +889,30 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return;
         }
 
+        // Diagnostic: check that no line in the layout range exceeds MaxPseudoLine.
+        // If this fires, the line tree is stale or the buffer short-circuit
+        // served unsplit data.
+        if (System.Diagnostics.Debugger.IsAttached) {
+            var table = doc.Table;
+            for (var li = topLine; li < bottomLine && li < lineCount; li++) {
+                var ls = table.LineStartOfs(li);
+                var le = li + 1 < lineCount ? table.LineStartOfs(li + 1) : totalChars;
+                if (ls >= 0 && le >= 0 && le - ls > PieceTable.MaxGetTextLength) {
+                    // Capture diagnostic state before breaking.
+                    var hasLineTree = table.LineCount > 0; // forces tree build if needed
+                    var bufType = table.Buffer?.GetType().Name ?? "null";
+                    var bufLineCount = table.Buffer?.LineCount ?? -1;
+                    var bufLongest = table.Buffer?.LongestLine ?? -1;
+                    System.Diagnostics.Debugger.Break();
+                }
+            }
+        }
+
         // Layout one line at a time directly from the PieceTable so we
         // never materialize multiple lines into a single string.
         _layout = _layoutEngine.LayoutLines(
             doc.Table, topLine, bottomLine, typeface, FontSize, ForegroundBrush,
-            maxWidth, startOfs);
+            maxWidth, startOfs, lineCount, totalChars);
 
         // When the layout covers the entire document, use exact height
         // instead of the estimate — gives pixel-perfect scrolling on small files.
@@ -1070,10 +1089,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     private void DrawWhitespace(DrawingContext ctx, LayoutResult layout, LayoutLine line, double y, double rh) {
         var table = Document?.Table;
-        if (table == null || line.CharLen == 0) return;
+        if (table == null || line.CharLen <= 0) return;
 
         var docOfs = layout.ViewportBase + line.CharStart;
-        if (line.CharLen > PieceTable.MaxGetTextLength) return;
+        if (docOfs < 0 || line.CharLen > PieceTable.MaxGetTextLength) return;
+        if (docOfs + line.CharLen > table.Length) return;
         var text = table.GetText(docOfs, line.CharLen);
         var typeface = new Typeface(FontFamily);
 

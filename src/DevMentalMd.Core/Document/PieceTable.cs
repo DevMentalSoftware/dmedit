@@ -637,6 +637,8 @@ public sealed class PieceTable {
         get {
             if (_lineTree != null) return _lineTree;
             BuildLineTree();
+            Debug.Assert(_maxLineLen <= MaxPseudoLine,
+                $"BuildLineTree produced _maxLineLen={_maxLineLen} > MaxPseudoLine={MaxPseudoLine}");
             return _lineTree!;
         }
     }

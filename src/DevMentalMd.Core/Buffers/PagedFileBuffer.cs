@@ -74,7 +74,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     private List<int> _lineLengths = null!;  // every line's length including terminator
     private int _currentLineLen;             // accumulates chars for the line in progress
     private long _lineCount;                 // accessed via Interlocked
-    private volatile int _longestLine;
+    private volatile int _longestLine = Documents.PieceTable.MaxPseudoLine;
     private long _lastLineStart;
 
     // -----------------------------------------------------------------
