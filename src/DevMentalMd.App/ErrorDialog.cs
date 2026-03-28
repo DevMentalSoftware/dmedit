@@ -115,7 +115,7 @@ public class ErrorDialog : Window {
             var expander = new Expander {
                 Header = "Stack Trace",
                 Content = traceBox,
-                IsExpanded = true,
+                IsExpanded = devMode,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 BorderThickness = new Thickness(0),

@@ -70,13 +70,11 @@ class Program {
         // Only the first caller gets to show the dialog. Subsequent
         // exceptions while the dialog is up are logged but ignored.
         if (Interlocked.Exchange(ref _handlingFatal, 1) != 0) {
-            // Already handling a fatal error — just log and return.
-            var path = CrashReport.Write(ex, operation);
+            // Already handling a fatal error — log to stderr only.
+            // Don't write additional crash report files for the same
+            // cascading failure — the first report has the root cause.
             Console.Error.WriteLine($"FATAL (suppressed): {operation}");
             Console.Error.WriteLine(ex);
-            if (path is not null) {
-                Console.Error.WriteLine($"Crash report: {path}");
-            }
             return;
         }
 

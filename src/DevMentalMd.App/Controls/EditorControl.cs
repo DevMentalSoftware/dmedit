@@ -112,6 +112,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     private readonly TextLayoutEngine _layoutEngine = new();
     private LayoutResult? _layout;
+    /// <summary>
+    /// Set when a layout pass throws an unrecoverable exception.  Once set,
+    /// all subsequent layout/render attempts return an empty layout so the
+    /// error dialog can paint without triggering the same crash again.
+    /// </summary>
+    private bool _layoutFailed;
     private bool _caretVisible = true;
     private bool _keepScrollOnSwap;
     private readonly DispatcherTimer _caretTimer;
@@ -685,6 +691,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (_layout != null) {
             return _layout;
         }
+        if (_layoutFailed) {
+            _layout = _layoutEngine.LayoutEmpty(
+                new Typeface(FontFamily), FontSize, ForegroundBrush, 100);
+            return _layout;
+        }
         _perfSw.Restart();
 
         var doc = Document;
@@ -696,12 +707,20 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var textW = GetTextWidth(extentW);
         var lineCount = doc?.Table.LineCount ?? 0;
 
-        if (doc != null && lineCount > 0) {
-            LayoutWindowed(doc, lineCount, typeface, textW, extentW);
-        } else {
+        try {
+            if (doc != null && lineCount > 0) {
+                LayoutWindowed(doc, lineCount, typeface, textW, extentW);
+            } else {
+                _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, textW);
+                _extent = new Size(extentW, 0);
+                RenderOffsetY = 0;
+            }
+        } catch {
+            _layoutFailed = true;
             _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
+            throw;
         }
 
         _perfSw.Stop();
@@ -719,6 +738,14 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     protected override Size MeasureOverride(Size availableSize) {
         _layout?.Dispose();
         _layout = null;
+        _viewport = availableSize;
+
+        if (_layoutFailed) {
+            _layout = _layoutEngine.LayoutEmpty(
+                new Typeface(FontFamily), FontSize, ForegroundBrush, 100);
+            return availableSize;
+        }
+
         _perfSw.Restart();
 
         var doc = Document;
@@ -729,16 +756,23 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             ? 0
             : Math.Max(100, availableSize.Width - _gutterWidth);
         var textW = GetTextWidth(extentW);
-        _viewport = availableSize;
 
         var lineCount = doc?.Table.LineCount ?? 0;
 
-        if (doc != null && lineCount > 0) {
-            LayoutWindowed(doc, lineCount, typeface, textW, extentW);
-        } else {
+        try {
+            if (doc != null && lineCount > 0) {
+                LayoutWindowed(doc, lineCount, typeface, textW, extentW);
+            } else {
+                _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, textW);
+                _extent = new Size(extentW, 0);
+                RenderOffsetY = 0;
+            }
+        } catch {
+            _layoutFailed = true;
             _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
+            throw;
         }
 
         _perfSw.Stop();
