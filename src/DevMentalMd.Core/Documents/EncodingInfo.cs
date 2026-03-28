@@ -24,6 +24,9 @@ public enum FileEncoding {
 
     /// <summary>US-ASCII (7-bit).</summary>
     Ascii,
+
+    /// <summary>Not yet detected — set before file loading completes.</summary>
+    Unknown,
 }
 
 /// <summary>
@@ -39,6 +42,7 @@ public readonly record struct EncodingInfo(FileEncoding Encoding) {
         FileEncoding.Utf16Be => "UTF-16 BE",
         FileEncoding.Windows1252 => "Windows-1252",
         FileEncoding.Ascii => "ASCII",
+        FileEncoding.Unknown => "",
         _ => "UTF-8",
     };
 
@@ -55,6 +59,7 @@ public readonly record struct EncodingInfo(FileEncoding Encoding) {
         FileEncoding.Utf16Be => new UnicodeEncoding(bigEndian: true, byteOrderMark: true),
         FileEncoding.Windows1252 => System.Text.Encoding.GetEncoding(1252),
         FileEncoding.Ascii => System.Text.Encoding.ASCII,
+        FileEncoding.Unknown => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
         _ => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
     };
 

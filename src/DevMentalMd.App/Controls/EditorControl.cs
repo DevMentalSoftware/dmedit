@@ -876,12 +876,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         var len = (int)(endOfs - startOfs);
 
-        // Sanity check: a visible window of ~100 lines should never exceed
-        // a few hundred KB.  If len is larger, the line tree and piece table
-        // are in an inconsistent state (e.g. intermediate state during undo).
-        // Skip this layout pass — the next one will see the consistent state.
-        const int MaxLayoutBytes = 512 * 1024;
-        if (len > MaxLayoutBytes) {
+        // Sanity check: the visible window spans at most visibleRows lines,
+        // each capped at MaxPseudoLine chars.  If len exceeds that, the line
+        // tree and piece table are in an inconsistent state (e.g. intermediate
+        // state during undo).  Skip this layout pass — the next one will see
+        // the consistent state.
+        var maxLayoutBytes = visibleRows * PieceTable.MaxPseudoLine;
+        if (len > maxLayoutBytes) {
             _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, maxWidth);
             _extent = new Size(extentWidth, totalVisualRows * rh);
             RenderOffsetY = 0;

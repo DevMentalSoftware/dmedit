@@ -275,6 +275,206 @@ public class PieceTableTests {
     }
 
     // -------------------------------------------------------------------------
+    // Pseudo-newlines (MaxPseudoLine)
+    // -------------------------------------------------------------------------
+
+    // Use M as shorthand for MaxPseudoLine in test calculations.
+    private const int M = PieceTable.MaxPseudoLine;
+
+    [Fact]
+    public void PseudoNewline_LongLineSplitInBuildLineTree() {
+        var content = new string('a', M * 2 + 1);
+        var t = new PieceTable(content);
+        Assert.Equal(3, t.LineCount);
+        Assert.Equal(0L, t.LineStartOfs(0));
+        Assert.Equal((long)M, t.LineStartOfs(1));
+        Assert.Equal((long)M * 2, t.LineStartOfs(2));
+    }
+
+    [Fact]
+    public void PseudoNewline_ExactMultipleProducesNoRemainder() {
+        var content = new string('b', M * 2);
+        var t = new PieceTable(content);
+        Assert.Equal(2, t.LineCount);
+    }
+
+    [Fact]
+    public void PseudoNewline_GetLineReturnsCorrectContent() {
+        var content = new string('c', M + M / 2);
+        var t = new PieceTable(content);
+        Assert.Equal(2, t.LineCount);
+        Assert.Equal(new string('c', M), t.GetLine(0));
+        Assert.Equal(new string('c', M / 2), t.GetLine(1));
+    }
+
+    [Fact]
+    public void PseudoNewline_LineFromOfsMapsThroughBoundaries() {
+        var content = new string('d', M * 2 + M / 2);
+        var t = new PieceTable(content);
+        Assert.Equal(0L, t.LineFromOfs(0));
+        Assert.Equal(0L, t.LineFromOfs(M - 1));
+        Assert.Equal(1L, t.LineFromOfs(M));
+        Assert.Equal(2L, t.LineFromOfs(M * 2));
+    }
+
+    [Fact]
+    public void PseudoNewline_RealNewlinesMixedWithPseudo() {
+        // (M + M/2) chars + \n + 5 chars.
+        var content = new string('e', M + M / 2) + "\n" + "hello";
+        var t = new PieceTable(content);
+        // First real line splits into [M, M/2+1 (including \n)].
+        // Second real line: [5].
+        Assert.Equal(3, t.LineCount);
+        Assert.Equal(new string('e', M), t.GetLine(0));
+        Assert.Equal(new string('e', M / 2), t.GetLine(1));
+        Assert.Equal("hello", t.GetLine(2));
+    }
+
+    [Fact]
+    public void PseudoNewline_InsertSplitsLongLine() {
+        // Start at exactly MaxPseudoLine, then insert to push it over.
+        var content = new string('f', M);
+        var t = new PieceTable(content);
+        Assert.Equal(1, t.LineCount);
+        t.Insert(M / 2, "X"); // now M+1 chars
+        Assert.Equal(2, t.LineCount);
+        Assert.Equal(M + 1, t.Length);
+    }
+
+    [Fact]
+    public void PseudoNewline_DeleteMergesAndResplits() {
+        var content = new string('g', M * 3);
+        var t = new PieceTable(content);
+        Assert.Equal(3, t.LineCount);
+        // Delete M/2 chars crossing the first pseudo-boundary.
+        var delStart = M - M / 4;
+        var delLen = M / 2;
+        t.Delete(delStart, delLen);
+        Assert.Equal(M * 3 - delLen, t.Length);
+        Assert.Equal(new string('g', M * 3 - delLen), t.GetText());
+    }
+
+    [Fact]
+    public void PseudoNewline_InsertRealNewlineInPseudoLine() {
+        var content = new string('h', M + M / 2);
+        var t = new PieceTable(content);
+        Assert.Equal(2, t.LineCount);
+        // Insert a real newline at position M/2.
+        t.Insert(M / 2, "\n");
+        Assert.True(t.LineCount >= 3);
+        Assert.Equal(M + M / 2 + 1, t.Length);
+    }
+
+    [Fact]
+    public void PseudoNewline_UndoRedoPreservesContent() {
+        var content = new string('i', M);
+        var doc = MakeDoc(content);
+        doc.Selection = Core.Documents.Selection.Collapsed(M);
+        doc.Insert("X");
+        Assert.Equal(M + 1, doc.Table.Length);
+        doc.Undo();
+        Assert.Equal(M, doc.Table.Length);
+        Assert.Equal(content, doc.Table.GetText());
+        doc.Redo();
+        Assert.Equal(M + 1, doc.Table.Length);
+        Assert.Equal(content + "X", doc.Table.GetText());
+    }
+
+    [Fact]
+    public void PseudoNewline_ContentUnchangedAfterSplit() {
+        var content = new string('j', M * 3 + M / 2);
+        var t = new PieceTable(content);
+        Assert.Equal(content, t.GetText());
+    }
+
+    [Fact]
+    public void PseudoNewline_NoEntryExceedsMaxPseudoLine() {
+        // A line with a real newline beyond MaxPseudoLine.
+        var content = new string('x', M + 12) + "\n" + "end";
+        var t = new PieceTable(content);
+        var snapshot = t.SnapshotLineLengths();
+        foreach (var len in snapshot) {
+            Assert.True(len <= M,
+                $"Line entry {len} exceeds MaxPseudoLine ({M})");
+        }
+        Assert.Equal(content, t.GetText());
+    }
+
+    [Fact]
+    public void PseudoNewline_NoEntryExceedsMaxPseudoLine_ExactBoundary() {
+        var content = new string('y', M) + "\n" + "end";
+        var t = new PieceTable(content);
+        var snapshot = t.SnapshotLineLengths();
+        foreach (var len in snapshot) {
+            Assert.True(len <= M,
+                $"Line entry {len} exceeds MaxPseudoLine ({M})");
+        }
+        Assert.Equal(content, t.GetText());
+    }
+
+    [Fact]
+    public void PseudoNewline_NoEntryExceedsMaxPseudoLine_CrlfBeyondLimit() {
+        var content = new string('z', M + 1) + "\r\n" + "end";
+        var t = new PieceTable(content);
+        var snapshot = t.SnapshotLineLengths();
+        foreach (var len in snapshot) {
+            Assert.True(len <= M,
+                $"Line entry {len} exceeds MaxPseudoLine ({M})");
+        }
+        Assert.Equal(content, t.GetText());
+    }
+
+    [Fact]
+    public void PseudoNewline_InstallLineTreeSplitsLongEntries() {
+        var totalLen = M * 3;
+        var t = new PieceTable(new string('q', totalLen));
+        t.InstallLineTree([totalLen]);
+        var snapshot = t.SnapshotLineLengths();
+        foreach (var len in snapshot) {
+            Assert.True(len <= M,
+                $"InstallLineTree entry {len} exceeds MaxPseudoLine ({M})");
+        }
+        Assert.Equal(3, snapshot.Length);
+    }
+
+    [Fact]
+    public void PseudoNewline_SingleLineFileNoNewlines() {
+        var content = new string('m', M + 12);
+        var t = new PieceTable(content);
+        Assert.True(t.LineCount > 1, $"Expected pseudo-split but got {t.LineCount} line(s)");
+        var snapshot = t.SnapshotLineLengths();
+        foreach (var len in snapshot) {
+            Assert.True(len <= M,
+                $"Line entry {len} exceeds MaxPseudoLine ({M})");
+        }
+        for (var i = 0; i < t.LineCount; i++) {
+            var line = t.GetLine(i);
+            Assert.True(line.Length <= M);
+        }
+        Assert.Equal(content, t.GetText());
+    }
+
+    [Fact]
+    public void PseudoNewline_ShortLinesUnaffected() {
+        var t = new PieceTable("hello\nworld\n");
+        Assert.Equal(3, t.LineCount);
+        Assert.Equal("hello", t.GetLine(0));
+        Assert.Equal("world", t.GetLine(1));
+        Assert.Equal("", t.GetLine(2));
+    }
+
+    [Fact]
+    public void PseudoNewline_GetLine_RealNewlines_StillWork() {
+        // Verify GetLine still strips \r\n correctly after the CharAt fix.
+        var t = new PieceTable("abc\r\ndef\ngh\r");
+        Assert.Equal(4, t.LineCount);
+        Assert.Equal("abc", t.GetLine(0));
+        Assert.Equal("def", t.GetLine(1));
+        Assert.Equal("gh", t.GetLine(2));
+        Assert.Equal("", t.GetLine(3));
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 

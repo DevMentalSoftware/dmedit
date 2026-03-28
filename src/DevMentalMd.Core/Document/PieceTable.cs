@@ -23,8 +23,18 @@ public sealed class PieceTable {
     // Provides O(log L) prefix-sum queries for LineStartOfs/LineFromOfs and
     // O(log L) incremental updates for non-newline edits.  Individual values
     // are derived from the tree via ValueAt() — no parallel list is kept.
+    // Lines longer than MaxPseudoLine are split into pseudo-lines so the
+    // layout engine never sees a single enormous line.
     private LineIndexTree? _lineTree;
     private int _maxLineLen = -1;
+
+    /// <summary>
+    /// Maximum characters per line in the line tree.  Lines exceeding this
+    /// are split into pseudo-lines during <see cref="BuildLineTree"/> and
+    /// after incremental edits.  The document text is never modified —
+    /// pseudo-newlines exist only in the line tree.
+    /// </summary>
+    public const int MaxPseudoLine = 500;
 
     // Sentinel: a piece with this Len spans the entire _buf from its Start offset
     // without knowing the exact length upfront.  Only valid for Piece.Which == Original.
@@ -101,7 +111,9 @@ public sealed class PieceTable {
     public long LineCount {
         get {
             if (_lineTree != null) return _lineTree.Count;
-            if (IsOriginalContent && _buf.LineCount >= 0) return _buf.LineCount;
+            if (IsOriginalContent && _buf.LineCount >= 0
+                && _buf.LongestLine >= 0 && _buf.LongestLine <= MaxPseudoLine)
+                return _buf.LineCount;
             return LineTree.Count;
         }
     }
@@ -230,9 +242,14 @@ public sealed class PieceTable {
             var newLen = _lineTree.ValueAt(affectedLine);
             if (newLen > _maxLineLen)
                 _maxLineLen = newLen;
+            SplitLongLine(affectedLine);
         } else if (affectedLine >= 0 && hasNewlines) {
             // Newlines inserted: splice line lengths array, O(L) rebuild.
             SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs, text);
+            // SpliceInsertLines replaced 1 line with nlCount lines; count
+            // them by scanning forward from affectedLine.
+            var nlCount = (int)(LineFromOfs(Math.Min(ofs + text.Length, Length)) - affectedLine + 1);
+            SplitLongLines(affectedLine, nlCount);
         } else {
             // affectedLine < 0 means _lineTree was null when we checked above.
             // This should never happen once the tree is installed.
@@ -308,6 +325,7 @@ public sealed class PieceTable {
         } else if (startLine >= 0 && hasNewline) {
             // Newlines deleted: merge lines, O(L) rebuild.
             SpliceDeleteLines(startLine, endLine, ofs, len);
+            SplitLongLine(startLine); // merged line may exceed limit
         } else {
             // startLine < 0 means _lineTree was null when we checked above.
             // This should never happen once the tree is installed — edits
@@ -352,7 +370,7 @@ public sealed class PieceTable {
     /// accidental materialization of multi-GB documents into a single string.
     /// Code that needs larger ranges should use <see cref="ForEachPiece"/>.
     /// </summary>
-    public const int MaxGetTextLength = 5 * 1024;
+    public const int MaxGetTextLength = MaxPseudoLine + 2; // +2 for \r\n terminator
 
     /// <summary>Returns a substring of the document.</summary>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -361,9 +379,13 @@ public sealed class PieceTable {
     public string GetText(CharOffset start, int len) {
         ArgumentOutOfRangeException.ThrowIfNegative(start);
         ArgumentOutOfRangeException.ThrowIfNegative(len);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(len, MaxGetTextLength,
-            $"GetText len ({len}) exceeds MaxGetTextLength ({MaxGetTextLength}). " +
-            "Use ForEachPiece for large ranges.");
+        if (len > MaxGetTextLength) {
+            if (System.Diagnostics.Debugger.IsAttached)
+                System.Diagnostics.Debugger.Break();
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(len, MaxGetTextLength,
+                $"GetText len ({len}) exceeds MaxGetTextLength ({MaxGetTextLength}). " +
+                "Use ForEachPiece for large ranges.");
+        }
         if (_buf.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(start + len, Length);
         }
@@ -396,7 +418,8 @@ public sealed class PieceTable {
             if (lineIdx >= _lineTree.Count) return -1L;
             return lineIdx == 0 ? 0 : _lineTree.PrefixSum((int)lineIdx - 1);
         }
-        if (IsOriginalContent) return _buf.GetLineStart(lineIdx);
+        if (IsOriginalContent && _buf.LongestLine >= 0 && _buf.LongestLine <= MaxPseudoLine)
+            return _buf.GetLineStart(lineIdx);
         var tree = LineTree;
         if (lineIdx >= tree.Count) return -1L;
         return lineIdx == 0 ? 0 : tree.PrefixSum((int)lineIdx - 1);
@@ -413,7 +436,8 @@ public sealed class PieceTable {
             var idx = _lineTree.FindByPrefixSum(ofs + 1);
             return idx >= 0 ? idx : _lineTree.Count - 1;
         }
-        if (IsOriginalContent && _buf.LineCount >= 0) {
+        if (IsOriginalContent && _buf.LineCount >= 0
+            && _buf.LongestLine >= 0 && _buf.LongestLine <= MaxPseudoLine) {
             return BinarySearchBufferLines(_buf, ofs);
         }
         var tree = LineTree;
@@ -457,9 +481,16 @@ public sealed class PieceTable {
             lineEnd = LineStartOfs(lineIdx + 1);
             if (lineEnd < 0) {
                 lineEnd = Length;
-            } else {
-                lineEnd--; // back up before newline
-                if (lineEnd > lineStart && CharAt(lineEnd - 1) == '\r') {
+            } else if (lineEnd > lineStart) {
+                // Strip trailing newline if present.  Pseudo-line boundaries
+                // have no newline character, so check the actual content.
+                var ch = CharAt(lineEnd - 1);
+                if (ch == '\n') {
+                    lineEnd--;
+                    if (lineEnd > lineStart && CharAt(lineEnd - 1) == '\r') {
+                        lineEnd--;
+                    }
+                } else if (ch == '\r') {
                     lineEnd--;
                 }
             }
@@ -560,14 +591,38 @@ public sealed class PieceTable {
     /// unblocking input.
     /// </summary>
     public void InstallLineTree(ReadOnlySpan<int> lineLengths) {
-        _lineTree = LineIndexTree.FromValues(lineLengths);
-        // Compute max from the raw span — O(n) scan, much cheaper than
-        // O(n log n) via tree.ValueAt() calls.
-        var max = 0;
+        // Check if any entry exceeds MaxPseudoLine and needs splitting.
+        var needsSplit = false;
         foreach (var len in lineLengths) {
-            if (len > max) max = len;
+            if (len > MaxPseudoLine) { needsSplit = true; break; }
         }
-        _maxLineLen = max;
+
+        if (needsSplit) {
+            // Expand into a mutable list, splitting long entries.
+            var expanded = new List<int>(lineLengths.Length);
+            foreach (var len in lineLengths) {
+                if (len <= MaxPseudoLine) {
+                    expanded.Add(len);
+                } else {
+                    var remaining = len;
+                    while (remaining > MaxPseudoLine) {
+                        expanded.Add(MaxPseudoLine);
+                        remaining -= MaxPseudoLine;
+                    }
+                    if (remaining > 0) expanded.Add(remaining);
+                }
+            }
+            _lineTree = LineIndexTree.FromValues(
+                System.Runtime.InteropServices.CollectionsMarshal.AsSpan(expanded));
+            _maxLineLen = MaxPseudoLine;
+        } else {
+            _lineTree = LineIndexTree.FromValues(lineLengths);
+            var max = 0;
+            foreach (var len in lineLengths) {
+                if (len > max) max = len;
+            }
+            _maxLineLen = max;
+        }
         AssertLineTreeValid();
     }
 
@@ -626,6 +681,13 @@ public sealed class PieceTable {
         _maxLineLen = maxLen;
 
         _lineTree = LineIndexTree.FromValues(CollectionsMarshal.AsSpan(lengths));
+
+        // Split any lines that exceed MaxPseudoLine.  For the PieceTable(string)
+        // constructor this handles long lines; for PagedFileBuffer files,
+        // ScanNewlines already splits, so this is a no-op.
+        if (_maxLineLen > MaxPseudoLine) {
+            SplitLongLines(0, _lineTree.Count);
+        }
     }
 
 
@@ -704,6 +766,43 @@ public sealed class PieceTable {
     }
 
     /// <summary>
+    /// If the line at <paramref name="lineIdx"/> exceeds <see cref="MaxPseudoLine"/>,
+    /// splits it into chunks of MaxPseudoLine (last chunk gets the remainder).
+    /// </summary>
+    private void SplitLongLine(int lineIdx) {
+        var len = _lineTree!.ValueAt(lineIdx);
+        if (len <= MaxPseudoLine) return;
+
+        var chunkCount = (len + MaxPseudoLine - 1) / MaxPseudoLine;
+        Span<int> chunks = chunkCount <= 64
+            ? stackalloc int[chunkCount]
+            : new int[chunkCount];
+        var remaining = len;
+        for (var i = 0; i < chunkCount; i++) {
+            chunks[i] = Math.Min(MaxPseudoLine, remaining);
+            remaining -= chunks[i];
+        }
+
+        _lineTree.RemoveAt(lineIdx);
+        _lineTree.InsertRange(lineIdx, chunks);
+        // Max line length is now capped at MaxPseudoLine (plus possible
+        // newline terminator on the last real line's final chunk).
+        if (_maxLineLen >= 0 && _maxLineLen > MaxPseudoLine) {
+            _maxLineLen = -1; // conservative recompute
+        }
+    }
+
+    /// <summary>
+    /// Checks lines in the range [startLine, startLine+count) and splits
+    /// any that exceed <see cref="MaxPseudoLine"/>.
+    /// </summary>
+    private void SplitLongLines(int startLine, int count) {
+        for (var i = startLine + count - 1; i >= startLine; i--) {
+            SplitLongLine(i);
+        }
+    }
+
+    /// <summary>
     /// Captures line tree information for the range [ofs, ofs+len) so undo can
     /// restore the line tree without scanning characters.  Returns null when
     /// the delete is within a single line (no line structure change).
@@ -742,6 +841,7 @@ public sealed class PieceTable {
         // Re-insert the original lines.
         _lineTree.InsertRange(startLine, lineLengths);
         _maxLineLen = -1; // conservative recompute
+        SplitLongLines(startLine, lineLengths.Length);
     }
 
     /// <summary>
@@ -756,6 +856,7 @@ public sealed class PieceTable {
         _lineTree.Update(line, (int)len);
         var newLen = _lineTree.ValueAt(line);
         if (newLen > _maxLineLen) _maxLineLen = newLen;
+        SplitLongLine(line);
     }
 
     /// <summary>

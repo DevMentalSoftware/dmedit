@@ -79,6 +79,7 @@ public static class FileLoader {
         var paged = new PagedFileBuffer(path, byteLen);
 
         var doc = new Document(new PieceTable(paged));
+        doc.EncodingInfo = new Documents.EncodingInfo(FileEncoding.Unknown);
         var tcs = new TaskCompletionSource();
 
         var result = new LoadResult(doc, Path.GetFileName(path), WasZipped: false, Buffer: paged) {
@@ -139,6 +140,7 @@ public static class FileLoader {
             var buf = new StreamingFileBuffer(decompStream, estimatedLen, owner: zip);
 
             var doc = new Document(new PieceTable(buf));
+            doc.EncodingInfo = new Documents.EncodingInfo(FileEncoding.Unknown);
             var result = new LoadResult(doc, displayName, WasZipped: true) {
                 InnerEntryName = entry.Name
             };

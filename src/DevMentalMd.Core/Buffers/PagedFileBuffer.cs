@@ -31,7 +31,8 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     // -----------------------------------------------------------------
 
     private const int PageSizeBytes = 1_048_576; // 1 MB raw bytes per page
-    private const int MAX_LONGEST_LINE = 10_000; // If we have a line longer than this we won't bother to track further
+    // No line can exceed MaxPseudoLine after InstallLineTree splits them.
+    private static readonly int MAX_LONGEST_LINE = Documents.PieceTable.MaxPseudoLine;
 
     /// <summary>
     /// Default maximum number of decoded pages kept in memory.
@@ -479,6 +480,16 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                     _crCount++;
                 }
                 prevWasCr = false;
+
+                // Pseudo-split: emit a line entry before this char pushes
+                // us past MaxPseudoLine, so no entry ever exceeds the limit.
+                if (_currentLineLen >= Documents.PieceTable.MaxPseudoLine) {
+                    lock (_lock) { _lineLengths.Add(_currentLineLen); }
+                    currentLine++;
+                    Interlocked.Exchange(ref _lineCount, currentLine + 1);
+                    _currentLineLen = 0;
+                }
+
                 _currentLineLen++;
 
                 // Track indentation style: check first char of each line.

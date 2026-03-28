@@ -28,7 +28,7 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 491** (395 Core + 31 Rendering + 65 App, 1 skipped)
+**Test baseline: 508** (412 Core + 31 Rendering + 65 App, 1 skipped)
 
 ### Recently completed
 
@@ -173,6 +173,24 @@ small one — it is the primary way a fresh session recovers context.
 - **Command Registry + Key Binding System** (2026-03-06) — centralized dispatch,
   user-customizable bindings, Keyboard settings section, 55 App tests.
 
+- **Pseudo-Newlines for Single-Line Files** (2026-03-28) — `MaxPseudoLine = 500`
+  in PieceTable. Lines exceeding this are split into pseudo-lines in the line
+  tree — the document text is never modified. Pseudo-splitting applied at three
+  levels: `PagedFileBuffer.ScanNewlines` (during background file scan),
+  `BuildLineTree` (post-processing after tree construction), and `SplitLongLine`
+  helper (after incremental edits). `GetLine()` fixed to check actual character
+  via `CharAt` instead of assuming a newline at every boundary. `MaxGetTextLength`
+  derived from `MaxPseudoLine + 2`. `MaxLayoutBytes` derived from
+  `visibleRows * MaxPseudoLine`. `MAX_LONGEST_LINE` in PagedFileBuffer replaced
+  with reference to `MaxPseudoLine`. `LineCount`/`LineStartOfs`/`LineFromOfs`
+  buffer short-circuits gated on `LongestLine <= MaxPseudoLine` to prevent
+  bypassing the line tree when pseudo-splits are needed. `_layoutFailed` flag
+  in EditorControl prevents cascading crashes from repeated layout failures.
+  `HandleFatalException` re-entrancy guard no longer writes duplicate crash
+  reports. `Debugger.Break()` before `GetText` guard throw for easier debugging.
+  `FileEncoding.Unknown` added for documents before encoding detection completes.
+  17 new tests, all using `PieceTable.MaxPseudoLine` constant for portability.
+
 - **Per-line scroll estimation** (2026-03-27) — Replaced global `avgLineHeight`
   (uniform average) with per-line Y estimation using `LineIndexTree` prefix sums.
   Two new O(log N) helpers: `EstimateLineY(lineIndex, table, charsPerRow, rh)` maps
@@ -195,12 +213,14 @@ small one — it is the primary way a fresh session recovers context.
   as replacements shift content). Single-line selections continue to populate
   the search term as today.
 
-- **Pseudo-Newlines for Single-Line Files** — Inject synthetic line breaks at
-  a configurable MAX_LINE_LENGTH so the rest of the system (line counting,
-  windowed layout, word selection, etc.) never sees a line longer than that.
-  Eliminates the need for per-caller windowing workarounds for giant single-line
-  files (e.g. minified JSON). Affects LineStartOfs, LineFromOfs, LineCount, and
-  the line-tree building logic in PieceTable.
+- **Defer layout until first page loaded** — Currently, `ProgressChanged`
+  triggers `InvalidateLayout` after each page scan, causing `BuildLineTree`
+  to run on partial content. This is replaced by `InstallLineTree` once
+  `LoadComplete` fires. For small files (< 1 MB = 1 page), the entire load
+  completes in one page — no incremental rendering needed. Waiting until at
+  least the first page (or `InstallLineTree`) before starting layout would
+  eliminate the intermediate `BuildLineTree` calls and the buffer short-circuit
+  guards added for pseudo-newline safety.
 
 ### Key deferred items
 
