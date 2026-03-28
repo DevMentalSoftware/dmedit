@@ -19,6 +19,7 @@ using DevMentalMd.App.Services;
 using Cmd = DevMentalMd.App.Commands.Commands;
 using DevMentalMd.Core.Buffers;
 using DevMentalMd.Core.Documents;
+using DevMentalMd.Core.Documents.History;
 using DevMentalMd.Rendering.Layout;
 
 namespace DevMentalMd.App.Controls;
@@ -361,6 +362,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         /// <summary>Total time from open to fully loaded.</summary>
         public double LoadTimeMs { get; set; }
         public double SaveTimeMs { get; set; }
+        /// <summary>Time for the most recent ReplaceAll operation.</summary>
+        public double ReplaceAllTimeMs { get; set; }
         /// <summary>Current GC memory in MB.</summary>
         public double MemoryMb { get; set; }
         /// <summary>Peak GC memory seen this session in MB.</summary>
@@ -1594,8 +1597,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
         FlushCompound();
         _editSw.Restart();
-        doc.Undo();
-        ScrollCaretIntoView();
+        var edit = doc.Undo();
+        if (!IsBulkReplace(edit)) {
+            ScrollCaretIntoView();
+        }
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         InvalidateLayout();
@@ -1609,13 +1614,18 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
         FlushCompound();
         _editSw.Restart();
-        doc.Redo();
-        ScrollCaretIntoView();
+        var edit = doc.Redo();
+        if (!IsBulkReplace(edit)) {
+            ScrollCaretIntoView();
+        }
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         InvalidateLayout();
         ResetCaretBlink();
     }
+
+    private static bool IsBulkReplace(IDocumentEdit? edit) =>
+        edit is UniformBulkReplaceEdit or VaryingBulkReplaceEdit;
 
     public void PerformSelectAll() {
         var doc = Document;
@@ -2803,6 +2813,27 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             ScrollValue = ScrollMaximum;
         }
 
+        // The estimate above can be wrong when lines wrap unevenly.
+        // Do a layout pass and verify the caret is actually visible;
+        // if not, adjust the scroll to bring it into view.
+        InvalidateLayout();
+        var layout = EnsureLayout();
+        var caretLocalOfs = (int)(caret - layout.ViewportBase);
+        var layoutCharEnd = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
+        if (caretLocalOfs >= 0 && caretLocalOfs <= layoutCharEnd) {
+            var caretRect = _layoutEngine.GetCaretBounds(caretLocalOfs, layout);
+            var caretScreenY = caretRect.Y + RenderOffsetY;
+            if (caretScreenY < 0) {
+                // Caret is above the viewport — scroll up.
+                ScrollValue = _scrollOffset.Y + caretScreenY;
+                InvalidateLayout();
+            } else if (caretScreenY + rh > _viewport.Height) {
+                // Caret is below the viewport — scroll down.
+                ScrollValue = _scrollOffset.Y + caretScreenY + rh - _viewport.Height;
+                InvalidateLayout();
+            }
+        }
+
         // Horizontal: estimate caret X from its column within the line.
         if (!_wrapLines && HScrollMaximum > 0) {
             var lineStart = table.LineStartOfs(caretLine);
@@ -3389,46 +3420,79 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// Replaces all occurrences of the current search term with
     /// <paramref name="replacement"/>.  Returns the number of replacements made.
     /// </summary>
-    public int ReplaceAll(string replacement, bool matchCase = false,
-                          bool wholeWord = false, SearchMode mode = SearchMode.Normal) {
+    /// <summary>
+    /// Collects match positions on a background thread, then applies a single
+    /// bulk PieceTable replace on the UI thread.  Reports progress via
+    /// <paramref name="progress"/> (0–100) and supports cancellation.
+    /// Returns the number of replacements made, or 0 if cancelled.
+    /// </summary>
+    public async Task<int> ReplaceAllAsync(string replacement, bool matchCase = false,
+                          bool wholeWord = false, SearchMode mode = SearchMode.Normal,
+                          IProgress<(string Message, double Percent)>? progress = null,
+                          CancellationToken ct = default) {
         var doc = Document;
         if (doc == null || _lastSearchTerm.Length == 0) {
             return 0;
         }
         var table = doc.Table;
         var opts = new SearchOptions(_lastSearchTerm, matchCase, wholeWord, mode);
+        var isRegex = opts.CompiledRegex != null;
+        var docLen = table.Length;
+        var maxOverlap = MaxRegexMatchLength;
 
-        // Phase 1: collect all match positions in a single forward pass.
-        // This is fast — chunked search with no document mutations.
-        var matches = new List<(long Pos, int Len)>();
-        long searchFrom = 0;
-        while (searchFrom <= table.Length) {
-            var found = SearchChunked(table, opts, searchFrom, MaxRegexMatchLength);
-            if (found < 0) break;
-            var matchLen = opts.CompiledRegex != null
-                ? RegexMatchLengthAt(table, opts, found)
-                : opts.Needle.Length;
-            matches.Add((found, matchLen));
-            searchFrom = found + Math.Max(matchLen, 1);
-        }
-        if (matches.Count == 0) return 0;
+        // Phase 1: collect all match positions on a background thread.
+        // Progress updates throttled to ~100ms to avoid UI marshalling overhead.
+        var (positions, matchLengths) = await Task.Run(() => {
+            var pos = new List<long>();
+            var lens = isRegex ? new List<int>() : null;
+            long searchFrom = 0;
+            var lastProgressTicks = Environment.TickCount64;
+            while (searchFrom <= docLen) {
+                ct.ThrowIfCancellationRequested();
+                var found = SearchChunked(table, opts, searchFrom, maxOverlap);
+                if (found < 0) break;
+                var matchLen = isRegex
+                    ? RegexMatchLengthAt(table, opts, found)
+                    : opts.Needle.Length;
+                pos.Add(found);
+                lens?.Add(matchLen);
+                searchFrom = found + Math.Max(matchLen, 1);
 
-        // Phase 2: apply replacements back-to-front so earlier offsets
-        // stay valid.  Single compound for undo.  Suppress per-edit
-        // Changed events — one fires when the scope is disposed.
-        FlushCompound();
-        doc.BeginCompound();
-        using (doc.SuppressChangedEvents()) {
-            for (var i = matches.Count - 1; i >= 0; i--) {
-                var (pos, len) = matches[i];
-                doc.Selection = new Selection(pos, pos + len);
-                doc.Insert(replacement);
+                var now = Environment.TickCount64;
+                if (docLen > 0 && now - lastProgressTicks >= 100) {
+                    lastProgressTicks = now;
+                    var pct = (double)searchFrom / docLen * 99.0;
+                    progress?.Report(($"Searching\u2026 {pos.Count:N0} matches found", pct));
+                }
             }
+            return (pos, lens);
+        }, ct);
+
+        if (positions.Count == 0) return 0;
+
+        progress?.Report(($"Replacing {positions.Count:N0} matches\u2026", 99));
+
+        // Phase 2: single bulk PieceTable operation on the UI thread.
+        FlushCompound();
+        int count;
+        if (matchLengths == null) {
+            count = doc.BulkReplaceUniform(
+                positions.ToArray(), opts.Needle.Length, replacement);
+        } else {
+            var matches = new (long Pos, int Len)[positions.Count];
+            for (var i = 0; i < positions.Count; i++) {
+                matches[i] = (positions[i], matchLengths[i]);
+            }
+            var replacements = new string[matches.Length];
+            Array.Fill(replacements, replacement);
+            count = doc.BulkReplaceVarying(matches, replacements);
         }
-        doc.EndCompound();
+
+        progress?.Report(("Done", 100));
+
         ScrollCaretIntoView();
         InvalidateVisual();
-        return matches.Count;
+        return count;
     }
 
     /// <summary>

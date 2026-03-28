@@ -142,7 +142,7 @@ public class CommandPaletteWindow : Window {
             Text = "No matching commands",
             FontSize = 12,
             HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 16, 0, 0),
+            Margin = new Thickness(12, 16, 0, 0),
             IsVisible = false,
         };
 
@@ -182,6 +182,7 @@ public class CommandPaletteWindow : Window {
         var filtered = new List<Command>();
         foreach (var cmd in Cmd.All) {
             if (cmd.Category == "Menu") continue; // pseudo-commands for Alt access keys
+            if (cmd.Category == "Dev" && !_settings.DevMode) continue;
             if (hasFilter) {
                 var matchesName = cmd.DisplayName.Contains(filter,
                     StringComparison.OrdinalIgnoreCase);
@@ -221,14 +222,23 @@ public class CommandPaletteWindow : Window {
     }
 
     private void BuildGroupedList(List<Command> commands) {
-        var groups = commands
-            .GroupBy(c => c.Category)
-            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+        // Group by category, preserving first-seen order.
+        var groupMap = new Dictionary<string, List<Command>>();
+        var groupOrder = new List<string>();
+        foreach (var cmd in commands) {
+            if (!groupMap.TryGetValue(cmd.Category, out var list)) {
+                list = [];
+                groupMap[cmd.Category] = list;
+                groupOrder.Add(cmd.Category);
+            }
+            list.Add(cmd);
+        }
+        var groups = groupOrder.Select(c => (Category: c, Commands: groupMap[c]));
 
         foreach (var group in groups) {
             // Category header (not selectable).
             var header = new TextBlock {
-                Text = group.Key,
+                Text = group.Category,
                 FontSize = 13,
                 FontWeight = FontWeight.SemiBold,
                 Margin = new Thickness(4, 8, 0, 2),
@@ -236,7 +246,7 @@ public class CommandPaletteWindow : Window {
             };
             _listPanel.Children.Add(header);
 
-            foreach (var cmd in group.OrderBy(c => c.DisplayName, StringComparer.OrdinalIgnoreCase)) {
+            foreach (var cmd in group.Commands) {
                 var row = CreateRow(cmd, indent: true);
                 _listPanel.Children.Add(row);
                 _visibleRows.Add((row, cmd));

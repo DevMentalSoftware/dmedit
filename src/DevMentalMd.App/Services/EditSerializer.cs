@@ -95,6 +95,31 @@ public static class EditSerializer {
                     ["text"] = del.MaterializeText(table),
                 };
             }
+            case UniformBulkReplaceEdit ubr: {
+                var positions = new JsonArray();
+                foreach (var p in ubr.MatchPositions) positions.Add(p);
+                return new JsonObject {
+                    ["type"] = "bulkUniform",
+                    ["matchLen"] = ubr.MatchLen,
+                    ["replacement"] = ubr.Replacement,
+                    ["positions"] = positions,
+                };
+            }
+            case VaryingBulkReplaceEdit vbr: {
+                var items = new JsonArray();
+                for (var i = 0; i < vbr.MatchCount; i++) {
+                    var m = vbr.Matches[i];
+                    items.Add(new JsonObject {
+                        ["pos"] = m.Pos,
+                        ["len"] = m.Len,
+                        ["rep"] = vbr.Replacements[i],
+                    });
+                }
+                return new JsonObject {
+                    ["type"] = "bulkVarying",
+                    ["matches"] = items,
+                };
+            }
             case CompoundEdit comp:
                 return SerializeCompound(comp, table, ref budget);
             default:
@@ -158,8 +183,37 @@ public static class EditSerializer {
                 obj["len"]!.GetValue<long>(),
                 obj["text"]!.GetValue<string>()),
             "compound" => DeserializeCompound(obj),
+            "bulkUniform" => DeserializeUniformBulk(obj),
+            "bulkVarying" => DeserializeVaryingBulk(obj),
             _ => throw new NotSupportedException($"Unknown edit type: {type}")
         };
+    }
+
+    private static UniformBulkReplaceEdit DeserializeUniformBulk(JsonObject obj) {
+        var matchLen = obj["matchLen"]!.GetValue<int>();
+        var replacement = obj["replacement"]!.GetValue<string>();
+        var posArr = obj["positions"]!.AsArray();
+        var positions = new long[posArr.Count];
+        for (var i = 0; i < posArr.Count; i++) {
+            positions[i] = posArr[i]!.GetValue<long>();
+        }
+        // Saved state is not persisted — undo past a session restore boundary
+        // for bulk edits is not supported (same as oversized deletes).
+        return new UniformBulkReplaceEdit(
+            positions, matchLen, replacement, [], [], 0);
+    }
+
+    private static VaryingBulkReplaceEdit DeserializeVaryingBulk(JsonObject obj) {
+        var items = obj["matches"]!.AsArray();
+        var matches = new (long Pos, int Len)[items.Count];
+        var replacements = new string[items.Count];
+        for (var i = 0; i < items.Count; i++) {
+            var m = items[i]!.AsObject();
+            matches[i] = (m["pos"]!.GetValue<long>(), m["len"]!.GetValue<int>());
+            replacements[i] = m["rep"]!.GetValue<string>();
+        }
+        return new VaryingBulkReplaceEdit(
+            matches, replacements, [], [], 0);
     }
 
     private static CompoundEdit DeserializeCompound(JsonObject obj) {

@@ -818,6 +818,53 @@ public sealed class Document {
     }
 
     // -------------------------------------------------------------------------
+    // Bulk replace
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Uniform bulk replace: all matches have the same length and the same
+    /// replacement string.  Single undo entry, one line tree rebuild.
+    /// </summary>
+    public int BulkReplaceUniform(long[] matchPositions, int matchLen, string replacement) {
+        if (matchPositions.Length == 0) return 0;
+
+        var savedPieces = _table.SnapshotPieces();
+        var savedLines = _table.SnapshotLineLengths();
+        var savedAddLen = _table.AddBufferLength;
+
+        var edit = new UniformBulkReplaceEdit(
+            matchPositions, matchLen, replacement,
+            savedPieces, savedLines, savedAddLen);
+        _history.Push(edit, _table, Selection);
+
+        Selection = Selection.Collapsed(Math.Min(Selection.Caret, _table.Length));
+        RaiseChanged();
+        return matchPositions.Length;
+    }
+
+    /// <summary>
+    /// Varying bulk replace: matches have different lengths and/or different
+    /// replacements (e.g. regex replace, indentation conversion).
+    /// Single undo entry, one line tree rebuild.
+    /// </summary>
+    public int BulkReplaceVarying((long Pos, int Len)[] matches, string[] replacements) {
+        if (matches.Length == 0) return 0;
+
+        var savedPieces = _table.SnapshotPieces();
+        var savedLines = _table.SnapshotLineLengths();
+        var savedAddLen = _table.AddBufferLength;
+
+        var edit = new VaryingBulkReplaceEdit(
+            matches, replacements,
+            savedPieces, savedLines, savedAddLen);
+        _history.Push(edit, _table, Selection);
+
+        Selection = Selection.Collapsed(Math.Min(Selection.Caret, _table.Length));
+        RaiseChanged();
+        return matches.Length;
+    }
+
+    // -------------------------------------------------------------------------
     // Line ending conversion
     // -------------------------------------------------------------------------
 
@@ -836,35 +883,43 @@ public sealed class Document {
 
     /// <summary>
     /// Converts all leading indentation in the document between tabs and spaces.
-    /// Replaces the entire document content in a single compound edit.
+    /// Uses bulk replace — no full-document string materialization.
     /// </summary>
     public void ConvertIndentation(IndentStyle target, int tabSize = 4) {
-        var sb = new System.Text.StringBuilder((int)Math.Min(_table.Length * 2, int.MaxValue));
         var spacesStr = new string(' ', tabSize);
+
+        // Phase 1: walk the document to find indent regions that need changing.
+        var matches = new List<(long Pos, int Len)>();
+        var replacements = new List<string>();
+        var leadingBuf = new StringBuilder();
         var atLineStart = true;
-        var leadingBuf = new System.Text.StringBuilder();
-        var changed = false;
+        var indentStart = 0L;
+        var docPos = 0L;
 
         void FlushLeading() {
             if (leadingBuf.Length == 0) return;
             var before = leadingBuf.ToString();
+            string after;
             if (target == IndentStyle.Spaces) {
+                var sb = new StringBuilder(before.Length * tabSize);
                 foreach (var c in before) {
-                    if (c == '\t') { sb.Append(spacesStr); changed = true; }
-                    else sb.Append(c);
+                    if (c == '\t') { sb.Append(spacesStr); }
+                    else { sb.Append(c); }
                 }
+                after = sb.ToString();
             } else {
                 var expandedSpaces = 0;
                 foreach (var c in before) {
-                    if (c == '\t') expandedSpaces += tabSize;
-                    else expandedSpaces++;
+                    if (c == '\t') { expandedSpaces += tabSize; }
+                    else { expandedSpaces++; }
                 }
                 var wholeTabs = expandedSpaces / tabSize;
                 var remainSpaces = expandedSpaces % tabSize;
-                sb.Append('\t', wholeTabs);
-                sb.Append(' ', remainSpaces);
-                if (sb.Length > 0 && before != sb.ToString()[(sb.Length - wholeTabs - remainSpaces)..])
-                    changed = true;
+                after = new string('\t', wholeTabs) + new string(' ', remainSpaces);
+            }
+            if (after != before) {
+                matches.Add((indentStart, before.Length));
+                replacements.Add(after);
             }
             leadingBuf.Clear();
         }
@@ -872,14 +927,18 @@ public sealed class Document {
         _table.ForEachPiece(0, _table.Length, span => {
             foreach (var ch in span) {
                 if (atLineStart && (ch == ' ' || ch == '\t')) {
+                    if (leadingBuf.Length == 0) {
+                        indentStart = docPos;
+                    }
                     leadingBuf.Append(ch);
+                    docPos++;
                     continue;
                 }
                 if (atLineStart) {
                     FlushLeading();
                     atLineStart = false;
                 }
-                sb.Append(ch);
+                docPos++;
                 if (ch == '\n' || ch == '\r') {
                     atLineStart = true;
                 }
@@ -888,50 +947,45 @@ public sealed class Document {
         // Flush any trailing leading whitespace (file ends with whitespace-only line).
         if (atLineStart) FlushLeading();
 
-        if (!changed) {
+        if (matches.Count == 0) {
             IndentInfo = new IndentInfo(target, false);
             return;
         }
 
-        var result = sb.ToString();
-        var originalLen = _table.Length;
-        var pieces = _table.CapturePieces(0, originalLen);
-        var lineInfo = _table.CaptureLineInfo(0, originalLen);
-        var savedCaret = Selection.Caret;
-
-        _history.BeginCompound();
-        var deleteEdit = lineInfo is var (sl, ll)
-            ? new DeleteEdit(0, originalLen, pieces, sl, ll)
-            : new DeleteEdit(0, originalLen, pieces);
-        _history.Push(deleteEdit, _table, Selection);
-        _history.Push(new InsertEdit(0, result), _table, Selection);
-        _history.EndCompound();
-
-        Selection = Selection.Collapsed(Math.Min(savedCaret, _table.Length));
+        BulkReplaceVarying(matches.ToArray(), replacements.ToArray());
         IndentInfo = new IndentInfo(target, false);
-        RaiseChanged();
     }
 
     // -------------------------------------------------------------------------
     // Undo / Redo
     // -------------------------------------------------------------------------
 
-    public void Undo() {
+    /// <summary>
+    /// Undoes the most recent edit. Returns the edit that was reverted,
+    /// or <c>null</c> if nothing to undo.
+    /// </summary>
+    public IDocumentEdit? Undo() {
         var result = _history.Undo(_table);
         if (result is null) {
-            return;
+            return null;
         }
         Selection = result.Value.SelectionBefore;
         RaiseChanged();
+        return result.Value.Edit;
     }
 
-    public void Redo() {
+    /// <summary>
+    /// Re-applies the most recently undone edit. Returns the edit that
+    /// was applied, or <c>null</c> if nothing to redo.
+    /// </summary>
+    public IDocumentEdit? Redo() {
         var result = _history.Redo(_table);
         if (result is null) {
-            return;
+            return null;
         }
         Selection = Selection.Collapsed(CaretAfterRedo(result.Value.Edit));
         RaiseChanged();
+        return result.Value.Edit;
     }
 
     /// <summary>
@@ -944,6 +998,9 @@ public sealed class Document {
         DeleteEdit del => del.Ofs,
         // Compound applies in forward order → last apply is the last edit.
         CompoundEdit comp => CaretAfterRedo(comp.Edits[^1]),
+        // Bulk replace → caret at start of document (no single obvious position).
+        UniformBulkReplaceEdit => 0L,
+        VaryingBulkReplaceEdit => 0L,
         _ => 0L
     };
 

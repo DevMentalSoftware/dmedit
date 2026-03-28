@@ -22,14 +22,75 @@ small one — it is the primary way a fresh session recovers context.
 | [08-status-bar](design-journal/08-status-bar.md) | 2026-03-14 | Interactive status bar buttons, indent detection, GoTo Line, file locking fix, file watching notes |
 | [09-storage-and-history](design-journal/09-storage-and-history.md) | 2026-03-22 | Storage-backed edits, file history, checkpoints, projects, git integration roadmap |
 | [10-session-and-reliability](design-journal/10-session-and-reliability.md) | 2026-03-24 | Session persist bugs, edit serialization, line tree reliability, memory safety, buffer simplification |
+| [11-search-and-memory-safety](design-journal/11-search-and-memory-safety.md) | 2026-03-27 | Horizontal scrollbar, find bar improvements, async match counting, GetText guard, line-at-a-time layout, chunked search, ReplaceAll design |
 
 ---
 
 ## Current State
 
-**Test baseline: 450** (366 Core + 21 Rendering + 63 App)
+**Test baseline: 491** (395 Core + 31 Rendering + 65 App, 1 skipped)
 
 ### Recently completed
+
+- **Error Handling & UX Hardening** (2026-03-27) — Major overhaul of global exception
+  handling and several editor UX fixes:
+  - **Fatal error dialog**: `HandleFatalException` rewritten to avoid deadlocks.
+    `ShowDialog` cannot receive input when called from a `Post` callback (Win32 modal
+    loop issue), so background-thread exceptions use `Show()` + manual modality
+    (`mainWindow.IsEnabled = false`, `Topmost = true`, centered via `Opened` handler).
+    UI-thread exceptions use normal `ShowDialog`. Re-entrancy guard (`_handlingFatal`)
+    prevents duplicate dialogs. Exit button calls `Process.Kill()` for guaranteed
+    termination. Debugger-attached shows Continue button. `SaveSession()` removed from
+    crash path (risky + slow).
+  - **ErrorDialog improvements**: DockPanel layout (buttons anchored bottom-right),
+    reduced margins, Expander header styled with dark-red background via
+    ToggleButton template styles (normal + pointerover + pressed states).
+    `ErrorDialogButton.Exit` and `.Continue` added.
+  - **DevMode test commands**: `Dev.ThrowOnUIThread` and `Dev.ThrowOnBackground`
+    commands — Help menu items (visible only in DevMode) that throw
+    `InvalidOperationException` on the respective thread for testing crash handling.
+    Background uses `new Thread` (not `Task.Run`) for immediate exception delivery.
+    Added to all 6 key binding profiles as intentionally unbound.
+  - **Undo/Redo scroll preservation**: `Document.Undo()`/`Redo()` now return the
+    `IDocumentEdit` that was applied. `PerformUndo`/`PerformRedo` skip
+    `ScrollCaretIntoView` for bulk replace edits, preserving scroll position.
+  - **ProgressDialog cancel fix**: `OnClosed` override cancels the CTS regardless
+    of how the dialog closes (button, taskbar, programmatic). Double-close guard
+    in the `finally` block.
+  - **Settings page command guard**: `DispatchCommand` now whitelists only File,
+    Window, Menu, and Nav.FocusEditor commands on the settings page (was only
+    blocking `RequiresEditor` commands). Blocks Command Palette, Find, View, Dev, etc.
+  - **Command ordering**: Command Palette and Settings commands list preserve
+    original definition order (no alphabetical sorting). Categories merged by
+    first-seen order using dictionary. Dev commands hidden when DevMode is off.
+  - **ScrollCaretIntoView verification pass**: After the initial estimate-based
+    scroll, performs an `EnsureLayout()` + `GetCaretBounds()` check. If the caret
+    is outside the viewport, adjusts scroll and re-layouts. Helps with wrapped lines
+    where `avgLineHeight` estimate drifts.
+
+- **Bulk PieceTable Operations** (2026-03-27) — `PieceTable.BulkReplace` with two
+  tiers: `UniformBulkReplaceEdit` (same-length, same-replacement — stores only
+  `long[]` positions + single matchLen + single replacement) and
+  `VaryingBulkReplaceEdit` (varying lengths/replacements — for regex, indentation).
+  O(pieces + matches) single-pass algorithm with one `BuildLineTree()` call.
+  Undo is O(1) via piece-list + line-tree snapshot restore + add-buffer trim.
+  `EditorControl.ReplaceAllAsync` runs match collection on a background thread
+  with `ProgressDialog` (cancel button, progress bar), then applies the bulk
+  replace on the UI thread. Status bar shows replacement count + timing;
+  stats bar shows `ReplAll: Xms` in the IO row.
+  `Document.ConvertIndentation` rewritten to collect indent regions via
+  `ForEachPiece` and feed them into `BulkReplaceVarying` — eliminated the
+  `StringBuilder` sized to `_table.Length * 2`. Session serialization added for
+  both bulk edit types. 29 new tests (PieceTable-level + Document undo/redo).
+  See [11-search-and-memory-safety](design-journal/11-search-and-memory-safety.md).
+
+- **Search, Memory Safety & Horizontal Scrolling** (2026-03-27) — horizontal
+  scrollbar when wrapping disabled, find bar toggle buttons (Wildcard/Regex),
+  async match counting, `GetText` 5KB guard on PieceTable, line-at-a-time layout
+  (eliminated `Layout(string)`), chunked search with `ArrayPool` (no string
+  allocation), `SuppressChangedEvents`, search term limited to single-line ≤1024
+  chars.
+  See [11-search-and-memory-safety](design-journal/11-search-and-memory-safety.md).
 
 - **Session Persistence & Memory Safety** (2026-03-24) — major reliability pass fixing
   edit serialization (MaterializeText, explicit delete length, recapture in Apply),
@@ -114,15 +175,18 @@ small one — it is the primary way a fresh session recovers context.
 
 ### In progress
 
-- **ReplaceAll as a bulk PieceTable operation** — Current N-edit approach is too
-  slow for large documents.  Correct design: append replacement text once to the
-  add buffer, split existing pieces at match boundaries, substitute match regions
-  with a single add-buffer reference — same architecture as all other PT edits.
-  Undo entry stores match positions + original match length + replacement string;
-  undo reverses the piece substitutions.  Line tree rebuilt once at the end.
-  Makes ReplaceAll O(matches) in piece operations with no string materialization,
-  no per-edit line tree rebuilds, no per-edit undo captures.  Still needs a
-  progress dialog with cancel for the match-collection phase on huge documents.
+- **Replace `avgLineHeight` with per-line visual row estimation** — 12 call sites
+  in EditorControl use `avgLineHeight` (global average of visual rows per logical
+  line × row height). This estimate drifts badly when line lengths vary (e.g. a file
+  mixing 10-char and 500-char lines with word wrap). The `LineIndexTree` gives O(log n)
+  access to any line's character count via `LineStartOfs`, and we know `charsPerRow =
+  textWidth / charWidth`. A better estimate for a line's Y position:
+  `max(caretLine, caretCharOfs / charsPerRow) * rh` — uses the actual cumulative
+  character count rather than assuming uniform distribution. Key call sites to fix:
+  `LayoutWindowed` (scroll offset → topLine mapping, RenderOffsetY for large jumps),
+  `ScrollCaretIntoView` (caret Y estimation), `ScrollToTopLine`. A verification pass
+  using `GetCaretBounds` was added to `ScrollCaretIntoView` as a stopgap but doesn't
+  address the root cause in `LayoutWindowed`.
 
 - **Search Within Selection** — When OpenFindBar is invoked with a multi-line
   selection, the scope dropdown should auto-select "Current Selection" and all
@@ -181,7 +245,9 @@ small one — it is the primary way a fresh session recovers context.
 - **Guard against accidental whole-document string materialization** — operations
   that would materialize the entire document as a `string` (or any contiguous buffer)
   should either be prevented with an error message explaining why, or redesigned to
-  stream via `ForEachPiece`.  Currently `ConvertLineEndings` and `ConvertIndentation`
-  stream the input but still build the full output as a `StringBuilder` + `InsertEdit`.
-  A future improvement could stream the output to a temp file and reference it as
-  pieces, avoiding the full-document string entirely.
+  stream via `ForEachPiece`.  `ConvertIndentation` has been rewritten to use
+  `BulkReplaceVarying` (no more full-document StringBuilder).  `ConvertLineEndings`
+  is handled at save time in `FileSaver` (already streams correctly).  Remaining
+  concern: `ReplaceAll` progress dialog with cancel for the match-collection phase
+  on huge documents (bulk replace itself is fast, but the chunked search scan for
+  collecting matches could still take a while on very large files).

@@ -172,6 +172,22 @@ public partial class MainWindow : Window {
         MenuManual.Click += (_, _) => OpenHelpDocumentAsync("manual.md", "Manual");
         MenuAbout.Click += (_, _) => OpenHelpDocumentAsync("about.md", "About");
 
+        // Dev-only diagnostic commands (visible only in DevMode).
+        if (_settings.DevMode) {
+            MenuDevSep.IsVisible = true;
+            MenuDevThrowUI.IsVisible = true;
+            MenuDevThrowBG.IsVisible = true;
+        }
+        MenuDevThrowUI.Click += (_, _) =>
+            throw new InvalidOperationException("DevMode test exception on UI thread");
+        MenuDevThrowBG.Click += (_, _) => {
+            new Thread(static () =>
+                throw new InvalidOperationException("DevMode test exception on background thread")) {
+                IsBackground = true,
+                Name = "DevThrowTest",
+            }.Start();
+        };
+
         MenuFile.SubmenuOpened += OnTopMenuOpened;
         MenuEdit.SubmenuOpened += OnTopMenuOpened;
         MenuSearch.SubmenuOpened += OnTopMenuOpened;
@@ -767,8 +783,14 @@ public partial class MainWindow : Window {
         var cmd = Cmd.TryGet(commandId);
         if (cmd == null) return false;
         if (!cmd.IsEnabled) return false;
-        if (cmd.RequiresEditor) {
-            if (_activeTab is { IsSettings: true }) return false;
+        if (_activeTab is { IsSettings: true }) {
+            // On the settings page, only File, Window, Menu, and
+            // Nav.FocusEditor commands are allowed.
+            if (cmd.Category is not ("File" or "Window" or "Menu")
+                && cmd != Cmd.NavFocusEditor) {
+                return false;
+            }
+        } else if (cmd.RequiresEditor) {
             if (FindBar.IsVisible && FindBar.IsKeyboardFocusWithin) return false;
         }
         return cmd.Run();
@@ -934,6 +956,17 @@ public partial class MainWindow : Window {
         Cmd.PseudoMenuSearch.Wire(Noop);
         Cmd.PseudoMenuView.Wire(Noop);
         Cmd.PseudoMenuHelp.Wire(Noop);
+
+        // -- Dev (DevMode-only) --
+        Cmd.DevThrowOnUIThread.Wire(
+            static () => throw new InvalidOperationException("DevMode test exception on UI thread"),
+            canExecute: () => _settings.DevMode);
+        Cmd.DevThrowOnBackground.Wire(
+            static () => new Thread(static () =>
+                throw new InvalidOperationException("DevMode test exception on background thread")) {
+                IsBackground = true, Name = "DevThrowTest",
+            }.Start(),
+            canExecute: () => _settings.DevMode);
     }
 
     private void CycleTab(int direction) {
@@ -1528,8 +1561,9 @@ public partial class MainWindow : Window {
             load = s.LoadTimeMs > 0 ? $"{s.LoadTimeMs:F1}ms" : "\u2014";
         }
         var save = s.SaveTimeMs > 0 ? $"{s.SaveTimeMs:F1}ms" : "\u2014";
+        var replaceAll = s.ReplaceAllTimeMs > 0 ? $" | ReplAll: {s.ReplaceAllTimeMs:F1}ms" : "";
         var ioText =
-            $"Load: {load} | Save: {save} | " +
+            $"Load: {load} | Save: {save}{replaceAll} | " +
             $"Mem: {s.MemoryMb:F0} MB (max {s.PeakMemoryMb:F0} MB)";
         if (StatsBarIO.Text != ioText) StatsBarIO.Text = ioText;
     }
@@ -2106,7 +2140,6 @@ public partial class MainWindow : Window {
         if (conflict is not null) {
             var errorDialog = new ErrorDialog(
                 "Cannot Save",
-                "File already open",
                 $"{conflict.DisplayName} is already open in another tab. Close it first, or choose a different file name.",
                 [ErrorDialogButton.OK],
                 theme: _theme);
@@ -2168,7 +2201,6 @@ public partial class MainWindow : Window {
         } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
             var dialog = new ErrorDialog(
                 "Could Not Save",
-                "Could not save the file.",
                 $"File: {path}\n\n{ex.Message}",
                 [ErrorDialogButton.SaveAs, ErrorDialogButton.OK],
                 stackTrace: ex.ToString(),
@@ -2188,7 +2220,6 @@ public partial class MainWindow : Window {
             var reportPath = await CrashReport.WriteAsync(ex, "Save", path, Editor.Document);
             var dialog = new ErrorDialog(
                 "Save Failed",
-                "Save failed. The file may be corrupted.",
                 $"File: {path}\n\n{ex.Message}",
                 [ErrorDialogButton.SaveAs, ErrorDialogButton.CloseTab],
                 crashReportPath: reportPath,
@@ -2360,7 +2391,6 @@ public partial class MainWindow : Window {
         } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
             var dialog = new ErrorDialog(
                 "Could Not Save PDF",
-                "Could not save the PDF file.",
                 $"File: {path}\n\n{ex.Message}",
                 [ErrorDialogButton.OK],
                 stackTrace: ex.ToString(),
@@ -2371,7 +2401,6 @@ public partial class MainWindow : Window {
             var reportPath = await CrashReport.WriteAsync(ex, "Save As PDF", path);
             var dialog = new ErrorDialog(
                 "PDF Export Failed",
-                "An unexpected error occurred while exporting to PDF.",
                 ex.Message,
                 [ErrorDialogButton.OK],
                 crashReportPath: reportPath,
@@ -2678,6 +2707,9 @@ public partial class MainWindow : Window {
                     break;
                 case "DevMode":
                     UpdateStatusBarVisibility();
+                    MenuDevSep.IsVisible = _settings.DevMode;
+                    MenuDevThrowUI.IsVisible = _settings.DevMode;
+                    MenuDevThrowBG.IsVisible = _settings.DevMode;
                     break;
                 case "TailFile":
                     UpdateTailButton();
@@ -2886,7 +2918,7 @@ public partial class MainWindow : Window {
         };
 
         // Replace all matches.
-        FindBar.ReplaceAllRequested += () => {
+        FindBar.ReplaceAllRequested += async () => {
             var searchTerm = FindBar.SearchTerm;
             var replaceTerm = FindBar.ReplaceTerm;
             if (searchTerm.Length == 0) return;
@@ -2895,7 +2927,37 @@ public partial class MainWindow : Window {
             SyncFindBarHistory();
             _settings.ScheduleSave();
             Editor.LastSearchTerm = searchTerm;
-            Editor.ReplaceAll(replaceTerm, FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode);
+
+            var sw = Stopwatch.StartNew();
+            var dialog = new ProgressDialog("Replace All", "Searching\u2026", _theme);
+            var progress = new Progress<(string Message, double Percent)>(
+                p => dialog.Update(p.Message, p.Percent));
+
+            // Show the dialog non-blocking so we can start the async operation.
+            var dialogTask = dialog.ShowDialog(this);
+            int count;
+            try {
+                count = await Editor.ReplaceAllAsync(
+                    replaceTerm, FindBar.MatchCase, FindBar.WholeWord,
+                    FindBar.SearchMode, progress, dialog.CancellationToken);
+            } catch (OperationCanceledException) {
+                count = 0;
+            } finally {
+                // Dialog may already be closed (e.g. user closed via taskbar).
+                try { dialog.Close(); } catch (InvalidOperationException) { }
+                await dialogTask;
+            }
+
+            sw.Stop();
+            Editor.PerfStats.ReplaceAllTimeMs = sw.Elapsed.TotalMilliseconds;
+
+            if (dialog.WasCancelled) {
+                StatusLeft.Text = "Replace All cancelled";
+            } else if (count == 0) {
+                StatusLeft.Text = "No matches found";
+            } else {
+                StatusLeft.Text = $"Replaced {count:N0} occurrences in {sw.Elapsed.TotalMilliseconds:F0}ms";
+            }
             UpdateFindMatchInfo();
         };
 

@@ -282,6 +282,17 @@ public static class Commands {
     public static readonly Command PseudoMenuHelp = new("Menu", "Help", "Help Menu");
 
     // =================================================================
+    // Dev (DevMode-only diagnostic commands, not in menus)
+    // =================================================================
+
+    public static readonly Command DevThrowOnUIThread = new("Dev", "ThrowOnUIThread", "Throw on UI Thread") {
+        IsAdvanced = true,
+    };
+    public static readonly Command DevThrowOnBackground = new("Dev", "ThrowOnBackground", "Throw on Background Thread") {
+        IsAdvanced = true,
+    };
+
+    // =================================================================
     // Master list and lookup
     // =================================================================
 
@@ -469,6 +480,9 @@ public static class Commands {
         Add(PseudoMenuSearch);
         Add(PseudoMenuView);
         Add(PseudoMenuHelp);
+
+        Add(DevThrowOnUIThread);
+        Add(DevThrowOnBackground);
 
         return all;
     }

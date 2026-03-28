@@ -218,14 +218,22 @@ public partial class CommandsSettingsSection : UserControl {
         _commandRows.Clear();
         _categoryGroups.Clear();
 
-        var categories = Cmd.All.Select(c => c.Category).Distinct().OrderBy(c => c);
-        foreach (var category in categories) {
-            var commands = Cmd.All
-                .Where(c => c.Category == category)
-                .ToList();
-            if (commands.Count == 0) {
-                continue;
+        var allVisible = _settings.DevMode
+            ? Cmd.All
+            : Cmd.All.Where(c => c.Category != "Dev");
+        // Group by category, preserving first-seen order.
+        var groupMap = new Dictionary<string, List<Command>>();
+        var groupOrder = new List<string>();
+        foreach (var cmd in allVisible) {
+            if (!groupMap.TryGetValue(cmd.Category, out var list)) {
+                list = [];
+                groupMap[cmd.Category] = list;
+                groupOrder.Add(cmd.Category);
             }
+            list.Add(cmd);
+        }
+        var groups = groupOrder.Select(c => (Category: c, Commands: groupMap[c]));
+        foreach (var (category, commands) in groups) {
 
             // Category header (bold, no indent)
             var header = new TextBlock {

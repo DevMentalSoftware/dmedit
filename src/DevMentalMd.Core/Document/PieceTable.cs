@@ -812,6 +812,197 @@ public sealed class PieceTable {
         return sb.ToString();
     }
 
+    // -------------------------------------------------------------------------
+    // Bulk replace
+    // -------------------------------------------------------------------------
+
+    /// <summary>Current length of the append-only add buffer.</summary>
+    public long AddBufferLength => _addBuf.Length;
+
+    /// <summary>Snapshots the current piece list for later restore (undo).</summary>
+    public Piece[] SnapshotPieces() => _pieces.ToArray();
+
+    /// <summary>Snapshots the current line tree lengths for later restore (undo).</summary>
+    public int[] SnapshotLineLengths() {
+        var tree = LineTree;
+        return tree.ExtractValues();
+    }
+
+    /// <summary>
+    /// Replaces the piece list wholesale (used by bulk-replace undo).
+    /// Caller must also restore the line tree via <see cref="InstallLineTree"/>.
+    /// </summary>
+    public void RestorePieces(Piece[] pieces) {
+        _pieces.Clear();
+        _pieces.AddRange(pieces);
+        _addBufCache = null;
+    }
+
+    /// <summary>
+    /// Truncates the add buffer to <paramref name="len"/> characters.
+    /// Used by bulk-replace undo to discard appended replacement text.
+    /// </summary>
+    public void TrimAddBuffer(long len) {
+        if (len < _addBuf.Length) {
+            _addBuf.Length = (int)len;
+            _addBufCache = null;
+        }
+    }
+
+    /// <summary>
+    /// Uniform bulk replace: all matches have the same length and the same
+    /// replacement string. Match positions must be sorted ascending and
+    /// non-overlapping.  O(pieces + matches) with one line tree rebuild.
+    /// </summary>
+    public void BulkReplace(long[] matchPositions, int matchLen, string replacement) {
+        if (matchPositions.Length == 0) return;
+
+        // Append replacement once to the add buffer.
+        var addOfs = _addBuf.Length;
+        if (replacement.Length > 0) {
+            _addBuf.Append(replacement);
+            _addBufCache = null;
+        }
+
+        var replacementPiece = replacement.Length > 0
+            ? new Piece(BufferKind.Add, addOfs, replacement.Length)
+            : default;
+
+        BulkReplaceCore(matchPositions.Length,
+            i => matchPositions[i],
+            _ => matchLen,
+            _ => replacementPiece);
+    }
+
+    /// <summary>
+    /// Varying bulk replace: matches have different lengths and/or different
+    /// replacements. Matches must be sorted ascending by Pos and non-overlapping.
+    /// O(pieces + matches) with one line tree rebuild.
+    /// </summary>
+    public void BulkReplace((long Pos, int Len)[] matches, string[] replacements) {
+        if (matches.Length == 0) return;
+
+        // Append each replacement to the add buffer, recording spans.
+        var addSpans = new (long Ofs, int Len)[replacements.Length];
+        for (var i = 0; i < replacements.Length; i++) {
+            var r = replacements[i];
+            addSpans[i] = (_addBuf.Length, r.Length);
+            if (r.Length > 0) {
+                _addBuf.Append(r);
+            }
+        }
+        _addBufCache = null;
+
+        BulkReplaceCore(matches.Length,
+            i => matches[i].Pos,
+            i => matches[i].Len,
+            i => addSpans[i].Len > 0
+                ? new Piece(BufferKind.Add, addSpans[i].Ofs, addSpans[i].Len)
+                : default);
+    }
+
+    /// <summary>
+    /// Core algorithm shared by uniform and varying bulk replace.
+    /// Walks the piece list and match list simultaneously, building a new
+    /// piece list with match regions replaced by add-buffer pieces.
+    /// </summary>
+    private void BulkReplaceCore(
+        int matchCount,
+        Func<int, long> matchPos,
+        Func<int, int> matchLenFunc,
+        Func<int, Piece> replacementPiece) {
+
+        var newPieces = new List<Piece>(_pieces.Count + matchCount);
+
+        // Cursor into the existing piece list.
+        var pieceIdx = 0;
+        var ofsInPiece = 0L; // how far into _pieces[pieceIdx] we've consumed
+        var docOfs = 0L;     // current document offset
+
+        for (var m = 0; m < matchCount; m++) {
+            var mPos = matchPos(m);
+            var mLen = matchLenFunc(m);
+
+            // 1. Copy pieces for the gap before this match.
+            CopyPiecesUpTo(mPos, newPieces, ref pieceIdx, ref ofsInPiece, ref docOfs);
+
+            // 2. Skip pieces covering the match region.
+            SkipPieces(mLen, ref pieceIdx, ref ofsInPiece, ref docOfs);
+
+            // 3. Insert the replacement piece.
+            var rp = replacementPiece(m);
+            if (!rp.IsEmpty) {
+                newPieces.Add(rp);
+            }
+        }
+
+        // 4. Copy remaining pieces after the last match.
+        CopyPiecesUpTo(long.MaxValue, newPieces, ref pieceIdx, ref ofsInPiece, ref docOfs);
+
+        _pieces.Clear();
+        _pieces.AddRange(newPieces);
+        _addBufCache = null;
+        BuildLineTree();
+    }
+
+    /// <summary>
+    /// Copies piece fragments from the current position up to (but not including)
+    /// the target document offset into <paramref name="dest"/>.
+    /// </summary>
+    private void CopyPiecesUpTo(long targetOfs, List<Piece> dest,
+        ref int pieceIdx, ref long ofsInPiece, ref long docOfs) {
+
+        while (pieceIdx < _pieces.Count && docOfs < targetOfs) {
+            var p = _pieces[pieceIdx];
+            var pLen = p.Len == WholeBufSentinel ? _buf.Length - p.Start : p.Len;
+            var remaining = pLen - ofsInPiece;
+            var available = Math.Min(remaining, targetOfs - docOfs);
+
+            if (available == remaining) {
+                // Take the rest of this piece.
+                if (ofsInPiece == 0) {
+                    dest.Add(p.Len == WholeBufSentinel
+                        ? new Piece(p.Which, p.Start, pLen)
+                        : p);
+                } else {
+                    dest.Add(new Piece(p.Which, p.Start + ofsInPiece, remaining));
+                }
+                pieceIdx++;
+                ofsInPiece = 0;
+                docOfs += remaining;
+            } else {
+                // Take a prefix of this piece.
+                dest.Add(new Piece(p.Which, p.Start + ofsInPiece, available));
+                ofsInPiece += available;
+                docOfs += available;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Advances the piece cursor past <paramref name="skipLen"/> characters
+    /// without copying anything.
+    /// </summary>
+    private void SkipPieces(long skipLen, ref int pieceIdx, ref long ofsInPiece, ref long docOfs) {
+        var toSkip = skipLen;
+        while (toSkip > 0 && pieceIdx < _pieces.Count) {
+            var p = _pieces[pieceIdx];
+            var pLen = p.Len == WholeBufSentinel ? _buf.Length - p.Start : p.Len;
+            var remaining = pLen - ofsInPiece;
+
+            if (toSkip >= remaining) {
+                toSkip -= remaining;
+                docOfs += remaining;
+                pieceIdx++;
+                ofsInPiece = 0;
+            } else {
+                ofsInPiece += toSkip;
+                docOfs += toSkip;
+                toSkip = 0;
+            }
+        }
+    }
+
     internal char CharAt(CharOffset ofs) {
         var (pieceIdx, ofsInPiece) = FindPiece(ofs);
         if (pieceIdx >= _pieces.Count) {
