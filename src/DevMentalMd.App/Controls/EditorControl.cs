@@ -1383,7 +1383,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
         FlushCompound();
 
-        string text;
+        string? text;
         if (doc.ColumnSel != null) {
             text = doc.GetColumnSelectedText(_indentWidth);
         } else {
@@ -1391,6 +1391,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 return;
             }
             text = doc.GetSelectedText();
+            if (text == null) {
+                CopyTooLarge?.Invoke(doc.Selection.Len);
+                return;
+            }
         }
 
         if (string.IsNullOrEmpty(text)) {
@@ -1411,7 +1415,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
         FlushCompound();
 
-        string text;
+        string? text;
         if (doc.ColumnSel != null) {
             text = doc.GetColumnSelectedText(_indentWidth);
             if (string.IsNullOrEmpty(text)) {
@@ -1441,6 +1445,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return;
         }
         text = doc.GetSelectedText();
+        if (text == null) {
+            CopyTooLarge?.Invoke(doc.Selection.Len);
+            return;
+        }
         await cb.SetTextAsync(text);
         _clipboardRing.Push(text);
         _editSw.Restart();
@@ -1570,6 +1578,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     /// <summary>Raised when clipboard cycling starts, advances, or ends.</summary>
     public event EventHandler? ClipboardCycleStatusChanged;
+
+    /// <summary>
+    /// Raised when a Copy or Cut is blocked because the selection exceeds
+    /// <see cref="Document.MaxCopyLength"/>.  The argument is the selection
+    /// length in characters.
+    /// </summary>
+    public event Action<long>? CopyTooLarge;
 
     public void EditDelete() {
         var doc = Document;
@@ -3407,7 +3422,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             FindNext(matchCase, wholeWord, mode);
             return false;
         }
-        var selectedText = doc.GetSelectedText();
+        var selectedText = doc.GetSelectedText()!; // bounded by MaxSearchTermLength above
         var opts = new SearchOptions(_lastSearchTerm, matchCase, wholeWord, mode);
         if (!IsSelectionMatch(selectedText, opts)) {
             // Selection doesn't match — find next match instead.

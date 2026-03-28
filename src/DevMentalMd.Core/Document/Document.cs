@@ -86,11 +86,22 @@ public sealed class Document {
     /// <summary>
     /// Returns the currently selected text, or an empty string if selection is empty.
     /// </summary>
-    public string GetSelectedText() {
+    /// <summary>
+    /// Maximum selection size (in characters) that Copy/Cut will materialize.
+    /// Selections larger than this return <c>null</c> so the caller can notify
+    /// the user instead of risking an out-of-memory condition.
+    /// </summary>
+    public const int MaxCopyLength = 50 * 1024 * 1024; // 50 MB worth of chars
+
+    public string? GetSelectedText() {
         if (Selection.IsEmpty) {
             return "";
         }
-        var len = (int)Selection.Len;
+        long selLen = Selection.Len;
+        if (selLen > MaxCopyLength) {
+            return null;
+        }
+        var len = (int)selLen;
         if (len <= PieceTable.MaxGetTextLength) {
             return _table.GetText(Selection.Start, len);
         }
