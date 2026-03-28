@@ -66,7 +66,7 @@ small one — it is the primary way a fresh session recovers context.
   - **ScrollCaretIntoView verification pass**: After the initial estimate-based
     scroll, performs an `EnsureLayout()` + `GetCaretBounds()` check. If the caret
     is outside the viewport, adjusts scroll and re-layouts. Helps with wrapped lines
-    where `avgLineHeight` estimate drifts.
+    where the scroll estimate drifts.
 
 - **Bulk PieceTable Operations** (2026-03-27) — `PieceTable.BulkReplace` with two
   tiers: `UniformBulkReplaceEdit` (same-length, same-replacement — stores only
@@ -173,20 +173,19 @@ small one — it is the primary way a fresh session recovers context.
 - **Command Registry + Key Binding System** (2026-03-06) — centralized dispatch,
   user-customizable bindings, Keyboard settings section, 55 App tests.
 
-### In progress
+- **Per-line scroll estimation** (2026-03-27) — Replaced global `avgLineHeight`
+  (uniform average) with per-line Y estimation using `LineIndexTree` prefix sums.
+  Two new O(log N) helpers: `EstimateLineY(lineIndex, table, charsPerRow, rh)` maps
+  a logical line to pixel Y via `max(N, ceil(charsBefore / charsPerRow)) * rh`;
+  `EstimateTopLine(scrollY, table, lineCount, charsPerRow, rh)` is the inverse.
+  `GetCharsPerRow(textWidth)` deduplicates the chars-per-row calculation.
+  Updated `LayoutWindowed` (scroll→topLine and RenderOffsetY for large jumps),
+  `ScrollCaretIntoView` (caret Y estimation), and `ScrollToTopLine`.
+  Incremental small-scroll path unchanged (already uses actual cached line heights).
+  When wrapping is off, `charsPerRow = 0` and both helpers degenerate to exact
+  `lineIndex * rh` / `scrollY / rh`.
 
-- **Replace `avgLineHeight` with per-line visual row estimation** — 12 call sites
-  in EditorControl use `avgLineHeight` (global average of visual rows per logical
-  line × row height). This estimate drifts badly when line lengths vary (e.g. a file
-  mixing 10-char and 500-char lines with word wrap). The `LineIndexTree` gives O(log n)
-  access to any line's character count via `LineStartOfs`, and we know `charsPerRow =
-  textWidth / charWidth`. A better estimate for a line's Y position:
-  `max(caretLine, caretCharOfs / charsPerRow) * rh` — uses the actual cumulative
-  character count rather than assuming uniform distribution. Key call sites to fix:
-  `LayoutWindowed` (scroll offset → topLine mapping, RenderOffsetY for large jumps),
-  `ScrollCaretIntoView` (caret Y estimation), `ScrollToTopLine`. A verification pass
-  using `GetCaretBounds` was added to `ScrollCaretIntoView` as a stopgap but doesn't
-  address the root cause in `LayoutWindowed`.
+### In progress
 
 - **Search Within Selection** — When OpenFindBar is invoked with a multi-line
   selection, the scope dropdown should auto-select "Current Selection" and all

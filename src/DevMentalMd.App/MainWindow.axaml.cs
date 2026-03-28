@@ -1557,7 +1557,8 @@ public partial class MainWindow : Window {
             $"Layout: {s.Layout.Format()} | " +
             $"Render: {s.Render.Format()}{editStat} | " +
             $"{s.ViewportLines} lines ({s.ViewportRows} rows) | " +
-            $"{s.ScrollPercent:F1}%";
+            $"{s.ScrollPercent:F1}%" +
+            (s.ScrollRetries > 0 ? $" | ScrRetry: {s.ScrollRetries}" : "");
         if (StatsBar.Text != statsText) StatsBar.Text = statsText;
 
         string load;

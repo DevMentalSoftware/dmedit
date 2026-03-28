@@ -364,6 +364,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         public double SaveTimeMs { get; set; }
         /// <summary>Time for the most recent ReplaceAll operation.</summary>
         public double ReplaceAllTimeMs { get; set; }
+        /// <summary>How many times ScrollCaretIntoView needed a retry pass.</summary>
+        public long ScrollRetries { get; set; }
         /// <summary>Current GC memory in MB.</summary>
         public double MemoryMb { get; set; }
         /// <summary>Peak GC memory seen this session in MB.</summary>
@@ -638,6 +640,44 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     }
 
     /// <summary>
+    /// Returns the number of characters that fit in one visual row at the
+    /// current font/wrap settings, or 0 when wrapping is off.
+    /// </summary>
+    private int GetCharsPerRow(double textWidth) {
+        if (!double.IsFinite(textWidth) || textWidth <= 0) return 0;
+        return Math.Max(1, (int)(textWidth / GetCharWidth()));
+    }
+
+    /// <summary>
+    /// Estimates the pixel Y position of a logical line using per-line
+    /// character counts from the <see cref="LineIndexTree"/>.  O(log N).
+    /// When wrapping is off (<paramref name="charsPerRow"/> = 0), each line
+    /// is exactly one row, so the result is <c>lineIndex * rh</c>.
+    /// </summary>
+    private static double EstimateLineY(long lineIndex, PieceTable table, int charsPerRow, double rh) {
+        if (lineIndex <= 0) return 0;
+        var charsBefore = (long)table.LineStartOfs(lineIndex);
+        if (charsBefore < 0) return lineIndex * rh; // streaming load fallback
+        var visualRows = charsPerRow > 0
+            ? Math.Max(lineIndex, (long)Math.Ceiling((double)charsBefore / charsPerRow))
+            : lineIndex;
+        return visualRows * rh;
+    }
+
+    /// <summary>
+    /// Inverse of <see cref="EstimateLineY"/>: maps a scroll-pixel offset
+    /// to the logical line that should appear at the viewport top.  O(log N).
+    /// </summary>
+    private static long EstimateTopLine(double scrollY, PieceTable table, long lineCount, int charsPerRow, double rh) {
+        if (scrollY <= 0 || lineCount <= 0) return 0;
+        var targetRow = (long)(scrollY / rh);
+        if (charsPerRow <= 0) return Math.Clamp(targetRow, 0, lineCount - 1);
+        var targetCharOfs = Math.Min((long)targetRow * charsPerRow, table.Length);
+        var charBasedLine = table.LineFromOfs(targetCharOfs);
+        return Math.Clamp(Math.Min(targetRow, charBasedLine), 0, lineCount - 1);
+    }
+
+    /// <summary>
     /// Builds or retrieves the current layout.
     /// Only the visible window of text is fetched and laid out (windowed layout).
     /// </summary>
@@ -721,30 +761,24 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// </remarks>
     private void LayoutWindowed(Document doc, long lineCount, Typeface typeface, double maxWidth, double extentWidth) {
         var rh = GetRowHeight();
-        var cw = GetCharWidth();
 
-        // Estimate total visual rows from document character count.
-        // When wrapping is off (maxWidth = infinity), each line = 1 row.
+        // Estimate total visual rows from document character count (for extent height).
         var totalChars = doc.Table.Length;
+        var charsPerRow = GetCharsPerRow(maxWidth);
         long totalVisualRows;
-        if (!double.IsFinite(maxWidth) || maxWidth <= 0) {
+        if (charsPerRow <= 0) {
             totalVisualRows = lineCount;
         } else {
-            var charsPerRow = Math.Max(1, (int)(maxWidth / cw));
             totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
         }
 
-        // Average visual rows per logical line → average height per logical line
-        var avgRowsPerLine = Math.Max(1.0, (double)totalVisualRows / lineCount);
-        var avgLineHeight = avgRowsPerLine * rh;
-
-        // Map scroll offset → top logical line using the average height
-        var topLine = Math.Clamp((long)(_scrollOffset.Y / avgLineHeight), 0, Math.Max(0, lineCount - 1));
+        // Map scroll offset → top logical line using per-line character counts.
+        var topLine = EstimateTopLine(_scrollOffset.Y, doc.Table, lineCount, charsPerRow, rh);
 
         // For single-row scrolls (arrow buttons), constrain topLine to change
         // by at most ±1 from the previous frame.  This lets the incremental
         // render-offset logic use the actual cached line height instead of
-        // avgLineHeight, giving pixel-perfect smooth scrolling.
+        // the estimate, giving pixel-perfect smooth scrolling.
         // Everything else (wheel, drag, page-down) uses the formula-based
         // topLine directly — the threshold of 2*rh cleanly separates arrow
         // clicks (ds = rh) from wheel notches (ds = 3*rh).
@@ -849,7 +883,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             RenderOffsetY = _winRenderOffsetY - (_scrollOffset.Y - _winScrollOffset);
         } else if (_winTopLine >= 0 && deltaTop == 1 && _winFirstLineHeight > 0) {
             // topLine advanced by 1.  Compensate for the departed line's
-            // actual height (not avgLineHeight) to avoid a visual jump.
+            // actual height (not the estimate) to avoid a visual jump.
             RenderOffsetY = _winRenderOffsetY
                 - (_scrollOffset.Y - _winScrollOffset)
                 + _winFirstLineHeight;
@@ -860,8 +894,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 - (_scrollOffset.Y - _winScrollOffset)
                 - _layout.Lines[0].HeightInRows * rh;
         } else {
-            // First layout or large jump — use formula estimate.
-            RenderOffsetY = topLine * avgLineHeight - _scrollOffset.Y;
+            // First layout or large jump — use per-line estimate.
+            RenderOffsetY = EstimateLineY(topLine, doc.Table, charsPerRow, rh) - _scrollOffset.Y;
         }
 
         // Safety: prevent any remaining gap at the viewport top.
@@ -2765,9 +2799,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     /// <summary>
     /// Adjusts <see cref="ScrollValue"/> so the caret's logical line is visible
-    /// within the viewport.  For windowed layout the caret position is estimated
-    /// from the logical line index and the average line height; for small (full)
-    /// layouts the exact pixel position from <see cref="TextLayoutEngine"/> is used.
+    /// within the viewport.  The caret position is estimated from the logical
+    /// line index using per-line character counts, then verified with a layout
+    /// pass that checks the actual pixel position.
     /// </summary>
     private void ScrollCaretIntoView() {
         var doc = Document;
@@ -2796,23 +2830,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return;
         }
 
-        // Estimate caret Y from its logical line index.
+        // Estimate caret Y from its logical line index using per-line char counts.
         var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
         var textW = GetTextWidth(maxW);
-        var totalChars = table.Length;
-        long totalVisualRows;
-        if (!double.IsFinite(textW) || textW <= 0) {
-            totalVisualRows = lineCount;
-        } else {
-            var cw = GetCharWidth();
-            var charsPerRow = Math.Max(1, (int)(textW / cw));
-            totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
-        }
-        var avgRowsPerLine = Math.Max(1.0, (double)totalVisualRows / lineCount);
-        var avgLineHeight = avgRowsPerLine * rh;
+        var charsPerRow = GetCharsPerRow(textW);
 
         var caretLine = table.LineFromOfs(caret);
-        var caretY = caretLine * avgLineHeight;
+        var caretY = EstimateLineY(caretLine, table, charsPerRow, rh);
 
         var estimateVpH = Bounds.Height > 0 ? Bounds.Height : _viewport.Height;
         if (caretY < _scrollOffset.Y) {
@@ -2847,9 +2871,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             var caretH = Math.Ceiling(Math.Max(caretRect.Height, rh));
             if (caretScreenY < 0) {
                 // Caret is above the viewport — scroll up.
+                PerfStats.ScrollRetries++;
                 ScrollValue = _scrollOffset.Y + caretScreenY;
             } else if (caretScreenY + caretH > vpH) {
                 // Caret is below the viewport — scroll down.
+                PerfStats.ScrollRetries++;
                 ScrollValue = _scrollOffset.Y + caretScreenY + caretH - vpH;
             } else {
                 break; // caret is visible — done
@@ -2913,8 +2939,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     /// <summary>
     /// Sets <see cref="ScrollValue"/> so that the given logical line appears
-    /// at the top of the viewport.  Uses the same avgLineHeight formula that
-    /// <see cref="LayoutWindowed"/> uses, so the mapping is consistent.
+    /// at the top of the viewport.  Uses the same <see cref="EstimateLineY"/>
+    /// formula that <see cref="LayoutWindowed"/> uses, so the mapping is consistent.
     /// </summary>
     private void ScrollToTopLine(long targetLine, PieceTable table) {
         var lineCount = table.LineCount;
@@ -2923,24 +2949,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var rh = GetRowHeight();
         var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
         var textW = GetTextWidth(maxW);
-        var totalChars = table.Length;
-        long totalVisualRows;
-        if (!double.IsFinite(textW) || textW <= 0) {
-            totalVisualRows = lineCount;
-        } else {
-            var cw = GetCharWidth();
-            var charsPerRow = Math.Max(1, (int)(textW / cw));
-            totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
-        }
-        var avgRowsPerLine = Math.Max(1.0, (double)totalVisualRows / lineCount);
-        var avgLineHeight = avgRowsPerLine * rh;
+        var charsPerRow = GetCharsPerRow(textW);
 
-        // Nudge by a sub-pixel amount so that the (long)(scrollOfs / avgLineHeight)
-        // truncation in LayoutWindowed always resolves to targetLine.  Without
-        // this, the floating-point round-trip can land at targetLine - ε, which
-        // (long) truncates down by 1, making _renderOffsetY jump by avgLineHeight
-        // and destabilising the screen-row computation in MoveCaretByPage.
-        ScrollValue = targetLine * avgLineHeight + 0.01;
+        // Nudge by a sub-pixel amount so that the EstimateTopLine
+        // round-trip in LayoutWindowed always resolves to targetLine.
+        // Without this, floating-point truncation can land one line short,
+        // destabilising the screen-row computation in MoveCaretByPage.
+        ScrollValue = EstimateLineY(targetLine, table, charsPerRow, rh) + 0.01;
     }
 
     /// <summary>
