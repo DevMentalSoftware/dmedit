@@ -335,7 +335,6 @@ public partial class MainWindow : Window {
         // search against a new (potentially large) document.
         if (tab != _findBarTab) {
             FindBar.SetSearchTerm("");
-            FindBar.ClearMatchInfo();
         }
         FindBar.IsVisible = (tab == _findBarTab);
         UpdateTabBar();
@@ -2832,14 +2831,13 @@ public partial class MainWindow : Window {
         _matchCountCts?.Cancel();
         _matchCountCts?.Dispose();
 
-        if (!FindBar.IsVisible) return;
-        var term = FindBar.SearchTerm;
+        var term = FindBar.IsVisible ? FindBar.SearchTerm : (Editor.LastSearchTerm ?? "");
         if (term.Length == 0) {
-            FindBar.ClearMatchInfo();
+            StatusLeft.Text = "";
             _matchCountCts = null;
             return;
         }
-        Editor.LastSearchTerm = term;
+        if (FindBar.IsVisible) Editor.LastSearchTerm = term;
 
         var cts = new CancellationTokenSource();
         _matchCountCts = cts;
@@ -2849,7 +2847,13 @@ public partial class MainWindow : Window {
                 cts.Token);
             // Only update UI if this request wasn't superseded.
             if (_matchCountCts == cts) {
-                FindBar.SetMatchInfo(current, total, capped);
+                if (total == 0) {
+                    StatusLeft.Text = "";
+                } else if (capped) {
+                    StatusLeft.Text = current > 0 ? $"Match {current} of {total}+" : $"{total}+ matches";
+                } else {
+                    StatusLeft.Text = $"Match {current} of {total}";
+                }
             }
         } catch (OperationCanceledException) {
             // Superseded by a newer request — ignore.

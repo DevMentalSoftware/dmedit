@@ -162,27 +162,12 @@ public partial class FindBarControl : UserControl {
         ReplaceBox.Text = text;
     }
 
-    public void SetMatchInfo(int current, int total, bool capped = false) {
-        if (total == 0) {
-            MatchCount.Text = "";
-        } else if (capped) {
-            MatchCount.Text = current > 0 ? $"{current} / {total}+" : $"{total}+";
-        } else {
-            MatchCount.Text = $"{current} / {total}";
-        }
-    }
-
-    public void ClearMatchInfo() {
-        MatchCount.Text = "";
-    }
-
     public void ApplyTheme(EditorTheme theme) {
         OuterBorder.Background = theme.TabActiveBackground;
         // Concave ear corners + top strip share the same bg as the body
         EarLeft.Fill = theme.TabActiveBackground;
         EarRight.Fill = theme.TabActiveBackground;
         TopStrip.Background = theme.TabActiveBackground;
-        MatchCount.Foreground = theme.SettingsDimForeground;
         OptionsSeparator.Background = theme.TabBarBorder;
         OptionsSeparator2.Background = theme.TabBarBorder;
 

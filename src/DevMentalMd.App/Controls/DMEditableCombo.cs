@@ -34,6 +34,7 @@ public class DMEditableCombo : TemplatedControl {
         AvaloniaProperty.Register<DMEditableCombo, bool>(nameof(ShowClearButton), defaultValue: true);
 
 
+
     public string? Text {
         get => GetValue(TextProperty);
         set => SetValue(TextProperty, value);
@@ -68,6 +69,9 @@ public class DMEditableCombo : TemplatedControl {
 
     /// <summary>Inner TextBox for attaching key handlers, CaretIndex, SelectAll() etc.</summary>
     public TextBox? InnerTextBox { get; private set; }
+
+    private Thickness _basePadding;
+    private const double ButtonReserve = 34;
 
     private Button? _clearButton;
     private Button? _dropDownButton;
@@ -117,7 +121,9 @@ public class DMEditableCombo : TemplatedControl {
             InnerTextBox.KeyDown += OnInnerKeyDown;
         }
 
+        _basePadding = InnerTextBox?.Padding ?? default;
         UpdateClearButtonVisibility();
+        UpdateTextBoxPadding();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change) {
@@ -125,6 +131,9 @@ public class DMEditableCombo : TemplatedControl {
 
         if (change.Property == TextProperty) {
             UpdateClearButtonVisibility();
+        }
+        if (change.Property == ShowClearButtonProperty) {
+            UpdateTextBoxPadding();
         }
     }
 
@@ -136,6 +145,14 @@ public class DMEditableCombo : TemplatedControl {
         if (_clearButton != null) {
             _clearButton.IsVisible = ShowClearButton && !string.IsNullOrEmpty(Text);
         }
+    }
+
+    private void UpdateTextBoxPadding() {
+        if (InnerTextBox == null) return;
+        double right = _basePadding.Right
+                     + ButtonReserve                                    // dropdown always visible
+                     + (ShowClearButton ? ButtonReserve : 0);
+        InnerTextBox.Padding = new Thickness(_basePadding.Left, _basePadding.Top, right, _basePadding.Bottom);
     }
 
     // -----------------------------------------------------------------

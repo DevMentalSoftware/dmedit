@@ -2799,10 +2799,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var caretLine = table.LineFromOfs(caret);
         var caretY = caretLine * avgLineHeight;
 
+        var estimateVpH = Bounds.Height > 0 ? Bounds.Height : _viewport.Height;
         if (caretY < _scrollOffset.Y) {
             ScrollValue = caretY;
-        } else if (caretY + rh > _scrollOffset.Y + _viewport.Height) {
-            ScrollValue = caretY + rh - _viewport.Height;
+        } else if (caretY + rh > _scrollOffset.Y + estimateVpH) {
+            ScrollValue = caretY + rh - estimateVpH;
         }
 
         // Clamp: if the scroll position exceeds the extent (e.g. after
@@ -2815,22 +2816,28 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         // The estimate above can be wrong when lines wrap unevenly.
         // Do a layout pass and verify the caret is actually visible;
-        // if not, adjust the scroll to bring it into view.
-        InvalidateLayout();
-        var layout = EnsureLayout();
-        var caretLocalOfs = (int)(caret - layout.ViewportBase);
-        var layoutCharEnd = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
-        if (caretLocalOfs >= 0 && caretLocalOfs <= layoutCharEnd) {
+        // if not, adjust the scroll to bring it into view.  Repeat up
+        // to 3 times because the first correction can still be off when
+        // RenderOffsetY shifts after the scroll adjustment.
+        var vpH = Bounds.Height > 0 ? Bounds.Height : _viewport.Height;
+        for (var pass = 0; pass < 3; pass++) {
+            InvalidateLayout();
+            var layout = EnsureLayout();
+            var caretLocalOfs = (int)(caret - layout.ViewportBase);
+            var layoutCharEnd = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
+            if (caretLocalOfs < 0 || caretLocalOfs > layoutCharEnd) break;
+
             var caretRect = _layoutEngine.GetCaretBounds(caretLocalOfs, layout);
             var caretScreenY = caretRect.Y + RenderOffsetY;
+            var caretH = Math.Ceiling(Math.Max(caretRect.Height, rh));
             if (caretScreenY < 0) {
                 // Caret is above the viewport — scroll up.
                 ScrollValue = _scrollOffset.Y + caretScreenY;
-                InvalidateLayout();
-            } else if (caretScreenY + rh > _viewport.Height) {
+            } else if (caretScreenY + caretH > vpH) {
                 // Caret is below the viewport — scroll down.
-                ScrollValue = _scrollOffset.Y + caretScreenY + rh - _viewport.Height;
-                InvalidateLayout();
+                ScrollValue = _scrollOffset.Y + caretScreenY + caretH - vpH;
+            } else {
+                break; // caret is visible — done
             }
         }
 

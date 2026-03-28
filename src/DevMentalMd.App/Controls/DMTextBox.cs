@@ -14,6 +14,9 @@ public class DMTextBox : TemplatedControl {
         FocusableProperty.OverrideDefaultValue<DMTextBox>(true);
     }
 
+    private Thickness _basePadding;
+    private const double ButtonReserve = 34;
+
     public static readonly StyledProperty<string?> TextProperty =
         AvaloniaProperty.Register<DMTextBox, string?>(nameof(Text), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
@@ -64,7 +67,9 @@ public class DMTextBox : TemplatedControl {
             };
         }
 
+        _basePadding = InnerTextBox?.Padding ?? default;
         UpdateClearButtonVisibility();
+        UpdateTextBoxPadding();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change) {
@@ -73,12 +78,22 @@ public class DMTextBox : TemplatedControl {
         if (change.Property == TextProperty) {
             UpdateClearButtonVisibility();
         }
+        if (change.Property == ShowClearButtonProperty) {
+            UpdateClearButtonVisibility();
+            UpdateTextBoxPadding();
+        }
     }
 
     private void UpdateClearButtonVisibility() {
         if (_clearButton != null) {
             _clearButton.IsVisible = ShowClearButton && !string.IsNullOrEmpty(Text);
         }
+    }
+
+    private void UpdateTextBoxPadding() {
+        if (InnerTextBox == null) return;
+        double right = _basePadding.Right + (ShowClearButton ? ButtonReserve : 0);
+        InnerTextBox.Padding = new Thickness(_basePadding.Left, _basePadding.Top, right, _basePadding.Bottom);
     }
 
     /// <summary>Forward focus to the inner TextBox.</summary>

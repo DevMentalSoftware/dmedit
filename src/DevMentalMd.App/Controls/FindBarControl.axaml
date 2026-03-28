@@ -54,22 +54,11 @@
                 </Button>
 
                 <!-- Col 2: SearchBox -->
-                <Grid Grid.Column="2" Grid.Row="0"
-                      ColumnDefinitions="*,Auto" Margin="0,0,4,0"
-                      ClipToBounds="True">
-                    <controls:DMEditableCombo x:Name="SearchBox"
-                                              Grid.ColumnSpan="2"
-                                              TabIndex="0"
-                                              Watermark="Find..." />
-                    <TextBlock x:Name="MatchCount"
-                               Grid.Column="1"
-                               Text=""
-                               FontSize="11"
-                               Opacity="0.6"
-                               VerticalAlignment="Center"
-                               Margin="0,0,75,0"
-                               IsHitTestVisible="False" />
-                </Grid>
+                <controls:DMEditableCombo x:Name="SearchBox"
+                                          Grid.Column="2" Grid.Row="0"
+                                          TabIndex="0"
+                                          Watermark="Find..."
+                                          Margin="0,0,4,0" />
 
                 <!-- Col 3: Direction + Menu (Row 0)  /  Replace + Replace All (Row 1) -->
                 <StackPanel Grid.Column="3" Grid.Row="0"
