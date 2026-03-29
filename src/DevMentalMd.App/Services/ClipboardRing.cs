@@ -12,6 +12,13 @@ public sealed class ClipboardRing {
 
     public int MaxSize { get; set; } = 10;
 
+    /// <summary>
+    /// Maximum character count for a single ring entry. Entries larger than
+    /// this are silently dropped to avoid holding large strings in memory.
+    /// The system clipboard still has the text for immediate paste.
+    /// </summary>
+    public int MaxEntryChars { get; set; } = 500;
+
     public int Count => _entries.Count;
 
     public IReadOnlyList<string> Entries => _entries;
@@ -23,6 +30,7 @@ public sealed class ClipboardRing {
     /// </summary>
     public void Push(string text) {
         if (string.IsNullOrEmpty(text)) return;
+        if (text.Length > MaxEntryChars) return;
         _entries.Remove(text);
         _entries.Insert(0, text);
         while (_entries.Count > MaxSize) {

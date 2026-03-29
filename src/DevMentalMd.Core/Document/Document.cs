@@ -89,31 +89,28 @@ public sealed class Document {
     public bool CanRedo => _history.CanRedo;
 
     /// <summary>
-    /// Returns the currently selected text, or an empty string if selection is empty.
+    /// Maximum selection size (in characters) that the Avalonia clipboard fallback
+    /// will materialize. The native clipboard service has no limit.
     /// </summary>
-    /// <summary>
-    /// Maximum selection size (in characters) that Copy/Cut will materialize.
-    /// Selections larger than this return <c>null</c> so the caller can notify
-    /// the user instead of risking an out-of-memory condition.
-    /// </summary>
-    public const int MaxCopyLength = 50 * 1024 * 1024; // 50 MB worth of chars
+    public const int MaxCopyLength = 1024 * 1024; // 1 M chars ≈ 2 MB
 
+    /// <summary>
+    /// Returns the currently selected text, or an empty string if selection is empty.
+    /// Returns <c>null</c> when the selection exceeds <see cref="MaxCopyLength"/>.
+    /// Uses <see cref="PieceTable.CopyTo"/> via <c>string.Create</c> to allocate
+    /// the result string once with zero intermediate copies.
+    /// </summary>
     public string? GetSelectedText() {
-        if (Selection.IsEmpty) {
-            return "";
-        }
+        if (Selection.IsEmpty) return "";
         long selLen = Selection.Len;
-        if (selLen > MaxCopyLength) {
-            return null;
-        }
+        if (selLen > MaxCopyLength) return null;
         var len = (int)selLen;
         if (len <= PieceTable.MaxGetTextLength) {
             return _table.GetText(Selection.Start, len);
         }
-        // Large selection: build via ForEachPiece to avoid GetText guard.
-        var sb = new StringBuilder(len);
-        _table.ForEachPiece(Selection.Start, len, span => sb.Append(span));
-        return sb.ToString();
+        var start = Selection.Start;
+        return string.Create(len, (_table, start),
+            static (span, s) => s._table.CopyTo(s.start, span.Length, span));
     }
 
     /// <summary>
@@ -183,6 +180,32 @@ public sealed class Document {
             _history.EndCompound();
         }
         Selection = Selection.Collapsed(ofs + text.Length);
+        RaiseChanged();
+    }
+
+    /// <summary>
+    /// Inserts text from a native clipboard service that streams chunks directly
+    /// into the add buffer, bypassing managed string allocation. The
+    /// <paramref name="pasteAction"/> should call
+    /// <see cref="PieceTable.AppendToAddBuffer"/> one or more times.
+    /// </summary>
+    public void InsertFromNativeClipboard(Action<PieceTable> pasteAction) {
+        var ofs = Selection.Start;
+        var replacing = !Selection.IsEmpty;
+        if (replacing) {
+            _history.BeginCompound();
+            DeleteRange(ofs, Selection.Len);
+        }
+        var addBufStart = _table.AddBufferLength;
+        pasteAction(_table);
+        var totalLen = (int)(_table.AddBufferLength - addBufStart);
+        if (totalLen > 0) {
+            _history.Push(new SpanInsertEdit(ofs, addBufStart, totalLen), _table, Selection);
+        }
+        if (replacing) {
+            _history.EndCompound();
+        }
+        Selection = Selection.Collapsed(ofs + totalLen);
         RaiseChanged();
     }
 

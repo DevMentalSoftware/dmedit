@@ -1458,53 +1458,34 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     public async Task CopyAsync() {
         var doc = Document;
-        if (doc == null) {
-            return;
-        }
+        if (doc == null) return;
         FlushCompound();
 
-        string? text;
         if (doc.ColumnSel != null) {
-            text = doc.GetColumnSelectedText(_indentWidth);
-        } else {
-            if (doc.Selection.IsEmpty) {
-                return;
-            }
-            text = doc.GetSelectedText();
-            if (text == null) {
-                CopyTooLarge?.Invoke(doc.Selection.Len);
-                return;
-            }
+            // Column selection: always materializes (selections are small).
+            var text = doc.GetColumnSelectedText(_indentWidth);
+            if (string.IsNullOrEmpty(text)) return;
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard == null) return;
+            await clipboard.SetTextAsync(text);
+            _clipboardRing.Push(text);
+            return;
         }
 
-        if (string.IsNullOrEmpty(text)) {
-            return;
-        }
-        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard == null) {
-            return;
-        }
-        await clipboard.SetTextAsync(text);
-        _clipboardRing.Push(text);
+        if (doc.Selection.IsEmpty) return;
+        await CopySelectionToClipboard(doc);
     }
 
     public async Task CutAsync() {
         var doc = Document;
-        if (doc == null) {
-            return;
-        }
+        if (doc == null) return;
         FlushCompound();
 
-        string? text;
         if (doc.ColumnSel != null) {
-            text = doc.GetColumnSelectedText(_indentWidth);
-            if (string.IsNullOrEmpty(text)) {
-                return;
-            }
+            var text = doc.GetColumnSelectedText(_indentWidth);
+            if (string.IsNullOrEmpty(text)) return;
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-            if (clipboard == null) {
-                return;
-            }
+            if (clipboard == null) return;
             await clipboard.SetTextAsync(text);
             _clipboardRing.Push(text);
             _editSw.Restart();
@@ -1517,20 +1498,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return;
         }
 
-        if (doc.Selection.IsEmpty) {
-            return;
-        }
-        var cb = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (cb == null) {
-            return;
-        }
-        text = doc.GetSelectedText();
-        if (text == null) {
-            CopyTooLarge?.Invoke(doc.Selection.Len);
-            return;
-        }
-        await cb.SetTextAsync(text);
-        _clipboardRing.Push(text);
+        if (doc.Selection.IsEmpty) return;
+        if (!await CopySelectionToClipboard(doc)) return;
         _editSw.Restart();
         doc.DeleteSelection();
         ScrollCaretIntoView();
@@ -1540,44 +1509,73 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         ResetCaretBlink();
     }
 
-    public async Task PasteAsync() {
-        var doc = Document;
-        if (doc == null) {
-            return;
-        }
-        FlushCompound();
-        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard == null) {
-            return;
-        }
-#pragma warning disable CS0618 // GetTextAsync is deprecated but TryGetTextAsync requires IAsyncDataTransfer
-        var text = await clipboard.GetTextAsync();
-#pragma warning restore CS0618
-        if (string.IsNullOrEmpty(text)) {
-            return;
-        }
-        // Normalize Windows line endings to LF
-        text = text.Replace("\r\n", "\n").Replace("\r", "\n");
-        _clipboardRing.Push(text);
-        _preferredCaretX = -1;
-
-        _editSw.Restart();
-        if (doc.ColumnSel is { } colSel) {
-            // Column mode paste: if clipboard lines match cursor count, paste
-            // one line per cursor. Otherwise paste full text at each cursor.
-            var lines = text.Split('\n');
-            if (lines.Length == colSel.LineCount) {
-                doc.PasteAtCursors(lines, _indentWidth);
-            } else {
-                doc.InsertAtCursors(text, _indentWidth);
+    /// <summary>
+    /// Copies the current stream selection to the system clipboard.
+    /// Uses the native clipboard service when available (zero managed allocation);
+    /// falls back to Avalonia's <c>SetTextAsync</c> with <c>string.Create</c>.
+    /// </summary>
+    private async Task<bool> CopySelectionToClipboard(Document doc) {
+        var sel = doc.Selection;
+        var nativeClip = NativeClipboardDiscovery.Service;
+        if (nativeClip != null) {
+            if (!nativeClip.Copy(doc.Table, sel.Start, sel.Len)) return false;
+            // Push to ring only for small selections.
+            if (sel.Len <= _clipboardRing.MaxEntryChars) {
+                var ringText = doc.GetSelectedText();
+                if (ringText != null) _clipboardRing.Push(ringText);
             }
         } else {
-            doc.Insert(text);
+            // Fallback: materialize via string.Create + Avalonia clipboard.
+            var text = doc.GetSelectedText();
+            if (text == null) {
+                CopyTooLarge?.Invoke(sel.Len);
+                return false;
+            }
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard == null) return false;
+            await clipboard.SetTextAsync(text);
+            _clipboardRing.Push(text);
         }
+        return true;
+    }
+
+    public async Task PasteAsync() {
+        var doc = Document;
+        if (doc == null) return;
+        FlushCompound();
+        _preferredCaretX = -1;
+        _editSw.Restart();
+
+        // Column mode paste always needs the full string (for line splitting).
+        // Native streaming paste is only used for normal (non-column) mode.
+        var nativeClip = NativeClipboardDiscovery.Service;
+        if (nativeClip != null && doc.ColumnSel == null) {
+            doc.InsertFromNativeClipboard(table => nativeClip.Paste(table));
+        } else {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard == null) { _editSw.Stop(); return; }
+#pragma warning disable CS0618 // GetTextAsync is deprecated but TryGetTextAsync requires IAsyncDataTransfer
+            var text = await clipboard.GetTextAsync();
+#pragma warning restore CS0618
+            if (string.IsNullOrEmpty(text)) { _editSw.Stop(); return; }
+            // Normalize Windows line endings to LF
+            text = text.Replace("\r\n", "\n").Replace("\r", "\n");
+            _clipboardRing.Push(text);
+            if (doc.ColumnSel is { } colSel) {
+                var lines = text.Split('\n');
+                if (lines.Length == colSel.LineCount) {
+                    doc.PasteAtCursors(lines, _indentWidth);
+                } else {
+                    doc.InsertAtCursors(text, _indentWidth);
+                }
+            } else {
+                doc.Insert(text);
+            }
+        }
+
         ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-
         InvalidateLayout();
         ResetCaretBlink();
     }
@@ -1660,9 +1658,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     public event EventHandler? ClipboardCycleStatusChanged;
 
     /// <summary>
-    /// Raised when a Copy or Cut is blocked because the selection exceeds
-    /// <see cref="Document.MaxCopyLength"/>.  The argument is the selection
-    /// length in characters.
+    /// Raised when a Copy or Cut falls back to the Avalonia clipboard and
+    /// the selection exceeds <see cref="Document.MaxCopyLength"/>.
+    /// The argument is the selection length in characters.
     /// </summary>
     public event Action<long>? CopyTooLarge;
 
@@ -2065,8 +2063,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             canExecute: HasSelection);
         Reg(Cmd.EditCopy, doc => { _ = CopyAsync(); }, isColumnAware: true,
             canExecute: HasSelection);
-        Reg(Cmd.EditPaste, doc => { _ = PasteAsync(); }, isColumnAware: true,
-            canExecute: () => _clipboardRing.Count > 0);
+        Reg(Cmd.EditPaste, doc => { _ = PasteAsync(); }, isColumnAware: true);
         Reg(Cmd.EditPasteMore, _ => PasteMore(),
             canExecute: () => _clipboardRing.Count > 1);
         Reg(Cmd.EditSelectAll, _ => PerformSelectAll());

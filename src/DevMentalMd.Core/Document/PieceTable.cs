@@ -401,6 +401,49 @@ public sealed class PieceTable {
         VisitPieces(start, len, visitor);
     }
 
+    /// <summary>
+    /// Copies [<paramref name="start"/>, <paramref name="start"/>+<paramref name="len"/>)
+    /// directly into <paramref name="dest"/>. The span must be at least <paramref name="len"/>
+    /// characters long. No managed string is allocated.
+    /// </summary>
+    public void CopyTo(long start, long len, Span<char> dest) {
+        if (len == 0) return;
+        var (startPiece, startOfsInPiece) = FindPiece(start);
+        var remaining = len;
+        var destOfs = 0;
+        for (var i = startPiece; i < _pieces.Count && remaining > 0; i++) {
+            var p = _pieces[i];
+            var pieceOfs = i == startPiece ? startOfsInPiece : 0L;
+
+            if (p.Len == WholeBufSentinel || p.Which == BufferKind.Original) {
+                var pieceLen = p.Len == WholeBufSentinel
+                    ? _buf!.Length - p.Start : p.Len;
+                var avail = pieceLen - pieceOfs;
+                var pieceRemaining = Math.Min(avail, remaining);
+                while (pieceRemaining > 0) {
+                    var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
+                    _buf!.CopyTo(p.Start + pieceOfs, dest.Slice(destOfs, take), take);
+                    destOfs += take;
+                    pieceOfs += take;
+                    pieceRemaining -= take;
+                    remaining -= take;
+                }
+            } else {
+                var avail = p.Len - pieceOfs;
+                var pieceRemaining = (int)Math.Min(avail, remaining);
+                while (pieceRemaining > 0) {
+                    var take = Math.Min(pieceRemaining, MaxVisitChunk);
+                    BufFor(p.Which).AsSpan((int)(p.Start + pieceOfs), take)
+                        .CopyTo(dest.Slice(destOfs, take));
+                    destOfs += take;
+                    pieceOfs += take;
+                    pieceRemaining -= take;
+                    remaining -= take;
+                }
+            }
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Line access
     // -------------------------------------------------------------------------
@@ -912,6 +955,88 @@ public sealed class PieceTable {
 
     /// <summary>Current length of the append-only add buffer.</summary>
     public long AddBufferLength => _addBuf.Length;
+
+    /// <summary>
+    /// Returns a substring from the add buffer. Used by serialization to
+    /// materialize text from a <see cref="History.SpanInsertEdit"/>.
+    /// </summary>
+    public string GetAddBufferSlice(long start, int len) =>
+        BufFor(BufferKind.Add).Substring((int)start, len);
+
+    /// <summary>
+    /// Appends <paramref name="text"/> to the add buffer without creating a piece.
+    /// Returns the start offset within the add buffer. Use with
+    /// <see cref="InsertFromAddBuffer"/> to complete the insert.
+    /// </summary>
+    public long AppendToAddBuffer(ReadOnlySpan<char> text) {
+        var start = (long)_addBuf.Length;
+        _addBuf.Append(text);
+        _addBufCache = null;
+        return start;
+    }
+
+    /// <summary>
+    /// Inserts a piece referencing [<paramref name="addBufStart"/>,
+    /// <paramref name="addBufStart"/>+<paramref name="len"/>) from the add buffer
+    /// into the piece list at logical offset <paramref name="ofs"/>, and updates
+    /// the line tree. The data must already exist in the add buffer.
+    /// </summary>
+    public void InsertFromAddBuffer(CharOffset ofs, long addBufStart, int len) {
+        if (len == 0) return;
+        ArgumentOutOfRangeException.ThrowIfNegative(ofs);
+        if (_buf.LengthIsKnown) {
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs, Length);
+        }
+
+        // Pre-mutation: capture line info for incremental tree update.
+        var addSpan = BufFor(BufferKind.Add).AsSpan((int)addBufStart, len);
+        var hasNewlines = addSpan.IndexOfAny('\n', '\r') >= 0;
+        LineIndex affectedLine = -1;
+        CharOffset lineStart = 0;
+        int oldLineLen = 0;
+        if (_lineTree != null) {
+            affectedLine = (LineIndex)LineFromOfs(ofs);
+            lineStart = affectedLine == 0 ? 0 : _lineTree.PrefixSum(affectedLine - 1);
+            oldLineLen = _lineTree.ValueAt(affectedLine);
+        }
+
+        var newPiece = new Piece(BufferKind.Add, addBufStart, len);
+        var (pieceIdx, ofsInPiece) = FindPiece(ofs);
+
+        if (ofsInPiece == 0L) {
+            _pieces.Insert(pieceIdx, newPiece);
+        } else {
+            var existing = _pieces[pieceIdx];
+            var left = existing.TakeFirst(ofsInPiece);
+            Piece right;
+            if (existing.Len == WholeBufSentinel) {
+                right = new Piece(BufferKind.Original, existing.Start + ofsInPiece, WholeBufSentinel);
+            } else {
+                right = existing.SkipFirst(ofsInPiece);
+            }
+            _pieces[pieceIdx] = left;
+            _pieces.Insert(pieceIdx + 1, newPiece);
+            _pieces.Insert(pieceIdx + 2, right);
+        }
+
+        // Post-mutation: update line tree.
+        if (affectedLine >= 0 && !hasNewlines) {
+            _lineTree!.Update(affectedLine, len);
+            var newLen = _lineTree.ValueAt(affectedLine);
+            if (newLen > _maxLineLen) _maxLineLen = newLen;
+            SplitLongLine(affectedLine);
+        } else if (affectedLine >= 0 && hasNewlines) {
+            // SpliceInsertLines needs a string for the inserted text.
+            var text = new string(addSpan);
+            SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs, text);
+            var nlCount = (int)(LineFromOfs(Math.Min(ofs + len, Length)) - affectedLine + 1);
+            SplitLongLines(affectedLine, nlCount);
+        } else {
+            Debug.Assert(false, "InsertFromAddBuffer called without a line tree.");
+            _maxLineLen = -1;
+        }
+        AssertLineTreeValid();
+    }
 
     /// <summary>Snapshots the current piece list for later restore (undo).</summary>
     public Piece[] SnapshotPieces() => _pieces.ToArray();

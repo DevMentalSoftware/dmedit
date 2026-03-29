@@ -1327,11 +1327,11 @@ public partial class MainWindow : Window {
             }
         };
 
-        // Copy/Cut too large → status bar warning
+        // Copy/Cut too large for Avalonia fallback → status bar warning
         Editor.CopyTooLarge += len => {
             var mb = len / (1024 * 1024);
             var limitMb = Document.MaxCopyLength / (1024 * 1024);
-            StatusLeft.Text = $"Selection too large to copy ({mb:N0} MB). Maximum is {limitMb} MB.";
+            StatusLeft.Text = $"Selection too large to copy ({mb:N0} MB, limit {limitMb} MB). Native clipboard unavailable.";
         };
 
         // ScrollBar → Editor: update scroll offset when user drags/clicks scrollbar

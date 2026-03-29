@@ -73,6 +73,15 @@ public static class EditSerializer {
                     ["ofs"] = ins.Ofs,
                     ["text"] = ins.Text,
                 };
+            case SpanInsertEdit spanIns: {
+                // Materialize text from add buffer for serialization.
+                var text = table.GetAddBufferSlice(spanIns.AddBufStart, spanIns.Len);
+                return new JsonObject {
+                    ["type"] = "insert",
+                    ["ofs"] = spanIns.Ofs,
+                    ["text"] = text,
+                };
+            }
             case DeleteEdit del: {
                 var cost = del.Len * 2L;
                 if (cost > budget) {
