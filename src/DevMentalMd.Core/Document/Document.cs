@@ -183,35 +183,6 @@ public sealed class Document {
         RaiseChanged();
     }
 
-    /// <summary>
-    /// Inserts text from a native clipboard service that streams chunks directly
-    /// into the add buffer, bypassing managed string allocation. The
-    /// <paramref name="pasteAction"/> receives the table, a progress callback
-    /// (chars done, total chars), and a cancellation token.
-    /// </summary>
-    public void InsertFromNativeClipboard(
-        Action<PieceTable, Action<long, long>?, CancellationToken> pasteAction) {
-
-        var ofs = Selection.Start;
-        var replacing = !Selection.IsEmpty;
-        if (replacing) {
-            _history.BeginCompound();
-            DeleteRange(ofs, Selection.Len);
-        }
-        var addBufStart = _table.AddBufferLength;
-        pasteAction(_table, null, default);
-
-        var totalLen = (int)(_table.AddBufferLength - addBufStart);
-        if (totalLen > 0) {
-            _history.Push(new SpanInsertEdit(ofs, addBufStart, totalLen), _table, Selection);
-        }
-        if (replacing) {
-            _history.EndCompound();
-        }
-        Selection = Selection.Collapsed(ofs + totalLen);
-        RaiseChanged();
-    }
-
     /// <summary>Deletes the current selection. No-op if selection is empty.</summary>
     public void DeleteSelection() {
         if (Selection.IsEmpty) {
@@ -1056,6 +1027,30 @@ public sealed class Document {
     // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Records an insert (and optional delete) that was already applied on a
+    /// background thread. Updates history, selection, and fires Changed.
+    /// </summary>
+    public void RecordBackgroundPaste(long ofs, Selection selBefore,
+        long addBufStart, int insertLen, bool replacing,
+        Piece[]? deletePieces,
+        (int StartLine, int[]? LineLengths)? deleteLineInfo) {
+
+        if (replacing && deletePieces != null) {
+            var delEdit = deleteLineInfo is var (sl, ll)
+                ? new DeleteEdit(ofs, selBefore.Len, deletePieces, sl, ll)
+                : new DeleteEdit(ofs, selBefore.Len, deletePieces);
+            var insEdit = new SpanInsertEdit(ofs, addBufStart, insertLen);
+            var compound = new CompoundEdit(new List<IDocumentEdit> { delEdit, insEdit });
+            _history.PushAlreadyApplied(compound, selBefore);
+        } else {
+            var insEdit = new SpanInsertEdit(ofs, addBufStart, insertLen);
+            _history.PushAlreadyApplied(insEdit, selBefore);
+        }
+        Selection = Selection.Collapsed(ofs + insertLen);
+        RaiseChanged();
+    }
 
     /// <summary>
     /// Appends <paramref name="text"/> to the add buffer and pushes a

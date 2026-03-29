@@ -100,10 +100,16 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     public bool IsEditBlocked { get; set; }
 
     /// <summary>
-    /// True while the document is still streaming from disk.  Blocks scrolling,
-    /// caret drawing, and mouse interaction until the line tree is installed.
+    /// True while a large paste is being processed on a background thread.
+    /// Prevents layout/render from accessing the PieceTable.
     /// </summary>
-    public bool IsLoading => Document?.IsLoading ?? false;
+    internal bool BackgroundPasteInProgress { get; private set; }
+
+    /// <summary>
+    /// True while the document is still streaming from disk or a large paste
+    /// is processing.  Blocks scrolling, caret drawing, and mouse interaction.
+    /// </summary>
+    public bool IsLoading => BackgroundPasteInProgress || (Document?.IsLoading ?? false);
 
     /// <summary>True when the document has an active selection or column selection.</summary>
     private bool HasSelection() {
@@ -435,6 +441,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     // Public scroll API (used by DualZoneScrollBar)
     // -------------------------------------------------------------------------
 
+    /// <summary>Fired when a background paste starts or finishes.</summary>
+    public event Action<bool>? BackgroundPasteChanged;
+
     /// <summary>Fired when scroll state changes (offset, extent, or viewport).</summary>
     public event EventHandler? ScrollChanged;
 
@@ -706,7 +715,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
         _perfSw.Restart();
 
-        var doc = Document;
+        var doc = BackgroundPasteInProgress ? null : Document;
         var typeface = new Typeface(FontFamily);
         var rh = GetRowHeight();
         UpdateGutterWidth();
@@ -984,7 +993,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _perfSw.Restart();
 
         var layout = EnsureLayout();
-        var doc = Document;
+        var doc = BackgroundPasteInProgress ? null : Document;
 
         // Background
         context.FillRectangle(_theme.EditorBackground, new Rect(Bounds.Size));
@@ -1550,9 +1559,51 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Native streaming paste is only used for normal (non-column) mode.
         var nativeClip = NativeClipboardDiscovery.Service;
         if (nativeClip != null && doc.ColumnSel == null) {
-            doc.InsertFromNativeClipboard(
-                (table, progress, cancel) =>
-                    nativeClip.Paste(table, progress, cancel));
+            // Phase 1: read clipboard into the add buffer (UI thread — fast,
+            // Windows clipboard API requires UI thread).
+            var addBufStart = doc.Table.AddBufferLength;
+            var charsPasted = nativeClip.Paste(doc.Table, null, default);
+            if (charsPasted <= 0) {
+                _editSw.Stop();
+                return;
+            }
+            var totalLen = (int)(doc.Table.AddBufferLength - addBufStart);
+
+            // Phase 2: insert into piece table on background thread.
+            // Block all UI access to the document during this time.
+            var savedIsEditBlocked = IsEditBlocked;
+            IsEditBlocked = true;
+            BackgroundPasteInProgress = true;
+            BackgroundPasteChanged?.Invoke(true);
+            InvalidateVisual(); // render empty layout while paste runs
+
+            var ofs = doc.Selection.Start;
+            var selBefore = doc.Selection;
+            var replacing = !doc.Selection.IsEmpty;
+
+            // Capture delete pieces on UI thread before going to background,
+            // so undo has the data it needs.
+            Piece[]? deletePieces = null;
+            (int StartLine, int[]? LineLengths)? deleteLineInfo = null;
+            if (replacing) {
+                deletePieces = doc.Table.CapturePieces(ofs, selBefore.Len);
+                deleteLineInfo = doc.Table.CaptureLineInfo(ofs, selBefore.Len);
+            }
+
+            await Task.Run(() => {
+                if (replacing) {
+                    doc.Table.Delete(ofs, selBefore.Len);
+                }
+                doc.Table.InsertFromAddBuffer(ofs, addBufStart, totalLen);
+            });
+
+            // Phase 3: back on UI thread — record history and update selection.
+            doc.RecordBackgroundPaste(ofs, selBefore, addBufStart, totalLen,
+                replacing, deletePieces, deleteLineInfo);
+
+            BackgroundPasteInProgress = false;
+            BackgroundPasteChanged?.Invoke(false);
+            IsEditBlocked = savedIsEditBlocked;
         } else {
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard == null) { _editSw.Stop(); return; }

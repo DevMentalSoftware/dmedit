@@ -1317,6 +1317,14 @@ public partial class MainWindow : Window {
             UpdateStatusBar();
         };
 
+        // Background paste → tab spinner
+        Editor.BackgroundPasteChanged += loading => {
+            if (_activeTab is { } tab) {
+                tab.IsLoading = loading;
+                UpdateTabBar();
+            }
+        };
+
         // Overwrite mode → status bar
         Editor.OverwriteModeChanged += (_, _) => UpdateStatusBar();
 

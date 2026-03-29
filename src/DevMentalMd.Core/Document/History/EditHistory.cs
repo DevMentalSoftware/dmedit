@@ -64,6 +64,15 @@ public sealed class EditHistory {
         }
     }
 
+    /// <summary>
+    /// Records an already-applied edit for undo without re-executing it.
+    /// Used when the edit was applied on a background thread.
+    /// </summary>
+    public void PushAlreadyApplied(IDocumentEdit edit, Selection selBefore) {
+        _undoStack.Push(new Entry(edit, selBefore));
+        _redoStack.Clear();
+    }
+
     // -------------------------------------------------------------------------
     // Compound grouping
     // -------------------------------------------------------------------------

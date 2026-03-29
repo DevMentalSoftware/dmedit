@@ -61,30 +61,32 @@ public sealed class ChunkedUtf8Buffer {
         }
 
         var charStart = _totalChars;
+        var remaining = text;
 
-        // Worst case: 3 bytes per char (BMP). Surrogates need 4 bytes for
-        // 2 code units, which is still ≤ 3 × 2 = 6, so 3× is safe.
-        var maxBytes = (long)text.Length * 3;
-
-        // Decide whether to append to the current chunk or allocate a new one.
-        var currentRemaining = CurrentChunkRemaining();
-        if (currentRemaining <= 0 || maxBytes > currentRemaining) {
-            // Need a new chunk. Size it to fit the incoming data, but at
-            // least GrowthChunkSize for normal growth.
-            var chunkSize = Math.Max(GrowthChunkSize, (int)Math.Min(maxBytes, int.MaxValue));
-            if (_chunks.Count == 0) {
-                chunkSize = Math.Max(InitialChunkSize, (int)Math.Min(maxBytes, int.MaxValue));
+        while (remaining.Length > 0) {
+            // Ensure we have a chunk with space.
+            if (CurrentChunkRemaining() <= 0) {
+                var minSize = _chunks.Count == 0 ? InitialChunkSize : GrowthChunkSize;
+                // Size to fit the remaining text (exact byte count) or growth size.
+                var needed = Encoding.UTF8.GetByteCount(remaining);
+                AllocateChunk(Math.Max(minSize, needed));
             }
-            AllocateChunk(chunkSize);
-        }
 
-        // Encode into the current chunk.
-        ref var chunk = ref CurrentChunkRef();
-        var bytesWritten = Encoding.UTF8.GetBytes(text, chunk.Data.AsSpan(chunk.BytesUsed));
-        chunk.BytesUsed += bytesWritten;
-        chunk.CharCount += text.Length;
-        _totalChars += text.Length;
-        _totalBytes += bytesWritten;
+            ref var chunk = ref CurrentChunkRef();
+            var space = chunk.Data.Length - chunk.BytesUsed;
+            var dest = chunk.Data.AsSpan(chunk.BytesUsed, space);
+
+            // Encode as many chars as fit into the available space.
+            var encoder = Encoding.UTF8.GetEncoder();
+            encoder.Convert(remaining, dest, flush: true,
+                out var charsUsed, out var bytesUsed, out _);
+
+            chunk.BytesUsed += bytesUsed;
+            chunk.CharCount += charsUsed;
+            _totalChars += charsUsed;
+            _totalBytes += bytesUsed;
+            remaining = remaining[charsUsed..];
+        }
 
         return charStart;
     }
@@ -99,26 +101,41 @@ public sealed class ChunkedUtf8Buffer {
         }
 
         var charStart = _totalChars;
+        var remaining = utf8;
 
-        // Count chars in the UTF-8 data.
-        var charCount = Encoding.UTF8.GetCharCount(utf8);
-
-        // Allocate chunk if needed.
-        var currentRemaining = CurrentChunkRemaining();
-        if (currentRemaining <= 0 || utf8.Length > currentRemaining) {
-            var chunkSize = Math.Max(GrowthChunkSize, utf8.Length);
-            if (_chunks.Count == 0) {
-                chunkSize = Math.Max(InitialChunkSize, utf8.Length);
+        while (remaining.Length > 0) {
+            if (CurrentChunkRemaining() <= 0) {
+                var minSize = _chunks.Count == 0 ? InitialChunkSize : GrowthChunkSize;
+                AllocateChunk(Math.Max(minSize, remaining.Length));
             }
-            AllocateChunk(chunkSize);
-        }
 
-        ref var chunk = ref CurrentChunkRef();
-        utf8.CopyTo(chunk.Data.AsSpan(chunk.BytesUsed));
-        chunk.BytesUsed += utf8.Length;
-        chunk.CharCount += charCount;
-        _totalChars += charCount;
-        _totalBytes += utf8.Length;
+            ref var chunk = ref CurrentChunkRef();
+            var space = chunk.Data.Length - chunk.BytesUsed;
+            var take = Math.Min(remaining.Length, space);
+
+            // Don't split a multi-byte UTF-8 sequence across chunks.
+            if (take < remaining.Length) {
+                while (take > 0 && (remaining[take] & 0xC0) == 0x80) {
+                    take--;
+                }
+                if (take == 0) {
+                    // No room for even one complete sequence — need a new chunk.
+                    AllocateChunk(Math.Max(GrowthChunkSize, remaining.Length));
+                    chunk = ref CurrentChunkRef();
+                    space = chunk.Data.Length - chunk.BytesUsed;
+                    take = Math.Min(remaining.Length, space);
+                }
+            }
+
+            var slice = remaining[..take];
+            var charCount = Encoding.UTF8.GetCharCount(slice);
+            slice.CopyTo(chunk.Data.AsSpan(chunk.BytesUsed));
+            chunk.BytesUsed += take;
+            chunk.CharCount += charCount;
+            _totalChars += charCount;
+            _totalBytes += take;
+            remaining = remaining[take..];
+        }
 
         return charStart;
     }
