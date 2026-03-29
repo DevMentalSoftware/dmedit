@@ -47,27 +47,24 @@ static class IconGlyphs {
     public const string Delete = "\uE47B"; //EEA5,EEA6  
     public const string Wrap = "\uEF28"; //F80E
 
-    public const string Save = "\uEA28";
+    public const string Save = "\uEA43";
     public const string Search = "\uEA7C";
 
     // Placeholder toolbar icons
-    public const string ClipboardRing  = "\uE331";
-    public const string New            = "\uE331";
-    public const string Open           = "\uE331";
-    public const string SaveAs         = "\uE331";
-    public const string RevertFile     = "\uE331";
-    public const string Print          = "\uE331";
-    public const string SaveAsPdf      = "\uE331";
-    public const string ToggleReadOnly = "\uE331";
-    public const string ReloadFile     = "\uE331";
-    public const string Replace        = "\uE331";
-    public const string GoToLine       = "\uE331";
-    public const string CommandPalette = "\uE331";
-    public const string LineNumbers    = "\uE331";
-    public const string Whitespace     = "\uE331";
-    public const string ZoomIn         = "\uE331";
-    public const string ZoomOut        = "\uE331";
-    public const string ZoomReset      = "\uE331";
+    public const string ClipboardRing  = "\uEF13";
+    public const string SaveAs         = "\uEA4C";
+    public const string RevertFile     = "\uE47C";
+    public const string Print          = "\uE427";
+    public const string SaveAsPdf      = "\uE528";
+    public const string ReloadFile     = "\uE110";
+    public const string Replace        = "\uEAF9";
+    public const string GoToLine       = "\uE0B0";
+    public const string CommandPalette = "\uEE87";
+    public const string LineNumbers    = "\uE887";
+    public const string Whitespace     = "\uF8B3";
+    public const string ZoomIn         = "\uF8C5";
+    public const string ZoomOut        = "\uF8C7";
+    public const string ZoomReset      = "\uF860";
 
     // Conflict / error indicators
     public const string ErrorCircle  = "\uF4A0";  

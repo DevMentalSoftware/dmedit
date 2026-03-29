@@ -16,12 +16,8 @@ public static class Commands {
     // File
     // =================================================================
 
-    public static readonly Command FileNew = new("File", "New", "_New") {
-        ToolbarGlyph = IconGlyphs.New, ToolbarTooltip = "New",
-    };
-    public static readonly Command FileOpen = new("File", "Open", "_Open\u2026") {
-        ToolbarGlyph = IconGlyphs.Open, ToolbarTooltip = "Open",
-    };
+    public static readonly Command FileNew = new("File", "New", "_New");
+    public static readonly Command FileOpen = new("File", "Open", "_Open\u2026");
     public static readonly Command FileSave = new("File", "Save", "_Save") {
         ToolbarGlyph = IconGlyphs.Save, ToolbarTooltip = "Save",
     };
@@ -45,7 +41,6 @@ public static class Commands {
     public static readonly Command FileExit = new("File", "Exit", "E_xit");
     public static readonly Command FileToggleReadOnly = new("File", "ToggleReadOnly", "Toggle Read _Only") {
         IsAdvanced = true,
-        ToolbarGlyph = IconGlyphs.ToggleReadOnly, ToolbarTooltip = "Toggle Read Only",
     };
     public static readonly Command FileReloadFile = new("File", "ReloadFile", "Re_load File") {
         IsAdvanced = true,
@@ -181,6 +176,7 @@ public static class Commands {
     public static readonly Command ViewLineNumbers = new("View", "LineNumbers", "_Line Numbers") {
         IsAdvanced = true,
         ToolbarGlyph = IconGlyphs.LineNumbers, ToolbarTooltip = "Line Numbers",
+        IsToolbarToggle = true,
     };
     public static readonly Command ViewStatusBar = new("View", "StatusBar", "_Status Bar");
     public static readonly Command ViewWrapLines = new("View", "WrapLines", "_Wrap Lines") {
@@ -189,6 +185,7 @@ public static class Commands {
     };
     public static readonly Command ViewWhitespace = new("View", "Whitespace", "Show W_hitespace") {
         ToolbarGlyph = IconGlyphs.Whitespace, ToolbarTooltip = "Show Whitespace",
+        IsToolbarToggle = true,
     };
     public static readonly Command ViewZoomIn = new("View", "ZoomIn", "Zoom _In") {
         ToolbarGlyph = IconGlyphs.ZoomIn, ToolbarTooltip = "Zoom In",

@@ -297,7 +297,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     public event Action? HScrollChanged;
 
     // Word wrap
-    private bool _wrapLines = true;
+    private bool _wrapLines = false;
     private int _wrapLinesAt = 100;
 
     // Indentation
@@ -312,8 +312,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     public double GutterWidth => _gutterWidth;
     public double CharWidth => GetCharWidth();
     private int _gutterDigitCnt;
-    private const double GutterPadLeft = 4;
-    private const double GutterPadRight = 12;
+    private const double GutterPadLeft = 6;
+    private const double GutterPadRight = 6;
 
     // Theme — set by MainWindow when the effective theme changes.
     private EditorTheme _theme = EditorTheme.Light;

@@ -1473,6 +1473,8 @@ public partial class MainWindow : Window {
     /// </summary>
     private Func<bool>? GetToolbarToggleFunc(string id) => id switch {
         "View.WrapLines" => () => _settings.WrapLines,
+        "View.Whitespace" => () => _settings.ShowWhitespace,
+        "View.LineNumbers" => () => _settings.ShowLineNumbers,
         _ => null,
     };
 

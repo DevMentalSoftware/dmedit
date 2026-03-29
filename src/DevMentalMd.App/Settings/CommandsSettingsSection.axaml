@@ -40,7 +40,7 @@
 				<ToggleButton x:Name="ModifiedFilterBtn"
 				              Grid.Column="2"
 				              Content="S"
-				              FontSize="16"
+				              FontSize="18"
 				              FontWeight="SemiBold"
 				              Padding="7,3"
 				              Margin="0,0,0,0"

@@ -36,7 +36,7 @@ public sealed class ToolbarControl : Control {
     private const double ButtonSize = 26;
     private const double ButtonGap = 2;
     private const double OverflowBtnWidth = 24;
-    private const double IconFontSize = 14;
+    private const double IconFontSize = 18;
     private const double CheckFontSize = 8;
     private const double CornerRadius = 4;
 
