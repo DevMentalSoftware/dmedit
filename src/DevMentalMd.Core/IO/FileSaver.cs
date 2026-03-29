@@ -35,7 +35,7 @@ namespace DevMentalMd.Core.IO;
 /// </para>
 /// </remarks>
 public static class FileSaver {
-    private const int WriteChunk = 1_048_576; // 1 MB
+    private const int WriteChunk = 1024 * 1024;
 
     /// <summary>
     /// Asynchronously saves <paramref name="doc"/> to <paramref name="path"/>.

@@ -14,10 +14,10 @@ public class EditHistorySerializationTests {
         var entries = doc.History.GetUndoEntries();
         Assert.Equal(2, entries.Count);
         // First entry is the oldest (insert "d")
-        var first = Assert.IsType<InsertEdit>(entries[0].Edit);
-        Assert.Equal("d", first.Text);
-        var second = Assert.IsType<InsertEdit>(entries[1].Edit);
-        Assert.Equal("e", second.Text);
+        var first = Assert.IsType<SpanInsertEdit>(entries[0].Edit);
+        Assert.Equal(1, first.Len);
+        var second = Assert.IsType<SpanInsertEdit>(entries[1].Edit);
+        Assert.Equal(1, second.Len);
     }
 
     [Fact]
@@ -32,21 +32,24 @@ public class EditHistorySerializationTests {
         var redo = doc.History.GetRedoEntries();
         Assert.Equal(2, redo.Count);
         // Bottom = oldest undo = "e", top = "d"
-        var first = Assert.IsType<InsertEdit>(redo[0].Edit);
-        Assert.Equal("e", first.Text);
-        var second = Assert.IsType<InsertEdit>(redo[1].Edit);
-        Assert.Equal("d", second.Text);
+        var first = Assert.IsType<SpanInsertEdit>(redo[0].Edit);
+        Assert.Equal(1, first.Len);
+        var second = Assert.IsType<SpanInsertEdit>(redo[1].Edit);
+        Assert.Equal(1, second.Len);
     }
 
     [Fact]
     public void RestoreEntries_ReplaysUndoOntoTable() {
         // Build entries: insert "X" at 0, insert "Y" at 1.
+        // Pre-populate the add buffer so SpanInsertEdit references resolve.
+        var doc = new Document("abc");
+        var bufStart0 = doc.Table.AppendToAddBuffer("X");
+        var bufStart1 = doc.Table.AppendToAddBuffer("Y");
         var undoEntries = new List<EditHistory.HistoryEntry> {
-            new(new InsertEdit(0, "X"), Selection.Collapsed(0)),
-            new(new InsertEdit(1, "Y"), Selection.Collapsed(1)),
+            new(new SpanInsertEdit(0, bufStart0, 1), Selection.Collapsed(0)),
+            new(new SpanInsertEdit(1, bufStart1, 1), Selection.Collapsed(1)),
         };
 
-        var doc = new Document("abc");
         doc.History.RestoreEntries(doc.Table, undoEntries,
             new List<EditHistory.HistoryEntry>(), savePointDepth: 0);
 
@@ -56,11 +59,12 @@ public class EditHistorySerializationTests {
 
     [Fact]
     public void RestoreEntries_UndoRevertsCorrectly() {
+        var doc = new Document("abc");
+        var bufStart = doc.Table.AppendToAddBuffer("X");
         var undoEntries = new List<EditHistory.HistoryEntry> {
-            new(new InsertEdit(0, "X"), Selection.Collapsed(0)),
+            new(new SpanInsertEdit(0, bufStart, 1), Selection.Collapsed(0)),
         };
 
-        var doc = new Document("abc");
         doc.History.RestoreEntries(doc.Table, undoEntries,
             new List<EditHistory.HistoryEntry>(), savePointDepth: 0);
 
@@ -71,11 +75,12 @@ public class EditHistorySerializationTests {
 
     [Fact]
     public void RestoreEntries_RedoAppliesCorrectly() {
+        var doc = new Document("abc");
+        var bufStart = doc.Table.AppendToAddBuffer("Z");
         var redoEntries = new List<EditHistory.HistoryEntry> {
-            new(new InsertEdit(0, "Z"), Selection.Collapsed(0)),
+            new(new SpanInsertEdit(0, bufStart, 1), Selection.Collapsed(0)),
         };
 
-        var doc = new Document("abc");
         doc.History.RestoreEntries(doc.Table,
             new List<EditHistory.HistoryEntry>(), redoEntries, savePointDepth: 0);
 
@@ -86,12 +91,14 @@ public class EditHistorySerializationTests {
 
     [Fact]
     public void RestoreEntries_PreservesSavePointDepth() {
+        var doc = new Document("x");
+        var bufStart0 = doc.Table.AppendToAddBuffer("A");
+        var bufStart1 = doc.Table.AppendToAddBuffer("B");
         var undoEntries = new List<EditHistory.HistoryEntry> {
-            new(new InsertEdit(0, "A"), Selection.Collapsed(0)),
-            new(new InsertEdit(1, "B"), Selection.Collapsed(1)),
+            new(new SpanInsertEdit(0, bufStart0, 1), Selection.Collapsed(0)),
+            new(new SpanInsertEdit(1, bufStart1, 1), Selection.Collapsed(1)),
         };
 
-        var doc = new Document("x");
         doc.History.RestoreEntries(doc.Table, undoEntries,
             new List<EditHistory.HistoryEntry>(), savePointDepth: 1);
 
@@ -119,8 +126,10 @@ public class EditHistorySerializationTests {
         var redoEntries = original.History.GetRedoEntries();
         var savePointDepth = original.History.SavePointDepth;
 
-        // Restore onto a fresh document with the same base content.
+        // Restore onto a fresh document with the same base content,
+        // carrying the add buffer so SpanInsertEdit references resolve.
         var restored = new Document("hello");
+        restored.Table.SetAddBuffer(original.Table.AddBuffer);
         restored.History.RestoreEntries(restored.Table, undoEntries, redoEntries, savePointDepth);
 
         Assert.Equal("hello world!", restored.Table.GetText());

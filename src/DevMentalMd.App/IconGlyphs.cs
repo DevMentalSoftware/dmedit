@@ -48,7 +48,7 @@ static class IconGlyphs {
     public const string Wrap = "\uEF28"; //F80E
 
     public const string Save = "\uEA43";
-    public const string Search = "\uEA7C";
+    public const string Search = "\uE6A9";
 
     // Placeholder toolbar icons
     public const string ClipboardRing  = "\uEF13";
@@ -61,9 +61,9 @@ static class IconGlyphs {
     public const string GoToLine       = "\uE0B0";
     public const string CommandPalette = "\uEE87";
     public const string LineNumbers    = "\uE887";
-    public const string Whitespace     = "\uF8B3";
-    public const string ZoomIn         = "\uF8C5";
-    public const string ZoomOut        = "\uF8C7";
+    public const string Whitespace     = "\uF6F8";
+    public const string ZoomIn         = "\uEE8E";
+    public const string ZoomOut        = "\uEE8F";
     public const string ZoomReset      = "\uF860";
 
     // Conflict / error indicators

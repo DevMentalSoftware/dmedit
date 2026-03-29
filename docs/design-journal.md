@@ -23,14 +23,35 @@ small one — it is the primary way a fresh session recovers context.
 | [09-storage-and-history](design-journal/09-storage-and-history.md) | 2026-03-22 | Storage-backed edits, file history, checkpoints, projects, git integration roadmap |
 | [10-session-and-reliability](design-journal/10-session-and-reliability.md) | 2026-03-24 | Session persist bugs, edit serialization, line tree reliability, memory safety, buffer simplification |
 | [11-search-and-memory-safety](design-journal/11-search-and-memory-safety.md) | 2026-03-27 | Horizontal scrollbar, find bar improvements, async match counting, GetText guard, line-at-a-time layout, chunked search, ReplaceAll design |
+| [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md) | 2026-03-29 | ChunkedUtf8Buffer replaces StringBuilder _addBuf, binary session persistence, paged eviction roadmap |
 
 ---
 
 ## Current State
 
-**Test baseline: 510** (414 Core + 31 Rendering + 65 App, 1 skipped)
+**Test baseline: 534** (439 Core + 31 Rendering + 64 App, 1 skipped)
+
+### In progress
+
+- **Paged add-buffer eviction** — since chunks are append-only and immutable once
+  the buffer moves to a new chunk, they can be written to disk in the background
+  and evicted from memory. Same pattern as PagedFileBuffer. Active chunk stays in
+  memory; older chunks become paged references. See
+  [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **UTF-8 Chunked Add Buffer** (2026-03-29) — Replaced `StringBuilder _addBuf` +
+  `string _addBufCache` with `ChunkedUtf8Buffer`: variable-size `byte[]` chunks
+  storing UTF-8 encoded text. Pieces keep char offsets; buffer translates
+  char↔byte internally. Eliminated `InsertEdit` — all inserts now go through
+  `SpanInsertEdit` via `PushInsert` helper. Session persistence uses binary
+  companion file (`{id}.addBuf`) alongside `.edits.json`; edit JSON references
+  buffer char offsets instead of duplicating text strings. Delete edit
+  serialization no longer materializes text (pieces reference persisted buffer).
+  Linux clipboard paste feeds raw UTF-8 bytes directly via `AppendUtf8`. 25 new
+  `ChunkedUtf8Buffer` unit tests. See
+  [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 - **Error Handling & UX Hardening** (2026-03-27) — Major overhaul of global exception
   handling and several editor UX fixes:

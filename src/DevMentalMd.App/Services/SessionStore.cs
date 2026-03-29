@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using DevMentalMd.Core.Buffers;
 using DevMentalMd.Core.Documents;
 using DevMentalMd.Core.Documents.History;
 using DevMentalMd.Core.IO;
@@ -120,11 +121,16 @@ public static class SessionStore {
                 }
 
                 var editsPath = Path.Combine(SessionDir, $"{tab.Id}.edits.json");
+                var addBufPath = Path.Combine(SessionDir, $"{tab.Id}.addBuf");
                 if (persistUndo.Count > 0 || persistRedo.Count > 0) {
                     var editsJson = EditSerializer.Serialize(persistUndo, persistRedo, tab.Document.Table);
                     File.WriteAllText(editsPath, editsJson);
-                } else if (File.Exists(editsPath)) {
-                    File.Delete(editsPath);
+                    // Persist the add buffer as a binary companion file.
+                    using var fs = File.Create(addBufPath);
+                    tab.Document.Table.AddBuffer.WriteTo(fs);
+                } else {
+                    if (File.Exists(editsPath)) File.Delete(editsPath);
+                    if (File.Exists(addBufPath)) File.Delete(addBufPath);
                 }
             }
 
@@ -304,6 +310,15 @@ public static class SessionStore {
             return null;
         }
         try {
+            // Load the persisted add buffer before replaying edits so that
+            // SpanInsertEdit references resolve correctly.
+            var addBufPath = Path.Combine(SessionDir, $"{entry.Id}.addBuf");
+            if (File.Exists(addBufPath)) {
+                using var fs = File.OpenRead(addBufPath);
+                var buf = ChunkedUtf8Buffer.ReadFrom(fs);
+                doc.Table.SetAddBuffer(buf);
+            }
+
             var json = File.ReadAllText(editsPath);
             var (undo, redo) = EditSerializer.Deserialize(json);
             // The line tree must already be installed before we get here.
@@ -327,6 +342,18 @@ public static class SessionStore {
     // Cleanup
     // -----------------------------------------------------------------
 
+    /// <summary>Deletes session files for a single tab (on tab close).</summary>
+    public static void DeleteTabFiles(string tabId) {
+        try {
+            var editsPath = Path.Combine(SessionDir, $"{tabId}.edits.json");
+            var addBufPath = Path.Combine(SessionDir, $"{tabId}.addBuf");
+            if (File.Exists(editsPath)) File.Delete(editsPath);
+            if (File.Exists(addBufPath)) File.Delete(addBufPath);
+        } catch {
+            // Best-effort.
+        }
+    }
+
     /// <summary>Removes the session directory entirely.</summary>
     public static void Clear() {
         try {
@@ -344,6 +371,12 @@ public static class SessionStore {
                 var name = Path.GetFileNameWithoutExtension(file);
                 // name is like "a1b2c3d4e5f6.edits" — strip ".edits"
                 var id = name.EndsWith(".edits") ? name[..^6] : name;
+                if (!referencedIds.Contains(id)) {
+                    File.Delete(file);
+                }
+            }
+            foreach (var file in Directory.GetFiles(SessionDir, "*.addBuf")) {
+                var id = Path.GetFileNameWithoutExtension(file);
                 if (!referencedIds.Contains(id)) {
                     File.Delete(file);
                 }

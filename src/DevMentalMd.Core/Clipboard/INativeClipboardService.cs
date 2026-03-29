@@ -20,5 +20,11 @@ public interface INativeClipboardService {
     /// <see cref="PieceTable.AppendToAddBuffer"/>. Returns the total number of
     /// characters pasted, or -1 if the clipboard contains no text.
     /// </summary>
-    long Paste(PieceTable table);
+    long Paste(PieceTable table) => Paste(table, null, default);
+
+    /// <summary>
+    /// Pastes with progress reporting and cancellation support.
+    /// <paramref name="progress"/> receives (chars pasted so far, total chars).
+    /// </summary>
+    long Paste(PieceTable table, Action<long, long>? progress, CancellationToken cancel);
 }

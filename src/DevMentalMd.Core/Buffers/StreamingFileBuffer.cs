@@ -19,7 +19,7 @@ namespace DevMentalMd.Core.Buffers;
 ///    to support loading zipped text files. 
 /// </remarks>
 public sealed class StreamingFileBuffer : IProgressBuffer {
-    private const int ChunkSize = 1_048_576; // 1 MB
+    private const int ChunkSize = 1024 * 1024;
 
     // Character storage — pre-allocated to worst-case size (1 char per byte for UTF-8).
     private char[]? _data;

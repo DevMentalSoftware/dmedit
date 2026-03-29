@@ -69,7 +69,7 @@ public readonly record struct LineEndingInfo(LineEnding Dominant, bool IsMixed,
     /// Detects the predominant line ending by scanning an <see cref="Buffers.IBuffer"/>.
     /// Only scans up to <paramref name="sampleLen"/> characters for performance.
     /// </summary>
-    public static LineEndingInfo Detect(Buffers.IBuffer buffer, int sampleLen = 1_048_576) {
+    public static LineEndingInfo Detect(Buffers.IBuffer buffer, int sampleLen = 64 * 1024) {
         int lf = 0, crlf = 0, cr = 0;
         var len = Math.Min(buffer.Length, sampleLen);
 

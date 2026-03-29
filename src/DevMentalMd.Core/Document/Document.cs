@@ -175,7 +175,7 @@ public sealed class Document {
             _history.BeginCompound();
             DeleteRange(ofs, Selection.Len);
         }
-        _history.Push(new InsertEdit(ofs, text), _table, Selection);
+        PushInsert(ofs, text);
         if (replacing) {
             _history.EndCompound();
         }
@@ -186,10 +186,12 @@ public sealed class Document {
     /// <summary>
     /// Inserts text from a native clipboard service that streams chunks directly
     /// into the add buffer, bypassing managed string allocation. The
-    /// <paramref name="pasteAction"/> should call
-    /// <see cref="PieceTable.AppendToAddBuffer"/> one or more times.
+    /// <paramref name="pasteAction"/> receives the table, a progress callback
+    /// (chars done, total chars), and a cancellation token.
     /// </summary>
-    public void InsertFromNativeClipboard(Action<PieceTable> pasteAction) {
+    public void InsertFromNativeClipboard(
+        Action<PieceTable, Action<long, long>?, CancellationToken> pasteAction) {
+
         var ofs = Selection.Start;
         var replacing = !Selection.IsEmpty;
         if (replacing) {
@@ -197,7 +199,8 @@ public sealed class Document {
             DeleteRange(ofs, Selection.Len);
         }
         var addBufStart = _table.AddBufferLength;
-        pasteAction(_table);
+        pasteAction(_table, null, default);
+
         var totalLen = (int)(_table.AddBufferLength - addBufStart);
         if (totalLen > 0) {
             _history.Push(new SpanInsertEdit(ofs, addBufStart, totalLen), _table, Selection);
@@ -292,7 +295,7 @@ public sealed class Document {
             if (pad > 0) {
                 var lineEnd = ColumnSelection.LineContentEnd(_table, line);
                 var spaces = new string(' ', pad);
-                _history.Push(new InsertEdit(lineEnd, spaces), _table, Selection);
+                PushInsert(lineEnd, spaces);
                 // Adjust the selection offsets for the padding we just added.
                 s = new Selection(lineEnd + pad, lineEnd + pad);
             }
@@ -302,7 +305,7 @@ public sealed class Document {
                 var dPieces = _table.CapturePieces(s.Start, s.Len);
                 _history.Push(new DeleteEdit(s.Start, s.Len, dPieces), _table, Selection);
             }
-            _history.Push(new InsertEdit(s.Start, text), _table, Selection);
+            PushInsert(s.Start, text);
         }
 
         _history.EndCompound();
@@ -500,14 +503,14 @@ public sealed class Document {
             var pad = ColumnSelection.PaddingNeeded(_table, line, colSel.LeftCol, tabSize);
             if (pad > 0) {
                 var lineEnd = ColumnSelection.LineContentEnd(_table, line);
-                _history.Push(new InsertEdit(lineEnd, new string(' ', pad)), _table, Selection);
+                PushInsert(lineEnd, new string(' ', pad));
                 s = new Selection(lineEnd + pad, lineEnd + pad);
             }
             if (!s.IsEmpty) {
                 var dPieces = _table.CapturePieces(s.Start, s.Len);
                 _history.Push(new DeleteEdit(s.Start, s.Len, dPieces), _table, Selection);
             }
-            _history.Push(new InsertEdit(s.Start, lines[i]), _table, Selection);
+            PushInsert(s.Start, lines[i]);
         }
         _history.EndCompound();
         ColumnSel = null;
@@ -848,7 +851,7 @@ public sealed class Document {
 
         _history.BeginCompound();
         DeleteRange(start, selLen);
-        _history.Push(new InsertEdit(start, transformed), _table, Selection);
+        PushInsert(start, transformed);
         _history.EndCompound();
 
         // Preserve selection over the transformed text
@@ -1032,7 +1035,7 @@ public sealed class Document {
     /// </summary>
     private static long CaretAfterRedo(IDocumentEdit edit) => edit switch {
         // Insert applied → caret at end of inserted text.
-        InsertEdit ins => ins.Ofs + ins.Text.Length,
+        SpanInsertEdit ins => ins.Ofs + ins.Len,
         // Delete applied → caret at deletion point.
         DeleteEdit del => del.Ofs,
         // Compound applies in forward order → last apply is the last edit.
@@ -1053,6 +1056,15 @@ public sealed class Document {
     // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Appends <paramref name="text"/> to the add buffer and pushes a
+    /// <see cref="SpanInsertEdit"/> that references it.
+    /// </summary>
+    private void PushInsert(long ofs, string text) {
+        var bufStart = _table.AppendToAddBuffer(text);
+        _history.Push(new SpanInsertEdit(ofs, bufStart, text.Length), _table, Selection);
+    }
 
     private void DeleteRange(long ofs, long len) {
         var pieces = _table.CapturePieces(ofs, len);
@@ -1117,9 +1129,6 @@ public sealed class Document {
         var blockStart = Math.Min(adjStart, selStart);
         var blockEnd = Math.Max(adjEnd, selEnd);
         var blockLen = (int)(blockEnd - blockStart);
-        var blockSb = new StringBuilder(blockLen);
-        _table.ForEachPiece(blockStart, blockLen, span => blockSb.Append(span));
-        var blockDeleted = blockSb.ToString();
 
         string newContent;
         long newSelStart;
@@ -1132,8 +1141,9 @@ public sealed class Document {
         }
 
         _history.BeginCompound();
-        _history.Push(new DeleteEdit(blockStart, blockDeleted), _table, Selection);
-        _history.Push(new InsertEdit(blockStart, newContent), _table, Selection);
+        var blockPieces = _table.CapturePieces(blockStart, blockLen);
+        _history.Push(new DeleteEdit(blockStart, blockLen, blockPieces), _table, Selection);
+        PushInsert(blockStart, newContent);
         _history.EndCompound();
 
         // Adjust selection to follow the moved lines

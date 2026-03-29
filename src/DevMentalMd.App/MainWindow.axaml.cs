@@ -346,6 +346,7 @@ public partial class MainWindow : Window {
         FindBar.IsVisible = (tab == _findBarTab);
         UpdateTabBar();
         UpdateStatusBar();
+        Toolbar.Refresh();
 
         // If the tab has a conflict but no unsaved edits, silently
         // reload the disk version now that the user is looking at it.
@@ -360,6 +361,7 @@ public partial class MainWindow : Window {
     /// </summary>
     private void CloseTabDirect(TabState tab) {
         _watcher.Unwatch(tab);
+        SessionStore.DeleteTabFiles(tab.Id);
         if (tab.IsSettings) {
             _settingsTab = null;
             SettingsPanel.ResetState();
@@ -510,7 +512,10 @@ public partial class MainWindow : Window {
         var shouldBeDirty = !tab.Document.IsAtSavePoint;
         if (tab.IsDirty != shouldBeDirty) {
             tab.IsDirty = shouldBeDirty;
-            Dispatcher.UIThread.Post(UpdateTabBar);
+            Dispatcher.UIThread.Post(() => {
+                UpdateTabBar();
+                Toolbar.Refresh();
+            });
         }
     }
 
@@ -894,7 +899,7 @@ public partial class MainWindow : Window {
         Cmd.FileNew.Wire(() => OnNew(null, null!));
         Cmd.FileOpen.Wire(() => OnOpen(null, null!));
         Cmd.FileSave.Wire(() => OnSave(null, null!),
-            canExecute: () => _activeTab is { IsSettings: false, IsReadOnly: false });
+            canExecute: () => _activeTab is { IsSettings: false, IsReadOnly: false, IsDirty: true });
         Cmd.FileSaveAs.Wire(() => OnSaveAs(null, null!),
             canExecute: () => _activeTab is { IsSettings: false, IsLocked: false });
         Cmd.FileSaveAll.Wire(SaveAll);
@@ -1439,6 +1444,11 @@ public partial class MainWindow : Window {
     }
 
     private void InitializeToolbar() {
+        // Unsubscribe before re-subscribing — this method is called both
+        // at startup and when toolbar settings change.
+        Toolbar.ButtonClicked -= OnToolbarButtonClicked;
+        Toolbar.OverflowClicked -= ShowToolbarOverflowMenu;
+
         // Toolbar order = position in Commands.All (the master list).
         var items = Cmd.All
             .Where(c => IsInToolbar(c) && c.ToolbarGlyph != null && !c.ToolbarFixed)
@@ -1451,11 +1461,13 @@ public partial class MainWindow : Window {
             })
             .ToArray();
         Toolbar.SetItems(items);
-        Toolbar.ButtonClicked += commandId => {
-            Cmd.Execute(commandId);
-            Toolbar.Refresh();
-        };
+        Toolbar.ButtonClicked += OnToolbarButtonClicked;
         Toolbar.OverflowClicked += ShowToolbarOverflowMenu;
+    }
+
+    private void OnToolbarButtonClicked(string commandId) {
+        Cmd.Execute(commandId);
+        Toolbar.Refresh();
     }
 
     /// <summary>

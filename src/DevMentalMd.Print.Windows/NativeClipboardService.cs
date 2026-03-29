@@ -49,7 +49,8 @@ public sealed class NativeClipboardService : INativeClipboardService {
         }
     }
 
-    public unsafe long Paste(PieceTable table) {
+    public unsafe long Paste(PieceTable table, Action<long, long>? progress,
+        CancellationToken cancel) {
         if (!IsClipboardFormatAvailable(CF_UNICODETEXT)) return -1;
         if (!OpenClipboard(IntPtr.Zero)) return -1;
         try {
@@ -73,10 +74,12 @@ public sealed class NativeClipboardService : INativeClipboardService {
                 const int chunkSize = 1024 * 1024; // 1M chars
                 var offset = 0;
                 while (offset < charCount) {
+                    cancel.ThrowIfCancellationRequested();
                     var take = Math.Min(chunkSize, charCount - offset);
                     var chunk = new ReadOnlySpan<char>(ptr + offset, take);
                     table.AppendToAddBuffer(chunk);
                     offset += take;
+                    progress?.Invoke(offset, charCount);
                 }
                 return charCount;
             } finally {

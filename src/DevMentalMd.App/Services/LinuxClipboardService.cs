@@ -1,7 +1,6 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using DevMentalMd.Core.Clipboard;
@@ -104,40 +103,35 @@ public sealed class LinuxClipboardService : INativeClipboardService {
         }
     }
 
-    public long Paste(PieceTable table) {
+    public long Paste(PieceTable table, Action<long, long>? progress,
+        CancellationToken cancel) {
         try {
             using var proc = StartProcess(_pasteTool, _pasteArgs, redirectOutput: true);
             if (proc == null) return -1;
 
             var stdout = proc.StandardOutput.BaseStream;
-            var decoder = Encoding.UTF8.GetDecoder();
             var byteBuf = ArrayPool<byte>.Shared.Rent(1024 * 1024); // 1 MB
-            var charBuf = ArrayPool<char>.Shared.Rent(1024 * 1024);
             long totalChars = 0;
             try {
                 int bytesRead;
                 while ((bytesRead = stdout.Read(byteBuf, 0, byteBuf.Length)) > 0) {
-                    decoder.Convert(byteBuf.AsSpan(0, bytesRead), charBuf,
-                        flush: false, out _, out var charsDecoded, out _);
-                    if (charsDecoded > 0) {
-                        table.AppendToAddBuffer(charBuf.AsSpan(0, charsDecoded));
-                        totalChars += charsDecoded;
-                    }
-                }
-                // Flush decoder
-                decoder.Convert(ReadOnlySpan<byte>.Empty, charBuf,
-                    flush: true, out _, out var finalChars, out _);
-                if (finalChars > 0) {
-                    table.AppendToAddBuffer(charBuf.AsSpan(0, finalChars));
-                    totalChars += finalChars;
+                    cancel.ThrowIfCancellationRequested();
+                    // Feed raw UTF-8 bytes directly into the chunked buffer,
+                    // avoiding the UTF-8 → UTF-16 → UTF-8 round-trip.
+                    var before = table.AddBufferLength;
+                    table.AddBuffer.AppendUtf8(byteBuf.AsSpan(0, bytesRead));
+                    totalChars += table.AddBufferLength - before;
+                    // Total is unknown for streaming; report bytes as estimate.
+                    progress?.Invoke(totalChars, 0);
                 }
             } finally {
                 ArrayPool<byte>.Shared.Return(byteBuf);
-                ArrayPool<char>.Shared.Return(charBuf);
             }
 
             proc.WaitForExit(5000);
             return totalChars;
+        } catch (OperationCanceledException) {
+            return -1;
         } catch {
             return -1;
         }

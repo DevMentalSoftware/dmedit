@@ -1,9 +1,8 @@
 namespace DevMentalMd.Core.Documents.History;
 
 /// <summary>
-/// Records a span-based insertion for undo/redo. Unlike <see cref="InsertEdit"/>,
-/// does not store the inserted text as a managed string. Instead stores the
-/// offset and length into the piece table's append-only add buffer.
+/// Records an insertion for undo/redo. Stores the offset and length into the
+/// piece table's append-only add buffer rather than a managed string.
 /// On redo, the add buffer still contains the data so Apply just creates a
 /// piece referencing the existing range — zero-copy redo.
 /// </summary>

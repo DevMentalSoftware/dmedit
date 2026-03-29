@@ -1550,7 +1550,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Native streaming paste is only used for normal (non-column) mode.
         var nativeClip = NativeClipboardDiscovery.Service;
         if (nativeClip != null && doc.ColumnSel == null) {
-            doc.InsertFromNativeClipboard(table => nativeClip.Paste(table));
+            doc.InsertFromNativeClipboard(
+                (table, progress, cancel) =>
+                    nativeClip.Paste(table, progress, cancel));
         } else {
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard == null) { _editSw.Stop(); return; }
@@ -2857,13 +2859,14 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         var rh = GetRowHeight();
 
-        // Ensure extent height is at least lineCount * rh so that
-        // ScrollValue's clamp (to ScrollMaximum) doesn't cap us at a
-        // stale pre-edit value.  The full extent is recalculated on the
-        // next EnsureLayout, but we need a reasonable floor right now.
-        var minExtent = lineCount * rh;
-        if (minExtent > _extent.Height) {
-            _extent = new Size(_extent.Width, minExtent);
+        // Update extent height from lineCount * rh so that ScrollValue's
+        // clamp (to ScrollMaximum) uses a reasonable value.  Without this,
+        // a dramatic document shrink (e.g. select-all + paste small) leaves
+        // the scroll offset past the new end.  The full extent is
+        // recalculated on the next EnsureLayout, but we need it now.
+        var estExtent = lineCount * rh;
+        if (estExtent != _extent.Height) {
+            _extent = new Size(_extent.Width, estExtent);
         }
 
         // At the document end, scroll to the bottom without a full layout

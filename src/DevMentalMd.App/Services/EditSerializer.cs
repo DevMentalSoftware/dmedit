@@ -66,44 +66,23 @@ public static class EditSerializer {
 
     private static JsonObject SerializeEdit(IDocumentEdit edit, PieceTable table, ref long budget) {
         switch (edit) {
-            case InsertEdit ins:
-                // Insert text already exists as a string — always include it.
+            case SpanInsertEdit spanIns:
+                // Reference add buffer offsets — no text materialization.
                 return new JsonObject {
-                    ["type"] = "insert",
-                    ["ofs"] = ins.Ofs,
-                    ["text"] = ins.Text,
-                };
-            case SpanInsertEdit spanIns: {
-                // Materialize text from add buffer for serialization.
-                var text = table.GetAddBufferSlice(spanIns.AddBufStart, spanIns.Len);
-                return new JsonObject {
-                    ["type"] = "insert",
+                    ["type"] = "bufInsert",
                     ["ofs"] = spanIns.Ofs,
-                    ["text"] = text,
+                    ["bufStart"] = spanIns.AddBufStart,
+                    ["bufLen"] = spanIns.Len,
                 };
-            }
-            case DeleteEdit del: {
-                var cost = del.Len * 2L;
-                if (cost > budget) {
-                    // Too large to materialize — serialize without text.
-                    // Apply still works (delete by ofs+len); undo past this
-                    // point won't restore the deleted content after restore.
-                    budget = 0;
-                    return new JsonObject {
-                        ["type"] = "delete",
-                        ["ofs"] = del.Ofs,
-                        ["len"] = del.Len,
-                        ["text"] = "",
-                    };
-                }
-                budget -= cost;
+            case DeleteEdit del:
+                // No text materialization needed — pieces reference the
+                // persisted add buffer and original file, so Apply (which
+                // recaptures pieces) works after restore.
                 return new JsonObject {
                     ["type"] = "delete",
                     ["ofs"] = del.Ofs,
                     ["len"] = del.Len,
-                    ["text"] = del.MaterializeText(table),
                 };
-            }
             case UniformBulkReplaceEdit ubr: {
                 var positions = new JsonArray();
                 foreach (var p in ubr.MatchPositions) positions.Add(p);
@@ -184,19 +163,22 @@ public static class EditSerializer {
     private static IDocumentEdit DeserializeEdit(JsonObject obj) {
         var type = obj["type"]!.GetValue<string>();
         return type switch {
-            "insert" => new InsertEdit(
-                obj["ofs"]!.GetValue<long>(),
-                obj["text"]!.GetValue<string>()),
+            "bufInsert" => DeserializeBufInsert(obj),
             "delete" => new DeleteEdit(
                 obj["ofs"]!.GetValue<long>(),
                 obj["len"]!.GetValue<long>(),
-                obj["text"]!.GetValue<string>()),
+                Array.Empty<Piece>()),
             "compound" => DeserializeCompound(obj),
             "bulkUniform" => DeserializeUniformBulk(obj),
             "bulkVarying" => DeserializeVaryingBulk(obj),
             _ => throw new NotSupportedException($"Unknown edit type: {type}")
         };
     }
+
+    private static SpanInsertEdit DeserializeBufInsert(JsonObject obj) =>
+        new(obj["ofs"]!.GetValue<long>(),
+            obj["bufStart"]!.GetValue<long>(),
+            obj["bufLen"]!.GetValue<int>());
 
     private static UniformBulkReplaceEdit DeserializeUniformBulk(JsonObject obj) {
         var matchLen = obj["matchLen"]!.GetValue<int>();

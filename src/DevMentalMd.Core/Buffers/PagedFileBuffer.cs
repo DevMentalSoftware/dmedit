@@ -30,7 +30,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     // Constants
     // -----------------------------------------------------------------
 
-    private const int PageSizeBytes = 1_048_576; // 1 MB raw bytes per page
+    private const int PageSizeBytes = 1024 * 1024; // 1 MB raw bytes per page
     // No line can exceed MaxPseudoLine after InstallLineTree splits them.
     private static readonly int MAX_LONGEST_LINE = Documents.PieceTable.MaxPseudoLine;
 
