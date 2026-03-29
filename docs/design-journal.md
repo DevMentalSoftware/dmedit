@@ -28,7 +28,7 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 508** (412 Core + 31 Rendering + 65 App, 1 skipped)
+**Test baseline: 510** (414 Core + 31 Rendering + 65 App, 1 skipped)
 
 ### Recently completed
 
@@ -173,23 +173,45 @@ small one — it is the primary way a fresh session recovers context.
 - **Command Registry + Key Binding System** (2026-03-06) — centralized dispatch,
   user-customizable bindings, Keyboard settings section, 55 App tests.
 
-- **Pseudo-Newlines for Single-Line Files** (2026-03-28) — `MaxPseudoLine = 500`
-  in PieceTable. Lines exceeding this are split into pseudo-lines in the line
-  tree — the document text is never modified. Pseudo-splitting applied at three
-  levels: `PagedFileBuffer.ScanNewlines` (during background file scan),
-  `BuildLineTree` (post-processing after tree construction), and `SplitLongLine`
-  helper (after incremental edits). `GetLine()` fixed to check actual character
-  via `CharAt` instead of assuming a newline at every boundary. `MaxGetTextLength`
-  derived from `MaxPseudoLine + 2`. `MaxLayoutBytes` derived from
-  `visibleRows * MaxPseudoLine`. `MAX_LONGEST_LINE` in PagedFileBuffer replaced
-  with reference to `MaxPseudoLine`. `LineCount`/`LineStartOfs`/`LineFromOfs`
-  buffer short-circuits gated on `LongestLine <= MaxPseudoLine` to prevent
-  bypassing the line tree when pseudo-splits are needed. `_layoutFailed` flag
-  in EditorControl prevents cascading crashes from repeated layout failures.
-  `HandleFatalException` re-entrancy guard no longer writes duplicate crash
-  reports. `Debugger.Break()` before `GetText` guard throw for easier debugging.
-  `FileEncoding.Unknown` added for documents before encoding detection completes.
-  17 new tests, all using `PieceTable.MaxPseudoLine` constant for portability.
+- **Pseudo-Newlines & Streaming Load Safety** (2026-03-28) — Major feature +
+  performance/reliability overhaul for large files (single-line and multi-line).
+
+  **Pseudo-newlines:** `MaxPseudoLine = 500` in PieceTable. Lines exceeding
+  this are split into pseudo-lines in the line tree — document text is never
+  modified. Pseudo-splitting at three levels: `PagedFileBuffer.ScanNewlines`
+  (during background scan — primary), `BuildLineTree` (post-processing for
+  `PieceTable(string)` constructor), and `SplitLongLine` helper (after edits).
+  `GetLine()` fixed to check actual character via `CharAt` instead of assuming
+  a newline at every boundary. `MaxGetTextLength` derived from
+  `MaxPseudoLine + 2`. `MaxLayoutBytes` derived from `visibleRows * MaxPseudoLine`.
+  `MAX_LONGEST_LINE` in PagedFileBuffer replaced with reference to
+  `MaxPseudoLine`. `_longestLine` initialized to `MaxPseudoLine` so buffer
+  short-circuits are safe from the start. 19 new tests using the constant.
+
+  **Streaming load safety:** Removed O(N) buffer short-circuits from
+  `LineCount`/`LineStartOfs`/`LineFromOfs` — all lookups now go through the
+  `LineIndexTree` (O(log N) via treap prefix sums). `LayoutLines` receives
+  frozen `lineCount` and `docLength` snapshots from `LayoutWindowed` to prevent
+  race conditions with the background scan advancing `_totalChars`.
+  `LayoutResult.TopLine` added so `DrawGutter` uses it directly instead of
+  calling `LineFromOfs` (eliminated the O(N log N) `BinarySearchBufferLines`
+  → `GetLineStart` hot path on every render frame). `LayoutLines` skips lines
+  with inconsistent offsets (negative, backwards) during streaming.
+
+  **Scroll/interaction lock during load:** `Document.IsLoading` property
+  (derived from `Buffer.LengthIsKnown`). `EditorControl.IsLoading` delegates
+  to `Document.IsLoading`. During streaming: scroll locked (both `ScrollValue`
+  and `IScrollable.Offset` setters reject changes), caret hidden, mouse
+  interaction blocked, `RestoreScrollState` deferred to `LoadComplete`.
+  First page shows at `topLine = 0` immediately. Once `InstallLineTree` runs,
+  scroll restores to saved position with O(log N) lookups.
+
+  **Crash resilience:** `_layoutFailed` flag in EditorControl prevents
+  cascading crashes from repeated layout failures. `HandleFatalException`
+  re-entrancy guard no longer writes duplicate crash reports.
+  `Debugger.Break()` before `GetText` guard throw for easier debugging.
+  `FileEncoding.Unknown` added for documents before encoding detection.
+  Tab spinner kept alive via `UpdateTabBar()` in `ProgressChanged` handler.
 
 - **Per-line scroll estimation** (2026-03-27) — Replaced global `avgLineHeight`
   (uniform average) with per-line Y estimation using `LineIndexTree` prefix sums.
@@ -213,14 +235,6 @@ small one — it is the primary way a fresh session recovers context.
   as replacements shift content). Single-line selections continue to populate
   the search term as today.
 
-- **Defer layout until first page loaded** — Currently, `ProgressChanged`
-  triggers `InvalidateLayout` after each page scan, causing `BuildLineTree`
-  to run on partial content. This is replaced by `InstallLineTree` once
-  `LoadComplete` fires. For small files (< 1 MB = 1 page), the entire load
-  completes in one page — no incremental rendering needed. Waiting until at
-  least the first page (or `InstallLineTree`) before starting layout would
-  eliminate the intermediate `BuildLineTree` calls and the buffer short-circuit
-  guards added for pseudo-newline safety.
 
 ### Key deferred items
 

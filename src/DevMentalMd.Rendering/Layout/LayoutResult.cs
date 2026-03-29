@@ -27,6 +27,12 @@ public sealed class LayoutResult : IDisposable {
     /// </summary>
     public long ViewportBase { get; }
 
+    /// <summary>
+    /// The logical line index of the first line in this layout window.
+    /// Used by the gutter to avoid an expensive <c>LineFromOfs</c> lookup.
+    /// </summary>
+    public long TopLine { get; set; }
+
     internal LayoutResult(IReadOnlyList<LayoutLine> lines, double rowHeight, long viewportBase = 0L) {
         Lines = lines;
         RowHeight = rowHeight;

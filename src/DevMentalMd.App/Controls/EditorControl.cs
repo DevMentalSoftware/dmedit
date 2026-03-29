@@ -99,6 +99,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// </summary>
     public bool IsEditBlocked { get; set; }
 
+    /// <summary>
+    /// True while the document is still streaming from disk.  Blocks scrolling,
+    /// caret drawing, and mouse interaction until the line tree is installed.
+    /// </summary>
+    public bool IsLoading => Document?.IsLoading ?? false;
+
     /// <summary>True when the document has an active selection or column selection.</summary>
     private bool HasSelection() {
         var doc = Document;
@@ -447,6 +453,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     public double ScrollValue {
         get => _scrollOffset.Y;
         set {
+            if (IsLoading) return;
             var clamped = Math.Clamp(value, 0, ScrollMaximum);
             var newOffset = new Vector(_scrollOffset.X, clamped);
             if (_scrollOffset != newOffset) {
@@ -501,6 +508,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     Vector IScrollable.Offset {
         get => _scrollOffset;
         set {
+            if (IsLoading) return;
             if (_scrollOffset != value) {
                 _scrollOffset = value;
                 // Scroll changed — dispose the layout so it rebuilds from the new offset.
@@ -889,30 +897,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return;
         }
 
-        // Diagnostic: check that no line in the layout range exceeds MaxPseudoLine.
-        // If this fires, the line tree is stale or the buffer short-circuit
-        // served unsplit data.
-        if (System.Diagnostics.Debugger.IsAttached) {
-            var table = doc.Table;
-            for (var li = topLine; li < bottomLine && li < lineCount; li++) {
-                var ls = table.LineStartOfs(li);
-                var le = li + 1 < lineCount ? table.LineStartOfs(li + 1) : totalChars;
-                if (ls >= 0 && le >= 0 && le - ls > PieceTable.MaxGetTextLength) {
-                    // Capture diagnostic state before breaking.
-                    var hasLineTree = table.LineCount > 0; // forces tree build if needed
-                    var bufType = table.Buffer?.GetType().Name ?? "null";
-                    var bufLineCount = table.Buffer?.LineCount ?? -1;
-                    var bufLongest = table.Buffer?.LongestLine ?? -1;
-                    System.Diagnostics.Debugger.Break();
-                }
-            }
-        }
-
         // Layout one line at a time directly from the PieceTable so we
         // never materialize multiple lines into a single string.
         _layout = _layoutEngine.LayoutLines(
             doc.Table, topLine, bottomLine, typeface, FontSize, ForegroundBrush,
             maxWidth, startOfs, lineCount, totalChars);
+        _layout.TopLine = topLine;
 
         // When the layout covers the entire document, use exact height
         // instead of the estimate — gives pixel-perfect scrolling on small files.
@@ -1042,7 +1032,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         // Draw caret (hidden during any scroll-drag operation)
         var scrollDrag = ScrollBar?.IsDragging ?? false;
-        if (doc != null && _caretVisible && IsFocused && !_middleDrag && !scrollDrag) {
+        if (doc != null && _caretVisible && IsFocused && !_middleDrag && !scrollDrag
+            && !IsLoading) {
             if (doc.ColumnSel is { } colSelCarets) {
                 DrawMultiCarets(context, layout, colSelCarets);
             } else {
@@ -1069,7 +1060,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         var typeface = new Typeface(FontFamily);
         var numW = _gutterWidth - GutterPadRight;
-        var firstLineIdx = table.LineFromOfs(layout.ViewportBase + layout.Lines[0].CharStart);
+        var firstLineIdx = layout.TopLine;
 
         for (var i = 0; i < layout.Lines.Count; i++) {
             var line = layout.Lines[i];
@@ -3041,6 +3032,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     protected override void OnPointerPressed(PointerPressedEventArgs e) {
         base.OnPointerPressed(e);
+        if (IsLoading) return;
         var props = e.GetCurrentPoint(this).Properties;
 
 

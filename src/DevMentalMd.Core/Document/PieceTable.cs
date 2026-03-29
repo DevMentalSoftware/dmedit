@@ -111,9 +111,6 @@ public sealed class PieceTable {
     public long LineCount {
         get {
             if (_lineTree != null) return _lineTree.Count;
-            if (IsOriginalContent && _buf.LineCount >= 0
-                && _buf.LongestLine >= 0 && _buf.LongestLine <= MaxPseudoLine)
-                return _buf.LineCount;
             return LineTree.Count;
         }
     }
@@ -418,8 +415,6 @@ public sealed class PieceTable {
             if (lineIdx >= _lineTree.Count) return -1L;
             return lineIdx == 0 ? 0 : _lineTree.PrefixSum((int)lineIdx - 1);
         }
-        if (IsOriginalContent && _buf.LongestLine >= 0 && _buf.LongestLine <= MaxPseudoLine)
-            return _buf.GetLineStart(lineIdx);
         var tree = LineTree;
         if (lineIdx >= tree.Count) return -1L;
         return lineIdx == 0 ? 0 : tree.PrefixSum((int)lineIdx - 1);
@@ -435,10 +430,6 @@ public sealed class PieceTable {
             if (_lineTree.Count == 0) return 0;
             var idx = _lineTree.FindByPrefixSum(ofs + 1);
             return idx >= 0 ? idx : _lineTree.Count - 1;
-        }
-        if (IsOriginalContent && _buf.LineCount >= 0
-            && _buf.LongestLine >= 0 && _buf.LongestLine <= MaxPseudoLine) {
-            return BinarySearchBufferLines(_buf, ofs);
         }
         var tree = LineTree;
         if (tree.Count == 0) return 0;

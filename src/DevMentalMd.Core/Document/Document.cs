@@ -80,6 +80,11 @@ public sealed class Document {
     /// </summary>
     public EncodingInfo EncodingInfo { get; set; } = EncodingInfo.Default;
 
+    /// <summary>
+    /// True while the backing buffer is still streaming from disk.
+    /// </summary>
+    public bool IsLoading => _table.Buffer is { LengthIsKnown: false };
+
     public bool CanUndo => _history.CanUndo;
     public bool CanRedo => _history.CanRedo;
 

@@ -309,10 +309,16 @@ public partial class MainWindow : Window {
             // document only after edits are replayed in FinishLoad.
             if (!tab.HasPendingEdits) {
                 Editor.Document = tab.Document;
-                Editor.RestoreScrollState(tab);
+                // Defer scroll restore until load completes so we don't
+                // set _scrollOffset to a mid-document position during
+                // streaming — that triggers expensive O(N) lookups.
+                if (!tab.IsLoading) {
+                    Editor.RestoreScrollState(tab);
+                }
             } else {
                 Editor.Document = null;
             }
+
             Editor.IsEditBlocked = tab.IsLoading || tab.IsReadOnly || tab.IsLocked;
             Editor.Focus();
 
@@ -321,6 +327,7 @@ public partial class MainWindow : Window {
             if (tab.IsLoading) {
                 tab.LoadCompleted += () => {
                     if (_activeTab == tab) {
+
                         Editor.Document = tab.Document;
                         Editor.RestoreScrollState(tab);
                         Editor.IsEditBlocked = tab.IsReadOnly || tab.IsLocked;
@@ -1689,7 +1696,9 @@ public partial class MainWindow : Window {
             var table = doc.Table;
             var stillLoading = table.Buffer is { LengthIsKnown: false };
 
-            var lineCount = table.LineCount;
+            var lineCount = stillLoading && table.Buffer is { } buf
+                ? buf.LineCount
+                : table.LineCount;
 
             var lcText = lineCount >= 0 ? $"{lineCount:N0}" : "\u2014";
             var lcWidth = lcText.Length;
@@ -3111,6 +3120,7 @@ public partial class MainWindow : Window {
                         if (_activeTab == tab) {
                             Editor.InvalidateLayout();
                         }
+                        UpdateTabBar();
                     }, DispatcherPriority.Background);
                 }
             };
