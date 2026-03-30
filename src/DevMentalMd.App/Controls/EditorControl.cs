@@ -1579,10 +1579,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             var clipSize = nativeClip.GetClipboardCharCount();
 
             if (clipSize > LargePasteThreshold) {
-                // PasteLargeAsync calls ScrollCaretIntoView internally
-                // after the line tree is fully built.
                 await PasteLargeAsync(doc, nativeClip, clipSize);
-                ScrollCaretIntoView();
+                // Post to dispatcher so the layout cycle resolves
+                // scrollbar visibility before we compute scroll position.
+                Dispatcher.UIThread.Post(ScrollCaretIntoView);
             } else {
                 PasteSmall(doc, nativeClip);
                 ScrollCaretIntoView();
@@ -1703,12 +1703,6 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         BackgroundPasteInProgress = false;
         BackgroundPasteChanged?.Invoke(false);
         IsEditBlocked = savedIsEditBlocked;
-
-        // Both this call and the one in PasteAsync (after await) are
-        // required. The first updates _extent and scroll state; the
-        // second (after the await resumes) makes the scroll take effect.
-        // TODO: understand why a single call isn't sufficient.
-        ScrollCaretIntoView();
     }
 
     /// <summary>
@@ -2992,11 +2986,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (!_wrapLines) {
             // ── Wrapping off ──────────────────────────────────────────
             // The line tree is exact: each entry = one visual row.
-            // Caret Y and extent are computed directly from line indices.
-            var caretY = caretLine * rh;
-            var extent = lineCount * rh;
-            _extent = new Size(_extent.Width, extent);
+            // Update extents so ScrollMaximum/HScrollMaximum aren't stale.
+            var cw = GetCharWidth();
+            var maxLine = table.MaxLineLength;
+            var hExtent = maxLine > 0 ? maxLine * cw + _gutterWidth : _extent.Width;
+            _extent = new Size(hExtent, lineCount * rh);
 
+            var caretY = caretLine * rh;
             if (_scrollOffset.Y > ScrollMaximum) {
                 ScrollValue = ScrollMaximum;
             }
@@ -3015,12 +3011,21 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             var charsPerRow = GetCharsPerRow(textW);
             var caretY = EstimateWrappedLineY(caretLine, table, charsPerRow, rh);
 
+            // Update extent from estimated total visual rows so that
+            // ScrollMaximum isn't stale (e.g. after a large paste).
+            var totalChars = table.Length;
+            var totalVisualRows = charsPerRow > 0
+                ? Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow))
+                : lineCount;
+            _extent = new Size(_extent.Width, totalVisualRows * rh);
+
+            if (_scrollOffset.Y > ScrollMaximum) {
+                ScrollValue = ScrollMaximum;
+            }
             if (caretY < _scrollOffset.Y) {
                 ScrollValue = caretY;
             } else if (caretY + rh > _scrollOffset.Y + vpH) {
                 ScrollValue = caretY + rh - vpH;
-            } else if (_scrollOffset.Y > ScrollMaximum) {
-                ScrollValue = ScrollMaximum;
             }
 
             // Verify with actual layout. Repeat up to 3 times because
@@ -3047,13 +3052,15 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             }
         }
 
-        // Horizontal: estimate caret X from its column within the line.
-        if (!_wrapLines && HScrollMaximum > 0) {
+        // Horizontal scroll (wrapping off only).
+        // Horizontal extent was already updated above.
+        if (!_wrapLines) {
             var lineStart = table.LineStartOfs(caretLine);
             var caretCol = (int)(caret - lineStart);
             var cw = GetCharWidth();
             var caretX = caretCol * cw;
             var textAreaW = _viewport.Width - _gutterWidth;
+
             if (caretX < _scrollOffset.X) {
                 HScrollValue = caretX;
             } else if (caretX + cw > _scrollOffset.X + textAreaW) {
