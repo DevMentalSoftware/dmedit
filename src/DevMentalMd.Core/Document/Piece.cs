@@ -4,10 +4,10 @@ namespace DevMentalMd.Core.Documents;
 /// A single span within a piece-table buffer.
 /// Immutable value type; all mutations produce new pieces.
 /// </summary>
-/// <param name="Which">Which buffer this piece references.</param>
+/// <param name="BufIdx">Index into the PieceTable's buffer list.</param>
 /// <param name="Start">Zero-based character offset into that buffer.</param>
 /// <param name="Len">Number of characters in this piece.</param>
-public readonly record struct Piece(BufferKind Which, long Start, long Len) {
+public readonly record struct Piece(int BufIdx, long Start, long Len) {
     /// <summary>True when this piece contains no characters.</summary>
     public bool IsEmpty => Len == 0;
 

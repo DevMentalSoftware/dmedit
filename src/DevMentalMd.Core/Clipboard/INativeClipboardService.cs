@@ -27,4 +27,18 @@ public interface INativeClipboardService {
     /// <paramref name="progress"/> receives (chars pasted so far, total chars).
     /// </summary>
     long Paste(PieceTable table, Action<long, long>? progress, CancellationToken cancel);
+
+    /// <summary>
+    /// Returns the number of characters on the clipboard, or -1 if no text.
+    /// Does not consume the clipboard data.
+    /// </summary>
+    long GetClipboardCharCount() => -1;
+
+    /// <summary>
+    /// Pastes clipboard text by encoding to UTF-8 and writing to
+    /// <paramref name="stream"/>. Returns total characters written,
+    /// or -1 if the clipboard contains no text.
+    /// </summary>
+    long PasteToStream(Stream stream, Action<long, long>? progress, CancellationToken cancel) =>
+        throw new NotSupportedException();
 }

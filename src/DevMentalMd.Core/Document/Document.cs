@@ -143,7 +143,7 @@ public sealed class Document {
         return new ChangedScope(this);
     }
 
-    private void RaiseChanged() {
+    public void RaiseChanged() {
         if (_suppressChanged == 0) Changed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -1035,17 +1035,18 @@ public sealed class Document {
     public void RecordBackgroundPaste(long ofs, Selection selBefore,
         long addBufStart, int insertLen, bool replacing,
         Piece[]? deletePieces,
-        (int StartLine, int[]? LineLengths)? deleteLineInfo) {
+        (int StartLine, int[]? LineLengths)? deleteLineInfo,
+        int bufIdx = -1) {
 
         if (replacing && deletePieces != null) {
             var delEdit = deleteLineInfo is var (sl, ll)
                 ? new DeleteEdit(ofs, selBefore.Len, deletePieces, sl, ll)
                 : new DeleteEdit(ofs, selBefore.Len, deletePieces);
-            var insEdit = new SpanInsertEdit(ofs, addBufStart, insertLen);
+            var insEdit = new SpanInsertEdit(ofs, addBufStart, insertLen, bufIdx);
             var compound = new CompoundEdit(new List<IDocumentEdit> { delEdit, insEdit });
             _history.PushAlreadyApplied(compound, selBefore);
         } else {
-            var insEdit = new SpanInsertEdit(ofs, addBufStart, insertLen);
+            var insEdit = new SpanInsertEdit(ofs, addBufStart, insertLen, bufIdx);
             _history.PushAlreadyApplied(insEdit, selBefore);
         }
         Selection = Selection.Collapsed(ofs + insertLen);

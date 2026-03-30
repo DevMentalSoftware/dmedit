@@ -177,31 +177,27 @@ public class ChunkedUtf8BufferTests {
     }
 
     [Fact]
-    public void Persistence_RoundTrip() {
+    public void WriteTo_ProducesRawUtf8() {
         var buf = new ChunkedUtf8Buffer();
         buf.Append("hello ");
         buf.Append("world\u00E9");
 
         using var ms = new MemoryStream();
         buf.WriteTo(ms);
-        ms.Position = 0;
 
-        var restored = ChunkedUtf8Buffer.ReadFrom(ms);
-        Assert.Equal(buf.CharLength, restored.CharLength);
-        Assert.Equal(buf.ByteLength, restored.ByteLength);
-        Assert.Equal(buf.GetSlice(0, (int)buf.CharLength),
-                     restored.GetSlice(0, (int)restored.CharLength));
+        // Verify the output is raw UTF-8 (no headers).
+        var bytes = ms.ToArray();
+        var decoded = System.Text.Encoding.UTF8.GetString(bytes);
+        Assert.Equal("hello world\u00E9", decoded);
+        Assert.Equal(buf.ByteLength, bytes.Length);
     }
 
     [Fact]
-    public void Persistence_EmptyBuffer() {
+    public void WriteTo_EmptyBuffer() {
         var buf = new ChunkedUtf8Buffer();
         using var ms = new MemoryStream();
         buf.WriteTo(ms);
-        ms.Position = 0;
-
-        var restored = ChunkedUtf8Buffer.ReadFrom(ms);
-        Assert.Equal(0, restored.CharLength);
+        Assert.Equal(0, ms.Length);
     }
 
     [Fact]

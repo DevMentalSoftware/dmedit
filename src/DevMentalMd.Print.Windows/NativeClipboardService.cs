@@ -1,5 +1,7 @@
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using DevMentalMd.Core.Clipboard;
 using DevMentalMd.Core.Documents;
 
@@ -78,6 +80,73 @@ public sealed class NativeClipboardService : INativeClipboardService {
                     var take = Math.Min(chunkSize, charCount - offset);
                     var chunk = new ReadOnlySpan<char>(ptr + offset, take);
                     table.AppendToAddBuffer(chunk);
+                    offset += take;
+                    progress?.Invoke(offset, charCount);
+                }
+                return charCount;
+            } finally {
+                GlobalUnlock(hGlobal);
+            }
+        } finally {
+            CloseClipboard();
+        }
+    }
+
+    public unsafe long GetClipboardCharCount() {
+        if (!IsClipboardFormatAvailable(CF_UNICODETEXT)) return -1;
+        if (!OpenClipboard(IntPtr.Zero)) return -1;
+        try {
+            var hGlobal = GetClipboardData(CF_UNICODETEXT);
+            if (hGlobal == IntPtr.Zero) return -1;
+            var ptr = (char*)GlobalLock(hGlobal);
+            if (ptr == null) return -1;
+            try {
+                var byteSize = (long)GlobalSize(hGlobal);
+                var maxChars = (int)(byteSize / sizeof(char));
+                var charCount = maxChars;
+                for (var i = 0; i < maxChars; i++) {
+                    if (ptr[i] == '\0') { charCount = i; break; }
+                }
+                return charCount;
+            } finally {
+                GlobalUnlock(hGlobal);
+            }
+        } finally {
+            CloseClipboard();
+        }
+    }
+
+    public unsafe long PasteToStream(Stream stream, Action<long, long>? progress,
+        CancellationToken cancel) {
+        if (!IsClipboardFormatAvailable(CF_UNICODETEXT)) return -1;
+        if (!OpenClipboard(IntPtr.Zero)) return -1;
+        try {
+            var hGlobal = GetClipboardData(CF_UNICODETEXT);
+            if (hGlobal == IntPtr.Zero) return -1;
+            var ptr = (char*)GlobalLock(hGlobal);
+            if (ptr == null) return -1;
+            try {
+                var byteSize = (long)GlobalSize(hGlobal);
+                var maxChars = (int)(byteSize / sizeof(char));
+                var charCount = maxChars;
+                for (var i = 0; i < maxChars; i++) {
+                    if (ptr[i] == '\0') { charCount = i; break; }
+                }
+                if (charCount == 0) return 0;
+
+                // Encode UTF-16 chars to UTF-8 and write to stream.
+                var encoder = Encoding.UTF8.GetEncoder();
+                const int chunkChars = 1024 * 1024;
+                var byteBuf = new byte[chunkChars * 3]; // worst case 3 bytes/char
+                var offset = 0;
+                while (offset < charCount) {
+                    cancel.ThrowIfCancellationRequested();
+                    var take = Math.Min(chunkChars, charCount - offset);
+                    var chars = new ReadOnlySpan<char>(ptr + offset, take);
+                    var flush = offset + take >= charCount;
+                    encoder.Convert(chars, byteBuf, flush,
+                        out _, out var bytesUsed, out _);
+                    stream.Write(byteBuf, 0, bytesUsed);
                     offset += take;
                     progress?.Invoke(offset, charCount);
                 }

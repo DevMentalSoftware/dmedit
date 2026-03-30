@@ -16,7 +16,7 @@ namespace DevMentalMd.Core.Buffers;
 /// All offsets in the public API are in characters (UTF-16 code units),
 /// matching the rest of the document model.
 /// </summary>
-public sealed class ChunkedUtf8Buffer {
+public sealed class ChunkedUtf8Buffer : IBuffer {
 
     private const int InitialChunkSize = 64 * 1024;
     private const int GrowthChunkSize = InitialChunkSize;
@@ -46,6 +46,13 @@ public sealed class ChunkedUtf8Buffer {
 
     /// <summary>Total UTF-8 bytes stored.</summary>
     public long ByteLength => _totalBytes;
+
+    // IBuffer implementation
+    long IBuffer.Length => _totalChars;
+    char IBuffer.this[long offset] => CharAt(offset);
+    void IBuffer.CopyTo(long offset, Span<char> destination, int len) =>
+        CopyTo(offset, len, destination);
+    public void Dispose() { } // nothing to dispose
 
     // -------------------------------------------------------------------------
     // Append
@@ -334,41 +341,14 @@ public sealed class ChunkedUtf8Buffer {
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Writes all UTF-8 bytes sequentially to <paramref name="stream"/>.
-    /// Format: [4-byte LE chunk count] then for each chunk
-    /// [4-byte LE bytesUsed] [4-byte LE charCount] [bytes...].
+    /// Writes all UTF-8 bytes as raw data to <paramref name="stream"/>.
+    /// The resulting file is a plain UTF-8 text file that can be loaded
+    /// by <see cref="PagedFileBuffer"/> for paged reading.
     /// </summary>
     public void WriteTo(Stream stream) {
-        using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
-        writer.Write(_chunks.Count);
         foreach (var chunk in _chunks) {
-            writer.Write(chunk.BytesUsed);
-            writer.Write(chunk.CharCount);
-            writer.Write(chunk.Data, 0, chunk.BytesUsed);
+            stream.Write(chunk.Data, 0, chunk.BytesUsed);
         }
-    }
-
-    /// <summary>
-    /// Reads a buffer previously written by <see cref="WriteTo"/>.
-    /// </summary>
-    public static ChunkedUtf8Buffer ReadFrom(Stream stream) {
-        var buf = new ChunkedUtf8Buffer();
-        using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
-        var chunkCount = reader.ReadInt32();
-        for (var i = 0; i < chunkCount; i++) {
-            var bytesUsed = reader.ReadInt32();
-            var charCount = reader.ReadInt32();
-            var data = new byte[bytesUsed]; // size to fit exactly on load
-            reader.BaseStream.ReadExactly(data, 0, bytesUsed);
-            buf._chunks.Add(new Chunk {
-                Data = data,
-                BytesUsed = bytesUsed,
-                CharCount = charCount,
-            });
-            buf._totalBytes += bytesUsed;
-            buf._totalChars += charCount;
-        }
-        return buf;
     }
 
     // -------------------------------------------------------------------------

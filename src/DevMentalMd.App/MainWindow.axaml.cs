@@ -40,7 +40,7 @@ public partial class MainWindow : Window {
     ];
 
     private readonly List<TabState> _tabs = [];
-    private TabState? _activeTab;
+    internal TabState? _activeTab;
     private TabState? _findBarTab;
     private CancellationTokenSource? _matchCountCts;
     private readonly RecentFilesStore _recentFiles = RecentFilesStore.Load();
@@ -1587,7 +1587,8 @@ public partial class MainWindow : Window {
             $"Render: {s.Render.Format()}{editStat} | " +
             $"{s.ViewportLines} lines ({s.ViewportRows} rows) | " +
             $"{s.ScrollPercent:F1}%" +
-            (s.ScrollRetries > 0 ? $" | ScrRetry: {s.ScrollRetries}" : "");
+            (s.ScrollRetries > 0 ? $" | ScrRetry: {s.ScrollRetries}" : "") +
+            $" | ScrCaret: {s.ScrollCaretCalls}";
         if (StatsBar.Text != statsText) StatsBar.Text = statsText;
 
         string load;

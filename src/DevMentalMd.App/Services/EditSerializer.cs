@@ -67,13 +67,18 @@ public static class EditSerializer {
     private static JsonObject SerializeEdit(IDocumentEdit edit, PieceTable table, ref long budget) {
         switch (edit) {
             case SpanInsertEdit spanIns:
-                // Reference add buffer offsets — no text materialization.
-                return new JsonObject {
+                // Reference buffer offsets — no text materialization.
+                var obj = new JsonObject {
                     ["type"] = "bufInsert",
                     ["ofs"] = spanIns.Ofs,
                     ["bufStart"] = spanIns.AddBufStart,
                     ["bufLen"] = spanIns.Len,
                 };
+                // Only serialize bufIdx when it's not the default add buffer.
+                if (spanIns.BufIdx >= 0) {
+                    obj["bufIdx"] = spanIns.BufIdx;
+                }
+                return obj;
             case DeleteEdit del:
                 // No text materialization needed — pieces reference the
                 // persisted add buffer and original file, so Apply (which
@@ -132,53 +137,64 @@ public static class EditSerializer {
 
     /// <summary>
     /// Deserializes a JSON string produced by <see cref="Serialize"/> back
-    /// into undo and redo entry lists.
+    /// into undo and redo entry lists. When <paramref name="restoredBufIdx"/>
+    /// is non-negative, any <c>bufInsert</c> edits that reference the persisted
+    /// add buffer are remapped to that buffer index.
     /// </summary>
     public static (IReadOnlyList<EditHistory.HistoryEntry> Undo,
                     IReadOnlyList<EditHistory.HistoryEntry> Redo)
-        Deserialize(string json) {
+        Deserialize(string json, int restoredBufIdx = -1) {
 
         var root = JsonNode.Parse(json)!.AsObject();
-        var undo = DeserializeStack(root["undo"]!.AsArray());
-        var redo = DeserializeStack(root["redo"]!.AsArray());
+        var undo = DeserializeStack(root["undo"]!.AsArray(), restoredBufIdx);
+        var redo = DeserializeStack(root["redo"]!.AsArray(), restoredBufIdx);
         return (undo, redo);
     }
 
-    private static List<EditHistory.HistoryEntry> DeserializeStack(JsonArray arr) {
+    private static List<EditHistory.HistoryEntry> DeserializeStack(JsonArray arr, int restoredBufIdx) {
         var list = new List<EditHistory.HistoryEntry>(arr.Count);
         foreach (var node in arr) {
-            list.Add(DeserializeEntry(node!.AsObject()));
+            list.Add(DeserializeEntry(node!.AsObject(), restoredBufIdx));
         }
         return list;
     }
 
-    private static EditHistory.HistoryEntry DeserializeEntry(JsonObject obj) {
-        var edit = DeserializeEdit(obj);
+    private static EditHistory.HistoryEntry DeserializeEntry(JsonObject obj, int restoredBufIdx) {
+        var edit = DeserializeEdit(obj, restoredBufIdx);
         var sel = new Selection(
             obj["selAnchor"]!.GetValue<long>(),
             obj["selActive"]!.GetValue<long>());
         return new EditHistory.HistoryEntry(edit, sel);
     }
 
-    private static IDocumentEdit DeserializeEdit(JsonObject obj) {
+    private static IDocumentEdit DeserializeEdit(JsonObject obj, int restoredBufIdx) {
         var type = obj["type"]!.GetValue<string>();
         return type switch {
-            "bufInsert" => DeserializeBufInsert(obj),
+            "bufInsert" => DeserializeBufInsert(obj, restoredBufIdx),
             "delete" => new DeleteEdit(
                 obj["ofs"]!.GetValue<long>(),
                 obj["len"]!.GetValue<long>(),
                 Array.Empty<Piece>()),
-            "compound" => DeserializeCompound(obj),
+            "compound" => DeserializeCompound(obj, restoredBufIdx),
             "bulkUniform" => DeserializeUniformBulk(obj),
             "bulkVarying" => DeserializeVaryingBulk(obj),
             _ => throw new NotSupportedException($"Unknown edit type: {type}")
         };
     }
 
-    private static SpanInsertEdit DeserializeBufInsert(JsonObject obj) =>
-        new(obj["ofs"]!.GetValue<long>(),
+    private static SpanInsertEdit DeserializeBufInsert(JsonObject obj, int restoredBufIdx) {
+        var bufIdx = obj["bufIdx"]?.GetValue<int>() ?? -1;
+        // Remap: if the edit referenced the persisted add buffer (bufIdx >= 0
+        // or default -1 from old format), use the restored paged buffer index.
+        if (restoredBufIdx >= 0 && bufIdx <= 0) {
+            bufIdx = restoredBufIdx;
+        }
+        return new SpanInsertEdit(
+            obj["ofs"]!.GetValue<long>(),
             obj["bufStart"]!.GetValue<long>(),
-            obj["bufLen"]!.GetValue<int>());
+            obj["bufLen"]!.GetValue<int>(),
+            bufIdx);
+    }
 
     private static UniformBulkReplaceEdit DeserializeUniformBulk(JsonObject obj) {
         var matchLen = obj["matchLen"]!.GetValue<int>();
@@ -207,11 +223,11 @@ public static class EditSerializer {
             matches, replacements, [], [], 0);
     }
 
-    private static CompoundEdit DeserializeCompound(JsonObject obj) {
+    private static CompoundEdit DeserializeCompound(JsonObject obj, int restoredBufIdx) {
         var arr = obj["edits"]!.AsArray();
         var edits = new List<IDocumentEdit>(arr.Count);
         foreach (var node in arr) {
-            edits.Add(DeserializeEdit(node!.AsObject()));
+            edits.Add(DeserializeEdit(node!.AsObject(), restoredBufIdx));
         }
         return new CompoundEdit(edits);
     }

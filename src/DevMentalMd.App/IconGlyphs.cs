@@ -47,6 +47,7 @@ static class IconGlyphs {
     public const string Delete = "\uE47B"; //EEA5,EEA6  
     public const string Wrap = "\uEF28"; //F80E
 
+    public const string Open = "\uF42E";
     public const string Save = "\uEA43";
     public const string Search = "\uE6A9";
 

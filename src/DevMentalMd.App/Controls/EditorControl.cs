@@ -18,6 +18,7 @@ using DevMentalMd.App.Commands;
 using DevMentalMd.App.Services;
 using Cmd = DevMentalMd.App.Commands.Commands;
 using DevMentalMd.Core.Buffers;
+using DevMentalMd.Core.Clipboard;
 using DevMentalMd.Core.Documents;
 using DevMentalMd.Core.Documents.History;
 using DevMentalMd.Rendering.Layout;
@@ -384,6 +385,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         public double ReplaceAllTimeMs { get; set; }
         /// <summary>How many times ScrollCaretIntoView needed a retry pass.</summary>
         public long ScrollRetries { get; set; }
+        /// <summary>How many times ScrollCaretIntoView ran (past all early exits).</summary>
+        public long ScrollCaretCalls { get; set; }
         /// <summary>Current GC memory in MB.</summary>
         public double MemoryMb { get; set; }
         /// <summary>Peak GC memory seen this session in MB.</summary>
@@ -677,7 +680,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// When wrapping is off (<paramref name="charsPerRow"/> = 0), each line
     /// is exactly one row, so the result is <c>lineIndex * rh</c>.
     /// </summary>
-    private static double EstimateLineY(long lineIndex, PieceTable table, int charsPerRow, double rh) {
+    /// <summary>
+    /// Estimates the Y pixel offset for a given line index when wrapping is
+    /// enabled. Lines can span multiple visual rows, so we approximate by
+    /// dividing total chars before the line by chars-per-row.
+    /// NOT used when wrapping is off — use <c>lineIndex * rh</c> instead.
+    /// </summary>
+    private static double EstimateWrappedLineY(long lineIndex, PieceTable table, int charsPerRow, double rh) {
         if (lineIndex <= 0) return 0;
         var charsBefore = (long)table.LineStartOfs(lineIndex);
         if (charsBefore < 0) return lineIndex * rh; // streaming load fallback
@@ -688,10 +697,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     }
 
     /// <summary>
-    /// Inverse of <see cref="EstimateLineY"/>: maps a scroll-pixel offset
-    /// to the logical line that should appear at the viewport top.  O(log N).
+    /// Inverse of <see cref="EstimateWrappedLineY"/>: maps a scroll-pixel offset
+    /// to the logical line at the viewport top when wrapping is enabled.
+    /// NOT used when wrapping is off — use <c>(long)(scrollY / rh)</c> instead.
     /// </summary>
-    private static long EstimateTopLine(double scrollY, PieceTable table, long lineCount, int charsPerRow, double rh) {
+    private static long EstimateWrappedTopLine(double scrollY, PieceTable table, long lineCount, int charsPerRow, double rh) {
         if (scrollY <= 0 || lineCount <= 0) return 0;
         var targetRow = (long)(scrollY / rh);
         if (charsPerRow <= 0) return Math.Clamp(targetRow, 0, lineCount - 1);
@@ -813,18 +823,22 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     private void LayoutWindowed(Document doc, long lineCount, Typeface typeface, double maxWidth, double extentWidth) {
         var rh = GetRowHeight();
 
-        // Estimate total visual rows from document character count (for extent height).
-        var totalChars = doc.Table.Length;
-        var charsPerRow = GetCharsPerRow(maxWidth);
+        // Compute total visual rows and map scroll offset → top line.
+        var charsPerRow = _wrapLines ? GetCharsPerRow(maxWidth) : 0;
         long totalVisualRows;
-        if (charsPerRow <= 0) {
+        long topLine;
+        if (!_wrapLines) {
+            // Wrapping off: each line tree entry = one visual row (exact).
             totalVisualRows = lineCount;
+            topLine = Math.Clamp((long)(_scrollOffset.Y / rh), 0, Math.Max(0, lineCount - 1));
         } else {
-            totalVisualRows = Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow));
+            // Wrapping on: lines can span multiple rows (estimated).
+            var totalChars = doc.Table.Length;
+            totalVisualRows = charsPerRow > 0
+                ? Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow))
+                : lineCount;
+            topLine = EstimateWrappedTopLine(_scrollOffset.Y, doc.Table, lineCount, charsPerRow, rh);
         }
-
-        // Map scroll offset → top logical line using per-line character counts.
-        var topLine = EstimateTopLine(_scrollOffset.Y, doc.Table, lineCount, charsPerRow, rh);
 
         // For single-row scrolls (arrow buttons), constrain topLine to change
         // by at most ±1 from the previous frame.  This lets the incremental
@@ -876,7 +890,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var startOfs = topLine > 0 ? doc.Table.LineStartOfs(topLine) : 0L;
         long endOfs;
         if (bottomLine >= lineCount) {
-            endOfs = totalChars;
+            endOfs = doc.Table.Length;
         } else {
             endOfs = doc.Table.LineStartOfs(bottomLine);
         }
@@ -910,7 +924,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // never materialize multiple lines into a single string.
         _layout = _layoutEngine.LayoutLines(
             doc.Table, topLine, bottomLine, typeface, FontSize, ForegroundBrush,
-            maxWidth, startOfs, lineCount, totalChars);
+            maxWidth, startOfs, lineCount, doc.Table.Length);
         _layout.TopLine = topLine;
 
         // When the layout covers the entire document, use exact height
@@ -947,8 +961,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 - (_scrollOffset.Y - _winScrollOffset)
                 - _layout.Lines[0].HeightInRows * rh;
         } else {
-            // First layout or large jump — use per-line estimate.
-            RenderOffsetY = EstimateLineY(topLine, doc.Table, charsPerRow, rh) - _scrollOffset.Y;
+            // First layout or large jump.
+            RenderOffsetY = _wrapLines
+                ? EstimateWrappedLineY(topLine, doc.Table, charsPerRow, rh) - _scrollOffset.Y
+                : topLine * rh - _scrollOffset.Y;
         }
 
         // Safety: prevent any remaining gap at the viewport top.
@@ -1559,51 +1575,18 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Native streaming paste is only used for normal (non-column) mode.
         var nativeClip = NativeClipboardDiscovery.Service;
         if (nativeClip != null && doc.ColumnSel == null) {
-            // Phase 1: read clipboard into the add buffer (UI thread — fast,
-            // Windows clipboard API requires UI thread).
-            var addBufStart = doc.Table.AddBufferLength;
-            var charsPasted = nativeClip.Paste(doc.Table, null, default);
-            if (charsPasted <= 0) {
-                _editSw.Stop();
-                return;
+            const long LargePasteThreshold = 1024 * 1024; // 1M chars
+            var clipSize = nativeClip.GetClipboardCharCount();
+
+            if (clipSize > LargePasteThreshold) {
+                // PasteLargeAsync calls ScrollCaretIntoView internally
+                // after the line tree is fully built.
+                await PasteLargeAsync(doc, nativeClip, clipSize);
+                ScrollCaretIntoView();
+            } else {
+                PasteSmall(doc, nativeClip);
+                ScrollCaretIntoView();
             }
-            var totalLen = (int)(doc.Table.AddBufferLength - addBufStart);
-
-            // Phase 2: insert into piece table on background thread.
-            // Block all UI access to the document during this time.
-            var savedIsEditBlocked = IsEditBlocked;
-            IsEditBlocked = true;
-            BackgroundPasteInProgress = true;
-            BackgroundPasteChanged?.Invoke(true);
-            InvalidateVisual(); // render empty layout while paste runs
-
-            var ofs = doc.Selection.Start;
-            var selBefore = doc.Selection;
-            var replacing = !doc.Selection.IsEmpty;
-
-            // Capture delete pieces on UI thread before going to background,
-            // so undo has the data it needs.
-            Piece[]? deletePieces = null;
-            (int StartLine, int[]? LineLengths)? deleteLineInfo = null;
-            if (replacing) {
-                deletePieces = doc.Table.CapturePieces(ofs, selBefore.Len);
-                deleteLineInfo = doc.Table.CaptureLineInfo(ofs, selBefore.Len);
-            }
-
-            await Task.Run(() => {
-                if (replacing) {
-                    doc.Table.Delete(ofs, selBefore.Len);
-                }
-                doc.Table.InsertFromAddBuffer(ofs, addBufStart, totalLen);
-            });
-
-            // Phase 3: back on UI thread — record history and update selection.
-            doc.RecordBackgroundPaste(ofs, selBefore, addBufStart, totalLen,
-                replacing, deletePieces, deleteLineInfo);
-
-            BackgroundPasteInProgress = false;
-            BackgroundPasteChanged?.Invoke(false);
-            IsEditBlocked = savedIsEditBlocked;
         } else {
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard == null) { _editSw.Stop(); return; }
@@ -1624,13 +1607,108 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             } else {
                 doc.Insert(text);
             }
+            ScrollCaretIntoView();
         }
 
-        ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-        InvalidateLayout();
-        ResetCaretBlink();
+    }
+
+    /// <summary>Small paste: clipboard → in-memory add buffer → insert.</summary>
+    private void PasteSmall(Document doc, INativeClipboardService nativeClip) {
+        var ofs = doc.Selection.Start;
+        var replacing = !doc.Selection.IsEmpty;
+        if (replacing) {
+            doc.History.BeginCompound();
+            var pieces = doc.Table.CapturePieces(ofs, doc.Selection.Len);
+            var lineInfo = doc.Table.CaptureLineInfo(ofs, doc.Selection.Len);
+            var delEdit = lineInfo is var (sl, ll)
+                ? new DeleteEdit(ofs, doc.Selection.Len, pieces, sl, ll)
+                : new DeleteEdit(ofs, doc.Selection.Len, pieces);
+            doc.History.Push(delEdit, doc.Table, doc.Selection);
+        }
+        var addBufStart = doc.Table.AddBufferLength;
+        nativeClip.Paste(doc.Table, null, default);
+        var totalLen = (int)(doc.Table.AddBufferLength - addBufStart);
+        if (totalLen > 0) {
+            doc.History.Push(
+                new SpanInsertEdit(ofs, addBufStart, totalLen), doc.Table, doc.Selection);
+        }
+        if (replacing) {
+            doc.History.EndCompound();
+        }
+        doc.Selection = Selection.Collapsed(ofs + totalLen);
+        doc.RaiseChanged();
+    }
+
+    /// <summary>
+    /// Large paste: clipboard → file on disk → PagedFileBuffer → piece insert.
+    /// The file stays on disk and is paged into memory on demand (~16 MB).
+    /// </summary>
+    private async Task PasteLargeAsync(Document doc, INativeClipboardService nativeClip,
+        long clipCharCount) {
+
+        var ofs = doc.Selection.Start;
+        var selBefore = doc.Selection;
+        var replacing = !selBefore.IsEmpty;
+
+        // Capture delete pieces before going to background.
+        Piece[]? deletePieces = null;
+        (int StartLine, int[]? LineLengths)? deleteLineInfo = null;
+        if (replacing) {
+            deletePieces = doc.Table.CapturePieces(ofs, selBefore.Len);
+            deleteLineInfo = doc.Table.CaptureLineInfo(ofs, selBefore.Len);
+        }
+
+        // Find the active tab ID for the file name.
+        var mw = TopLevel.GetTopLevel(this) as MainWindow;
+        var tabId = mw?._activeTab?.Id ?? Guid.NewGuid().ToString("N")[..12];
+        var bufFileIdx = doc.Table.Buffers.Count; // next available index
+        var filePath = SessionStore.AllocateAddBufPath(tabId, bufFileIdx);
+
+        // Phase 1 (UI thread): Stream clipboard → UTF-8 file on disk.
+        using (var fs = File.Create(filePath)) {
+            nativeClip.PasteToStream(fs, null, default);
+        }
+
+        // Phase 2 (background): Scan the file to build page table + line index.
+        var savedIsEditBlocked = IsEditBlocked;
+        IsEditBlocked = true;
+        BackgroundPasteInProgress = true;
+        BackgroundPasteChanged?.Invoke(true);
+        InvalidateVisual();
+
+        var byteLen = new FileInfo(filePath).Length;
+        var paged = new PagedFileBuffer(filePath, byteLen);
+        var tcs = new TaskCompletionSource();
+        paged.LoadComplete += () => tcs.TrySetResult();
+        paged.StartLoading(default);
+        await tcs.Task;
+
+        var pastedBufIdx = doc.Table.RegisterBuffer(paged);
+        var totalLen = (int)paged.Length;
+
+        // Phase 3 (background): Delete + insert piece + rebuild line tree.
+        await Task.Run(() => {
+            if (replacing) {
+                doc.Table.Delete(ofs, selBefore.Len);
+            }
+            doc.Table.InsertFromBuffer(ofs, pastedBufIdx, 0, totalLen);
+        });
+
+        // Phase 4 (UI thread): Record history, update selection, unblock.
+        doc.RecordBackgroundPaste(ofs, selBefore, 0, totalLen,
+            replacing, deletePieces, deleteLineInfo, pastedBufIdx);
+
+        BackgroundPasteInProgress = false;
+        BackgroundPasteChanged?.Invoke(false);
+        IsEditBlocked = savedIsEditBlocked;
+
+        // Both this call and the one in PasteAsync (after await) are
+        // required. The first updates _extent and scroll state; the
+        // second (after the await resumes) makes the scroll take effect.
+        // TODO: understand why a single call isn't sufficient.
+        ScrollCaretIntoView();
     }
 
     /// <summary>
@@ -2893,89 +2971,79 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         Focus();
     }
 
-    /// <summary>
-    /// Adjusts <see cref="ScrollValue"/> so the caret's logical line is visible
-    /// within the viewport.  The caret position is estimated from the logical
-    /// line index using per-line character counts, then verified with a layout
-    /// pass that checks the actual pixel position.
-    /// </summary>
     private void ScrollCaretIntoView() {
         var doc = Document;
         if (doc == null) return;
+        if (IsLoading) {
+            return; // Can't actually happen
+        }
 
         var table = doc.Table;
         var caret = doc.Selection.Caret;
         var lineCount = table.LineCount;
         if (lineCount <= 0) return;
 
+        PerfStats.ScrollCaretCalls++;
+
         var rh = GetRowHeight();
-
-        // Update extent height from lineCount * rh so that ScrollValue's
-        // clamp (to ScrollMaximum) uses a reasonable value.  Without this,
-        // a dramatic document shrink (e.g. select-all + paste small) leaves
-        // the scroll offset past the new end.  The full extent is
-        // recalculated on the next EnsureLayout, but we need it now.
-        var estExtent = lineCount * rh;
-        if (estExtent != _extent.Height) {
-            _extent = new Size(_extent.Width, estExtent);
-        }
-
-        // At the document end, scroll to the bottom without a full layout
-        // rebuild — keeps newline insertion at the end O(1) instead of O(N).
-        if (caret >= table.Length) {
-            ScrollValue = ScrollMaximum;
-            return;
-        }
-
-        // Estimate caret Y from its logical line index using per-line char counts.
-        var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-        var textW = GetTextWidth(maxW);
-        var charsPerRow = GetCharsPerRow(textW);
-
-        var caretLine = table.LineFromOfs(caret);
-        var caretY = EstimateLineY(caretLine, table, charsPerRow, rh);
-
-        var estimateVpH = Bounds.Height > 0 ? Bounds.Height : _viewport.Height;
-        if (caretY < _scrollOffset.Y) {
-            ScrollValue = caretY;
-        } else if (caretY + rh > _scrollOffset.Y + estimateVpH) {
-            ScrollValue = caretY + rh - estimateVpH;
-        }
-
-        // Clamp: if the scroll position exceeds the extent (e.g. after
-        // undo/delete that shortened the document), pull it back. We do
-        // this after the main logic so we don't trigger an extra layout
-        // rebuild before it's needed.
-        if (_scrollOffset.Y > ScrollMaximum) {
-            ScrollValue = ScrollMaximum;
-        }
-
-        // The estimate above can be wrong when lines wrap unevenly.
-        // Do a layout pass and verify the caret is actually visible;
-        // if not, adjust the scroll to bring it into view.  Repeat up
-        // to 3 times because the first correction can still be off when
-        // RenderOffsetY shifts after the scroll adjustment.
         var vpH = Bounds.Height > 0 ? Bounds.Height : _viewport.Height;
-        for (var pass = 0; pass < 3; pass++) {
-            InvalidateLayout();
-            var layout = EnsureLayout();
-            var caretLocalOfs = (int)(caret - layout.ViewportBase);
-            var layoutCharEnd = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
-            if (caretLocalOfs < 0 || caretLocalOfs > layoutCharEnd) break;
+        var caretLine = table.LineFromOfs(caret);
 
-            var caretRect = _layoutEngine.GetCaretBounds(caretLocalOfs, layout);
-            var caretScreenY = caretRect.Y + RenderOffsetY;
-            var caretH = Math.Ceiling(Math.Max(caretRect.Height, rh));
-            if (caretScreenY < 0) {
-                // Caret is above the viewport — scroll up.
-                PerfStats.ScrollRetries++;
-                ScrollValue = _scrollOffset.Y + caretScreenY;
-            } else if (caretScreenY + caretH > vpH) {
-                // Caret is below the viewport — scroll down.
-                PerfStats.ScrollRetries++;
-                ScrollValue = _scrollOffset.Y + caretScreenY + caretH - vpH;
-            } else {
-                break; // caret is visible — done
+        if (!_wrapLines) {
+            // ── Wrapping off ──────────────────────────────────────────
+            // The line tree is exact: each entry = one visual row.
+            // Caret Y and extent are computed directly from line indices.
+            var caretY = caretLine * rh;
+            var extent = lineCount * rh;
+            _extent = new Size(_extent.Width, extent);
+
+            if (_scrollOffset.Y > ScrollMaximum) {
+                ScrollValue = ScrollMaximum;
+            }
+            if (caretY < _scrollOffset.Y) {
+                ScrollValue = caretY;
+            } else if (caretY + rh > _scrollOffset.Y + vpH) {
+                ScrollValue = caretY + rh - vpH;
+            }
+        } else {
+            // ── Wrapping on ───────────────────────────────────────────
+            // Lines can span multiple visual rows. Use char-based
+            // estimation to position the scroll, then verify with an
+            // actual layout pass since the estimate can be off.
+            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+            var textW = GetTextWidth(maxW);
+            var charsPerRow = GetCharsPerRow(textW);
+            var caretY = EstimateWrappedLineY(caretLine, table, charsPerRow, rh);
+
+            if (caretY < _scrollOffset.Y) {
+                ScrollValue = caretY;
+            } else if (caretY + rh > _scrollOffset.Y + vpH) {
+                ScrollValue = caretY + rh - vpH;
+            } else if (_scrollOffset.Y > ScrollMaximum) {
+                ScrollValue = ScrollMaximum;
+            }
+
+            // Verify with actual layout. Repeat up to 3 times because
+            // the first correction can be off when RenderOffsetY shifts.
+            for (var pass = 0; pass < 3; pass++) {
+                InvalidateLayout();
+                var layout = EnsureLayout();
+                var caretLocalOfs = (int)(caret - layout.ViewportBase);
+                var layoutCharEnd = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
+                if (caretLocalOfs < 0 || caretLocalOfs > layoutCharEnd) break;
+
+                var caretRect = _layoutEngine.GetCaretBounds(caretLocalOfs, layout);
+                var caretScreenY = caretRect.Y + RenderOffsetY;
+                var caretH = Math.Ceiling(Math.Max(caretRect.Height, rh));
+                if (caretScreenY < 0) {
+                    PerfStats.ScrollRetries++;
+                    ScrollValue = _scrollOffset.Y + caretScreenY;
+                } else if (caretScreenY + caretH > vpH) {
+                    PerfStats.ScrollRetries++;
+                    ScrollValue = _scrollOffset.Y + caretScreenY + caretH - vpH;
+                } else {
+                    break; // caret is visible — done
+                }
             }
         }
 
@@ -3036,23 +3104,24 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     /// <summary>
     /// Sets <see cref="ScrollValue"/> so that the given logical line appears
-    /// at the top of the viewport.  Uses the same <see cref="EstimateLineY"/>
-    /// formula that <see cref="LayoutWindowed"/> uses, so the mapping is consistent.
+    /// at the top of the viewport.
     /// </summary>
     private void ScrollToTopLine(long targetLine, PieceTable table) {
         var lineCount = table.LineCount;
         if (lineCount <= 0) return;
 
         var rh = GetRowHeight();
-        var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-        var textW = GetTextWidth(maxW);
-        var charsPerRow = GetCharsPerRow(textW);
-
-        // Nudge by a sub-pixel amount so that the EstimateTopLine
-        // round-trip in LayoutWindowed always resolves to targetLine.
-        // Without this, floating-point truncation can land one line short,
-        // destabilising the screen-row computation in MoveCaretByPage.
-        ScrollValue = EstimateLineY(targetLine, table, charsPerRow, rh) + 0.01;
+        if (!_wrapLines) {
+            // Wrapping off: exact.
+            ScrollValue = targetLine * rh;
+        } else {
+            // Wrapping on: estimated. Nudge by a sub-pixel amount so the
+            // round-trip in LayoutWindowed always resolves to targetLine.
+            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+            var textW = GetTextWidth(maxW);
+            var charsPerRow = GetCharsPerRow(textW);
+            ScrollValue = EstimateWrappedLineY(targetLine, table, charsPerRow, rh) + 0.01;
+        }
     }
 
     /// <summary>

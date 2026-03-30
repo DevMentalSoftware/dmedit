@@ -125,9 +125,15 @@ public static class SessionStore {
                 if (persistUndo.Count > 0 || persistRedo.Count > 0) {
                     var editsJson = EditSerializer.Serialize(persistUndo, persistRedo, tab.Document.Table);
                     File.WriteAllText(editsPath, editsJson);
-                    // Persist the add buffer as a binary companion file.
-                    using var fs = File.Create(addBufPath);
-                    tab.Document.Table.AddBuffer.WriteTo(fs);
+                    // Persist the active (small) add buffer for typing edits.
+                    // Large paste buffers are already on disk as .addBuf.N files.
+                    var addBuf = tab.Document.Table.AddBuffer;
+                    if (addBuf.CharLength > 0) {
+                        using var fs = File.Create(addBufPath);
+                        addBuf.WriteTo(fs);
+                    } else if (File.Exists(addBufPath)) {
+                        File.Delete(addBufPath);
+                    }
                 } else {
                     if (File.Exists(editsPath)) File.Delete(editsPath);
                     if (File.Exists(addBufPath)) File.Delete(addBufPath);
@@ -310,17 +316,29 @@ public static class SessionStore {
             return null;
         }
         try {
-            // Load the persisted add buffer before replaying edits so that
-            // SpanInsertEdit references resolve correctly.
+            // Load persisted add buffer (small edits from typing) as a
+            // PagedFileBuffer so it stays on disk with ~16 MB LRU pages.
             var addBufPath = Path.Combine(SessionDir, $"{entry.Id}.addBuf");
+            int addBufIdx = -1;
             if (File.Exists(addBufPath)) {
-                using var fs = File.OpenRead(addBufPath);
-                var buf = ChunkedUtf8Buffer.ReadFrom(fs);
-                doc.Table.SetAddBuffer(buf);
+                addBufIdx = LoadPagedBuffer(doc, addBufPath);
+            }
+
+            // Load large-paste add buffers (.addBuf.N files).
+            // These were written at paste time and are already on disk.
+            // Register them at the same buffer indices they had originally.
+            foreach (var file in Directory.GetFiles(SessionDir, $"{entry.Id}.addBuf.*")) {
+                // Skip the base .addBuf file (already loaded above).
+                var ext = Path.GetExtension(file);
+                if (ext == ".addBuf") continue;
+                // Parse the index from the extension (e.g., ".2" from ".addBuf.2").
+                var idxStr = ext.TrimStart('.');
+                if (!int.TryParse(idxStr, out _)) continue;
+                LoadPagedBuffer(doc, file);
             }
 
             var json = File.ReadAllText(editsPath);
-            var (undo, redo) = EditSerializer.Deserialize(json);
+            var (undo, redo) = EditSerializer.Deserialize(json, addBufIdx);
             // The line tree must already be installed before we get here.
             // MainWindow installs it from the paged buffer scan results
             // before calling FinishLoad.  If the tree isn't present,
@@ -342,13 +360,39 @@ public static class SessionStore {
     // Cleanup
     // -----------------------------------------------------------------
 
+    /// <summary>
+    /// Loads a file as a PagedFileBuffer and registers it in the table's buffer list.
+    /// Returns the buffer index, or -1 if the file is empty.
+    /// </summary>
+    private static int LoadPagedBuffer(Document doc, string path) {
+        var byteLen = new FileInfo(path).Length;
+        if (byteLen <= 0) return -1;
+        var paged = new PagedFileBuffer(path, byteLen);
+        var tcs = new TaskCompletionSource();
+        paged.LoadComplete += () => tcs.TrySetResult();
+        paged.StartLoading(default);
+        tcs.Task.GetAwaiter().GetResult();
+        return doc.Table.RegisterBuffer(paged);
+    }
+
+    /// <summary>
+    /// Returns a path for a new add buffer file in the session directory.
+    /// Creates the directory if needed.
+    /// </summary>
+    public static string AllocateAddBufPath(string tabId, int index) {
+        Directory.CreateDirectory(SessionDir);
+        return Path.Combine(SessionDir, $"{tabId}.addBuf.{index}");
+    }
+
     /// <summary>Deletes session files for a single tab (on tab close).</summary>
     public static void DeleteTabFiles(string tabId) {
         try {
             var editsPath = Path.Combine(SessionDir, $"{tabId}.edits.json");
-            var addBufPath = Path.Combine(SessionDir, $"{tabId}.addBuf");
             if (File.Exists(editsPath)) File.Delete(editsPath);
-            if (File.Exists(addBufPath)) File.Delete(addBufPath);
+            // Delete .addBuf and all .addBuf.N files.
+            foreach (var f in Directory.GetFiles(SessionDir, $"{tabId}.addBuf*")) {
+                File.Delete(f);
+            }
         } catch {
             // Best-effort.
         }
@@ -375,8 +419,11 @@ public static class SessionStore {
                     File.Delete(file);
                 }
             }
-            foreach (var file in Directory.GetFiles(SessionDir, "*.addBuf")) {
-                var id = Path.GetFileNameWithoutExtension(file);
+            foreach (var file in Directory.GetFiles(SessionDir, "*.addBuf*")) {
+                // Extract tab ID: "abc123.addBuf" or "abc123.addBuf.2"
+                var name = Path.GetFileName(file);
+                var dotIdx = name.IndexOf('.');
+                var id = dotIdx >= 0 ? name[..dotIdx] : name;
                 if (!referencedIds.Contains(id)) {
                     File.Delete(file);
                 }

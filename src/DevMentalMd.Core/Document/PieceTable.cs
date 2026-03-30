@@ -13,9 +13,11 @@ namespace DevMentalMd.Core.Documents;
 /// </summary>
 public sealed class PieceTable {
 
-    private readonly IBuffer _buf;
-
+    private readonly List<IBuffer> _buffers = new();
     private ChunkedUtf8Buffer _addBuf = new();
+    private int _addBufIdx;
+    private bool _initialPieceResolved;
+
     private readonly List<Piece> _pieces = new();
 
     // LineIndexTree-based line index: stores line lengths (including terminators).
@@ -35,11 +37,6 @@ public sealed class PieceTable {
     /// </summary>
     public const int MaxPseudoLine = 500;
 
-    // Sentinel: a piece with this Len spans the entire _buf from its Start offset
-    // without knowing the exact length upfront.  Only valid for Piece.Which == Original.
-    // Insert/Delete will replace it with real pieces.
-    private const long WholeBufSentinel = long.MaxValue;
-
     // -------------------------------------------------------------------------
     // Construction
     // -------------------------------------------------------------------------
@@ -54,25 +51,23 @@ public sealed class PieceTable {
         BuildLineTree();
     }
 
-    /// <summary>Constructs a piece-table from an <see cref="IBuffer"/>.</summary>
-    /// <remarks>
-    /// For paged file content, pass a <see cref="PagedFileBuffer"/>.
-    /// Call <see cref="InstallLineTree"/> or <see cref="EnsureLineTree"/> after
-    /// the buffer is fully loaded and before any edits.
-    /// </remarks>
-
     /// <summary>
     /// Constructs a piece-table from an <see cref="IBuffer"/>.
     /// The piece-table does NOT take ownership of the buffer; the caller is responsible
     /// for disposing it after the piece-table is no longer needed.
     /// </summary>
     public PieceTable(IBuffer buf) {
-        _buf = buf;
-        // Add the entire buffer as the initial piece.  When length is not yet known
-        // we use WholeBufSentinel so that Length is not computed on construction.
-        var len = buf.LengthIsKnown ? buf.Length : WholeBufSentinel;
-        if (len != 0) {
-            _pieces.Add(new Piece(BufferKind.Original, 0, len));
+        _buffers.Add(buf);          // index 0 = original buffer
+        _buffers.Add(_addBuf);      // index 1 = active add buffer
+        _addBufIdx = 1;
+        // Create the initial piece when the buffer's length is already known.
+        // For paged/streaming buffers (LengthIsKnown == false), the piece is
+        // deferred until EnsureInitialPiece is called lazily on first access.
+        if (buf.LengthIsKnown) {
+            if (buf.Length > 0) {
+                _pieces.Add(new Piece(0, 0, buf.Length));
+            }
+            _initialPieceResolved = true;
         }
     }
 
@@ -80,25 +75,50 @@ public sealed class PieceTable {
     // Properties
     // -------------------------------------------------------------------------
 
+    /// <summary>The original file buffer (index 0).</summary>
+    public IBuffer Buffer => _buffers[0];
+
+    /// <summary>The active in-memory add buffer.</summary>
+    public ChunkedUtf8Buffer AddBuffer => _addBuf;
+
+    /// <summary>The buffer list, exposed for session persistence.</summary>
+    public IReadOnlyList<IBuffer> Buffers => _buffers;
+
+    /// <summary>Index of the active add buffer in the buffer list.</summary>
+    public int AddBufferIndex => _addBufIdx;
+
     /// <summary>
-    /// The underlying <see cref="IBuffer"/> when constructed from a buffer, or <c>null</c>
-    /// when constructed from a string.
+    /// Replaces the active add buffer (used by session restore to load
+    /// a previously persisted buffer before replaying edits).
     /// </summary>
-    public IBuffer Buffer => _buf;
+    public void SetAddBuffer(ChunkedUtf8Buffer buffer) {
+        _addBuf = buffer;
+        _buffers[_addBufIdx] = buffer;
+    }
+
+    /// <summary>
+    /// Adds a buffer to the buffer list and returns its index.
+    /// Used for loading persisted add buffers or adding large paste buffers.
+    /// </summary>
+    public int RegisterBuffer(IBuffer buffer) {
+        _buffers.Add(buffer);
+        return _buffers.Count - 1;
+    }
 
     /// <summary>
     /// <c>true</c> when the document content is the unedited original buffer
     /// (no inserts or deletes have been applied).
     /// </summary>
     public bool IsOriginalContent =>
-        _pieces.Count == 1 && _pieces[0].Which == BufferKind.Original;
+        _pieces.Count == 1 && _pieces[0].BufIdx == 0;
 
     /// <summary>Total number of characters in the document.</summary>
     public long Length {
         get {
+            EnsureInitialPiece();
             var total = 0L;
             foreach (var p in _pieces) {
-                total += p.Len == WholeBufSentinel ? _buf!.Length - p.Start : p.Len;
+                total += p.Len;
             }
             return total;
         }
@@ -120,7 +140,7 @@ public sealed class PieceTable {
     /// </summary>
     public long MaxLineLength {
         get {
-            if (_lineTree == null && IsOriginalContent && _buf.LongestLine >= 0) return _buf.LongestLine;
+            if (_lineTree == null && IsOriginalContent && Buffer.LongestLine >= 0) return Buffer.LongestLine;
             if (_maxLineLen < 0) {
                 // Recompute from line lengths.
                 var tree = LineTree;
@@ -155,12 +175,7 @@ public sealed class PieceTable {
         } else {
             var existing = _pieces[pieceIdx];
             var left = existing.TakeFirst(ofsInPiece);
-            Piece right;
-            if (existing.Len == WholeBufSentinel) {
-                right = new Piece(BufferKind.Original, existing.Start + ofsInPiece, WholeBufSentinel);
-            } else {
-                right = existing.SkipFirst(ofsInPiece);
-            }
+            var right = existing.SkipFirst(ofsInPiece);
             _pieces[pieceIdx] = left;
             _pieces.InsertRange(pieceIdx + 1, pieces);
             _pieces.Insert(pieceIdx + 1 + pieces.Length, right);
@@ -191,7 +206,7 @@ public sealed class PieceTable {
         }
         ArgumentOutOfRangeException.ThrowIfNegative(ofs);
         // Only check upper bound when Length is fully known.
-        if (_buf.LengthIsKnown) {
+        if (Buffer.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs, Length);
         }
 
@@ -207,7 +222,7 @@ public sealed class PieceTable {
         }
 
         var addStart = _addBuf.Append(text);
-        var newPiece = new Piece(BufferKind.Add, addStart, text.Length);
+        var newPiece = new Piece(_addBufIdx, addStart, text.Length);
 
         var (pieceIdx, ofsInPiece) = FindPiece(ofs);
 
@@ -215,15 +230,8 @@ public sealed class PieceTable {
             _pieces.Insert(pieceIdx, newPiece);
         } else {
             var existing = _pieces[pieceIdx];
-            // Split: left part keeps real length; right part may still be sentinel.
             var left = existing.TakeFirst(ofsInPiece);
-            Piece right;
-            if (existing.Len == WholeBufSentinel) {
-                // Right part still covers the remainder of the buffer from its new start.
-                right = new Piece(BufferKind.Original, existing.Start + ofsInPiece, WholeBufSentinel);
-            } else {
-                right = existing.SkipFirst(ofsInPiece);
-            }
+            var right = existing.SkipFirst(ofsInPiece);
             _pieces[pieceIdx] = left;
             _pieces.Insert(pieceIdx + 1, newPiece);
             _pieces.Insert(pieceIdx + 2, right);
@@ -238,15 +246,12 @@ public sealed class PieceTable {
                 _maxLineLen = newLen;
             SplitLongLine(affectedLine);
         } else if (affectedLine >= 0 && hasNewlines) {
-            // Newlines inserted: splice line lengths array, O(L) rebuild.
-            SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs, text);
-            // SpliceInsertLines replaced 1 line with nlCount lines; count
-            // them by scanning forward from affectedLine.
+            // Newlines inserted: splice line lengths via chunked buffer read.
+            SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs,
+                _addBuf, addStart, text.Length);
             var nlCount = (int)(LineFromOfs(Math.Min(ofs + text.Length, Length)) - affectedLine + 1);
             SplitLongLines(affectedLine, nlCount);
         } else {
-            // affectedLine < 0 means _lineTree was null when we checked above.
-            // This should never happen once the tree is installed.
             Debug.Assert(false, "Insert called without a line tree.");
             _maxLineLen = -1;
         }
@@ -260,7 +265,7 @@ public sealed class PieceTable {
         }
         ArgumentOutOfRangeException.ThrowIfNegative(ofs);
         ArgumentOutOfRangeException.ThrowIfNegative(len);
-        if (_buf.LengthIsKnown) {
+        if (Buffer.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs + len, Length);
         }
 
@@ -290,10 +295,7 @@ public sealed class PieceTable {
 
         Piece? rightRemainder = null;
         if (endOfsInPiece > 0 && endPiece < _pieces.Count) {
-            var ep = _pieces[endPiece];
-            rightRemainder = ep.Len == WholeBufSentinel
-                ? new Piece(BufferKind.Original, ep.Start + endOfsInPiece, WholeBufSentinel)
-                : ep.SkipFirst(endOfsInPiece);
+            rightRemainder = _pieces[endPiece].SkipFirst(endOfsInPiece);
             if (rightRemainder.Value.IsEmpty) {
                 rightRemainder = null;
             }
@@ -343,21 +345,9 @@ public sealed class PieceTable {
         var len = Length;
         var sb = new StringBuilder((int)Math.Min(len, int.MaxValue));
         foreach (var p in _pieces) {
-            if (p.Len == WholeBufSentinel) {
-                var bufLen = (int)(_buf!.Length - p.Start);
-                var chars = new char[bufLen];
-                _buf.CopyTo(p.Start, chars, bufLen);
-                sb.Append(chars);
-            } else if (p.Which == BufferKind.Original) {
-                var chars = new char[(int)p.Len];
-                _buf.CopyTo(p.Start, chars, (int)p.Len);
-                sb.Append(chars);
-            } else {
-                var charLen = (int)p.Len;
-                var chars = new char[charLen];
-                _addBuf.CopyTo(p.Start, charLen, chars);
-                sb.Append(chars);
-            }
+            var chars = new char[(int)p.Len];
+            _buffers[p.BufIdx].CopyTo(p.Start, chars, (int)p.Len);
+            sb.Append(chars);
         }
         return sb.ToString();
     }
@@ -383,7 +373,7 @@ public sealed class PieceTable {
                 $"GetText len ({len}) exceeds MaxGetTextLength ({MaxGetTextLength}). " +
                 "Use ForEachPiece for large ranges.");
         }
-        if (_buf.LengthIsKnown) {
+        if (Buffer.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(start + len, Length);
         }
 
@@ -414,27 +404,16 @@ public sealed class PieceTable {
         for (var i = startPiece; i < _pieces.Count && remaining > 0; i++) {
             var p = _pieces[i];
             var pieceOfs = i == startPiece ? startOfsInPiece : 0L;
-
-            if (p.Len == WholeBufSentinel || p.Which == BufferKind.Original) {
-                var pieceLen = p.Len == WholeBufSentinel
-                    ? _buf!.Length - p.Start : p.Len;
-                var avail = pieceLen - pieceOfs;
-                var pieceRemaining = Math.Min(avail, remaining);
-                while (pieceRemaining > 0) {
-                    var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
-                    _buf!.CopyTo(p.Start + pieceOfs, dest.Slice(destOfs, take), take);
-                    destOfs += take;
-                    pieceOfs += take;
-                    pieceRemaining -= take;
-                    remaining -= take;
-                }
-            } else {
-                var avail = p.Len - pieceOfs;
-                var pieceRemaining = (int)Math.Min(avail, remaining);
-                _addBuf.CopyTo(p.Start + pieceOfs, pieceRemaining, dest.Slice(destOfs, pieceRemaining));
-                destOfs += pieceRemaining;
-                pieceOfs += pieceRemaining;
-                remaining -= pieceRemaining;
+            var buf = _buffers[p.BufIdx];
+            var avail = p.Len - pieceOfs;
+            var pieceRemaining = Math.Min(avail, remaining);
+            while (pieceRemaining > 0) {
+                var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
+                buf.CopyTo(p.Start + pieceOfs, dest.Slice(destOfs, take), take);
+                destOfs += take;
+                pieceOfs += take;
+                pieceRemaining -= take;
+                remaining -= take;
             }
         }
     }
@@ -461,7 +440,7 @@ public sealed class PieceTable {
     /// <summary>Returns the zero-based line index that contains logical offset <paramref name="ofs"/>.</summary>
     public long LineFromOfs(CharOffset ofs) {
         ArgumentOutOfRangeException.ThrowIfNegative(ofs);
-        if (_buf.LengthIsKnown) {
+        if (Buffer.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs, Length);
         }
         if (_lineTree != null) {
@@ -534,33 +513,35 @@ public sealed class PieceTable {
     // Internal helpers
     // -------------------------------------------------------------------------
 
-    /// <summary>The underlying UTF-8 add buffer, exposed for session persistence.</summary>
-    public ChunkedUtf8Buffer AddBuffer => _addBuf;
-
-    /// <summary>
-    /// Replaces the add buffer wholesale (used by session restore to load
-    /// a previously persisted buffer before replaying edits).
-    /// </summary>
-    public void SetAddBuffer(ChunkedUtf8Buffer buffer) => _addBuf = buffer;
-
     /// <summary>
     /// Finds the piece and within-piece offset for a given logical document offset.
     /// Returns (pieces.Count, 0) when ofs == Length (i.e., end-of-document).
     /// </summary>
     private (int pieceIdx, long ofsInPiece) FindPiece(long ofs) {
+        EnsureInitialPiece();
         var remaining = ofs;
         for (var i = 0; i < _pieces.Count; i++) {
-            var p = _pieces[i];
-            // Sentinel piece: spans the whole remaining buffer — always matches.
-            if (p.Len == WholeBufSentinel) {
+            if (remaining < _pieces[i].Len) {
                 return (i, remaining);
             }
-            if (remaining < p.Len) {
-                return (i, remaining);
-            }
-            remaining -= p.Len;
+            remaining -= _pieces[i].Len;
         }
         return (_pieces.Count, 0L); // ofs == Length
+    }
+
+    /// <summary>
+    /// Lazily creates the initial piece for the original buffer when its
+    /// length was not known at construction time (paged, streaming, or
+    /// procedural buffers).
+    /// </summary>
+    private void EnsureInitialPiece() {
+        if (!_initialPieceResolved) {
+            _initialPieceResolved = true;
+            var len = Buffer.Length;
+            if (len > 0) {
+                _pieces.Add(new Piece(0, 0, len));
+            }
+        }
     }
 
     /// <summary>Maximum char[] allocation per visitor callback (1 MB of chars = 2 MB).</summary>
@@ -575,41 +556,17 @@ public sealed class PieceTable {
         for (var i = startPiece; i < _pieces.Count && remaining > 0; i++) {
             var p = _pieces[i];
             var pieceOfs = i == startPiece ? startOfsInPiece : 0L;
-
-            if (p.Len == WholeBufSentinel) {
-                var bufAvail = _buf!.Length - (p.Start + pieceOfs);
-                var pieceRemaining = Math.Min(remaining, bufAvail);
-                while (pieceRemaining > 0) {
-                    var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
-                    var chars = new char[take];
-                    _buf.CopyTo(p.Start + pieceOfs, chars, take);
-                    visitor(chars);
-                    pieceOfs += take;
-                    pieceRemaining -= take;
-                    remaining -= take;
-                }
-            } else if (p.Which == BufferKind.Original) {
-                var avail = p.Len - pieceOfs;
-                var pieceRemaining = Math.Min(avail, remaining);
-                while (pieceRemaining > 0) {
-                    var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
-                    var chars = new char[take];
-                    _buf.CopyTo(p.Start + pieceOfs, chars, take);
-                    visitor(chars);
-                    pieceOfs += take;
-                    pieceRemaining -= take;
-                    remaining -= take;
-                }
-            } else {
-                var avail = p.Len - pieceOfs;
-                var pieceRemaining = (int)Math.Min(avail, remaining);
-                _addBuf.Visit(p.Start + pieceOfs, pieceRemaining, span => {
-                    visitor(span);
-                    var consumed = span.Length;
-                    pieceOfs += consumed;
-                    pieceRemaining -= consumed;
-                    remaining -= consumed;
-                });
+            var buf = _buffers[p.BufIdx];
+            var avail = p.Len - pieceOfs;
+            var pieceRemaining = Math.Min(avail, remaining);
+            while (pieceRemaining > 0) {
+                var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
+                var chars = new char[take];
+                buf.CopyTo(p.Start + pieceOfs, chars, take);
+                visitor(chars);
+                pieceOfs += take;
+                pieceRemaining -= take;
+                remaining -= take;
             }
         }
     }
@@ -620,6 +577,7 @@ public sealed class PieceTable {
     /// unblocking input.
     /// </summary>
     public void InstallLineTree(ReadOnlySpan<int> lineLengths) {
+        EnsureInitialPiece();
         // Check if any entry exceeds MaxPseudoLine and needs splitting.
         var needsSplit = false;
         foreach (var len in lineLengths) {
@@ -739,38 +697,47 @@ public sealed class PieceTable {
     /// newline positions in the inserted text.  O(k log L) via treap
     /// InsertRange/RemoveAt.
     /// </summary>
+    /// <summary>
+    /// Splices the line tree after a newline-containing insert. Scans the
+    /// inserted text (via IBuffer) for newlines to compute line lengths.
+    /// Uses chunked reads to avoid materializing the full insert as a string.
+    /// </summary>
     private void SpliceInsertLines(LineIndex line, CharOffset lineStart, int oldLineLen,
-                                   CharOffset insertOfs, string text) {
+                                   CharOffset insertOfs, IBuffer buf, long bufStart, int textLen) {
         var prefixLen = (int)(insertOfs - lineStart);
         var suffixLen = oldLineLen - prefixLen;
 
-        // Compute replacement line lengths from the inserted text.
-        Span<int> buf = stackalloc int[Math.Min(text.Length + 1, 64)];
-        var newLines = text.Length + 1 <= 64 ? buf : new int[text.Length + 1];
-        var nlCount = 0;
+        // Scan the inserted text in chunks, building line lengths incrementally.
+        var newLines = new List<int>();
         var cur = prefixLen;
         var prevCr = false;
-        for (var i = 0; i < text.Length; i++) {
-            var ch = text[i];
-            if (prevCr) {
-                prevCr = false;
-                if (ch == '\n') { newLines[nlCount - 1]++; continue; }
+        var scanBuf = new char[Math.Min(textLen, MaxVisitChunk)];
+        var scanned = 0;
+        while (scanned < textLen) {
+            var take = Math.Min(textLen - scanned, scanBuf.Length);
+            buf.CopyTo(bufStart + scanned, scanBuf, take);
+            for (var i = 0; i < take; i++) {
+                var ch = scanBuf[i];
+                if (prevCr) {
+                    prevCr = false;
+                    if (ch == '\n') { newLines[^1]++; continue; }
+                }
+                cur++;
+                if (ch == '\n') { newLines.Add(cur); cur = 0; }
+                else if (ch == '\r') { newLines.Add(cur); cur = 0; prevCr = true; }
             }
-            cur++;
-            if (ch == '\n') { newLines[nlCount++] = cur; cur = 0; }
-            else if (ch == '\r') { newLines[nlCount++] = cur; cur = 0; prevCr = true; }
+            scanned += take;
         }
         cur += suffixLen;
-        newLines[nlCount++] = cur;
+        newLines.Add(cur);
 
         // Replace the single line with the new lines.
         _lineTree!.RemoveAt(line);
-        _lineTree.InsertRange(line, newLines[..nlCount]);
-        // The old line was split — each new line is ≤ oldLineLen.
-        // Max can only increase if a new line exceeds it (unlikely but check).
+        _lineTree.InsertRange(line,
+            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(newLines));
         if (_maxLineLen >= 0) {
-            for (var i = 0; i < nlCount; i++) {
-                if (newLines[i] > _maxLineLen) _maxLineLen = newLines[i];
+            foreach (var l in newLines) {
+                if (l > _maxLineLen) _maxLineLen = l;
             }
         }
     }
@@ -905,12 +872,11 @@ public sealed class PieceTable {
         var result = new List<Piece>();
         for (var i = startPiece; i <= endPiece && i < _pieces.Count; i++) {
             var p = _pieces[i];
-            var pLen = p.Len == WholeBufSentinel ? _buf.Length - p.Start : p.Len;
             var skip = (i == startPiece) ? startOfsInPiece : 0L;
-            var limit = (i == endPiece) ? endOfsInPiece : pLen;
+            var limit = (i == endPiece) ? endOfsInPiece : p.Len;
             var take = limit - skip;
             if (take <= 0) continue;
-            result.Add(new Piece(p.Which, p.Start + skip, take));
+            result.Add(new Piece(p.BufIdx, p.Start + skip, take));
         }
         return result.ToArray();
     }
@@ -925,23 +891,16 @@ public sealed class PieceTable {
         foreach (var p in pieces) totalLen += p.Len;
         var sb = new StringBuilder((int)Math.Min(totalLen, int.MaxValue));
         foreach (var p in pieces) {
-            if (p.Which == BufferKind.Original) {
-                // Read in chunks to avoid single huge char[] allocation.
-                var ofs = p.Start;
-                var pieceRemaining = p.Len;
-                while (pieceRemaining > 0) {
-                    var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
-                    var chars = new char[take];
-                    _buf.CopyTo(ofs, chars, take);
-                    sb.Append(chars);
-                    ofs += take;
-                    pieceRemaining -= take;
-                }
-            } else {
-                var charLen = (int)p.Len;
-                var chars = new char[charLen];
-                _addBuf.CopyTo(p.Start, charLen, chars);
+            var buf = _buffers[p.BufIdx];
+            var ofs = p.Start;
+            var pieceRemaining = p.Len;
+            while (pieceRemaining > 0) {
+                var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
+                var chars = new char[take];
+                buf.CopyTo(ofs, chars, take);
                 sb.Append(chars);
+                ofs += take;
+                pieceRemaining -= take;
             }
         }
         return sb.ToString();
@@ -970,20 +929,46 @@ public sealed class PieceTable {
         _addBuf.Append(text);
 
     /// <summary>
-    /// Inserts a piece referencing [<paramref name="addBufStart"/>,
-    /// <paramref name="addBufStart"/>+<paramref name="len"/>) from the add buffer
-    /// into the piece list at logical offset <paramref name="ofs"/>, and updates
-    /// the line tree. The data must already exist in the add buffer.
+    /// Inserts a piece referencing [<paramref name="bufStart"/>,
+    /// <paramref name="bufStart"/>+<paramref name="len"/>) from the add buffer
+    /// into the piece list at logical offset <paramref name="ofs"/>.
     /// </summary>
-    public void InsertFromAddBuffer(CharOffset ofs, long addBufStart, int len) {
+    public void InsertFromAddBuffer(CharOffset ofs, long bufStart, int len) =>
+        InsertFromBuffer(ofs, _addBufIdx, bufStart, len);
+
+    /// <summary>
+    /// Inserts a piece referencing [<paramref name="bufStart"/>,
+    /// <paramref name="bufStart"/>+<paramref name="len"/>) from buffer
+    /// <paramref name="bufIdx"/> into the piece list at logical offset
+    /// <paramref name="ofs"/>, and updates the line tree.
+    /// </summary>
+    public void InsertFromBuffer(CharOffset ofs, int bufIdx, long bufStart, int len) {
         if (len == 0) return;
         ArgumentOutOfRangeException.ThrowIfNegative(ofs);
-        if (_buf.LengthIsKnown) {
+        if (Buffer.LengthIsKnown) {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(ofs, Length);
         }
 
-        // Pre-mutation: capture line info for incremental tree update.
-        var hasNewlines = _addBuf.IndexOfAny(addBufStart, len, '\n', '\r') >= 0;
+        var buf = _buffers[bufIdx];
+
+        // Pre-mutation: check for newlines using the target buffer.
+        var hasNewlines = false;
+        // Scan for newlines by reading a small chunk from the buffer.
+        {
+            var scanBuf = new char[Math.Min(len, MaxVisitChunk)];
+            var scanned = 0;
+            var scanOfs = bufStart;
+            while (scanned < len && !hasNewlines) {
+                var take = Math.Min(len - scanned, scanBuf.Length);
+                buf.CopyTo(scanOfs, scanBuf, take);
+                if (scanBuf.AsSpan(0, take).IndexOfAny('\n', '\r') >= 0) {
+                    hasNewlines = true;
+                }
+                scanned += take;
+                scanOfs += take;
+            }
+        }
+
         LineIndex affectedLine = -1;
         CharOffset lineStart = 0;
         int oldLineLen = 0;
@@ -993,7 +978,7 @@ public sealed class PieceTable {
             oldLineLen = _lineTree.ValueAt(affectedLine);
         }
 
-        var newPiece = new Piece(BufferKind.Add, addBufStart, len);
+        var newPiece = new Piece(bufIdx, bufStart, len);
         var (pieceIdx, ofsInPiece) = FindPiece(ofs);
 
         if (ofsInPiece == 0L) {
@@ -1001,12 +986,7 @@ public sealed class PieceTable {
         } else {
             var existing = _pieces[pieceIdx];
             var left = existing.TakeFirst(ofsInPiece);
-            Piece right;
-            if (existing.Len == WholeBufSentinel) {
-                right = new Piece(BufferKind.Original, existing.Start + ofsInPiece, WholeBufSentinel);
-            } else {
-                right = existing.SkipFirst(ofsInPiece);
-            }
+            var right = existing.SkipFirst(ofsInPiece);
             _pieces[pieceIdx] = left;
             _pieces.Insert(pieceIdx + 1, newPiece);
             _pieces.Insert(pieceIdx + 2, right);
@@ -1019,13 +999,12 @@ public sealed class PieceTable {
             if (newLen > _maxLineLen) _maxLineLen = newLen;
             SplitLongLine(affectedLine);
         } else if (affectedLine >= 0 && hasNewlines) {
-            // SpliceInsertLines needs a string for the inserted text.
-            var text = _addBuf.GetSlice(addBufStart, len);
-            SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs, text);
+            SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs,
+                buf, bufStart, len);
             var nlCount = (int)(LineFromOfs(Math.Min(ofs + len, Length)) - affectedLine + 1);
             SplitLongLines(affectedLine, nlCount);
         } else {
-            Debug.Assert(false, "InsertFromAddBuffer called without a line tree.");
+            Debug.Assert(false, "InsertFromBuffer called without a line tree.");
             _maxLineLen = -1;
         }
         AssertLineTreeValid();
@@ -1072,7 +1051,7 @@ public sealed class PieceTable {
         }
 
         var replacementPiece = replacement.Length > 0
-            ? new Piece(BufferKind.Add, addOfs, replacement.Length)
+            ? new Piece(_addBufIdx, addOfs, replacement.Length)
             : default;
 
         BulkReplaceCore(matchPositions.Length,
@@ -1103,7 +1082,7 @@ public sealed class PieceTable {
             i => matches[i].Pos,
             i => matches[i].Len,
             i => addSpans[i].Len > 0
-                ? new Piece(BufferKind.Add, addSpans[i].Ofs, addSpans[i].Len)
+                ? new Piece(_addBufIdx, addSpans[i].Ofs, addSpans[i].Len)
                 : default);
     }
 
@@ -1159,25 +1138,20 @@ public sealed class PieceTable {
 
         while (pieceIdx < _pieces.Count && docOfs < targetOfs) {
             var p = _pieces[pieceIdx];
-            var pLen = p.Len == WholeBufSentinel ? _buf.Length - p.Start : p.Len;
-            var remaining = pLen - ofsInPiece;
+            var remaining = p.Len - ofsInPiece;
             var available = Math.Min(remaining, targetOfs - docOfs);
 
             if (available == remaining) {
                 // Take the rest of this piece.
-                if (ofsInPiece == 0) {
-                    dest.Add(p.Len == WholeBufSentinel
-                        ? new Piece(p.Which, p.Start, pLen)
-                        : p);
-                } else {
-                    dest.Add(new Piece(p.Which, p.Start + ofsInPiece, remaining));
-                }
+                dest.Add(ofsInPiece == 0
+                    ? p
+                    : new Piece(p.BufIdx, p.Start + ofsInPiece, remaining));
                 pieceIdx++;
                 ofsInPiece = 0;
                 docOfs += remaining;
             } else {
                 // Take a prefix of this piece.
-                dest.Add(new Piece(p.Which, p.Start + ofsInPiece, available));
+                dest.Add(new Piece(p.BufIdx, p.Start + ofsInPiece, available));
                 ofsInPiece += available;
                 docOfs += available;
             }
@@ -1192,8 +1166,7 @@ public sealed class PieceTable {
         var toSkip = skipLen;
         while (toSkip > 0 && pieceIdx < _pieces.Count) {
             var p = _pieces[pieceIdx];
-            var pLen = p.Len == WholeBufSentinel ? _buf.Length - p.Start : p.Len;
-            var remaining = pLen - ofsInPiece;
+            var remaining = p.Len - ofsInPiece;
 
             if (toSkip >= remaining) {
                 toSkip -= remaining;
@@ -1214,13 +1187,7 @@ public sealed class PieceTable {
             throw new ArgumentOutOfRangeException(nameof(ofs));
         }
         var p = _pieces[pieceIdx];
-        if (p.Len == WholeBufSentinel) {
-            return _buf![p.Start + ofsInPiece];
-        }
-        if (p.Which == BufferKind.Original) {
-            return _buf[p.Start + ofsInPiece];
-        }
-        return _addBuf.CharAt(p.Start + ofsInPiece);
+        return _buffers[p.BufIdx][p.Start + ofsInPiece];
     }
 
     /// <summary>
