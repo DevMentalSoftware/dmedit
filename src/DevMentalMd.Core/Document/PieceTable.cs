@@ -578,6 +578,19 @@ public sealed class PieceTable {
     /// </summary>
     public void InstallLineTree(ReadOnlySpan<int> lineLengths) {
         EnsureInitialPiece();
+
+        // During streaming/paged loads, EnsureInitialPiece may have been
+        // called while the buffer scan was still in progress, capturing a
+        // partial _totalChars.  Now that the scan is complete, reconcile
+        // the initial piece to match the final buffer length.
+        var bufLen = Buffer.Length;
+        if (_pieces.Count == 0) {
+            if (bufLen > 0) _pieces.Add(new Piece(0, 0, bufLen));
+        } else if (_pieces.Count == 1 && _pieces[0].BufIdx == 0
+                   && _pieces[0].Len != bufLen) {
+            _pieces[0] = new Piece(0, 0, bufLen);
+        }
+
         // Check if any entry exceeds MaxPseudoLine and needs splitting.
         var needsSplit = false;
         foreach (var len in lineLengths) {

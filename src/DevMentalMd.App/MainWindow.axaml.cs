@@ -2643,8 +2643,11 @@ public partial class MainWindow : Window {
             Editor.PerfStats.FirstChunkTimeMs = 0;
             Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
 
-            // Throttle: only one post queued at a time so we don't
-            // saturate the dispatcher and starve the spinner timer.
+            // Track scan progress for perf stats.  Don't call
+            // InvalidateLayout — the PieceTable can't be queried
+            // consistently until the scan finishes and InstallLineTree
+            // reconciles the initial piece.  The completion handler
+            // does the first real layout.
             var layoutPending = 0;
             buf.ProgressChanged += () => {
                 if (Interlocked.CompareExchange(ref layoutPending, 1, 0) == 0) {
@@ -2656,7 +2659,6 @@ public partial class MainWindow : Window {
                             Editor.PerfStats.FirstChunkTimeMs = sw.Elapsed.TotalMilliseconds;
                         }
                         Editor.PerfStats.LoadTimeMs = sw.Elapsed.TotalMilliseconds;
-                        Editor.InvalidateLayout();
                     }, DispatcherPriority.Background);
                 }
             };
@@ -3126,23 +3128,17 @@ public partial class MainWindow : Window {
     /// </summary>
     private void WireLoadCompletion(TabState tab, SessionStore.TabEntry entry,
         Stopwatch? sessionSw = null, int[]? loadingRemaining = null) {
-        // Wire streaming progress so the active tab re-layouts incrementally.
-        // Throttle: only one post is queued at a time so we don't saturate
-        // the dispatcher and starve the spinner timer.
+        // Wire streaming progress to update the tab bar (spinner) but
+        // don't call InvalidateLayout — the PieceTable can't be queried
+        // consistently until the scan finishes and InstallLineTree
+        // reconciles the initial piece.  The completion handler below
+        // does the first real layout.
         if (tab.Document.Table.Buffer is IProgressBuffer buf) {
             var layoutPending = 0;
             buf.ProgressChanged += () => {
-                // Suppress incremental rendering when session edits are pending —
-                // showing the base file content before edits are replayed would
-                // flash stale/wrong content.
-                if (tab.HasPendingEdits) return;
-
                 if (Interlocked.CompareExchange(ref layoutPending, 1, 0) == 0) {
                     Dispatcher.UIThread.Post(() => {
                         Interlocked.Exchange(ref layoutPending, 0);
-                        if (_activeTab == tab) {
-                            Editor.InvalidateLayout();
-                        }
                         UpdateTabBar();
                     }, DispatcherPriority.Background);
                 }

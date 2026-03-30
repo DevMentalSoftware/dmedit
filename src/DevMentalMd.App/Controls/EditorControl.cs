@@ -908,12 +908,14 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var len = (int)(endOfs - startOfs);
 
         // Sanity check: the visible window spans at most visibleRows lines,
-        // each capped at MaxPseudoLine chars.  If len exceeds that, the line
+        // each capped at MaxPseudoLine chars.  If len exceeds that, or the
+        // computed range falls outside the actual table content, the line
         // tree and piece table are in an inconsistent state (e.g. intermediate
-        // state during undo).  Skip this layout pass — the next one will see
-        // the consistent state.
+        // state during undo or document reload).  Skip this layout pass —
+        // the next one will see the consistent state.
+        var tableLen = doc.Table.Length;
         var maxLayoutBytes = visibleRows * PieceTable.MaxPseudoLine;
-        if (len > maxLayoutBytes) {
+        if (len > maxLayoutBytes || startOfs + len > tableLen) {
             _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, maxWidth);
             _extent = new Size(extentWidth, totalVisualRows * rh);
             RenderOffsetY = 0;
