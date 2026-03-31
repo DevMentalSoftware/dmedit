@@ -32,7 +32,6 @@ public sealed class PagedFileBuffer : IProgressBuffer {
 
     private const int PageSizeBytes = 1024 * 1024; // 1 MB raw bytes per page
     // No line can exceed MaxPseudoLine after InstallLineTree splits them.
-    private static readonly int MAX_LONGEST_LINE = Documents.PieceTable.MaxPseudoLine;
 
     /// <summary>
     /// Default maximum number of decoded pages kept in memory.
@@ -71,14 +70,16 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     // Line index (exact line lengths, built during scan)
     // -----------------------------------------------------------------
 
-    private List<int> _lineLengths = null!;  // every line's length including terminator
-    private int _currentLineLen;             // accumulates chars for the line in progress
-    private long _lineCount;                 // accessed via Interlocked
-    private volatile int _longestLine = Documents.PieceTable.MaxPseudoLine;
-    private long _lastLineStart;
+    private List<int> _lineLengths = null!;     // buf-space, set by LineScanner during scan
+    private List<int> _docLineLengths = null!;  // doc-space, set by LineScanner during scan
+    private long _lineCount;                    // accessed via Interlocked
+    private volatile int _longestLine;
+
+    // Run-length encoded terminator types built by LineScanner.
+    private List<(long StartLine, Documents.LineTerminatorType Type)>? _terminatorRuns;
 
     // -----------------------------------------------------------------
-    // Line ending counters (accumulated during scan)
+    // Line ending counters (populated from LineScanner after scan)
     // -----------------------------------------------------------------
 
     private int _lfCount;
@@ -95,7 +96,6 @@ public sealed class PagedFileBuffer : IProgressBuffer {
 
     private int _spaceIndentCount;
     private int _tabIndentCount;
-    private bool _atLineStart = true; // first line starts at col 0
 
     public IndentInfo DetectedIndent =>
         IndentInfo.FromCounts(_spaceIndentCount, _tabIndentCount);
@@ -152,15 +152,13 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         _path = path;
         _byteLen = byteLen;
         MaxPagesInMemory = maxPages;
+        _longestLine = Documents.PieceTable.MaxPseudoLine;
 
         // Pre-allocate page arrays based on file size.
         var estimatedPages = (int)Math.Min((byteLen + PageSizeBytes - 1) / PageSizeBytes, int.MaxValue);
         _pages = new PageInfo[Math.Max(estimatedPages, 1)];
         _pageData = new char[]?[_pages.Length];
 
-        // Line lengths: estimate ~1 line per 80 bytes.
-        var estimatedLines = (int)Math.Min(Math.Max(16L, byteLen / 80), int.MaxValue);
-        _lineLengths = new List<int>(estimatedLines);
         _lineCount = 1;
     }
 
@@ -347,8 +345,9 @@ public sealed class PagedFileBuffer : IProgressBuffer {
             var byteBuf = new byte[PageSizeBytes];
             var charBuf = new char[PageSizeBytes]; // worst case: 1 char per byte
             long cumulativeChars = 0;
-            long currentLine = 0;
-            var prevWasCr = false;
+
+            var estimatedLines = (int)Math.Min(Math.Max(16L, _byteLen / 80), int.MaxValue);
+            var scanner = new Documents.LineScanner(estimatedLines: estimatedLines);
 
             while (true) {
                 ct.ThrowIfCancellationRequested();
@@ -377,8 +376,15 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                     CharCount = charCount,
                 };
 
-                // Scan for newlines and build sampled line index.
-                ScanNewlines(charBuf, charCount, cumulativeChars, ref currentLine, ref prevWasCr);
+                // Scan for newlines, line lengths, and terminator types.
+                scanner.Scan(charBuf.AsSpan(0, charCount));
+
+                // Sync line count for progress reporting.
+                Interlocked.Exchange(ref _lineCount, scanner.LineCount);
+                lock (_lock) {
+                    _lineLengths = scanner.LineLengths;
+                    _docLineLengths = scanner.DocLineLengths;
+                }
 
                 // Retain decoded chars if within the page cache limit.
                 if (_loadedPageCount < MaxPagesInMemory) {
@@ -404,15 +410,20 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                 }
             }
 
-            // Handle trailing bare \r.
-            if (prevWasCr) {
-                _crCount++;
-                currentLine++;
-                Interlocked.Exchange(ref _lineCount, currentLine);
-            }
+            scanner.Finish();
 
-            // Add the final line (content after the last newline, may be empty).
-            lock (_lock) { _lineLengths.Add(_currentLineLen); }
+            // Sync final state from scanner.
+            Interlocked.Exchange(ref _lineCount, scanner.LineCount);
+            lock (_lock) {
+                _lineLengths = scanner.LineLengths;
+                _docLineLengths = scanner.DocLineLengths;
+                _terminatorRuns = scanner.TerminatorRuns;
+            }
+            _lfCount = scanner.LfCount;
+            _crlfCount = scanner.CrlfCount;
+            _crCount = scanner.CrCount;
+            _spaceIndentCount = scanner.SpaceIndentCount;
+            _tabIndentCount = scanner.TabIndentCount;
 
             Interlocked.Exchange(ref _totalChars, cumulativeChars);
             _sha1 = Convert.ToHexStringLower(hasher.GetHashAndReset());
@@ -434,90 +445,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     /// </summary>
     public void WaitUntilLoaded() => _loadedEvent.Wait();
 
-    // -----------------------------------------------------------------
-    // Newline scanning (builds sampled line index)
-    // -----------------------------------------------------------------
-
-    private void ScanNewlines(char[] data, int charCount, long charBase,
-        ref long currentLine, ref bool prevWasCr) {
-
-        for (int i = 0; i < charCount; i++) {
-            var ch = data[i];
-            if (ch == '\n') {
-                if (prevWasCr) {
-                    // \r\n — already counted the line at the \r; add the \n to its length.
-                    // Don't increment _currentLineLen — the \n belongs to the previous line.
-                    _crlfCount++;
-                    lock (_lock) { _lineLengths[^1] = _lineLengths[^1] + 1; } // extend \r to \r\n
-                    prevWasCr = false;
-                    _atLineStart = true;
-                    continue;
-                }
-                _lfCount++;
-                _currentLineLen++; // include the \n in this line's length
-                lock (_lock) { _lineLengths.Add(_currentLineLen); }
-                currentLine++;
-                Interlocked.Exchange(ref _lineCount, currentLine + 1);
-                long charOffset = charBase + i + 1;
-                CheckLongestLine(charOffset);
-                _currentLineLen = 0;
-                _atLineStart = true;
-            } else if (ch == '\r') {
-                if (prevWasCr) {
-                    _crCount++;
-                }
-                _currentLineLen++; // include the \r in this line's length
-                lock (_lock) { _lineLengths.Add(_currentLineLen); }
-                currentLine++;
-                Interlocked.Exchange(ref _lineCount, currentLine + 1);
-                long charOffset = charBase + i + 1;
-                CheckLongestLine(charOffset);
-                _currentLineLen = 0;
-                prevWasCr = true;
-                _atLineStart = true;
-            } else {
-                if (prevWasCr) {
-                    _crCount++;
-                }
-                prevWasCr = false;
-
-                // Pseudo-split: emit a line entry before this char pushes
-                // us past MaxPseudoLine, so no entry ever exceeds the limit.
-                if (_currentLineLen >= Documents.PieceTable.MaxPseudoLine) {
-                    lock (_lock) { _lineLengths.Add(_currentLineLen); }
-                    currentLine++;
-                    Interlocked.Exchange(ref _lineCount, currentLine + 1);
-                    _currentLineLen = 0;
-                }
-
-                _currentLineLen++;
-
-                // Track indentation style: check first char of each line.
-                if (_atLineStart) {
-                    if (ch == ' ') {
-                        _spaceIndentCount++;
-                    } else if (ch == '\t') {
-                        _tabIndentCount++;
-                    }
-                    _atLineStart = false;
-                }
-            }
-        }
-    }
-
-    private void CheckLongestLine(long charOffset) {
-        if (_longestLine >= MAX_LONGEST_LINE) {
-            return;
-        }
-        // Single-writer (scan worker) + multi-reader (UI thread) pattern:
-        // volatile on _longestLine provides the cross-thread visibility
-        // guarantee.  No lock needed since only the scan worker writes.
-        int lx = (int)Math.Min(MAX_LONGEST_LINE, charOffset - _lastLineStart);
-        if (lx > _longestLine) {
-            _longestLine = lx;
-        }
-        _lastLineStart = charOffset;
-    }
+    // ScanNewlines replaced by LineScanner — see ScanWorker.
 
     /// <summary>
     /// Returns the exact line lengths computed during the scan.
@@ -530,6 +458,52 @@ public sealed class PagedFileBuffer : IProgressBuffer {
             _lineLengths = null!;
             return result;
         }
+    }
+
+    /// <summary>
+    /// Returns the doc-space line lengths computed during the scan.
+    /// Only valid after <see cref="LoadComplete"/> has fired.
+    /// The caller takes ownership; the buffer clears its reference.
+    /// </summary>
+    public List<int>? TakeDocLineLengths() {
+        lock (_lock) {
+            var result = _docLineLengths;
+            _docLineLengths = null!;
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Returns the run-length encoded terminator type list built during the scan.
+    /// Only valid after <see cref="LoadComplete"/> has fired.
+    /// The caller takes ownership; the buffer clears its reference.
+    /// </summary>
+    public List<(long StartLine, Documents.LineTerminatorType Type)>? TakeTerminatorRuns() {
+        lock (_lock) {
+            var result = _terminatorRuns;
+            _terminatorRuns = null!;
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Looks up the terminator type for a given line index using the
+    /// run-length encoded list. Binary search: O(log R) where R is the
+    /// number of distinct runs (typically 1).
+    /// </summary>
+    public Documents.LineTerminatorType GetLineTerminator(long lineIdx) {
+        var runs = _terminatorRuns;
+        if (runs == null || runs.Count == 0)
+            return Documents.LineTerminatorType.None;
+
+        // Binary search for the last run with StartLine <= lineIdx.
+        int lo = 0, hi = runs.Count - 1;
+        while (lo < hi) {
+            var mid = lo + (hi - lo + 1) / 2;
+            if (runs[mid].StartLine <= lineIdx) lo = mid;
+            else hi = mid - 1;
+        }
+        return runs[lo].Type;
     }
 
     // -----------------------------------------------------------------

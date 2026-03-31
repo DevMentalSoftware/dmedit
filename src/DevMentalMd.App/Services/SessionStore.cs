@@ -300,10 +300,10 @@ public static class SessionStore {
     }
 
     private static void RestoreSelection(Document doc, TabEntry entry) {
-        var len = doc.Table.Length;
+        var docLen = doc.Table.DocLength;
         doc.Selection = new Selection(
-            Math.Clamp(entry.CaretAnchor, 0, len),
-            Math.Clamp(entry.CaretActive, 0, len));
+            Math.Clamp(entry.CaretAnchor, 0, docLen),
+            Math.Clamp(entry.CaretActive, 0, docLen));
     }
 
     /// <summary>

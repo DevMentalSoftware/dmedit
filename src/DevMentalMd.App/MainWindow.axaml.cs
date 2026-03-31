@@ -72,6 +72,7 @@ public partial class MainWindow : Window {
     private bool _altPressedClean;
 
     public MainWindow() {
+        PieceTable.MaxPseudoLine = _settings.MaxPseudoLine;
         InitializeComponent();
         RegisterWindowCommands();
         Editor.RegisterCommands();
@@ -1729,10 +1730,11 @@ public partial class MainWindow : Window {
             var lineCol = "";
             // During loading, line-start lookups can fail (pages not in memory).
             if (!stillLoading) {
-                var caret = Math.Min(doc.Selection.Caret, table.Length);
-                var lineIdx = table.LineFromOfs(caret);
-                var lineStart = table.LineStartOfs(lineIdx);
-                var col = caret - lineStart + 1;
+                var caret = Math.Min(doc.Selection.Caret, table.DocLength);
+                var lineIdx = table.LineFromDocOfs(caret);
+                var docLineStart = table.DocLineStartOfs(lineIdx);
+                var contentLen = table.LineContentLength((int)lineIdx);
+                var col = Math.Min(caret - docLineStart, contentLen) + 1;
                 var line = lineIdx + 1;
 
                 var lnText = $"{line:N0}".PadLeft(lcWidth);
@@ -2548,14 +2550,21 @@ public partial class MainWindow : Window {
         newTab.Document.EncodingInfo = result.Document.EncodingInfo;
         if (result.Buffer is PagedFileBuffer paged) {
             var lengths = paged.TakeLineLengths();
+            var docLengths = paged.TakeDocLineLengths();
             if (lengths is { Count: > 0 }) {
-                newTab.Document.Table.InstallLineTree(
-                    CollectionsMarshal.AsSpan(lengths));
+                if (docLengths is { Count: > 0 }) {
+                    newTab.Document.Table.InstallLineTree(
+                        CollectionsMarshal.AsSpan(lengths),
+                        CollectionsMarshal.AsSpan(docLengths));
+                } else {
+                    newTab.Document.Table.InstallLineTree(
+                        CollectionsMarshal.AsSpan(lengths));
+                }
             }
         }
 
         // ---- Transfer live editor state → new document ----
-        var newLen = newTab.Document.Table.Length;
+        var newLen = newTab.Document.Table.DocLength;
         var isActive = tab == _activeTab;
 
         if (isActive) {
@@ -2622,7 +2631,7 @@ public partial class MainWindow : Window {
         var table = tab.Document.Table;
         var lineCount = table.LineCount;
         if (lineCount <= 0) return true;
-        var caretLine = table.LineFromOfs(tab.Document.Selection.Caret);
+        var caretLine = table.LineFromDocOfs(tab.Document.Selection.Caret);
         return caretLine >= lineCount - 1;
     }
 
@@ -2806,8 +2815,8 @@ public partial class MainWindow : Window {
         long currentLine = 1;
         if (doc != null) {
             var table = doc.Table;
-            var caret = Math.Min(doc.Selection.Caret, table.Length);
-            currentLine = table.LineFromOfs(caret) + 1;
+            var caret = Math.Min(doc.Selection.Caret, table.DocLength);
+            currentLine = table.LineFromDocOfs(caret) + 1;
         }
 
         var dialog = new GoToLineWindow(_theme, currentLine);
@@ -2816,15 +2825,12 @@ public partial class MainWindow : Window {
         if (dialog.TargetLine is { } targetLine && doc != null) {
             var table = doc.Table;
             var lineIdx = Math.Clamp(targetLine - 1, 0, table.LineCount - 1);
-            var lineStart = table.LineStartOfs(lineIdx);
-            var pos = lineStart;
+            var docLineStart = table.DocLineStartOfs(lineIdx);
+            var pos = docLineStart;
             if (dialog.TargetCol is { } targetCol) {
-                // Clamp column to line length.
-                var nextLineStart = lineIdx + 1 < table.LineCount
-                    ? table.LineStartOfs(lineIdx + 1)
-                    : table.Length;
-                var lineLen = nextLineStart - lineStart;
-                pos = lineStart + Math.Clamp(targetCol - 1, 0, lineLen);
+                // Clamp column to line content length.
+                var contentLen = table.LineContentLength((int)lineIdx);
+                pos = docLineStart + Math.Clamp(targetCol - 1, 0, contentLen);
             }
             Editor.GoToPosition(pos);
         }
@@ -3164,9 +3170,16 @@ public partial class MainWindow : Window {
                 // line-tree maintenance during Insert/Delete/CaptureLineInfo.
                 if (tab.LoadResult?.Buffer is PagedFileBuffer paged) {
                     var lengths = paged.TakeLineLengths();
+                    var docLengths = paged.TakeDocLineLengths();
                     if (lengths is { Count: > 0 }) {
-                        tab.Document.Table.InstallLineTree(
-                            CollectionsMarshal.AsSpan(lengths));
+                        if (docLengths is { Count: > 0 }) {
+                            tab.Document.Table.InstallLineTree(
+                                CollectionsMarshal.AsSpan(lengths),
+                                CollectionsMarshal.AsSpan(docLengths));
+                        } else {
+                            tab.Document.Table.InstallLineTree(
+                                CollectionsMarshal.AsSpan(lengths));
+                        }
                     }
                 }
 
@@ -3225,9 +3238,16 @@ public partial class MainWindow : Window {
                 // This replaces the old PreBuildLineIndex post-scan rescan.
                 if (tab.LoadResult?.Buffer is PagedFileBuffer paged) {
                     var lengths = paged.TakeLineLengths();
+                    var docLengths = paged.TakeDocLineLengths();
                     if (lengths is { Count: > 0 }) {
-                        tab.Document.Table.InstallLineTree(
-                            CollectionsMarshal.AsSpan(lengths));
+                        if (docLengths is { Count: > 0 }) {
+                            tab.Document.Table.InstallLineTree(
+                                CollectionsMarshal.AsSpan(lengths),
+                                CollectionsMarshal.AsSpan(docLengths));
+                        } else {
+                            tab.Document.Table.InstallLineTree(
+                                CollectionsMarshal.AsSpan(lengths));
+                        }
                     }
                 }
 

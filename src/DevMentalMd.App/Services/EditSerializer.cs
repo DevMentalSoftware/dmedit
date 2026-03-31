@@ -207,7 +207,7 @@ public static class EditSerializer {
         // Saved state is not persisted — undo past a session restore boundary
         // for bulk edits is not supported (same as oversized deletes).
         return new UniformBulkReplaceEdit(
-            positions, matchLen, replacement, [], [], 0);
+            positions, matchLen, replacement, [], [], [], 0);
     }
 
     private static VaryingBulkReplaceEdit DeserializeVaryingBulk(JsonObject obj) {
@@ -220,7 +220,7 @@ public static class EditSerializer {
             replacements[i] = m["rep"]!.GetValue<string>();
         }
         return new VaryingBulkReplaceEdit(
-            matches, replacements, [], [], 0);
+            matches, replacements, [], [], [], 0);
     }
 
     private static CompoundEdit DeserializeCompound(JsonObject obj, int restoredBufIdx) {

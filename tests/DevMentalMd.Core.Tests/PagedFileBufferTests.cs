@@ -499,4 +499,162 @@ public class PagedFileBufferTests : IDisposable {
         table.Insert(3, "XYZ");
         Assert.Equal("ABCXYZDEF", table.GetText());
     }
+
+    // -------------------------------------------------------------------------
+    // Terminator type tracking
+    // -------------------------------------------------------------------------
+
+    /// <summary>Helper: builds a string of <paramref name="n"/> content chars.</summary>
+    private static string Chars(int n, char ch = 'a') => new(ch, n);
+
+    [Fact]
+    public void TerminatorType_EmptyFile() {
+        var path = WriteTempFile("");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(1L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(0));
+    }
+
+    [Fact]
+    public void TerminatorType_OneChar_NoTerminator() {
+        var path = WriteTempFile("a");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(1L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(0));
+    }
+
+    [Fact]
+    public void TerminatorType_OneChar_LF() {
+        var path = WriteTempFile("a\n");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(2L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.LF, buf.GetLineTerminator(0));
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(1));
+    }
+
+    [Fact]
+    public void TerminatorType_OneChar_CRLF() {
+        var path = WriteTempFile("a\r\n");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(2L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.CRLF, buf.GetLineTerminator(0));
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(1));
+    }
+
+    [Fact]
+    public void TerminatorType_498Chars_CRLF() {
+        // 498 content + CRLF = 500 total, fits in one line entry
+        var path = WriteTempFile(Chars(498) + "\r\n");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(2L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.CRLF, buf.GetLineTerminator(0));
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(1));
+        // Line 0 full length = 500, content = 498
+        var lengths = buf.TakeLineLengths()!;
+        Assert.Equal(500, lengths[0]);
+    }
+
+    [Fact]
+    public void TerminatorType_499Chars_LF() {
+        // 499 content + LF = 500 total
+        var path = WriteTempFile(Chars(499) + "\n");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(2L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.LF, buf.GetLineTerminator(0));
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(1));
+    }
+
+    [Fact]
+    public void TerminatorType_499Chars_CRLF() {
+        // 499 content + CRLF = 501 total — crosses MaxPseudoLine boundary
+        // but content is only 499, so no pseudo-split should occur
+        var path = WriteTempFile(Chars(499) + "\r\n");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(2L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.CRLF, buf.GetLineTerminator(0));
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(1));
+    }
+
+    [Fact]
+    public void TerminatorType_500Chars_NoTerminator() {
+        // Exactly MaxPseudoLine, no terminator — single line, no split
+        var path = WriteTempFile(Chars(500));
+        using var buf = LoadAndWait(path);
+        Assert.Equal(1L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(0));
+    }
+
+    [Fact]
+    public void TerminatorType_500Chars_LF() {
+        var path = WriteTempFile(Chars(500) + "\n");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(2L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.LF, buf.GetLineTerminator(0));
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(1));
+    }
+
+    [Fact]
+    public void TerminatorType_500Chars_CRLF() {
+        var path = WriteTempFile(Chars(500) + "\r\n");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(2L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.CRLF, buf.GetLineTerminator(0));
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(1));
+    }
+
+    [Fact]
+    public void TerminatorType_501Chars_NoTerminator_PseudoSplit() {
+        // 501 chars, no newline — splits into pseudo-line [500] + [1]
+        var path = WriteTempFile(Chars(501));
+        using var buf = LoadAndWait(path);
+        Assert.Equal(2L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.Pseudo, buf.GetLineTerminator(0));
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(1));
+    }
+
+    [Fact]
+    public void TerminatorType_501Chars_LF() {
+        // 501 content + LF — pseudo-split [500] + [1 + LF]
+        var path = WriteTempFile(Chars(501) + "\n");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(3L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.Pseudo, buf.GetLineTerminator(0));
+        Assert.Equal(LineTerminatorType.LF, buf.GetLineTerminator(1));
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(2));
+    }
+
+    [Fact]
+    public void TerminatorType_501Chars_CRLF() {
+        // 501 content + CRLF — pseudo-split [500] + [1 + CRLF]
+        var path = WriteTempFile(Chars(501) + "\r\n");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(3L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.Pseudo, buf.GetLineTerminator(0));
+        Assert.Equal(LineTerminatorType.CRLF, buf.GetLineTerminator(1));
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(2));
+    }
+
+    [Fact]
+    public void TerminatorType_UniformCRLF_SingleRun() {
+        // Multiple CRLF lines should produce minimal RLE entries
+        var path = WriteTempFile("line1\r\nline2\r\nline3\r\n");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(4L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.CRLF, buf.GetLineTerminator(0));
+        Assert.Equal(LineTerminatorType.CRLF, buf.GetLineTerminator(1));
+        Assert.Equal(LineTerminatorType.CRLF, buf.GetLineTerminator(2));
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(3));
+    }
+
+    [Fact]
+    public void TerminatorType_MixedEndings() {
+        // LF then CRLF then CR
+        var path = WriteTempFile("a\nb\r\nc\rd");
+        using var buf = LoadAndWait(path);
+        Assert.Equal(4L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.LF, buf.GetLineTerminator(0));
+        Assert.Equal(LineTerminatorType.CRLF, buf.GetLineTerminator(1));
+        Assert.Equal(LineTerminatorType.CR, buf.GetLineTerminator(2));
+        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(3));
+    }
 }

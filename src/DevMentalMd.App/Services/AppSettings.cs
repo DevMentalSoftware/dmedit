@@ -141,6 +141,13 @@ public sealed class AppSettings {
     public int IndentWidth { get; set; } = 4;
 
     /// <summary>
+    /// Maximum content characters per pseudo-line.  Lines exceeding this are
+    /// split for display purposes.  Lower values make pseudo-line logic easier
+    /// to observe during development.  Default: 500.
+    /// </summary>
+    public int MaxPseudoLine { get; set; } = 500;
+
+    /// <summary>
     /// Default indentation style for new/untitled documents. Files opened from
     /// disk use the detected style instead. Default: Spaces.
     /// </summary>

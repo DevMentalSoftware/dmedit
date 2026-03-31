@@ -9,7 +9,8 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void FromValues_PrefixSumsAreCorrect() {
-        var tree = LineIndexTree.FromValues([10, 20, 30, 40, 50]);
+        int[] v = [10, 20, 30, 40, 50];
+        var tree = LineIndexTree.FromValues(v, v);
         Assert.Equal(10, tree.PrefixSum(0));
         Assert.Equal(30, tree.PrefixSum(1));
         Assert.Equal(60, tree.PrefixSum(2));
@@ -19,19 +20,22 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void TotalSum_ReturnsSum() {
-        var tree = LineIndexTree.FromValues([5, 10, 15]);
+        int[] v = [5, 10, 15];
+        var tree = LineIndexTree.FromValues(v, v);
         Assert.Equal(30, tree.TotalSum());
     }
 
     [Fact]
     public void TotalSum_EmptyTree() {
-        var tree = LineIndexTree.FromValues([]);
+        int[] v = [];
+        var tree = LineIndexTree.FromValues(v, v);
         Assert.Equal(0, tree.TotalSum());
     }
 
     [Fact]
     public void ValueAt_ReturnsIndividualValues() {
-        var tree = LineIndexTree.FromValues([10, 20, 30, 40]);
+        int[] v = [10, 20, 30, 40];
+        var tree = LineIndexTree.FromValues(v, v);
         Assert.Equal(10, tree.ValueAt(0));
         Assert.Equal(20, tree.ValueAt(1));
         Assert.Equal(30, tree.ValueAt(2));
@@ -40,7 +44,8 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void Update_AdjustsValueAndPrefixSums() {
-        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        int[] v = [10, 20, 30];
+        var tree = LineIndexTree.FromValues(v, v);
         tree.Update(1, 5); // 20 → 25
         Assert.Equal(10, tree.PrefixSum(0));
         Assert.Equal(35, tree.PrefixSum(1));
@@ -50,7 +55,8 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void Update_NegativeDelta() {
-        var tree = LineIndexTree.FromValues([100, 200, 300]);
+        int[] v = [100, 200, 300];
+        var tree = LineIndexTree.FromValues(v, v);
         tree.Update(2, -50); // 300 → 250
         Assert.Equal(550, tree.TotalSum());
         Assert.Equal(250, tree.ValueAt(2));
@@ -58,7 +64,8 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void FindByPrefixSum_FindsCorrectIndex() {
-        var tree = LineIndexTree.FromValues([10, 20, 30, 40]);
+        int[] v = [10, 20, 30, 40];
+        var tree = LineIndexTree.FromValues(v, v);
         Assert.Equal(0, tree.FindByPrefixSum(5));
         Assert.Equal(0, tree.FindByPrefixSum(10));
         Assert.Equal(1, tree.FindByPrefixSum(11));
@@ -71,21 +78,24 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void FindByPrefixSum_TargetExceedsTotal_ReturnsNegativeOne() {
-        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        int[] v = [10, 20, 30];
+        var tree = LineIndexTree.FromValues(v, v);
         Assert.Equal(-1, tree.FindByPrefixSum(61));
         Assert.Equal(-1, tree.FindByPrefixSum(1000));
     }
 
     [Fact]
     public void FindByPrefixSum_TargetZeroOrNegative_ReturnsZero() {
-        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        int[] v = [10, 20, 30];
+        var tree = LineIndexTree.FromValues(v, v);
         Assert.Equal(0, tree.FindByPrefixSum(0));
         Assert.Equal(0, tree.FindByPrefixSum(-5));
     }
 
     [Fact]
     public void FindByPrefixSum_SingleElement() {
-        var tree = LineIndexTree.FromValues([42]);
+        int[] v = [42];
+        var tree = LineIndexTree.FromValues(v, v);
         Assert.Equal(0, tree.FindByPrefixSum(1));
         Assert.Equal(0, tree.FindByPrefixSum(42));
         Assert.Equal(-1, tree.FindByPrefixSum(43));
@@ -93,15 +103,18 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void FindByPrefixSum_EmptyTree() {
-        var tree = LineIndexTree.FromValues([]);
+        int[] v = [];
+        var tree = LineIndexTree.FromValues(v, v);
         Assert.Equal(-1, tree.FindByPrefixSum(1));
     }
 
     [Fact]
     public void Rebuild_ReplacesAllContent() {
-        var tree = LineIndexTree.FromValues([1, 2, 3]);
+        int[] v1 = [1, 2, 3];
+        var tree = LineIndexTree.FromValues(v1, v1);
         Assert.Equal(6, tree.TotalSum());
-        tree.Rebuild([10, 20, 30, 40]);
+        int[] v2 = [10, 20, 30, 40];
+        tree.Rebuild(v2, v2);
         Assert.Equal(4, tree.Count);
         Assert.Equal(100, tree.TotalSum());
         Assert.Equal(10, tree.ValueAt(0));
@@ -110,8 +123,10 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void Rebuild_ToSmallerSize() {
-        var tree = LineIndexTree.FromValues([10, 20, 30, 40, 50]);
-        tree.Rebuild([100, 200]);
+        int[] v1 = [10, 20, 30, 40, 50];
+        var tree = LineIndexTree.FromValues(v1, v1);
+        int[] v2 = [100, 200];
+        tree.Rebuild(v2, v2);
         Assert.Equal(2, tree.Count);
         Assert.Equal(300, tree.TotalSum());
     }
@@ -121,7 +136,7 @@ public class LineIndexTreeTests {
         const int n = 10_000;
         var values = new int[n];
         for (var i = 0; i < n; i++) values[i] = i + 1;
-        var tree = LineIndexTree.FromValues(values);
+        var tree = LineIndexTree.FromValues(values, values);
         Assert.Equal(50_005_000, tree.TotalSum());
         Assert.Equal(5050, tree.PrefixSum(99));
         Assert.Equal(99, tree.FindByPrefixSum(5050));
@@ -130,7 +145,8 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void FindByPrefixSum_AfterUpdate_StillCorrect() {
-        var tree = LineIndexTree.FromValues([10, 20, 30, 40]);
+        int[] v = [10, 20, 30, 40];
+        var tree = LineIndexTree.FromValues(v, v);
         tree.Update(1, 30); // 20 → 50
         Assert.Equal(130, tree.TotalSum());
         Assert.Equal(0, tree.FindByPrefixSum(10));
@@ -143,7 +159,7 @@ public class LineIndexTreeTests {
     public void FindByPrefixSum_UniformValues_ScrollPositionMapping() {
         var values = new int[1000];
         Array.Fill(values, 20);
-        var tree = LineIndexTree.FromValues(values);
+        var tree = LineIndexTree.FromValues(values, values);
         Assert.Equal(0, tree.FindByPrefixSum(1));
         Assert.Equal(4, tree.FindByPrefixSum(100));
         Assert.Equal(5, tree.FindByPrefixSum(101));
@@ -158,8 +174,9 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void InsertAt_Beginning() {
-        var tree = LineIndexTree.FromValues([20, 30]);
-        tree.InsertAt(0, 10);
+        int[] v = [20, 30];
+        var tree = LineIndexTree.FromValues(v, v);
+        tree.InsertAt(0, 10, 10);
         Assert.Equal(3, tree.Count);
         Assert.Equal(10, tree.ValueAt(0));
         Assert.Equal(20, tree.ValueAt(1));
@@ -169,8 +186,9 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void InsertAt_Middle() {
-        var tree = LineIndexTree.FromValues([10, 30]);
-        tree.InsertAt(1, 20);
+        int[] v = [10, 30];
+        var tree = LineIndexTree.FromValues(v, v);
+        tree.InsertAt(1, 20, 20);
         Assert.Equal(3, tree.Count);
         Assert.Equal(10, tree.ValueAt(0));
         Assert.Equal(20, tree.ValueAt(1));
@@ -179,8 +197,9 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void InsertAt_End() {
-        var tree = LineIndexTree.FromValues([10, 20]);
-        tree.InsertAt(2, 30);
+        int[] v = [10, 20];
+        var tree = LineIndexTree.FromValues(v, v);
+        tree.InsertAt(2, 30, 30);
         Assert.Equal(3, tree.Count);
         Assert.Equal(30, tree.ValueAt(2));
         Assert.Equal(60, tree.TotalSum());
@@ -188,15 +207,17 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void InsertAt_EmptyTree() {
-        var tree = LineIndexTree.FromValues([]);
-        tree.InsertAt(0, 42);
+        int[] v = [];
+        var tree = LineIndexTree.FromValues(v, v);
+        tree.InsertAt(0, 42, 42);
         Assert.Equal(1, tree.Count);
         Assert.Equal(42, tree.ValueAt(0));
     }
 
     [Fact]
     public void RemoveAt_Beginning() {
-        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        int[] v = [10, 20, 30];
+        var tree = LineIndexTree.FromValues(v, v);
         tree.RemoveAt(0);
         Assert.Equal(2, tree.Count);
         Assert.Equal(20, tree.ValueAt(0));
@@ -205,7 +226,8 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void RemoveAt_Middle() {
-        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        int[] v = [10, 20, 30];
+        var tree = LineIndexTree.FromValues(v, v);
         tree.RemoveAt(1);
         Assert.Equal(2, tree.Count);
         Assert.Equal(10, tree.ValueAt(0));
@@ -214,7 +236,8 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void RemoveAt_End() {
-        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        int[] v = [10, 20, 30];
+        var tree = LineIndexTree.FromValues(v, v);
         tree.RemoveAt(2);
         Assert.Equal(2, tree.Count);
         Assert.Equal(30, tree.TotalSum());
@@ -222,8 +245,10 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void InsertRange_InsertsMultipleElements() {
-        var tree = LineIndexTree.FromValues([10, 40, 50]);
-        tree.InsertRange(1, [20, 30]);
+        int[] v = [10, 40, 50];
+        var tree = LineIndexTree.FromValues(v, v);
+        int[] r = [20, 30];
+        tree.InsertRange(1, r, r);
         Assert.Equal(5, tree.Count);
         Assert.Equal(10, tree.ValueAt(0));
         Assert.Equal(20, tree.ValueAt(1));
@@ -235,7 +260,8 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void RemoveRange_RemovesMultipleElements() {
-        var tree = LineIndexTree.FromValues([10, 20, 30, 40, 50]);
+        int[] v = [10, 20, 30, 40, 50];
+        var tree = LineIndexTree.FromValues(v, v);
         tree.RemoveRange(1, 3); // remove 20, 30, 40
         Assert.Equal(2, tree.Count);
         Assert.Equal(10, tree.ValueAt(0));
@@ -245,10 +271,11 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void InsertAndRemove_MaintainsPrefixSums() {
-        var tree = LineIndexTree.FromValues([10, 20, 30]);
-        tree.InsertAt(1, 15);      // [10, 15, 20, 30]
-        tree.RemoveAt(2);          // [10, 15, 30]
-        tree.InsertAt(2, 25);      // [10, 15, 25, 30]
+        int[] v = [10, 20, 30];
+        var tree = LineIndexTree.FromValues(v, v);
+        tree.InsertAt(1, 15, 15);      // [10, 15, 20, 30]
+        tree.RemoveAt(2);              // [10, 15, 30]
+        tree.InsertAt(2, 25, 25);      // [10, 15, 25, 30]
 
         Assert.Equal(4, tree.Count);
         Assert.Equal(10, tree.PrefixSum(0));
@@ -259,9 +286,10 @@ public class LineIndexTreeTests {
 
     [Fact]
     public void ExtractValues_MatchesInsertedOrder() {
-        var tree = LineIndexTree.FromValues([10, 20, 30]);
-        tree.InsertAt(1, 15);
-        tree.InsertAt(3, 25);
+        int[] v = [10, 20, 30];
+        var tree = LineIndexTree.FromValues(v, v);
+        tree.InsertAt(1, 15, 15);
+        tree.InsertAt(3, 25, 25);
         var values = tree.ExtractValues();
         Assert.Equal([10, 15, 20, 25, 30], values);
     }
@@ -273,7 +301,8 @@ public class LineIndexTreeTests {
     [Fact]
     public void RandomOperations_ConsistentWithListReference() {
         var rng = new Random(42);
-        var tree = LineIndexTree.FromValues([]);
+        int[] empty = [];
+        var tree = LineIndexTree.FromValues(empty, empty);
         var reference = new List<int>();
 
         for (var op = 0; op < 5000; op++) {
@@ -282,7 +311,7 @@ public class LineIndexTreeTests {
                 case 0: { // insert
                     var idx = rng.Next(reference.Count + 1);
                     var val = rng.Next(1, 1000);
-                    tree.InsertAt(idx, val);
+                    tree.InsertAt(idx, val, val);
                     reference.Insert(idx, val);
                     break;
                 }
@@ -320,12 +349,13 @@ public class LineIndexTreeTests {
         // Build 100K elements, do 10K random inserts/removes.
         var values = new int[100_000];
         for (var i = 0; i < values.Length; i++) values[i] = 100;
-        var tree = LineIndexTree.FromValues(values);
+        var tree = LineIndexTree.FromValues(values, values);
 
         var rng = new Random(123);
         for (var i = 0; i < 10_000; i++) {
             if (rng.Next(2) == 0) {
-                tree.InsertAt(rng.Next(tree.Count + 1), rng.Next(1, 200));
+                var val = rng.Next(1, 200);
+                tree.InsertAt(rng.Next(tree.Count + 1), val, val);
             } else if (tree.Count > 1) {
                 tree.RemoveAt(rng.Next(tree.Count));
             }
@@ -334,7 +364,7 @@ public class LineIndexTreeTests {
         // Verify total sum is consistent.
         var extracted = tree.ExtractValues();
         var sum = 0L;
-        foreach (var v in extracted) sum += v;
+        foreach (var vv in extracted) sum += vv;
         Assert.Equal(sum, tree.TotalSum());
     }
 
@@ -343,7 +373,7 @@ public class LineIndexTreeTests {
         const int n = 100_000;
         var values = new int[n];
         for (var i = 0; i < n; i++) values[i] = i + 1;
-        var tree = LineIndexTree.FromValues(values);
+        var tree = LineIndexTree.FromValues(values, values);
 
         // Spot-check prefix sums.
         Assert.Equal(n, tree.Count);

@@ -10,16 +10,19 @@ public sealed class UniformBulkReplaceEdit : IDocumentEdit {
     private readonly string _replacement;
     private readonly Piece[] _savedPieces;
     private readonly int[] _savedLineLengths;
+    private readonly int[] _savedDocLineLengths;
     private readonly long _savedAddBufLen;
 
     public UniformBulkReplaceEdit(
         long[] matchPositions, int matchLen, string replacement,
-        Piece[] savedPieces, int[] savedLineLengths, long savedAddBufLen) {
+        Piece[] savedPieces, int[] savedLineLengths, int[] savedDocLineLengths,
+        long savedAddBufLen) {
         _matchPositions = matchPositions;
         _matchLen = matchLen;
         _replacement = replacement;
         _savedPieces = savedPieces;
         _savedLineLengths = savedLineLengths;
+        _savedDocLineLengths = savedDocLineLengths;
         _savedAddBufLen = savedAddBufLen;
     }
 
@@ -42,6 +45,6 @@ public sealed class UniformBulkReplaceEdit : IDocumentEdit {
     public void Revert(PieceTable table) {
         table.TrimAddBuffer(_savedAddBufLen);
         table.RestorePieces(_savedPieces);
-        table.InstallLineTree(_savedLineLengths);
+        table.InstallLineTree(_savedLineLengths, _savedDocLineLengths);
     }
 }

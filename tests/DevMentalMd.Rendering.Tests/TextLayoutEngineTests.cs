@@ -307,4 +307,168 @@ public class TextLayoutEngineTests {
                 $"Round-trip failed at offset {ofs}: HitTest returned {hit}");
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Pseudo-line layout (MaxPseudoLine = 10)
+    // -------------------------------------------------------------------------
+
+    private const int T = 10; // test MaxPseudoLine
+
+    private static PieceTable MakeTableSmall(string text) {
+        var t = new PieceTable(maxPseudoLine: T);
+        if (text.Length > 0) t.Insert(0, text);
+        return t;
+    }
+
+    private static LayoutResult DoLayoutSmall(string text) {
+        var table = MakeTableSmall(text);
+        return Engine().LayoutLines(
+            table, 0, table.LineCount, DefaultTypeface, FontSize,
+            Brushes.Black, WideViewport, 0);
+    }
+
+    [AvaloniaFact]
+    public void PseudoLine_ContentOnly_NoExtraChar() {
+        // 11 chars → pseudo-split [10] + [1].
+        // Line 0 should have CharLen=10, line 1 CharLen=1.
+        using var r = DoLayoutSmall(new string('a', T + 1));
+        Assert.Equal(2, r.Lines.Count);
+        Assert.Equal(T, r.Lines[0].CharLen);
+        Assert.Equal(1, r.Lines[1].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void PseudoLine_CharStartsAreCorrect() {
+        // 11 chars → pseudo-split [10] + [1].
+        // CharStart is doc-space: line 0 = 0, line 1 = 11 (10 content + 1 virtual terminator).
+        using var r = DoLayoutSmall(new string('a', T + 1));
+        Assert.Equal(0, r.Lines[0].CharStart);
+        Assert.Equal(T + 1, r.Lines[1].CharStart);
+    }
+
+    [AvaloniaFact]
+    public void PseudoLine_WithLF_TerminatorNotInContent() {
+        // 10 content + LF — no pseudo-split needed.
+        // CharLen should be 10, not 11.
+        using var r = DoLayoutSmall(new string('a', T) + "\n");
+        Assert.Equal(2, r.Lines.Count);
+        Assert.Equal(T, r.Lines[0].CharLen);
+        Assert.Equal(0, r.Lines[1].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void PseudoLine_WithCRLF_TerminatorNotInContent() {
+        // 10 content + CRLF — no pseudo-split needed.
+        // CharLen should be 10, not 12.
+        using var r = DoLayoutSmall(new string('a', T) + "\r\n");
+        Assert.Equal(2, r.Lines.Count);
+        Assert.Equal(T, r.Lines[0].CharLen);
+        Assert.Equal(0, r.Lines[1].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void PseudoLine_11Chars_LF_ThreeLines() {
+        // 11 content + LF → pseudo [10] + [1+LF] + [empty]
+        using var r = DoLayoutSmall(new string('a', T + 1) + "\n");
+        Assert.Equal(3, r.Lines.Count);
+        Assert.Equal(T, r.Lines[0].CharLen);   // pseudo
+        Assert.Equal(1, r.Lines[1].CharLen);    // content before LF
+        Assert.Equal(0, r.Lines[2].CharLen);    // empty after LF
+    }
+
+    [AvaloniaFact]
+    public void PseudoLine_11Chars_CRLF_ThreeLines() {
+        // 11 content + CRLF → pseudo [10] + [1+CRLF] + [empty]
+        using var r = DoLayoutSmall(new string('a', T + 1) + "\r\n");
+        Assert.Equal(3, r.Lines.Count);
+        Assert.Equal(T, r.Lines[0].CharLen);   // pseudo
+        Assert.Equal(1, r.Lines[1].CharLen);    // content before CRLF
+        Assert.Equal(0, r.Lines[2].CharLen);    // empty after CRLF
+    }
+
+    [AvaloniaFact]
+    public void PseudoLine_CharStartGap_RealNewline() {
+        // "hello\nworld" with MPL=10: no pseudo-split.
+        // Line 0: CharStart=0, CharLen=5. Line 1: CharStart=6, CharLen=5.
+        // Gap of 1 between CharEnd(5) and CharStart(6) = the LF.
+        using var r = DoLayoutSmall("hello\nworld");
+        Assert.Equal(2, r.Lines.Count);
+        Assert.Equal(5, r.Lines[0].CharLen);
+        Assert.Equal(6, r.Lines[1].CharStart);
+        Assert.True(r.Lines[0].CharEnd < r.Lines[1].CharStart,
+            "Real newline should create a gap between CharEnd and next CharStart");
+    }
+
+    [AvaloniaFact]
+    public void PseudoLine_CharStartGap_Pseudo() {
+        // 20 chars, no newline, MPL=10 → two pseudo-lines.
+        // Doc-space: Line 0: CharStart=0, CharLen=10. Line 1: CharStart=11, CharLen=10.
+        // There IS a 1-char gap: CharEnd(10) + 1 == CharStart(11).
+        // This virtual gap is the whole point of dual offsets.
+        using var r = DoLayoutSmall(new string('a', T * 2));
+        Assert.Equal(2, r.Lines.Count);
+        Assert.Equal(T, r.Lines[0].CharLen);
+        Assert.Equal(T + 1, r.Lines[1].CharStart);
+        Assert.Equal(r.Lines[0].CharEnd + 1, r.Lines[1].CharStart);
+    }
+
+    [AvaloniaFact]
+    public void PseudoLine_9Chars_CRLF_NoSplit() {
+        // 9 content + CRLF = 11 total. Content < MPL, so no pseudo-split.
+        using var r = DoLayoutSmall(new string('a', T - 1) + "\r\n");
+        Assert.Equal(2, r.Lines.Count);
+        Assert.Equal(T - 1, r.Lines[0].CharLen);
+        Assert.Equal(0, r.Lines[1].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void PseudoLine_InsertPastMPL_LayoutSplits() {
+        // Start with 10 chars (single line), insert one more → layout should show 2 lines
+        var table = new PieceTable(maxPseudoLine: T);
+        table.Insert(0, new string('a', T));
+
+        // Layout before: 1 line
+        using var r1 = Engine().LayoutLines(
+            table, 0, table.LineCount, DefaultTypeface, FontSize,
+            Brushes.Black, WideViewport, 0);
+        Assert.Single(r1.Lines);
+        Assert.Equal(T, r1.Lines[0].CharLen);
+
+        // Insert one more char
+        table.Insert(T, "b");
+
+        // Layout after: should be 2 lines
+        Assert.Equal(2, table.LineCount);
+        using var r2 = Engine().LayoutLines(
+            table, 0, table.LineCount, DefaultTypeface, FontSize,
+            Brushes.Black, WideViewport, 0);
+        Assert.Equal(2, r2.Lines.Count);
+        Assert.Equal(T, r2.Lines[0].CharLen);
+        Assert.Equal(1, r2.Lines[1].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void PseudoLine_ExactlyMPL_NoNewline_SingleLine() {
+        // Exactly 10 chars, no newline → single line, no split.
+        using var r = DoLayoutSmall(new string('a', T));
+        Assert.Single(r.Lines);
+        Assert.Equal(T, r.Lines[0].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void PseudoLine_TextContent_NoOverlap() {
+        // "abcdefghijK" with MPL=10 → line 0 should have "abcdefghij", line 1 "K"
+        var table = MakeTableSmall("abcdefghijK");
+        using var r = Engine().LayoutLines(
+            table, 0, table.LineCount, DefaultTypeface, FontSize,
+            Brushes.Black, WideViewport, 0);
+        Assert.Equal(2, r.Lines.Count);
+        // Line 0: 10 chars "abcdefghij"
+        Assert.Equal(10, r.Lines[0].CharLen);
+        Assert.Equal("abcdefghij", table.GetText(0, r.Lines[0].CharLen));
+        // Line 1: 1 char "K"
+        Assert.Equal(1, r.Lines[1].CharLen);
+        var line1Start = table.LineStartOfs(1);
+        Assert.Equal("K", table.GetText(line1Start, r.Lines[1].CharLen));
+    }
 }

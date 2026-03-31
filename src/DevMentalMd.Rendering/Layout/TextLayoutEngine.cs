@@ -51,41 +51,33 @@ public sealed class TextLayoutEngine {
         var lines = new List<LayoutLine>();
         var row = 0;
         if (lineCount < 0) lineCount = table.LineCount;
-        if (docLength < 0) docLength = table.Length;
-        var charOfs = 0L;
+        if (docLength < 0) docLength = table.DocLength;
+        var charOfs = 0L; // doc-space accumulator
 
         for (var lineIdx = topLine; lineIdx < bottomLine && lineIdx < lineCount; lineIdx++) {
-            var lineStart = table.LineStartOfs(lineIdx);
-            var lineEnd = lineIdx + 1 < lineCount
-                ? table.LineStartOfs(lineIdx + 1)
+            // Buf-space line start for GetText.
+            var bufLineStart = table.LineStartOfs(lineIdx);
+            // Doc-space line boundaries for CharStart accumulation.
+            var docLineEnd = lineIdx + 1 < lineCount
+                ? table.DocLineStartOfs(lineIdx + 1)
                 : docLength;
+            var docLineStart = table.DocLineStartOfs(lineIdx);
 
             // Skip lines with inconsistent offsets — can happen during
             // streaming load when the background scan mutates line data
             // between reads.
-            if (lineStart < 0 || lineEnd < 0 || lineEnd < lineStart) continue;
-            var fullLen = (int)(lineEnd - lineStart);
-            if (fullLen > PieceTable.MaxGetTextLength) continue;
-            var nlLen = 0;
-            if (fullLen > 0) {
-                // Read the last 1-2 chars to detect newline type.
-                var tailStart = Math.Max(lineStart, lineEnd - 2);
-                var tail = table.GetText(tailStart, (int)(lineEnd - tailStart));
-                if (tail.Length > 0 && tail[^1] == '\n') {
-                    nlLen = (tail.Length >= 2 && tail[^2] == '\r') ? 2 : 1;
-                } else if (tail.Length > 0 && tail[^1] == '\r') {
-                    nlLen = 1;
-                }
-            }
-            var contentLen = fullLen - nlLen;
-            var lineText = contentLen > 0 ? table.GetText(lineStart, contentLen) : "";
+            if (bufLineStart < 0 || docLineStart < 0 || docLineEnd < docLineStart) continue;
+            var docFullLen = (int)(docLineEnd - docLineStart);
+            var contentLen = table.LineContentLength((int)lineIdx);
+            if (contentLen > table.MaxGetTextLength) continue;
+            var lineText = contentLen > 0 ? table.GetText(bufLineStart, contentLen) : "";
 
             var layout = MakeTextLayout(lineText, typeface, fontSize, foreground, maxWidth);
             var h = layout.Height > 0 ? layout.Height : rowHeight;
             var heightInRows = Math.Max(1, (int)Math.Round(h / rowHeight));
             lines.Add(new LayoutLine((int)charOfs, contentLen, row, heightInRows, layout));
             row += heightInRows;
-            charOfs += fullLen;
+            charOfs += docFullLen;
         }
 
         if (lines.Count == 0) {
