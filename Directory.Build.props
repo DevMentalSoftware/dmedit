@@ -1,0 +1,25 @@
+<Project>
+  <PropertyGroup>
+    <MajorVersion>0</MajorVersion>
+    <MinorVersion>1</MinorVersion>
+    <PatchVersion>0</PatchVersion>
+    <!-- We set InformationalVersion ourselves; stop SourceLink from appending a second hash. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <!-- Derive build number from git commit count so every build is unique. -->
+  <Target Name="_SetBuildNumber" BeforeTargets="GetAssemblyVersion;GenerateNuspec;_GenerateRestoreProjectSpec">
+    <Exec Command="git rev-list --count HEAD" ConsoleToMsBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="BuildNumber" />
+    </Exec>
+    <Exec Command="git rev-parse --short HEAD" ConsoleToMsBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitShortSha" />
+    </Exec>
+    <PropertyGroup>
+      <Version>$(MajorVersion).$(MinorVersion).$(PatchVersion).$(BuildNumber)</Version>
+      <AssemblyVersion>$(MajorVersion).$(MinorVersion).$(PatchVersion).$(BuildNumber)</AssemblyVersion>
+      <FileVersion>$(MajorVersion).$(MinorVersion).$(PatchVersion).$(BuildNumber)</FileVersion>
+      <InformationalVersion>$(MajorVersion).$(MinorVersion).$(PatchVersion).$(BuildNumber)+$(GitShortSha)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
+</Project>
