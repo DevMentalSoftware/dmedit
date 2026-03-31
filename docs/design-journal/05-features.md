@@ -7,7 +7,7 @@ implementation begins.
 ### Configuration
 
 - [x] **DevMode via appsettings** — move DevMode toggle from environment variable
-  (`DEVMENTALMD_DEV`) to appsettings. Default to enabled for now.
+  (`DMEDIT_DEV`) to appsettings. Default to enabled for now.
 
 ### Editing commands
 
@@ -123,7 +123,7 @@ full undo/redo support. 34 new tests in `DocumentTests.cs`.
 `DevMode.IsEnabled` is no longer a static readonly init. It is set by an explicit
 `DevMode.Init(AppSettings)` call in the `MainWindow` constructor, before any wiring
 methods run. `AppSettings.DevModeEnabled` (default `true`) controls the flag in Release
-builds. DEBUG builds always return `true`. The `DEVMENTALMD_DEV` env var was removed.
+builds. DEBUG builds always return `true`. The `DMEDIT_DEV` env var was removed.
 
 ### Line Delete (Ctrl+Y)
 
@@ -261,7 +261,7 @@ non-editable gutter on the left side of the editor.
 ### Settings
 
 - `ShowLineNumbers` in `AppSettings` (default: `true`). Persisted to
-  `%APPDATA%/DevMentalMD/settings.json`.
+  `%APPDATA%/DMEdit/settings.json`.
 - **View → Line Numbers** menu item toggles the setting with a checkbox indicator.
 
 ### Implementation

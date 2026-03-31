@@ -1,4 +1,4 @@
-# DevMentalMD Release Notes
+# DMEdit Release Notes
 
 ## Beta 2 — 2026-03-15
 

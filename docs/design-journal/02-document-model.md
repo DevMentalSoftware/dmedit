@@ -275,7 +275,7 @@ that block, rather than tracking a single global character offset.
   appropriate font/size/weight. Also feeds actual heights back into the document's Fenwick
   tree and actual font metrics back into the StyleSheet for future estimates.
 
-- **InternalsVisibleTo** added to `DevMentalMd.Core.csproj` for test access to `SplitAt`/`MergeFrom`.
+- **InternalsVisibleTo** added to `DMEdit.Core.csproj` for test access to `SplitAt`/`MergeFrom`.
 - **Rendering → Core** project reference added for block types and styles.
 
 ### Design problems found during implementation

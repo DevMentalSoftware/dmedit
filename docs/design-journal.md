@@ -1,4 +1,4 @@
-# DevMentalMD Design Journal
+# DMEdit Design Journal
 
 Chronological record of design decisions, user requirements, and architectural direction.
 **This is the index.** Full entries live in `docs/design-journal/`. When adding a new

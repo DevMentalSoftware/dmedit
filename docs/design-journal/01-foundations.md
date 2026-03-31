@@ -19,8 +19,8 @@ Key design decisions:
 ## 2026-02-26 — Recent Files + Dev Mode
 
 Added `File -> Open Recent` submenu. Persists up to 10 real file paths in
-`%APPDATA%\DevMentalMD\recentfiles.json`. Developer mode (`#if DEBUG` or env var
-`DEVMENTALMD_DEV=1`) injects three `ProceduralBuffer`-based sample documents
+`%APPDATA%\DMEdit\recentfiles.json`. Developer mode (`#if DEBUG` or env var
+`DMEDIT_DEV=1`) injects three `ProceduralBuffer`-based sample documents
 (100 / 10K / 1M lines) into the Recent menu for interactive testing.
 
 Files: `Services/RecentFilesStore.cs`, `Services/DevMode.cs`, `Services/DevSamples.cs`.

@@ -24,7 +24,7 @@ MainWindow.OnKeyDown (centralized dispatch)
 - `Commands/KeyGestureComparer.cs` — IEqualityComparer<KeyGesture> (Avalonia's doesn't override Equals)
 - `Commands/KeyBindingService.cs` — two-pass Rebuild() (defaults first, then user overrides always win),
   O(1) gesture→command resolution, conflict detection, SetBinding/ResetBinding/ResetAll
-- `tests/DevMentalMd.App.Tests/` — 21 tests (6 registry integrity + 13 service behavior + 2 comparer)
+- `tests/DMEdit.App.Tests/` — 21 tests (6 registry integrity + 13 service behavior + 2 comparer)
 
 ### Phase 2 — Centralized Dispatch
 

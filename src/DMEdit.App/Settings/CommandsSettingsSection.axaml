@@ -1,0 +1,102 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:DMEdit.App.Controls"
+             x:Class="DMEdit.App.Settings.CommandsSettingsSection">
+	<!-- StackPanel stacks items at their natural height — no fill element and
+	     no dead space.  MaxHeight on CommandScroll (set from code) caps the
+	     inner scroll area so the full list scrolls internally. -->
+	<!-- No duplicate hover style needed — FluentTextBoxButton handles it. -->
+	<StackPanel Margin="12,8,12,8">
+
+		<Border x:Name="HideAdvancedRow"
+		        Margin="0,0,0,6"
+		        Padding="9,4,4,4"
+		        BorderThickness="3,0,0,0" />
+		
+		<!-- Profile selector and reset-all button -->
+		<StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+			<ComboBox x:Name="ProfileCombo"
+			          MinWidth="130" />
+			<Button x:Name="ResetAllBtn"
+			        Margin="8,0,0,0"
+			        VerticalAlignment="Center"
+			        ToolTip.Tip="Reset all commands to defaults" />
+		</StackPanel>
+
+
+		<!-- Filter row: fixed column widths (230 name, 160 shortcut filter, * remainder)
+		     tuned to visually align with the command list columns below. -->
+		<Border Width="624"
+		        HorizontalAlignment="Left">
+			<Grid ColumnDefinitions="226,160,*" ColumnSpacing="8">
+				<controls:DMTextBox x:Name="NameFilter"
+				                    Grid.Column="0"
+				                    Watermark="Search commands&#x2026;"
+				                    MinWidth="160" />
+				<controls:DMTextBox x:Name="FindShortcut"
+				                    Grid.Column="1"
+				                    Watermark="Find Shortcut&#x2026;"
+				                    IsReadOnly="True" />
+				<ToggleButton x:Name="ModifiedFilterBtn"
+				              Grid.Column="2"
+				              Content="S"
+				              FontSize="18"
+				              FontWeight="SemiBold"
+				              Padding="7,3"
+				              Margin="0,0,0,0"
+				              HorizontalAlignment="Left"
+				              VerticalAlignment="Stretch"
+				              ToolTip.Tip="Show modified only" />
+			</Grid>
+		</Border>
+
+		<!-- Scroll hint (shown when outer page needs scrolling) -->
+		<TextBlock x:Name="ScrollHint"
+		           Text="Ctrl+Scroll to scroll this list when the page also scrolls."
+		           FontSize="11"
+		           Margin="0,2,0,0"
+		           IsVisible="False" />
+
+		<!-- Scrollable command list inside a subtle border.
+		     MaxHeight is set from SetAvailableHeight() to cap the inner scroll
+		     area; the StackPanel parent sizes this to content when filtered. -->
+		<Border x:Name="CommandListBorder"
+		        BorderThickness="1"
+		        CornerRadius="3"
+		        Margin="0,6,0,6"
+		        Width="644"
+		        HorizontalAlignment="Left">
+			<ScrollViewer x:Name="CommandScroll"
+			              HorizontalScrollBarVisibility="Disabled"
+			              VerticalScrollBarVisibility="Auto"
+			              AllowAutoHide="False">
+				<!-- Add symmetric top margin so the up-arrow button has the same
+				     spacing from the border as the down-arrow button, which inherits
+				     a bottom margin from the outer ContentScroll style. -->
+				<ScrollViewer.Styles>
+					<Style Selector="ScrollBar:vertical">
+						<Setter Property="Margin" Value="0,8,0,8" />
+					</Style>
+				</ScrollViewer.Styles>
+				<StackPanel x:Name="CommandList" Spacing="0" />
+			</ScrollViewer>
+		</Border>
+
+		<!-- Action buttons -->
+		<WrapPanel Orientation="Horizontal">
+			<controls:DMTextBox x:Name="CaptureBox"
+			                    MaxWidth="260"
+			                    Watermark="Press shortcut keys&#x2026;"
+			                    IsReadOnly="True"
+			                    MinWidth="180" />
+			<Button x:Name="AssignBtn" Content="Assign" Margin="8,0,4,0" />
+		</WrapPanel>
+
+		<!-- Replacement notice: "Will replace the shortcut already assigned to [Cmd]".
+		     Empty (no height) when no conflict. Built from code. -->
+		<StackPanel x:Name="ConflictPanel"
+		            Orientation="Horizontal"
+		            Margin="0,4,0,0" />
+
+	</StackPanel>
+</UserControl>

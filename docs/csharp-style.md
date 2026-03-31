@@ -1,6 +1,6 @@
 # C# Style Guide
 
-This document defines the coding conventions for the DevMentalMD project.
+This document defines the coding conventions for the DMEdit project.
 All code should follow these rules consistently. When in doubt, match what's already in the codebase.
 
 ---

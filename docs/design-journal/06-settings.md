@@ -52,7 +52,7 @@ KeyUp-based) with a full edit coalescing system inspired by VS Code's undo behav
 
 `CoalesceTimerSeconds` in `AppSettings` (default 1.0 s). Exposed as
 `EditorControl.CoalesceTimerSeconds` property, wired in `WireViewMenu()`. Minimum
-clamped to 0.1 s. Editable in `%APPDATA%/DevMentalMD/settings.json`.
+clamped to 0.1 s. Editable in `%APPDATA%/DMEdit/settings.json`.
 
 Test count: **287** (266 Core + 21 Rendering).
 

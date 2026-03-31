@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="src/DMEdit.Print.Windows/DMEdit.Print.Windows.csproj" />
+  <Project Path="src/DMEdit.App/DMEdit.App.csproj" />
+  <Project Path="src/DMEdit.Core/DMEdit.Core.csproj" />
+  <Project Path="src/DMEdit.Rendering/DMEdit.Rendering.csproj" />
+  <Project Path="tests/DMEdit.App.Tests/DMEdit.App.Tests.csproj" />
+  <Project Path="tests/DMEdit.Core.Tests/DMEdit.Core.Tests.csproj" />
+  <Project Path="tests/DMEdit.Rendering.Tests/DMEdit.Rendering.Tests.csproj" />
+</Solution>

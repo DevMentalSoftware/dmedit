@@ -1,0 +1,63 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:controls="clr-namespace:DMEdit.App.Controls">
+
+	<!-- DMEditableCombo: TextBox + clear button + dropdown button + history popup.
+	     Buttons sit outside the TextBox visual tree (overlay Grid) so hovering
+	     them does not propagate :pointerover to the TextBox. -->
+	<ControlTheme x:Key="{x:Type controls:DMEditableCombo}" TargetType="controls:DMEditableCombo">
+		<Setter Property="Template">
+			<ControlTemplate>
+				<Grid ColumnDefinitions="*,Auto">
+					<TextBox x:Name="PART_TextBox"
+					         Grid.ColumnSpan="2"
+					         Text="{TemplateBinding Text, Mode=TwoWay}"
+					         Watermark="{TemplateBinding Watermark}"
+					         FontSize="{TemplateBinding FontSize}" />
+					<StackPanel Grid.Column="1"
+					            Orientation="Horizontal"
+					            VerticalAlignment="Stretch"
+					            ClipToBounds="True"
+					            Margin="0,1,0,1">
+						<Button x:Name="PART_ClearButton"
+						        Theme="{StaticResource FluentTextBoxButton}"
+						        ClipToBounds="True"
+						        IsVisible="False"
+						        ToolTip.Tip="Clear">
+							<TextBlock Text="&#xF367;"
+							           VerticalAlignment="Center"
+							           HorizontalAlignment="Center" />
+						</Button>
+						<Button x:Name="PART_DropDownButton"
+						        Theme="{StaticResource FluentTextBoxButton}"
+						        CornerRadius="0,4,4,0"
+						        ClipToBounds="True"
+						        ToolTip.Tip="History">
+							<TextBlock Text="&#xF2A1;"
+							           VerticalAlignment="Center"
+							           HorizontalAlignment="Center" />
+						</Button>
+					</StackPanel>
+
+					<!-- History popup anchored below the entire control -->
+					<Popup x:Name="PART_Popup"
+					       Grid.ColumnSpan="2"
+					       PlacementTarget="{Binding $parent[controls:DMEditableCombo]}"
+					       Placement="Bottom"
+					       IsLightDismissEnabled="True"
+					       MaxHeight="200">
+						<Border x:Name="PART_PopupBorder"
+						        Background="{DynamicResource MenuFlyoutPresenterBackground}"
+						        BorderBrush="{DynamicResource MenuFlyoutPresenterBorderBrush}"
+						        BorderThickness="1"
+						        CornerRadius="4"
+						        Padding="0">
+							<ListBox x:Name="PART_ListBox"
+							         MaxHeight="190" />
+						</Border>
+					</Popup>
+				</Grid>
+			</ControlTemplate>
+		</Setter>
+	</ControlTheme>
+</ResourceDictionary>

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Installing DevMental Edit..."
+echo "Installing DMEdit..."
 
 # Install prerequisites
 sudo apt install -y libgtk-3-0 libx11-6 libxcb1 libxcursor1 \
@@ -15,7 +15,7 @@ chmod +x /opt/dmedit/dmedit
 # Create desktop entry (system-wide)
 cat > /usr/local/share/applications/dmedit.desktop << 'DESKTOP'
 [Desktop Entry]
-Name=DevMental Edit
+Name=DMEdit
 Exec=/opt/dmedit/dmedit %F
 Icon=/opt/dmedit/dev_mental_head.svg
 Type=Application

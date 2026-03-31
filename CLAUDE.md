@@ -1,4 +1,4 @@
-# DevMentalMD — Claude Session Context
+# DMEdit — Claude Session Context
 
 ## First steps for every session
 
@@ -12,14 +12,14 @@
 
 ```
 src/
-  DevMentalMd.Core/        — Document model, PieceTable, IBuffer, blocks, FenwickTree, IO
-  DevMentalMd.Rendering/   — TextLayoutEngine (Avalonia TextLayout wrapper)
-  DevMentalMd.App/         — Avalonia desktop app: EditorControl, DualZoneScrollBar, MainWindow
-  DevMentalMd.Print.Windows/ — Windows printing support
+  DMEdit.Core/             — Document model, PieceTable, IBuffer, blocks, FenwickTree, IO
+  DMEdit.Rendering/        — TextLayoutEngine (Avalonia TextLayout wrapper)
+  DMEdit.App/              — Avalonia desktop app: EditorControl, DualZoneScrollBar, MainWindow
+  DMEdit.Print.Windows/    — Windows printing support
 tests/
-  DevMentalMd.Core.Tests/
-  DevMentalMd.Rendering.Tests/
-  DevMentalMd.App.Tests/
+  DMEdit.Core.Tests/
+  DMEdit.Rendering.Tests/
+  DMEdit.App.Tests/
 docs/
   design-journal.md        — append-only design history (READ THIS FIRST)
   csharp-style.md          — coding style guide
@@ -39,6 +39,6 @@ All tests must pass before and after any change. Current baseline: **534 tests**
 ## Dev mode
 
 Debug builds enable DevMode automatically. In Release builds, set
-`DevModeEnabled: true` in `%APPDATA%/DevMentalMD/settings.json`.
+`DevModeEnabled: true` in `%APPDATA%/DMEdit/settings.json`.
 DevMode shows: Dev menu, procedural sample documents in Recent menu, performance stats bar.
 The

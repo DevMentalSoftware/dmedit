@@ -58,7 +58,7 @@ PieceTable.BufFor(piece)
   → if piece.IsAdd      → segments[piece.SegmentId].Read(piece.Offset, piece.Length)
 ```
 
-The temp directory for segments can live under `%APPDATA%/DevMentalMD/segments/`
+The temp directory for segments can live under `%APPDATA%/DMEdit/segments/`
 or a per-session temp folder.
 
 ---
