@@ -2008,7 +2008,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
 
     private void PerformColumnSelectVertical(Document doc, int delta) {
-        if (_wrapLines) return; // Column mode disabled when wrapping is on.
+        if (_wrapLines || doc.Table.HasPseudoLines) return;
         FlushCompound();
         var table = doc.Table;
         if (doc.ColumnSel is { } colSel) {
@@ -2029,7 +2029,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     }
 
     private void PerformColumnSelectHorizontal(Document doc, int delta) {
-        if (_wrapLines) return; // Column mode disabled when wrapping is on.
+        if (_wrapLines || doc.Table.HasPseudoLines) return;
         FlushCompound();
         if (doc.ColumnSel is { } colSel) {
             var newCol = ColumnSelection.NextCharCol(
@@ -3274,7 +3274,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             }
             var alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
             var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-            if (alt && !_wrapLines) {
+            if (alt && !_wrapLines && !doc.Table.HasPseudoLines) {
                 // Alt+click: start column (block) selection.
                 var table = doc.Table;
                 var line = (int)table.LineFromDocOfs(ofs);

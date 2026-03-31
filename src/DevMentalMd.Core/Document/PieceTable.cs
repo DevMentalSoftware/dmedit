@@ -138,6 +138,12 @@ public sealed class PieceTable {
     public DocOffset DocLength => LineTree.DocTotalSum();
 
     /// <summary>
+    /// <c>true</c> when the document contains at least one pseudo-line split
+    /// (i.e. a line exceeded <see cref="MaxPseudoLine"/> and was broken up).
+    /// </summary>
+    public bool HasPseudoLines => DocLength != Length;
+
+    /// <summary>
     /// Number of logical lines (always at least 1).
     /// </summary>
     public long LineCount {
