@@ -99,6 +99,7 @@ public sealed class TabState {
 
     // Scroll / windowed-layout state, saved when leaving the tab so
     // returning does not produce a visual jump.
+    public double ScrollOffsetX { get; set; }
     public double ScrollOffsetY { get; set; }
     public long WinTopLine { get; set; } = -1;
     public double WinScrollOffset { get; set; }

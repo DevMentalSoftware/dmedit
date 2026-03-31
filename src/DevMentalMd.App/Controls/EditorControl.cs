@@ -484,6 +484,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
     }
 
+    /// <summary>Viewport width in pixels (valid during measure, before arrange sets Bounds).</summary>
+    public double ViewportWidth => _viewport.Width;
+
     /// <summary>Viewport height in pixels.</summary>
     public double ScrollViewportHeight => _viewport.Height;
 
@@ -2584,6 +2587,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 : Selection.Collapsed(newCaret);
         }
 
+        ScrollCaretIntoView();
         InvalidateVisual();
         ResetCaretBlink();
     }
@@ -3137,7 +3141,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             var textAreaW = _viewport.Width - _gutterWidth;
 
             if (caretX < _scrollOffset.X) {
-                HScrollValue = caretX;
+                // Show at least one character before the caret so the
+                // character the caret sits after is visible (mirrors the
+                // TextAreaPadRight on the right side).
+                HScrollValue = Math.Max(0, caretX - cw);
             } else if (caretX + cw + TextAreaPadRight > _scrollOffset.X + textAreaW) {
                 HScrollValue = caretX + cw + TextAreaPadRight - textAreaW;
             }
@@ -3478,6 +3485,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// <paramref name="tab"/> so it can be restored when switching back.
     /// </summary>
     public void SaveScrollState(TabState tab) {
+        tab.ScrollOffsetX = _scrollOffset.X;
         tab.ScrollOffsetY = _scrollOffset.Y;
         tab.WinTopLine = _winTopLine;
         tab.WinScrollOffset = _winScrollOffset;
@@ -3502,7 +3510,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Apply the target scroll position. Don't dispose the old
         // layout — MeasureOverride will rebuild it atomically so there
         // is never a frame with _layout == null.
-        _scrollOffset = new Vector(0, scrollState.ScrollOffsetY);
+        _scrollOffset = new Vector(scrollState.ScrollOffsetX, scrollState.ScrollOffsetY);
         _winTopLine = scrollState.WinTopLine;
         _winScrollOffset = scrollState.WinScrollOffset;
         _winRenderOffsetY = scrollState.WinRenderOffsetY;
@@ -3523,7 +3531,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// which resets scroll to (0,0).
     /// </summary>
     public void RestoreScrollState(TabState tab) {
-        _scrollOffset = new Vector(0, tab.ScrollOffsetY);
+        _scrollOffset = new Vector(tab.ScrollOffsetX, tab.ScrollOffsetY);
         _winTopLine = tab.WinTopLine;
         _winScrollOffset = tab.WinScrollOffset;
         _winRenderOffsetY = tab.WinRenderOffsetY;

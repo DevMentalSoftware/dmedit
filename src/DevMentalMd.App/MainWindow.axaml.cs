@@ -1373,7 +1373,10 @@ public partial class MainWindow : Window {
         HScrollBar.IsVisible = show;
         if (show) {
             HScrollBar.Maximum = max;
-            HScrollBar.ViewportSize = Editor.Bounds.Width - Editor.GutterWidth;
+            // Use ViewportWidth (set during MeasureOverride) rather than
+            // Bounds.Width (set after ArrangeOverride) so the scrollbar is
+            // correct on the very first layout pass.
+            HScrollBar.ViewportSize = Editor.ViewportWidth - Editor.GutterWidth;
             HScrollBar.SmallChange = Editor.CharWidth;
             HScrollBar.LargeChange = HScrollBar.ViewportSize;
             HScrollBar.Value = Editor.HScrollValue;

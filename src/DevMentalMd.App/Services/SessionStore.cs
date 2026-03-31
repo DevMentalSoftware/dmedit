@@ -45,6 +45,7 @@ public static class SessionStore {
         public bool IsDirty { get; set; }
         public long CaretAnchor { get; set; }
         public long CaretActive { get; set; }
+        public double ScrollOffsetX { get; set; }
         public double ScrollOffsetY { get; set; }
         public long WinTopLine { get; set; } = -1;
         public double WinScrollOffset { get; set; }
@@ -80,6 +81,7 @@ public static class SessionStore {
                     IsDirty = tab.IsDirty,
                     CaretAnchor = tab.Document.Selection.Anchor,
                     CaretActive = tab.Document.Selection.Active,
+                    ScrollOffsetX = tab.ScrollOffsetX,
                     ScrollOffsetY = tab.ScrollOffsetY,
                     WinTopLine = tab.WinTopLine,
                     WinScrollOffset = tab.WinScrollOffset,
@@ -241,6 +243,7 @@ public static class SessionStore {
             IsLoading = isLoading,
             HasPendingEdits = hasPendingEdits,
             LoadResult = loadResult,
+            ScrollOffsetX = entry.ScrollOffsetX,
             ScrollOffsetY = entry.ScrollOffsetY,
             WinTopLine = entry.WinTopLine,
             WinScrollOffset = entry.WinScrollOffset,
