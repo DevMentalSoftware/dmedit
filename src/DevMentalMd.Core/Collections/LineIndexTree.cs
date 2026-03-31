@@ -24,8 +24,10 @@ public sealed class LineIndexTree {
 
     private int[] _val;   // primary element value (buf-space line length)
     private long[] _sum;  // primary subtree sum including self
+    private int[] _max;   // primary subtree max including self
     private int[] _val2;  // secondary element value (doc-space line length)
     private long[] _sum2; // secondary subtree sum including self
+    private int[] _max2;  // secondary subtree max including self
     private int[] _sz;    // subtree size including self
     private int[] _pri;   // random priority (max-heap)
     private int[] _left;
@@ -40,8 +42,10 @@ public sealed class LineIndexTree {
         capacity = Math.Max(capacity, 4);
         _val   = new int[capacity];
         _sum   = new long[capacity];
+        _max   = new int[capacity];
         _val2  = new int[capacity];
         _sum2  = new long[capacity];
+        _max2  = new int[capacity];
         _sz    = new int[capacity];
         _pri   = new int[capacity];
         _left  = new int[capacity];
@@ -55,6 +59,12 @@ public sealed class LineIndexTree {
     public int Count => _count;
 
     public long TotalSum() => _root == Nil ? 0 : _sum[_root];
+
+    /// <summary>Returns the maximum primary (buf-space) value across all elements.  O(1).</summary>
+    public int MaxValue() => _root == Nil ? 0 : _max[_root];
+
+    /// <summary>Returns the maximum secondary (doc-space) value across all elements.  O(1).</summary>
+    public int MaxDocValue() => _root == Nil ? 0 : _max2[_root];
 
     /// <summary>Returns sum of primary (buf) elements [0..i] inclusive (0-based).</summary>
     public long PrefixSum(int i) {
@@ -209,6 +219,10 @@ public sealed class LineIndexTree {
         } else {
             UpdateNode(_right[node], i - leftSize - 1, delta);
         }
+        // Recompute max bottom-up: unlike sum, max is non-linear and can't be
+        // updated with a simple += delta — each ancestor must recompute from children.
+        _max[node] = Math.Max(_val[node], Math.Max(LeftMax(node), RightMax(node)));
+        _max2[node] = Math.Max(_val2[node], Math.Max(LeftMax2(node), RightMax2(node)));
     }
 
     // -------------------------------------------------------------------
@@ -338,12 +352,14 @@ public sealed class LineIndexTree {
     //  Node helpers
     // -------------------------------------------------------------------
 
-    /// <summary>Recomputes Size and both Sums from children.</summary>
+    /// <summary>Recomputes Size, both Sums, and both Maxes from children.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void Push(int node) {
         _sz[node] = 1 + LeftSize(node) + RightSize(node);
         _sum[node] = _val[node] + LeftSum(node) + RightSum(node);
         _sum2[node] = _val2[node] + LeftSum2(node) + RightSum2(node);
+        _max[node] = Math.Max(_val[node], Math.Max(LeftMax(node), RightMax(node)));
+        _max2[node] = Math.Max(_val2[node], Math.Max(LeftMax2(node), RightMax2(node)));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -364,6 +380,18 @@ public sealed class LineIndexTree {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private long RightSum2(int node) => _right[node] == Nil ? 0 : _sum2[_right[node]];
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int LeftMax(int node) => _left[node] == Nil ? 0 : _max[_left[node]];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int RightMax(int node) => _right[node] == Nil ? 0 : _max[_right[node]];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int LeftMax2(int node) => _left[node] == Nil ? 0 : _max2[_left[node]];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int RightMax2(int node) => _right[node] == Nil ? 0 : _max2[_right[node]];
+
     // -------------------------------------------------------------------
     //  Node allocation
     // -------------------------------------------------------------------
@@ -379,8 +407,10 @@ public sealed class LineIndexTree {
         }
         _val[id] = bufValue;
         _sum[id] = bufValue;
+        _max[id] = bufValue;
         _val2[id] = docValue;
         _sum2[id] = docValue;
+        _max2[id] = docValue;
         _sz[id] = 1;
         _pri[id] = Random.Shared.Next();
         _left[id] = Nil;
@@ -416,8 +446,10 @@ public sealed class LineIndexTree {
         var newCap = Math.Max(needed, _val.Length * 2);
         Array.Resize(ref _val,   newCap);
         Array.Resize(ref _sum,   newCap);
+        Array.Resize(ref _max,   newCap);
         Array.Resize(ref _val2,  newCap);
         Array.Resize(ref _sum2,  newCap);
+        Array.Resize(ref _max2,  newCap);
         Array.Resize(ref _sz,    newCap);
         Array.Resize(ref _pri,   newCap);
         Array.Resize(ref _left,  newCap);
@@ -444,8 +476,10 @@ public sealed class LineIndexTree {
             var id = _allocated++;
             _val[id] = bufValues[i];
             _sum[id] = bufValues[i];
+            _max[id] = bufValues[i];
             _val2[id] = docValues[i];
             _sum2[id] = docValues[i];
+            _max2[id] = docValues[i];
             _sz[id] = 1;
             _pri[id] = Random.Shared.Next();
             _left[id] = Nil;

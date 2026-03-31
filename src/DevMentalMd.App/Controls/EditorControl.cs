@@ -322,6 +322,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     private int _gutterDigitCnt;
     private const double GutterPadLeft = 6;
     private const double GutterPadRight = 6;
+    private const double TextAreaPadRight = 6;
 
     // Theme — set by MainWindow when the effective theme changes.
     private EditorTheme _theme = EditorTheme.Light;
@@ -766,6 +767,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     protected override Size MeasureOverride(Size availableSize) {
         _layout?.Dispose();
         _layout = null;
+        var oldViewportW = _viewport.Width;
         _viewport = availableSize;
 
         if (_layoutFailed) {
@@ -805,6 +807,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         _perfSw.Stop();
         PerfStats.Layout.Record(_perfSw.Elapsed.TotalMilliseconds);
+
+        // Viewport width change affects HScrollMaximum and scrollbar ViewportSize,
+        // but LayoutWindowed's oldHMax comparison misses this because _viewport is
+        // already updated before oldHMax is captured.
+        if (Math.Abs(availableSize.Width - oldViewportW) > 0.5)
+            HScrollChanged?.Invoke();
 
         RaiseScrollInvalidated();
         ScrollChanged?.Invoke(this, EventArgs.Empty);
@@ -936,11 +944,16 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             ? _layout.TotalHeight
             : totalVisualRows * rh;
         var contentWidth = !_wrapLines
-            ? _gutterWidth + doc.Table.MaxLineLength * GetCharWidth()
+            ? _gutterWidth + doc.Table.MaxLineLength * GetCharWidth() + TextAreaPadRight
             : extentWidth;
         var oldHMax = HScrollMaximum;
         _extent = new Size(Math.Max(extentWidth, contentWidth), extentHeight);
-        if (Math.Abs(HScrollMaximum - oldHMax) > 0.5) HScrollChanged?.Invoke();
+        var newHMax = HScrollMaximum;
+        // Clamp scroll offset so that shrinking content or a wider viewport
+        // doesn't leave the editor showing empty space to the right of text.
+        if (_scrollOffset.X > newHMax)
+            _scrollOffset = new Vector(newHMax, _scrollOffset.Y);
+        if (Math.Abs(newHMax - oldHMax) > 0.5) HScrollChanged?.Invoke();
 
         // Compute render offset.  For small topLine changes (arrow keys, wheel)
         // use an incremental offset based on the actual cached line height so
@@ -3049,8 +3062,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             // Update extents so ScrollMaximum/HScrollMaximum aren't stale.
             var cw = GetCharWidth();
             var maxLine = table.MaxLineLength;
-            var hExtent = maxLine > 0 ? maxLine * cw + _gutterWidth : _extent.Width;
+            var hExtent = maxLine > 0 ? maxLine * cw + _gutterWidth + TextAreaPadRight : _extent.Width;
+            var oldHMax = HScrollMaximum;
             _extent = new Size(hExtent, lineCount * rh);
+            if (Math.Abs(HScrollMaximum - oldHMax) > 0.5) HScrollChanged?.Invoke();
 
             var caretY = caretLine * rh;
             if (_scrollOffset.Y > ScrollMaximum) {
@@ -3123,8 +3138,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
             if (caretX < _scrollOffset.X) {
                 HScrollValue = caretX;
-            } else if (caretX + cw > _scrollOffset.X + textAreaW) {
-                HScrollValue = caretX + cw - textAreaW;
+            } else if (caretX + cw + TextAreaPadRight > _scrollOffset.X + textAreaW) {
+                HScrollValue = caretX + cw + TextAreaPadRight - textAreaW;
             }
         }
     }

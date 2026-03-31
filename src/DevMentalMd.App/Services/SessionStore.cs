@@ -316,21 +316,23 @@ public static class SessionStore {
             return null;
         }
         try {
-            // Load persisted add buffer (small edits from typing) as a
-            // PagedFileBuffer so it stays on disk with ~16 MB LRU pages.
+            // Load the base add buffer (small edits from typing) into the
+            // active in-memory add buffer.  This keeps it at buffer index 1
+            // so edits with the default BufIdx (-1) reference it directly,
+            // new typing appends after the old content, and on the next save
+            // the full combined buffer is persisted correctly.
             var addBufPath = Path.Combine(SessionDir, $"{entry.Id}.addBuf");
-            int addBufIdx = -1;
             if (File.Exists(addBufPath)) {
-                addBufIdx = LoadPagedBuffer(doc, addBufPath);
+                var bytes = File.ReadAllBytes(addBufPath);
+                doc.Table.AddBuffer.AppendUtf8(bytes);
             }
 
             // Load large-paste add buffers (.addBuf.N files).
             // These were written at paste time and are already on disk.
-            // Register them at the same buffer indices they had originally.
+            // Register them at the same buffer indices they had originally
+            // (the base .addBuf no longer consumes a slot, so indices match).
             foreach (var file in Directory.GetFiles(SessionDir, $"{entry.Id}.addBuf.*")) {
-                // Skip the base .addBuf file (already loaded above).
                 var ext = Path.GetExtension(file);
-                if (ext == ".addBuf") continue;
                 // Parse the index from the extension (e.g., ".2" from ".addBuf.2").
                 var idxStr = ext.TrimStart('.');
                 if (!int.TryParse(idxStr, out _)) continue;
@@ -338,7 +340,7 @@ public static class SessionStore {
             }
 
             var json = File.ReadAllText(editsPath);
-            var (undo, redo) = EditSerializer.Deserialize(json, addBufIdx);
+            var (undo, redo) = EditSerializer.Deserialize(json);
             // The line tree must already be installed before we get here.
             // MainWindow installs it from the paged buffer scan results
             // before calling FinishLoad.  If the tree isn't present,

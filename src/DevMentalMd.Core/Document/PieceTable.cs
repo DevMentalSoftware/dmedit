@@ -159,30 +159,19 @@ public sealed class PieceTable {
     /// </summary>
     public long MaxLineLength {
         get {
+            // When the line tree is available it maintains a subtree max at
+            // every node, so the root gives O(1) accurate max after any edit.
+            if (_lineTree != null)
+                return _lineTree.MaxDocValue();
+
             // Before the line tree is built (e.g. during streaming load),
             // use the buffer's pre-computed value clamped to MaxPseudoLine.
-            if (_maxLineLen < 0 && _lineTree == null) {
-                var bufMax = Buffer.LongestLine;
-                if (bufMax >= 0) {
-                    var mpl = EffectiveMaxPseudoLine;
-                    return Math.Min(bufMax, mpl + 1);
-                }
-                return -1;
+            var bufMax = Buffer.LongestLine;
+            if (bufMax >= 0) {
+                var mpl = EffectiveMaxPseudoLine;
+                return Math.Min(bufMax, mpl + 1);
             }
-            if (_maxLineLen < 0) {
-                // Tree is built but _maxLineLen was invalidated — recompute.
-                // Use doc-space values so pseudo-lines include the virtual
-                // terminator, matching how real lines include their real
-                // terminator (LF/CRLF) for horizontal extent calculation.
-                var tree = _lineTree!;
-                var max = 0;
-                for (var i = 0; i < tree.Count; i++) {
-                    var v = tree.DocValueAt(i);
-                    if (v > max) max = v;
-                }
-                _maxLineLen = max;
-            }
-            return _maxLineLen;
+            return -1;
         }
     }
 
@@ -950,11 +939,17 @@ public sealed class PieceTable {
         var deadZone = DeriveTerminatorType(lineIdx).DeadZoneWidth();
         var contentLen = fullLen - deadZone;
         var mpl = EffectiveMaxPseudoLine;
-        if (contentLen <= mpl) return;
+        if (contentLen < mpl) return;
 
         // Split the content into MaxPseudoLine chunks; the terminator
-        // stays attached to the last chunk.
+        // stays attached to the last chunk.  When the content fills an
+        // exact multiple of mpl on an unterminated line, add one extra
+        // empty chunk so the caret has somewhere to land after the last
+        // character (without it, the caret sits at col mpl with no
+        // pseudo-terminator dead zone to snap past).
         var chunkCount = (contentLen + mpl - 1) / mpl;
+        if (deadZone == 0 && contentLen % mpl == 0)
+            chunkCount++;
         Span<int> bufChunks = chunkCount <= 64
             ? stackalloc int[chunkCount]
             : new int[chunkCount];

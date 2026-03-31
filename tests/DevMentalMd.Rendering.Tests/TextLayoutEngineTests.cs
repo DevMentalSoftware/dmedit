@@ -401,12 +401,13 @@ public class TextLayoutEngineTests {
 
     [AvaloniaFact]
     public void PseudoLine_CharStartGap_Pseudo() {
-        // 20 chars, no newline, MPL=10 → two pseudo-lines.
+        // 20 chars, no newline, MPL=10 → two full pseudo-lines + empty overflow.
         // Doc-space: Line 0: CharStart=0, CharLen=10. Line 1: CharStart=11, CharLen=10.
-        // There IS a 1-char gap: CharEnd(10) + 1 == CharStart(11).
+        // Line 2: empty overflow (CharLen=0).
+        // There IS a 1-char gap between lines 0 and 1: CharEnd(10) + 1 == CharStart(11).
         // This virtual gap is the whole point of dual offsets.
         using var r = DoLayoutSmall(new string('a', T * 2));
-        Assert.Equal(2, r.Lines.Count);
+        Assert.Equal(3, r.Lines.Count);
         Assert.Equal(T, r.Lines[0].CharLen);
         Assert.Equal(T + 1, r.Lines[1].CharStart);
         Assert.Equal(r.Lines[0].CharEnd + 1, r.Lines[1].CharStart);
@@ -423,21 +424,22 @@ public class TextLayoutEngineTests {
 
     [AvaloniaFact]
     public void PseudoLine_InsertPastMPL_LayoutSplits() {
-        // Start with 10 chars (single line), insert one more → layout should show 2 lines
+        // Start with 10 chars → full line + empty overflow
         var table = new PieceTable(maxPseudoLine: T);
         table.Insert(0, new string('a', T));
 
-        // Layout before: 1 line
+        // Layout before: full line + empty overflow
         using var r1 = Engine().LayoutLines(
             table, 0, table.LineCount, DefaultTypeface, FontSize,
             Brushes.Black, WideViewport, 0);
-        Assert.Single(r1.Lines);
+        Assert.Equal(2, r1.Lines.Count);
         Assert.Equal(T, r1.Lines[0].CharLen);
+        Assert.Equal(0, r1.Lines[1].CharLen);
 
-        // Insert one more char
+        // Insert one more char — goes into the overflow line
         table.Insert(T, "b");
 
-        // Layout after: should be 2 lines
+        // Layout after: still 2 lines, second now has the new char
         Assert.Equal(2, table.LineCount);
         using var r2 = Engine().LayoutLines(
             table, 0, table.LineCount, DefaultTypeface, FontSize,
@@ -448,11 +450,13 @@ public class TextLayoutEngineTests {
     }
 
     [AvaloniaFact]
-    public void PseudoLine_ExactlyMPL_NoNewline_SingleLine() {
-        // Exactly 10 chars, no newline → single line, no split.
+    public void PseudoLine_ExactlyMPL_NoNewline_OverflowLine() {
+        // Exactly 10 chars, no newline → full line + empty overflow line
+        // so the caret has somewhere to land after the last character.
         using var r = DoLayoutSmall(new string('a', T));
-        Assert.Single(r.Lines);
+        Assert.Equal(2, r.Lines.Count);
         Assert.Equal(T, r.Lines[0].CharLen);
+        Assert.Equal(0, r.Lines[1].CharLen);
     }
 
     [AvaloniaFact]
