@@ -288,8 +288,15 @@ public partial class CommandsSettingsSection : UserControl {
                 ToolTip.SetTip(btn, "Show in menu");
             }
             btn.IsCheckedChanged += (_, _) => {
-                _settings.MenuOverrides ??= new();
-                _settings.MenuOverrides[cmd.Id] = btn.IsChecked == true;
+                var newVal = btn.IsChecked == true;
+                var defaultVal = !(cmd.IsAdvanced && _settings.HideAdvancedMenus)
+                    && cmd.Menu != CommandMenu.None;
+                if (newVal == defaultVal) {
+                    _settings.MenuOverrides?.Remove(cmd.Id);
+                } else {
+                    _settings.MenuOverrides ??= new();
+                    _settings.MenuOverrides[cmd.Id] = newVal;
+                }
                 _settings.ScheduleSave();
                 MenuOrToolbarChanged?.Invoke();
                 RefreshAfterChange();
@@ -323,8 +330,13 @@ public partial class CommandsSettingsSection : UserControl {
             } else {
                 ToolTip.SetTip(btn, "Show in toolbar");
                 btn.IsCheckedChanged += (_, _) => {
-                    _settings.ToolbarOverrides ??= new();
-                    _settings.ToolbarOverrides[cmd.Id] = btn.IsChecked == true;
+                    var newVal = btn.IsChecked == true;
+                    if (newVal == cmd.DefaultInToolbar) {
+                        _settings.ToolbarOverrides?.Remove(cmd.Id);
+                    } else {
+                        _settings.ToolbarOverrides ??= new();
+                        _settings.ToolbarOverrides[cmd.Id] = newVal;
+                    }
                     _settings.ScheduleSave();
                     MenuOrToolbarChanged?.Invoke();
                     RefreshAfterChange();
@@ -895,7 +907,10 @@ public partial class CommandsSettingsSection : UserControl {
     public void SetAvailableHeight(double height) {
         // Subtract the height of non-list elements (HideAdvanced row, profile
         // combo, filter row, capture box, conflict panel, margins).
-        var max = Math.Max(100, height - 180);
+        // Subtract enough to account for variations in monitors too. 180 looked 
+        //   correct on a desktop, but still forced the outer scrollbar when 
+        //   run on a laptop.
+        var max = Math.Max(100, height - 190); 
         CommandScroll.MaxHeight = max;
         CommandScroll.MinHeight = max;
         UpdateScrollHintVisibility();

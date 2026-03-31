@@ -1249,6 +1249,7 @@ public partial class MainWindow : Window {
         _theme = theme;
 
         // Custom-drawn controls
+        EditorPadding.Background = theme.EditorBackground;
         Editor.ApplyTheme(theme);
         ApplySelectionBrushes();
         ScrollBar.ApplyTheme(theme);

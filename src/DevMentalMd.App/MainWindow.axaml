@@ -237,9 +237,12 @@
 			<settings:SettingsControl x:Name="SettingsPanel"
 			                          IsVisible="False" />
 			<Grid RowDefinitions="*,Auto" ColumnDefinitions="*,Auto" x:Name="EditorGrid">
-				<controls:EditorControl x:Name="Editor"
-				                        Grid.Row="0" Grid.Column="0"
-				                        HorizontalAlignment="Stretch" />
+				<Border x:Name="EditorPadding"
+				        Grid.Row="0" Grid.Column="0"
+				        Padding="0,3,0,0">
+					<controls:EditorControl x:Name="Editor"
+					                        HorizontalAlignment="Stretch" />
+				</Border>
 				<controls:FindBarControl x:Name="FindBar"
 				                         Grid.Row="0" Grid.Column="0"
 				                         HorizontalAlignment="Right"
