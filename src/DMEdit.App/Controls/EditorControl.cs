@@ -2619,16 +2619,22 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var bufCaret = doc.Table.DocOfsToBufOfs(caret);
         var bufWindowStart = Math.Max(0L, bufCaret - 1024);
         var windowLen = (int)(bufCaret - bufWindowStart);
-        var text = doc.Table.GetText(bufWindowStart, windowLen);
-        var pos = windowLen; // position within the window
-        // Skip whitespace going left, then skip non-whitespace
-        while (pos > 0 && char.IsWhiteSpace(text[pos - 1])) {
-            pos--;
+        var buf = ArrayPool<char>.Shared.Rent(windowLen);
+        try {
+            CopyFromTable(doc.Table, bufWindowStart, buf, windowLen);
+            var text = buf.AsSpan(0, windowLen);
+            var pos = windowLen; // position within the window
+            // Skip whitespace going left, then skip non-whitespace
+            while (pos > 0 && char.IsWhiteSpace(text[pos - 1])) {
+                pos--;
+            }
+            while (pos > 0 && !char.IsWhiteSpace(text[pos - 1])) {
+                pos--;
+            }
+            return doc.Table.BufOfsToDocOfs(bufWindowStart + pos);
+        } finally {
+            ArrayPool<char>.Shared.Return(buf);
         }
-        while (pos > 0 && !char.IsWhiteSpace(text[pos - 1])) {
-            pos--;
-        }
-        return doc.Table.BufOfsToDocOfs(bufWindowStart + pos);
     }
 
     private static long FindWordBoundaryRight(Document doc, long caret) {
@@ -2640,15 +2646,21 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var bufCaret = doc.Table.DocOfsToBufOfs(caret);
         var bufLen = doc.Table.Length;
         var windowLen = (int)Math.Min(1024L, bufLen - bufCaret);
-        var text = doc.Table.GetText(bufCaret, windowLen);
-        var pos = 0;
-        while (pos < text.Length && char.IsWhiteSpace(text[pos])) {
-            pos++;
+        var buf = ArrayPool<char>.Shared.Rent(windowLen);
+        try {
+            CopyFromTable(doc.Table, bufCaret, buf, windowLen);
+            var text = buf.AsSpan(0, windowLen);
+            var pos = 0;
+            while (pos < text.Length && char.IsWhiteSpace(text[pos])) {
+                pos++;
+            }
+            while (pos < text.Length && !char.IsWhiteSpace(text[pos])) {
+                pos++;
+            }
+            return caret + pos;
+        } finally {
+            ArrayPool<char>.Shared.Return(buf);
         }
-        while (pos < text.Length && !char.IsWhiteSpace(text[pos])) {
-            pos++;
-        }
-        return caret + pos;
     }
 
     // -------------------------------------------------------------------------
@@ -3869,7 +3881,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         int total = 0, current = 0;
         long pos = 0;
         while (pos <= table.Length) {
-            ct.ThrowIfCancellationRequested();
+            if (ct.IsCancellationRequested) return (current, total, false);
             var found = SearchChunked(table, opts, pos, maxOverlap);
             if (found < 0) break;
             total++;
@@ -3889,9 +3901,15 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// </summary>
     private static int RegexMatchLengthAt(PieceTable table, SearchOptions opts, long pos) {
         var remaining = (int)Math.Min(table.Length - pos, 1024);
-        var text = table.GetText(pos, remaining);
-        var m = opts.CompiledRegex!.Match(text);
-        return m.Success && m.Index == 0 ? m.Length : 0;
+        var buf = ArrayPool<char>.Shared.Rent(remaining);
+        try {
+            CopyFromTable(table, pos, buf, remaining);
+            var text = new string(buf, 0, remaining);
+            var m = opts.CompiledRegex!.Match(text);
+            return m.Success && m.Index == 0 ? m.Length : 0;
+        } finally {
+            ArrayPool<char>.Shared.Return(buf);
+        }
     }
 
     /// <summary>
@@ -4012,9 +4030,19 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             }
             // For regex matches we need to re-match at the position to get length.
             var remaining = (int)Math.Min(table.Length - pos, Needle.Length * 4 + 256);
-            var text = table.GetText(pos, remaining);
-            var m = CompiledRegex.Match(text);
-            return m.Success && m.Index == 0 ? m.Length : Needle.Length;
+            var buf = ArrayPool<char>.Shared.Rent(remaining);
+            try {
+                var written = 0;
+                table.ForEachPiece(pos, remaining, span => {
+                    span.CopyTo(buf.AsSpan(written));
+                    written += span.Length;
+                });
+                var text = new string(buf, 0, remaining);
+                var m = CompiledRegex.Match(text);
+                return m.Success && m.Index == 0 ? m.Length : Needle.Length;
+            } finally {
+                ArrayPool<char>.Shared.Return(buf);
+            }
         }
 
         private static Regex? BuildRegex(string pattern, bool matchCase, bool wholeWord) {
