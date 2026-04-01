@@ -204,6 +204,12 @@ public sealed class AppSettings {
     public int EditorFontSize { get; set; } = 11;
 
     /// <summary>
+    /// Zoom offset in pixels from the base font size. Positive = zoomed in,
+    /// negative = zoomed out. Persisted across restarts.
+    /// </summary>
+    public int ZoomLevel { get; set; }
+
+    /// <summary>
     /// Custom sample text for the font preview. Null uses the built-in default.
     /// </summary>
     public string? FontPreviewText { get; set; }

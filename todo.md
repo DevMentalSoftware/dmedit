@@ -1,1 +1,1 @@
-* Make our installer, and ensure "Edit in DMEdit" is added to the Windows Explorer context menu.* Selection inner corners no longer appear rounded* Add all caps menu option like VS* Move Recent to the tab bar as a dropdown.* Add Open to the tab bar next to the New button.* 
+* Make our installer, and ensure "Edit in DMEdit" is added to the Windows Explorer context menu.

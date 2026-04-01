@@ -1284,9 +1284,30 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             for (var i = 0; i < rects.Count - 1; i++) {
                 var cur = rects[i];
                 var next = rects[i + 1];
-                c.LineTo(new Point(cur.Right, cur.Bottom));
                 if (Math.Abs(cur.Right - next.Right) > 0.5) {
-                    c.LineTo(new Point(next.Right, next.Top));
+                    if (next.Right < cur.Right) {
+                        // Step inward — selection narrows.
+                        // Outer corner at cur.Bottom-right (convex, CW),
+                        // inner corner at next.Top-right (concave, CCW).
+                        c.LineTo(new Point(cur.Right, cur.Bottom - r));
+                        c.ArcTo(new Point(cur.Right - r, cur.Bottom),
+                            new Size(r, r), 0, false, SweepDirection.Clockwise);
+                        c.LineTo(new Point(next.Right + r, next.Top));
+                        c.ArcTo(new Point(next.Right, next.Top + r),
+                            new Size(r, r), 0, false, SweepDirection.CounterClockwise);
+                    } else {
+                        // Step outward — selection widens.
+                        // Inner corner at cur.Bottom-right (concave, CCW),
+                        // outer corner at next.Top-right (convex, CW).
+                        c.LineTo(new Point(cur.Right, cur.Bottom - r));
+                        c.ArcTo(new Point(cur.Right + r, cur.Bottom),
+                            new Size(r, r), 0, false, SweepDirection.CounterClockwise);
+                        c.LineTo(new Point(next.Right - r, next.Top));
+                        c.ArcTo(new Point(next.Right, next.Top + r),
+                            new Size(r, r), 0, false, SweepDirection.Clockwise);
+                    }
+                } else {
+                    c.LineTo(new Point(cur.Right, cur.Bottom));
                 }
             }
 
@@ -1302,9 +1323,30 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             for (var i = rects.Count - 1; i > 0; i--) {
                 var cur = rects[i];
                 var prev = rects[i - 1];
-                c.LineTo(new Point(cur.Left, cur.Top));
                 if (Math.Abs(cur.Left - prev.Left) > 0.5) {
-                    c.LineTo(new Point(prev.Left, cur.Top));
+                    if (prev.Left < cur.Left) {
+                        // Step outward going up — selection widens.
+                        // Outer corner at cur.Top-left (convex, CW),
+                        // inner corner at prev.Left (concave, CCW).
+                        c.LineTo(new Point(cur.Left, cur.Top + r));
+                        c.ArcTo(new Point(cur.Left - r, cur.Top),
+                            new Size(r, r), 0, false, SweepDirection.Clockwise);
+                        c.LineTo(new Point(prev.Left + r, cur.Top));
+                        c.ArcTo(new Point(prev.Left, cur.Top - r),
+                            new Size(r, r), 0, false, SweepDirection.CounterClockwise);
+                    } else {
+                        // Step inward going up — selection narrows.
+                        // Outer corner at cur.Top-left (convex, CW),
+                        // inner corner at prev.Left (concave, CCW).
+                        c.LineTo(new Point(cur.Left, cur.Top + r));
+                        c.ArcTo(new Point(cur.Left + r, cur.Top),
+                            new Size(r, r), 0, false, SweepDirection.Clockwise);
+                        c.LineTo(new Point(prev.Left - r, cur.Top));
+                        c.ArcTo(new Point(prev.Left, cur.Top - r),
+                            new Size(r, r), 0, false, SweepDirection.CounterClockwise);
+                    }
+                } else {
+                    c.LineTo(new Point(cur.Left, cur.Top));
                 }
             }
 
