@@ -204,10 +204,10 @@ public sealed class AppSettings {
     public int EditorFontSize { get; set; } = 11;
 
     /// <summary>
-    /// Zoom offset in pixels from the base font size. Positive = zoomed in,
-    /// negative = zoomed out. Persisted across restarts.
+    /// Zoom percentage for the editor. 100 = no zoom. Range: 10–800.
+    /// Persisted across restarts. Independent of font size.
     /// </summary>
-    public int ZoomLevel { get; set; }
+    public int ZoomPercent { get; set; } = 100;
 
     /// <summary>
     /// Custom sample text for the font preview. Null uses the built-in default.

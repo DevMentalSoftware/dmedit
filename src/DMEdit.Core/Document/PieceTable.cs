@@ -29,9 +29,6 @@ public sealed class PieceTable {
     private LineIndexTree? _lineTree;
     private int _maxLineLen = -1;
 
-    // Reserved for future per-line terminator overrides from edits.
-    private Dictionary<int, LineTerminatorType>? _terminatorOverrides;
-
     /// <summary>
     /// Maximum content characters per pseudo-line.  Set from AppSettings
     /// at startup.  
@@ -475,21 +472,14 @@ public sealed class PieceTable {
 
     /// <summary>
     /// Returns the terminator type of the given line.
-    /// Checks override map first, then RLE baseline, then derives from characters.
     /// </summary>
     public LineTerminatorType GetLineTerminator(int lineIdx) {
-        // Override from edits?
-        if (_terminatorOverrides != null
-            && _terminatorOverrides.TryGetValue(lineIdx, out var ovr)) {
-            return ovr;
-        }
         // Derive from the last 1-2 characters of the line.
         return DeriveTerminatorType(lineIdx);
     }
 
     /// <summary>
     /// Determines the terminator type by reading the last 1–2 characters of a line.
-    /// Used as fallback when no RLE baseline or override is available.
     /// </summary>
     private LineTerminatorType DeriveTerminatorType(int lineIdx) {
         var tree = LineTree;

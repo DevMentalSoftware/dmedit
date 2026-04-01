@@ -77,6 +77,23 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         set => SetValue(FontSizeProperty, value);
     }
 
+    /// <summary>Zoom percentage (100 = 100%). Changing this invalidates layout.</summary>
+    public int ZoomPercent {
+        get => _zoomPercent;
+        set {
+            value = Math.Clamp(value, 10, 800);
+            if (_zoomPercent == value) return;
+            _zoomPercent = value;
+            _rowHeight = 0;
+            _charWidth = 0;
+            InvalidateLayout();
+        }
+    }
+    private int _zoomPercent = 100;
+
+    /// <summary>FontSize scaled by the current zoom factor.</summary>
+    private double EffectiveFontSize => FontSize * _zoomPercent / 100.0;
+
     public IBrush ForegroundBrush {
         get => GetValue(ForegroundBrushProperty);
         set => SetValue(ForegroundBrushProperty, value);
@@ -629,7 +646,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
         var typeface = new Typeface(FontFamily);
         using var tl = new TextLayout(
-            " ", typeface, FontSize, ForegroundBrush,
+            " ", typeface, EffectiveFontSize, ForegroundBrush,
             maxWidth: double.PositiveInfinity, maxHeight: double.PositiveInfinity);
         var raw = tl.Height > 0 ? tl.Height : 20.0;
         // Snap to device pixel multiple so line.Row * rh is always
@@ -645,7 +662,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
         var typeface = new Typeface(FontFamily);
         using var tl = new TextLayout(
-            "0", typeface, FontSize, ForegroundBrush,
+            "0", typeface, EffectiveFontSize, ForegroundBrush,
             maxWidth: double.PositiveInfinity, maxHeight: double.PositiveInfinity);
         _charWidth = tl.WidthIncludingTrailingWhitespace > 0 ? tl.WidthIncludingTrailingWhitespace : 8.0;
         return _charWidth;
@@ -737,7 +754,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
         if (_layoutFailed) {
             _layout = _layoutEngine.LayoutEmpty(
-                new Typeface(FontFamily), FontSize, ForegroundBrush, 100);
+                new Typeface(FontFamily), EffectiveFontSize, ForegroundBrush, 100);
             return _layout;
         }
         _perfSw.Restart();
@@ -755,13 +772,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (doc != null && lineCount > 0) {
                 LayoutWindowed(doc, lineCount, typeface, textW, extentW);
             } else {
-                _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, textW);
+                _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
                 _extent = new Size(extentW, 0);
                 RenderOffsetY = 0;
             }
         } catch {
             _layoutFailed = true;
-            _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, textW);
+            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
             throw;
@@ -787,7 +804,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         if (_layoutFailed) {
             _layout = _layoutEngine.LayoutEmpty(
-                new Typeface(FontFamily), FontSize, ForegroundBrush, 100);
+                new Typeface(FontFamily), EffectiveFontSize, ForegroundBrush, 100);
             return availableSize;
         }
 
@@ -808,13 +825,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (doc != null && lineCount > 0) {
                 LayoutWindowed(doc, lineCount, typeface, textW, extentW);
             } else {
-                _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, textW);
+                _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
                 _extent = new Size(extentW, 0);
                 RenderOffsetY = 0;
             }
         } catch {
             _layoutFailed = true;
-            _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, textW);
+            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
             throw;
@@ -923,7 +940,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // required page isn't in memory yet. Layout empty text — the next
         // ProgressChanged event will trigger re-layout once data is available.
         if (startOfs < 0 || endOfs < 0) {
-            _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, maxWidth);
+            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, maxWidth);
             _extent = new Size(extentWidth, totalVisualRows * rh);
             RenderOffsetY = 0;
             return;
@@ -940,7 +957,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var docLen = doc.Table.DocLength;
         var maxLayoutChars = visibleRows * (PieceTable.MaxPseudoLine + 1);
         if (len > maxLayoutChars || startOfs + len > docLen) {
-            _layout = _layoutEngine.LayoutEmpty(typeface, FontSize, ForegroundBrush, maxWidth);
+            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, maxWidth);
             _extent = new Size(extentWidth, totalVisualRows * rh);
             RenderOffsetY = 0;
             return;
@@ -949,7 +966,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Layout one line at a time directly from the PieceTable so we
         // never materialize multiple lines into a single string.
         _layout = _layoutEngine.LayoutLines(
-            doc.Table, topLine, bottomLine, typeface, FontSize, ForegroundBrush,
+            doc.Table, topLine, bottomLine, typeface, EffectiveFontSize, ForegroundBrush,
             maxWidth, startOfs, lineCount, doc.Table.DocLength);
         _layout.TopLine = topLine;
 
@@ -968,6 +985,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // doesn't leave the editor showing empty space to the right of text.
         if (_scrollOffset.X > newHMax)
             _scrollOffset = new Vector(newHMax, _scrollOffset.Y);
+        if (_scrollOffset.Y > ScrollMaximum)
+            _scrollOffset = new Vector(_scrollOffset.X, ScrollMaximum);
         if (Math.Abs(newHMax - oldHMax) > 0.5) HScrollChanged?.Invoke();
 
         // Compute render offset.  For small topLine changes (arrow keys, wheel)
@@ -1127,7 +1146,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             var lineNum = firstLineIdx + i + 1;
             var numText = lineNum.ToString();
             using var tl = new TextLayout(
-                numText, typeface, FontSize, _theme.GutterForeground,
+                numText, typeface, EffectiveFontSize, _theme.GutterForeground,
                 textAlignment: TextAlignment.Right,
                 maxWidth: numW);
             tl.Draw(context, new Point(0, y));
@@ -1180,7 +1199,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             } else {
                 // Space → · (U+00B7), NBSP → ␣ (U+2423)
                 var glyph = ch == ' ' ? "\u00B7" : "\u2423";
-                using var tl = new TextLayout(glyph, typeface, FontSize,
+                using var tl = new TextLayout(glyph, typeface, EffectiveFontSize,
                     _theme.WhitespaceGlyphBrush, textAlignment: TextAlignment.Left);
                 // Center the glyph in the character cell
                 var glyphW = tl.WidthIncludingTrailingWhitespace;
@@ -1191,7 +1210,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
     }
 
-    private const double SelCornerRadius = 3.0;
+    private const double SelCornerRadiusBase = 3.0;
+    private double SelCornerRadius => SelCornerRadiusBase * _zoomPercent / 100.0;
 
     private void DrawSelection(DrawingContext context, LayoutResult layout, Selection sel) {
         var localStart = (int)(sel.Start - layout.ViewportBase);
@@ -1250,12 +1270,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
 
         if (rects.Count == 1) {
-            const double r = SelCornerRadius;
+            var r = SelCornerRadius;
             FillRoundedRect(context, SelectionBrush, rects[0], r, r, r, r);
         } else {
             // Build a single outline path for all contiguous rects so there
             // are no internal horizontal edges (which cause sub-pixel seams).
-            FillSelectionPath(context, SelectionBrush, rects);
+            FillSelectionPath(context, SelectionBrush, rects, SelCornerRadius);
         }
     }
 
@@ -1265,8 +1285,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// corners (top of first rect, bottom of last rect).
     /// </summary>
     private static void FillSelectionPath(
-        DrawingContext ctx, IBrush brush, List<Rect> rects) {
-        const double r = SelCornerRadius;
+        DrawingContext ctx, IBrush brush, List<Rect> rects, double r) {
         var first = rects[0];
         var last = rects[^1];
 
@@ -1479,10 +1498,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return;
         }
         if (rects.Count == 1) {
-            const double r = SelCornerRadius;
+            var r = SelCornerRadius;
             FillRoundedRect(context, SelectionBrush, rects[0], r, r, r, r);
         } else {
-            FillSelectionPath(context, SelectionBrush, rects);
+            FillSelectionPath(context, SelectionBrush, rects, SelCornerRadius);
         }
     }
 

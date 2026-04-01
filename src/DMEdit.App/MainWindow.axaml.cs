@@ -935,9 +935,9 @@ public partial class MainWindow : Window {
         Cmd.ViewStatusBar.Wire(ToggleStatusBar);
         Cmd.ViewWrapLines.Wire(ToggleWrapLines);
         Cmd.ViewWhitespace.Wire(ToggleWhitespace);
-        Cmd.ViewZoomIn.Wire(() => ApplyZoom(_settings.ZoomLevel + 1));
-        Cmd.ViewZoomOut.Wire(() => ApplyZoom(_settings.ZoomLevel - 1));
-        Cmd.ViewZoomReset.Wire(() => ApplyZoom(0));
+        Cmd.ViewZoomIn.Wire(() => ApplyZoom(_settings.ZoomPercent + 10));
+        Cmd.ViewZoomOut.Wire(() => ApplyZoom(_settings.ZoomPercent - 10));
+        Cmd.ViewZoomReset.Wire(() => ApplyZoom(100));
 
         // -- Window --
         Cmd.WindowNextTab.Wire(() => CycleTab(+1));
@@ -994,13 +994,11 @@ public partial class MainWindow : Window {
         SwitchToTab(_tabs[idx]);
     }
 
-    private void ApplyZoom(int level) {
-        var basePx = _settings.EditorFontSize.ToPixels();
-        var newSize = Math.Clamp(basePx + level, 6, 72);
-        level = (int)(newSize - basePx);
-        _settings.ZoomLevel = level;
+    private void ApplyZoom(int percent) {
+        percent = Math.Clamp(percent, 10, 800);
+        _settings.ZoomPercent = percent;
         _settings.ScheduleSave();
-        Editor.FontSize = newSize;
+        Editor.ZoomPercent = percent;
     }
 
     private void ToggleLineNumbers() {
@@ -1451,7 +1449,8 @@ public partial class MainWindow : Window {
         // multi-font fallback chain in the EditorControl default).
         Editor.FontFamily = new FontFamily(
             SettingRowFactory.GetEffectiveFontFamily(_settings));
-        Editor.FontSize = _settings.EditorFontSize.ToPixels() + _settings.ZoomLevel;
+        Editor.FontSize = _settings.EditorFontSize.ToPixels();
+        Editor.ZoomPercent = _settings.ZoomPercent;
 
         // Wrap Lines + column limit
         Editor.WrapLines = _settings.WrapLines;
@@ -2875,9 +2874,7 @@ public partial class MainWindow : Window {
                         SettingRowFactory.GetEffectiveFontFamily(_settings));
                     break;
                 case "EditorFontSize":
-                    _settings.ZoomLevel = 0;
                     Editor.FontSize = _settings.EditorFontSize.ToPixels();
-                    _settings.ScheduleSave();
                     break;
                 case "CaretWidth":
                     Editor.CaretWidth = _settings.CaretWidth;
