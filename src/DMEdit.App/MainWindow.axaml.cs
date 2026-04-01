@@ -201,6 +201,7 @@ public partial class MainWindow : Window {
         WireScrollBar();
         WireViewMenuState();
         InitializeToolbar();
+        InitializeTabToolbar();
         ApplyAdvancedMenuVisibility();
         WireSettingsPanel();
         WireThemeSettings();
@@ -532,10 +533,6 @@ public partial class MainWindow : Window {
         TabBar.TabCloseClicked += async idx => {
             if (idx >= 0 && idx < _tabs.Count) await PromptAndCloseTabAsync(_tabs[idx]);
         };
-        TabBar.PlusClicked += () => {
-            var t = AddTab(TabState.CreateUntitled(_tabs));
-            SwitchToTab(t);
-        };
         TabBar.OverflowClicked += ShowOverflowMenu;
         TabBar.CloseTabsToRightClicked += idx => _ = CloseTabsToRightAsync(idx);
         TabBar.CloseOtherTabsClicked += idx => _ = CloseOtherTabsAsync(idx);
@@ -573,10 +570,17 @@ public partial class MainWindow : Window {
         var overflowTabs = TabBar.GetOverflowTabs();
         if (overflowTabs.Count == 0) return;
 
+        // If the menu is already open, close it (toggle behavior).
+        if (TabBar.ContextMenu is { IsOpen: true }) {
+            TabBar.ContextMenu.Close();
+            return;
+        }
+
         var menu = new ContextMenu {
             PlacementTarget = TabBar,
             Placement = PlacementMode.Bottom,
             PlacementRect = TabBar.OverflowButtonRect,
+            FontSize = 12,
         };
         foreach (var (index, label) in overflowTabs) {
             var captured = index;
@@ -589,6 +593,10 @@ public partial class MainWindow : Window {
             menu.Items.Add(item);
         }
 
+        // Assign as ContextMenu for proper light-dismiss, clear on close
+        // so stale menus don't auto-open on the next right-click.
+        TabBar.ContextMenu = menu;
+        menu.Closed += (_, _) => { if (TabBar.ContextMenu == menu) TabBar.ContextMenu = null; };
         menu.Open(TabBar);
     }
 
@@ -915,6 +923,7 @@ public partial class MainWindow : Window {
             canExecute: () => _activeTab is { IsSettings: false, IsLocked: false });
         Cmd.FileRevertFile.Wire(() => _ = RevertFileAsync());
         Cmd.FileReloadFile.Wire(() => _ = ReloadFileAsync(_activeTab));
+        Cmd.FileRecent.Wire(() => { }); // Dropdown-only — handled by tab toolbar
         Cmd.FileClearRecentFiles.Wire(() => {
             _recentFiles.Clear();
             _recentFiles.Save();
@@ -1002,6 +1011,7 @@ public partial class MainWindow : Window {
         _settings.ScheduleSave();
         _statusBarGlyph!.Opacity = show ? 1.0 : 0.0;
         UpdateStatusBarVisibility();
+        TabBar.RefreshToolbar();
     }
 
     private void ToggleWrapLines() {
@@ -1131,6 +1141,8 @@ public partial class MainWindow : Window {
                 item.IsVisible = userVisible.Value;
             } else if (cmd.IsAdvanced) {
                 item.IsVisible = !hide;
+            } else {
+                item.IsVisible = true;
             }
         }
 
@@ -1270,7 +1282,7 @@ public partial class MainWindow : Window {
         // entire bar (menus, toolbar buttons, gear icon) is uniform.
         MenuBarBorder.Background = theme.TabActiveBackground;
         MenuBarBorder.BorderBrush = theme.TabActiveBackground;
-        GearGlyph.Foreground = theme.TabPlusForeground;
+        GearGlyph.Foreground = theme.TabToolButtonForeground;
 
         // Status bar
         StatusBar.Background = theme.StatusBarBackground;
@@ -1465,8 +1477,10 @@ public partial class MainWindow : Window {
         Toolbar.OverflowClicked -= ShowToolbarOverflowMenu;
 
         // Toolbar order = position in Commands.All (the master list).
+        // Exclude commands assigned to the tab toolbar.
         var items = Cmd.All
-            .Where(c => IsInToolbar(c) && c.ToolbarGlyph != null && !c.ToolbarFixed)
+            .Where(c => IsInToolbar(c) && c.ToolbarGlyph != null && !c.ToolbarFixed
+                        && !Array.Exists(TabToolbarCommands, t => t == c))
             .Select(c => new ToolbarItem {
                 CommandId = c.Id,
                 Glyph = c.ToolbarGlyph!,
@@ -1502,6 +1516,7 @@ public partial class MainWindow : Window {
         "View.WrapLines" => () => _settings.WrapLines,
         "View.Whitespace" => () => _settings.ShowWhitespace,
         "View.LineNumbers" => () => _settings.ShowLineNumbers,
+        "View.StatusBar" => () => _settings.ShowStatusBar,
         _ => null,
     };
 
@@ -1518,6 +1533,7 @@ public partial class MainWindow : Window {
         var menu = new ContextMenu {
             Placement = PlacementMode.Bottom,
             PlacementRect = Toolbar.OverflowButtonRect,
+            FontSize = 12,
         };
         foreach (var item in overflow) {
             var captured = item;
@@ -1536,6 +1552,81 @@ public partial class MainWindow : Window {
         // Assign as ContextMenu for proper light-dismiss behavior.
         Toolbar.ContextMenu = menu;
         menu.Open(Toolbar);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tab toolbar (toolbar items on the tab bar)
+    // -------------------------------------------------------------------------
+
+    /// <summary>Commands that belong in the tab toolbar, in display order.</summary>
+    private static readonly Command[] TabToolbarCommands = [
+        Cmd.FileNew, Cmd.FileOpen, Cmd.FileRecent,
+        Cmd.FileSaveAll, Cmd.FileCloseAll, Cmd.ViewStatusBar,
+    ];
+
+    private void InitializeTabToolbar() {
+        TabBar.ToolbarButtonClicked -= OnTabToolbarButtonClicked;
+        TabBar.ToolbarDropdownRequested -= OnTabToolbarDropdownRequested;
+
+        var items = new List<ToolbarItem>();
+        foreach (var c in TabToolbarCommands) {
+            if (c.ToolbarFixed || IsInToolbar(c)) {
+                items.Add(new ToolbarItem {
+                    CommandId = c.Id,
+                    Glyph = c.ToolbarGlyph!,
+                    Tooltip = c.ToolbarTooltip ?? c.DisplayName,
+                    IsToggle = c.IsToolbarToggle,
+                    IsChecked = GetToolbarToggleFunc(c.Id),
+                    IsDropdown = c.IsToolbarDropdown,
+                });
+            }
+        }
+        TabBar.SetToolbarItems(items);
+        TabBar.ToolbarButtonClicked += OnTabToolbarButtonClicked;
+        TabBar.ToolbarDropdownRequested += OnTabToolbarDropdownRequested;
+    }
+
+    private void OnTabToolbarButtonClicked(string commandId) {
+        Cmd.Execute(commandId);
+        TabBar.RefreshToolbar();
+    }
+
+    private void OnTabToolbarDropdownRequested(string commandId, Rect buttonRect) {
+        if (commandId == "File.Recent") {
+            ShowRecentFilesDropdown(buttonRect);
+        }
+    }
+
+    private void ShowRecentFilesDropdown(Rect buttonRect) {
+        // If the menu is already open, close it (toggle behavior).
+        if (TabBar.ContextMenu is { IsOpen: true }) {
+            TabBar.ContextMenu.Close();
+            return;
+        }
+
+        var recentPaths = _recentFiles.Paths;
+        var visibleCount = Math.Min(recentPaths.Count, _settings.RecentFileCount);
+
+        var menu = new ContextMenu {
+            Placement = PlacementMode.Bottom,
+            PlacementRect = buttonRect,
+            FontSize = 12,
+        };
+
+        if (visibleCount == 0) {
+            menu.Items.Add(new MenuItem { Header = "(No recent files)", IsEnabled = false });
+        } else {
+            for (var i = 0; i < visibleCount; i++) {
+                var captured = recentPaths[i];
+                var mi = new MenuItem { Header = Path.GetFileName(captured) };
+                UiHelpers.SetPathToolTip(mi, captured);
+                mi.Click += async (_, _) => await OpenFileInTabAsync(captured);
+                menu.Items.Add(mi);
+            }
+        }
+        TabBar.ContextMenu = menu;
+        menu.Closed += (_, _) => { if (TabBar.ContextMenu == menu) TabBar.ContextMenu = null; };
+        menu.Open(TabBar);
     }
 
 
@@ -1962,6 +2053,10 @@ public partial class MainWindow : Window {
             MenuFile.Items.RemoveAt(MenuFile.Items.Count - 1);
         }
 
+        // Only show recent files in the menu when the File.Recent command's
+        // menu visibility (M column in Settings > Commands) is enabled.
+        if (!IsCommandMenuVisible(Cmd.FileRecent)) return;
+
         var recentPaths = _recentFiles.Paths;
         var visibleCount = Math.Min(recentPaths.Count, _settings.RecentFileCount);
 
@@ -1979,6 +2074,19 @@ public partial class MainWindow : Window {
             }
         }
 
+    }
+
+    /// <summary>
+    /// Returns whether a command should be visible in its menu, respecting
+    /// user overrides and the HideAdvancedMenus setting.
+    /// </summary>
+    private bool IsCommandMenuVisible(Command cmd) {
+        if (_settings.MenuOverrides?.TryGetValue(cmd.Id, out var userVisible) == true
+            && userVisible.HasValue) {
+            return userVisible.Value;
+        }
+        if (cmd.IsAdvanced && _settings.HideAdvancedMenus) return false;
+        return cmd.Menu != CommandMenu.None;
     }
 
     // -----------------------------------------------------------------
@@ -2704,6 +2812,8 @@ public partial class MainWindow : Window {
         SettingsPanel.MenuOrToolbarChanged += () => {
             ApplyAdvancedMenuVisibility();
             InitializeToolbar();
+            InitializeTabToolbar();
+            RebuildRecentMenu();
         };
         GearButton.Click += (_, _) => OpenSettings();
 

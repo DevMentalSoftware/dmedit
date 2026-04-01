@@ -42,8 +42,8 @@ public sealed class TabBarControl : Control {
     private const double CloseButtonSize = 24;   // hit area for close "×"
     private const double CornerRadius = 6;       // convex top corners
     private const double ConcaveRadius = 6;      // concave bottom curves
-    private const double PlusButtonWidth = 28;   // "+" button area
-    private const double PlusButtonHeight = 24;  // "+" hover bg height
+    private const double ToolButtonWidth = 28;   
+    private const double ToolButtonHeight = 24;  
     private const double IconSize = 24;
     private const double IconLeftMargin = 6;
     private const double TabGap = 2;             // gap between tabs
@@ -109,11 +109,12 @@ public sealed class TabBarControl : Control {
     private double _contentStartX; // x after icon
 
     private enum HitZone {
-        None, Tab, CloseButton, ErrorIcon, PlusButton, OverflowButton, DragArea,
-        ChromeMinimize, ChromeMaximize, ChromeClose,
+        None, Tab, CloseButton, ErrorIcon, OverflowButton, DragArea,
+        ChromeMinimize, ChromeMaximize, ChromeClose, ToolbarButton,
     }
     private HitZone _hoverZone = HitZone.None;
     private int _hoverTabIndex = -1;
+    private int _hoverToolbarIndex = -1;
 
     // Overflow state — set by ComputeTabLayout.
     // Non-contiguous: any subset of tabs may be visible.
@@ -137,7 +138,8 @@ public sealed class TabBarControl : Control {
 
     public event Action<int>? TabClicked;
     public event Action<int>? TabCloseClicked;
-    public event Action? PlusClicked;
+    public event Action<string>? ToolbarButtonClicked;
+    public event Action<string, Rect>? ToolbarDropdownRequested;
     public event Action? DragAreaPressed;
     public event Action? OverflowClicked;
     public event Action<int>? CloseTabsToRightClicked;
@@ -187,6 +189,30 @@ public sealed class TabBarControl : Control {
         }
     }
     private bool _isWindowActive = true;
+
+    // -------------------------------------------------------------------------
+    // Tab toolbar items (rendered after the last tab, replacing the "+" button)
+    // -------------------------------------------------------------------------
+
+    private IReadOnlyList<ToolbarItem> _toolbarItems = Array.Empty<ToolbarItem>();
+    private double[] _toolbarButtonXPositions = Array.Empty<double>();
+
+    /// <summary>
+    /// Sets the toolbar items displayed on the tab bar (to the right of tabs).
+    /// The first item replaces the old "+" button; additional items follow.
+    /// </summary>
+    public void SetToolbarItems(IReadOnlyList<ToolbarItem> items) {
+        _toolbarItems = items;
+        _toolbarButtonXPositions = new double[items.Count];
+        if (_tabs.Count > 0) ComputeTabLayout();
+        InvalidateVisual();
+    }
+
+    /// <summary>Repaints the tab toolbar to reflect changed toggle state.</summary>
+    public void RefreshToolbar() => InvalidateVisual();
+
+    private double ToolbarTotalWidth =>
+        _toolbarItems.Count * (ToolButtonWidth + TabGap);
 
     // -------------------------------------------------------------------------
     // Public API
@@ -288,7 +314,8 @@ public sealed class TabBarControl : Control {
         }
 
         // 2. Available space
-        var availableWidth = Bounds.Width - _contentStartX - PlusButtonWidth - 16
+        var toolbarReserved = _toolbarItems.Count > 0 ? ToolbarTotalWidth : ToolButtonWidth;
+        var availableWidth = Bounds.Width - _contentStartX - toolbarReserved - 16
                              - CaptionButtonsReserved;
         if (availableWidth < 1) availableWidth = 1;
 
@@ -473,10 +500,15 @@ public sealed class TabBarControl : Control {
         var x = pt.X;
         var y = pt.Y;
 
-        // Check "+" button
-        var plusX = GetPlusButtonX();
-        if (x >= plusX && x < plusX + PlusButtonWidth && y >= TabTopMargin) {
-            return (HitZone.PlusButton, -1);
+        // Check toolbar buttons
+        var tbStartX = GetToolbarStartX();
+        if (_toolbarItems.Count > 0) {
+            for (var ti = 0; ti < _toolbarItems.Count; ti++) {
+                var bx = tbStartX + ti * (ToolButtonWidth + TabGap);
+                if (x >= bx && x < bx + ToolButtonWidth && y >= TabTopMargin) {
+                    return (HitZone.ToolbarButton, ti);
+                }
+            }
         }
 
         // Check overflow button (if visible)
@@ -555,7 +587,7 @@ public sealed class TabBarControl : Control {
         return result;
     }
 
-    private double GetPlusButtonX() {
+    private double GetToolbarStartX() {
         if (_tabs.Count == 0) return _contentStartX;
         // Find rightmost visible tab
         var last = -1;
@@ -591,7 +623,7 @@ public sealed class TabBarControl : Control {
         }
 
         if (_tabs.Count == 0) {
-            DrawPlusButton(ctx, _contentStartX);
+            DrawTabToolbar(ctx, _contentStartX);
             if (ShowChromeButtons) DrawChromeButtons(ctx);
             return;
         }
@@ -641,8 +673,8 @@ public sealed class TabBarControl : Control {
             DrawOverflowButton(ctx);
         }
 
-        // Draw "+" button
-        DrawPlusButton(ctx, GetPlusButtonX());
+        // Draw tab toolbar
+        DrawTabToolbar(ctx, GetToolbarStartX());
 
         // Draw custom chrome buttons (Linux only)
         if (ShowChromeButtons) {
@@ -865,18 +897,53 @@ public sealed class TabBarControl : Control {
         ctx.DrawGeometry(null, pen, geo);
     }
 
-    private void DrawPlusButton(DrawingContext ctx, double x) {
-        var y = TabTopMargin + (TabHeight - PlusButtonHeight) / 2;
-        DrawIconButton(ctx, x, y, PlusButtonWidth, PlusButtonHeight,
-            _hoverZone == HitZone.PlusButton, _theme.TabInactiveHoverBg,
-            IconGlyphs.Add, _theme.TabPlusForeground);
+    private void DrawTabToolbar(DrawingContext ctx, double startX) {
+        var y = TabTopMargin + (TabHeight - ToolButtonHeight) / 2;
+        for (var i = 0; i < _toolbarItems.Count; i++) {
+            var bx = startX + i * (ToolButtonWidth + TabGap);
+            _toolbarButtonXPositions[i] = bx;
+            var item = _toolbarItems[i];
+            var isHovered = _hoverZone == HitZone.ToolbarButton && _hoverToolbarIndex == i;
+            var isToggleOn = item.IsToggle && item.IsChecked?.Invoke() == true;
+
+            // Draw hover or toggle-on background
+            if (isHovered || isToggleOn) {
+                var hoverGeo = CreateRoundedRect(new Rect(bx, y, ToolButtonWidth, ToolButtonHeight), 4);
+                ctx.DrawGeometry(isHovered ? _theme.TabInactiveHoverBg : _theme.TabInactiveHoverBg, null, hoverGeo);
+            }
+
+            // Draw glyph
+            var fg = _theme.TabToolButtonForeground;
+            var ft = new FormattedText(item.Glyph,
+                System.Globalization.CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight, IconFont, IconButtonFontSize, fg);
+
+            // For dropdown buttons, shift glyph left slightly to make room for chevron
+            double glyphX;
+            if (item.IsDropdown) {
+                glyphX = bx + (ToolButtonWidth - ft.Width - 5) / 2;
+            } else {
+                glyphX = bx + (ToolButtonWidth - ft.Width) / 2;
+            }
+            ctx.DrawText(ft, new Point(glyphX, y + (ToolButtonHeight - ft.Height) / 2));
+
+            // Draw dropdown chevron indicator
+            if (item.IsDropdown) {
+                var chevFt = new FormattedText(IconGlyphs.ChevronDown,
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight, IconFont, 8, fg);
+                ctx.DrawText(chevFt, new Point(
+                    bx + ToolButtonWidth - chevFt.Width - 2,
+                    y + ToolButtonHeight - chevFt.Height - 1));
+            }
+        }
     }
 
     private void DrawOverflowButton(DrawingContext ctx) {
-        var y = TabTopMargin + (TabHeight - PlusButtonHeight) / 2;
-        DrawIconButton(ctx, _overflowButtonX, y, OverflowButtonWidth, PlusButtonHeight,
+        var y = TabTopMargin + (TabHeight - ToolButtonHeight) / 2;
+        DrawIconButton(ctx, _overflowButtonX, y, OverflowButtonWidth, ToolButtonHeight,
             _hoverZone == HitZone.OverflowButton, _theme.TabInactiveHoverBg,
-            IconGlyphs.ChevronDown, _theme.TabPlusForeground);
+            IconGlyphs.ChevronDown, _theme.TabToolButtonForeground);
     }
 
     private void DrawChromeButtons(DrawingContext ctx) {
@@ -1010,25 +1077,33 @@ public sealed class TabBarControl : Control {
         }
 
         var (zone, idx) = HitTest(pt);
-        if (zone != _hoverZone || idx != _hoverTabIndex) {
+        var toolbarIdx = zone == HitZone.ToolbarButton ? idx : -1;
+        var tabIdx = zone == HitZone.ToolbarButton ? -1 : idx;
+        if (zone != _hoverZone || tabIdx != _hoverTabIndex || toolbarIdx != _hoverToolbarIndex) {
             _hoverZone = zone;
-            _hoverTabIndex = idx;
+            _hoverTabIndex = tabIdx;
+            _hoverToolbarIndex = toolbarIdx;
             Cursor = zone == HitZone.DragArea
                 ? Cursor.Default
                 : new Cursor(StandardCursorType.Arrow);
 
-            // Show tooltip: conflict message on error icon, file path on tab
-            if (zone == HitZone.ErrorIcon && idx >= 0 && idx < _tabs.Count
-                && _tabs[idx].Conflict is { } c && _tabs[idx].IsDirty) {
+            // Show tooltip: conflict message on error icon, file path on tab,
+            // or toolbar button tooltip.
+            if (zone == HitZone.ErrorIcon && tabIdx >= 0 && tabIdx < _tabs.Count
+                && _tabs[tabIdx].Conflict is { } c && _tabs[tabIdx].IsDirty) {
                 var tip = c.Kind == FileConflictKind.Missing
                     ? $"File not found: {c.FilePath}.\nClick for options."
                     : $"File changed on disk.\nClick for options.";
                 ToolTip.SetTip(this, tip);
                 ToolTip.SetIsOpen(this, true);
             } else if (zone is HitZone.Tab or HitZone.CloseButton
-                && idx >= 0 && idx < _tabs.Count
-                && _tabs[idx].FilePath != null) {
-                UiHelpers.SetPathToolTip(this, _tabs[idx].FilePath);
+                && tabIdx >= 0 && tabIdx < _tabs.Count
+                && _tabs[tabIdx].FilePath != null) {
+                UiHelpers.SetPathToolTip(this, _tabs[tabIdx].FilePath);
+                ToolTip.SetIsOpen(this, true);
+            } else if (zone == HitZone.ToolbarButton
+                && toolbarIdx >= 0 && toolbarIdx < _toolbarItems.Count) {
+                ToolTip.SetTip(this, _toolbarItems[toolbarIdx].Tooltip);
                 ToolTip.SetIsOpen(this, true);
             } else {
                 ToolTip.SetIsOpen(this, false);
@@ -1055,6 +1130,7 @@ public sealed class TabBarControl : Control {
         if (_isDragging) return; // pointer is captured — keep dragging
         _hoverZone = HitZone.None;
         _hoverTabIndex = -1;
+        _hoverToolbarIndex = -1;
         _dragTabIndex = -1;
         InvalidateVisual();
     }
@@ -1088,9 +1164,19 @@ public sealed class TabBarControl : Control {
 
     protected override void OnPointerPressed(PointerPressedEventArgs e) {
         base.OnPointerPressed(e);
+
         var props = e.GetCurrentPoint(this).Properties;
         var pt = e.GetPosition(this);
         var (zone, idx) = HitTest(pt);
+
+        // Close any open context menu — our Handled=true on every hit zone
+        // prevents Avalonia's light-dismiss from seeing the click.  Skip
+        // for zones that manage their own menu toggle (overflow, toolbar
+        // dropdown) so their IsOpen check still works.
+        if (ContextMenu is { IsOpen: true }
+            && zone is not (HitZone.OverflowButton or HitZone.ToolbarButton)) {
+            ContextMenu.Close();
+        }
 
         // Right-click context menu on tabs
         if (props.IsRightButtonPressed
@@ -1122,8 +1208,18 @@ public sealed class TabBarControl : Control {
                 TabCloseClicked?.Invoke(idx);
                 e.Handled = true;
                 break;
-            case HitZone.PlusButton:
-                PlusClicked?.Invoke();
+            case HitZone.ToolbarButton:
+                if (idx >= 0 && idx < _toolbarItems.Count) {
+                    var item = _toolbarItems[idx];
+                    if (item.IsDropdown) {
+                        var bx = _toolbarButtonXPositions[idx];
+                        var by = TabTopMargin + (TabHeight - ToolButtonHeight) / 2;
+                        ToolbarDropdownRequested?.Invoke(item.CommandId,
+                            new Rect(bx, by, ToolButtonWidth, ToolButtonHeight));
+                    } else {
+                        ToolbarButtonClicked?.Invoke(item.CommandId);
+                    }
+                }
                 e.Handled = true;
                 break;
             case HitZone.OverflowButton:
@@ -1154,7 +1250,7 @@ public sealed class TabBarControl : Control {
     }
 
     private void ShowTabContextMenu(int tabIndex, Point position) {
-        var menu = new ContextMenu();
+        var menu = new ContextMenu { FontSize = 12 };
 
         // Conflict resolution items at the top, if applicable.
         if (tabIndex >= 0 && tabIndex < _tabs.Count && _tabs[tabIndex].Conflict is { } conflict) {
@@ -1215,18 +1311,31 @@ public sealed class TabBarControl : Control {
 
         menu.PlacementTarget = this;
         menu.Placement = PlacementMode.Pointer;
-        menu.Open(this);
+        OpenAsContextMenu(menu);
     }
 
     private void ShowConflictMenu(int tabIndex, Point position) {
         if (tabIndex < 0 || tabIndex >= _tabs.Count
             || _tabs[tabIndex].Conflict is not { } conflict) return;
 
-        var menu = new ContextMenu();
+        var menu = new ContextMenu { FontSize = 12 };
         AddConflictMenuItems(menu, tabIndex, conflict);
 
         menu.PlacementTarget = this;
         menu.Placement = PlacementMode.Pointer;
+        OpenAsContextMenu(menu);
+    }
+
+    /// <summary>
+    /// Assigns the menu as <see cref="Control.ContextMenu"/> (so Avalonia
+    /// handles light-dismiss) and clears it on close to prevent stale menus
+    /// from auto-opening on the next right-click.
+    /// </summary>
+    private void OpenAsContextMenu(ContextMenu menu) {
+        ContextMenu = menu;
+        menu.Closed += (_, _) => {
+            if (ContextMenu == menu) ContextMenu = null;
+        };
         menu.Open(this);
     }
 

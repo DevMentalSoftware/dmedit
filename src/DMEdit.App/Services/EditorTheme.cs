@@ -51,7 +51,7 @@ public sealed class EditorTheme {
         new SolidColorBrush(Color.FromRgb(0xD9, 0xD9, 0xD9));
     public IBrush TabCloseHoverBg { get; init; } =
         new SolidColorBrush(Color.FromRgb(0xD9, 0xD9, 0xD9));
-    public IBrush TabPlusForeground { get; init; } =
+    public IBrush TabToolButtonForeground { get; init; } =
         new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
     public IBrush TabErrorIconForeground { get; init; } =
         new SolidColorBrush(Color.FromRgb(0xC4, 0x2B, 0x1C));
@@ -157,7 +157,7 @@ public sealed class EditorTheme {
         TabCloseForeground = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)),
         TabInactiveHoverBg = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x3A)),
         TabCloseHoverBg = new SolidColorBrush(Color.FromRgb(0x4A, 0x4A, 0x4A)),
-        TabPlusForeground = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)),
+        TabToolButtonForeground = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)),
         TabErrorIconForeground = new SolidColorBrush(Color.FromRgb(0xF4, 0x4B, 0x3C)),
         ChromeButtonHoverBg = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x3A)),
         ChromeButtonForeground = new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xC8)),

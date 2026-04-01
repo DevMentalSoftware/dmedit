@@ -323,12 +323,17 @@ public partial class CommandsSettingsSection : UserControl {
                     HorizontalAlignment = HorizontalAlignment.Center,
                 },
             };
+            var isTabToolbar = IsTabToolbarCommand(cmd);
             if (cmd.ToolbarFixed) {
                 btn.IsChecked = true;
                 btn.IsEnabled = false;
-                ToolTip.SetTip(btn, "Always shown in toolbar");
+                ToolTip.SetTip(btn, isTabToolbar
+                    ? "Always shown in tab toolbar"
+                    : "Always shown in toolbar");
             } else {
-                ToolTip.SetTip(btn, "Show in toolbar");
+                ToolTip.SetTip(btn, isTabToolbar
+                    ? "Show in tab toolbar"
+                    : "Show in toolbar");
                 btn.IsCheckedChanged += (_, _) => {
                     var newVal = btn.IsChecked == true;
                     if (newVal == cmd.DefaultInToolbar) {
@@ -517,6 +522,10 @@ public partial class CommandsSettingsSection : UserControl {
 
     private bool IsToolbarModified(string cmdId) =>
         _settings.ToolbarOverrides?.ContainsKey(cmdId) == true;
+
+    private static bool IsTabToolbarCommand(Command cmd) =>
+        cmd == Cmd.FileNew || cmd == Cmd.FileOpen || cmd == Cmd.FileRecent
+        || cmd == Cmd.FileSaveAll || cmd == Cmd.FileCloseAll || cmd == Cmd.ViewStatusBar;
 
     private bool IsRowModified(string cmdId) =>
         IsBindingModified(cmdId, 1) || IsBindingModified(cmdId, 2)

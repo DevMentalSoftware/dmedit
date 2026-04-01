@@ -30,27 +30,57 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 534** (439 Core + 31 Rendering + 64 App, 1 skipped)
+**Test baseline: 599** (492 Core + 43 Rendering + 64 App, 1 skipped)
 
 ### In progress
 
-- **Paged add-buffer eviction** — since chunks are append-only and immutable once
-  the buffer moves to a new chunk, they can be written to disk in the background
-  and evicted from memory. Same pattern as PagedFileBuffer. Active chunk stays in
-  memory; older chunks become paged references. See
-  [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
+- **EditorControl caret X offset** — caret renders consistently further right
+  than DMInputBox when using the same font/size.  Both use
+  `HitTestTextPosition().X` identically.  Root cause unknown; needs investigation.
+  See [13-custom-textbox](design-journal/13-custom-textbox.md).
+
+- **DMInputBox unit tests** — planned but not yet written.  Should cover text
+  insert, selection, caret movement, clipboard, and boundary clamps.
+
+- **Paged add-buffer eviction** (future/roadmap) — no code written yet.
+  Design idea: older immutable chunks could be paged to disk like
+  PagedFileBuffer.  See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
 
-- **DMInputBox** (2026-04-01) — Lightweight custom single-line text input
-  control (`DMInputBox : Control`) replacing Avalonia's `TextBox` in all
-  DMEdit chrome (DMTextBox, DMEditableCombo, GoToLineWindow).  Renders text,
-  caret, and selection directly via `TextLayout` — same approach as
-  `EditorControl` — to work around Avalonia's caret-positioning bug (#12809).
-  Handles arrow keys, Home/End, Ctrl+word-jump, clipboard, mouse
-  click/drag/double/triple-click, horizontal scrolling, caret blink.
-  Avalonia `TextBox` kept only for multi-line usages (ErrorDialog,
-  SettingRowFactory, ComboBox, NumericUpDown).  See
+- **Tab Toolbar + context menu fixes** (2026-04-01) — Replaced the tab bar "+"
+  button with a configurable toolbar ("TabToolbar") docked right of the last tab.
+  Three toolbar zones: TabToolbar (tab bar), Center (menu row), Right (fixed
+  Settings gear).  Tab toolbar commands: New (default on), Open, Recent (dropdown),
+  Save All, Close All, Status Bar (toggle).  All configurable via Settings > Commands
+  "T" button; New is no longer ToolbarFixed so users can hide it.  `FileRecent`
+  added as a dropdown-only command (`IsToolbarDropdown` on Command,
+  `IsDropdown` on ToolbarItem); clicking shows recent files popup reusing
+  `RecentFilesStore`.  Recent items in File menu gated by `File.Recent` M setting
+  via new `IsCommandMenuVisible()` helper.  Bug fixes: `ApplyAdvancedMenuVisibility`
+  now resets `IsVisible = true` for non-advanced commands without overrides (was
+  stuck hidden after toggle-off then toggle-on); all dynamically-created context
+  menus set `FontSize = 12` to match menu bar; tab bar context menus clear
+  `ContextMenu = null` on close to prevent stale menus auto-opening on right-click;
+  `OnPointerPressed` dismisses open context menus except for overflow/toolbar zones
+  that manage their own toggle; toolbar overflow chevron reduced from 18px to 12px.
+
+- **DMInputBox + caret/scroll polish** (2026-04-01) — Lightweight custom
+  single-line text input control (`DMInputBox : Control`) replacing Avalonia's
+  `TextBox` in all DMEdit chrome (DMTextBox, DMEditableCombo, GoToLineWindow).
+  Renders text, caret, and selection directly via `TextLayout` — same approach
+  as `EditorControl` — to work around Avalonia's caret-positioning bug (#12809).
+  Post-implementation fixes: border/hover/focus rendering via Avalonia styles
+  and `RoundedRect` drawing; `SetCurrentValue()` to preserve TemplateBinding;
+  watermark visible when focused; index clamping for crash safety.  Caret
+  rendering improved in both EditorControl and DMInputBox: width reduced to
+  1.0 DIP default with new `CaretWidth` setting (1.0–2.5, 0.5 increments);
+  device-pixel snapping via `Math.Round(x * scale) / scale`.  Row height
+  snapped to device pixel multiple (`Math.Ceiling`) to eliminate inter-line
+  jitter during slow scrolling.  FluentTextBoxButton CornerRadius template
+  fix; find bar expand button refocus; settings row layout stability
+  (Opacity instead of IsVisible for reset buttons); SettingDescriptor
+  Increment parameter.  See
   [13-custom-textbox](design-journal/13-custom-textbox.md).
 
 - **UTF-8 Chunked Add Buffer** (2026-03-29) — Replaced `StringBuilder _addBuf` +

@@ -49,11 +49,11 @@ static class IconGlyphs {
 
     public const string Open = "\uF42E";
     public const string Save = "\uEA43";
-    public const string Search = "\uE6A9";
+    public const string Search = "\uEB22";
 
     // Placeholder toolbar icons
     public const string ClipboardRing  = "\uEF13";
-    public const string SaveAs         = "\uEA4C";
+    public const string SaveAs         = "\uEA49";
     public const string RevertFile     = "\uE47C";
     public const string Print          = "\uE427";
     public const string SaveAsPdf      = "\uE528";
@@ -66,6 +66,11 @@ static class IconGlyphs {
     public const string ZoomIn         = "\uEE8E";
     public const string ZoomOut        = "\uEE8F";
     public const string ZoomReset      = "\uF860";
+
+    // TabToolbar icons
+    public const string SaveAll        = "\uEA4C";  // ic_fluent_save_multiple_20_regular
+    public const string StatusBar      = "\uF58B";  // ic_fluent_panel_bottom_20_regular
+    public const string History        = "\uE36E";
 
     // Conflict / error indicators
     public const string ErrorCircle  = "\uF4A0";  

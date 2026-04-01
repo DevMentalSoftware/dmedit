@@ -3,6 +3,7 @@
   "bindings": {
     "File.New": "Ctrl+X, Ctrl+N",
     "File.Open": "Ctrl+X, Ctrl+F",
+    "File.Recent": "",
     "File.Save": "Ctrl+X, Ctrl+S",
     "File.SaveAs": "Ctrl+X, Ctrl+W",
     "File.SaveAll": "",

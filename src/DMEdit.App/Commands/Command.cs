@@ -55,6 +55,10 @@ public sealed class Command {
     /// cannot disable it via Settings (e.g. the Settings gear icon).</summary>
     public bool ToolbarFixed { get; init; }
 
+    /// <summary>When true the toolbar button shows a dropdown chevron and fires a
+    /// dropdown event instead of executing the command directly.</summary>
+    public bool IsToolbarDropdown { get; init; }
+
     // -- Menu placement (set by Commands.DefineMenus) --
 
     /// <summary>Submenu name (e.g. "Transform Case", "Zoom"), or null for top-level items.</summary>

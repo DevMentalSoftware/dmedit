@@ -195,10 +195,82 @@ change `InnerTextBox` type, remove padding manipulation.
 | `src/DMEdit.App/GoToLineWindow.cs` | **Edit** — use DMInputBox instead of TextBox |
 | `tests/DMEdit.App.Tests/` | **New** — DMInputBox unit tests (text insert, selection, caret movement, clipboard) |
 
+## Implementation Notes (2026-04-01)
+
+### Bugs fixed after initial implementation
+
+1. **Border / hover / focus / background** — DMInputBox initially rendered no
+   chrome.  Added `BorderBrush`, `BorderThickness`, `CornerRadius` styled
+   properties.  `Render()` draws a `RoundedRect` border+background.  Avalonia
+   styles in `App.axaml` target `controls|DMInputBox`, `:pointerover`, and
+   `:focus` pseudoclasses using the same `TextControl*` dynamic resources as
+   the TextBox theme.
+
+2. **Clear button didn't clear text** — `OnTextInput` used `Text = value`
+   (`SetValue`) which created a local value overriding the TemplateBinding
+   from DMTextBox.  Fixed: all property mutations inside DMInputBox use
+   `SetCurrentValue()` to preserve bindings.
+
+3. **Watermark disappeared when focused** — Removed `&& !IsFocused` condition.
+   Watermark now shows whenever text is empty.  Drawn with
+   `PushOpacity(0.5)` for muted placeholder appearance.
+
+4. **Crash on typing after clear** — `CaretIndex` could exceed `Text.Length`
+   after external text change.  All index operations now clamp via
+   `Math.Clamp(..., 0, text.Length)` before string slicing.
+
+5. **Watermark foreground** — Changed fallback brush from hardcoded gray to
+   `Foreground ?? Brushes.Gray` so it's theme-aware.
+
+### Caret rendering improvements (both EditorControl and DMInputBox)
+
+- **Width reduced** from 1.5 to 1.0 DIP (configurable via `CaretWidth`
+  setting, range 1.0–2.5 in 0.5 increments).
+- **DMInputBox +1 offset removed** — the `+1` was a misguided workaround;
+  the Avalonia bug is in `TextPresenter.GetCaretPoints()`, not in
+  `TextLayout.HitTestTextPosition()`.
+- **Device-pixel snapping** — caret X is snapped via
+  `Math.Round(caretX * scale) / scale` to prevent anti-aliasing across
+  two physical pixels (which made the caret appear faint/thin).
+
+### Row height pixel-snapping (EditorControl)
+
+`GetRowHeight()` now snaps the raw `TextLayout.Height` to the nearest
+device pixel multiple via `Math.Ceiling(raw * scale) / scale`.  This
+ensures `line.Row * rh` is always pixel-aligned, eliminating the ±1px
+inter-line jitter visible during slow pixel-by-pixel scrolling.
+
+### Other fixes in this session
+
+- **FluentTextBoxButton CornerRadius** — added
+  `CornerRadius="{TemplateBinding CornerRadius}"` to the ContentPresenter
+  in `TextBoxTheme.axaml` so dropdown button rounded corners are visible.
+- **Find bar expand button focus** — `ExpandBtn.Click` now refocuses
+  `SearchBox.InnerTextBox` after toggling replace mode.
+- **Settings row size stability** — reset button uses `Opacity`/
+  `IsHitTestVisible` instead of `IsVisible` to preserve layout when
+  toggling modified state.
+- **SettingDescriptor.Increment** — new parameter (default 0.1) for
+  `SettingKind.Double` entries, wired into the NumericUpDown control.
+  `CaretWidth` uses `Increment: 0.5`.
+
+## Remaining Work
+
+- **EditorControl caret X offset** — caret appears consistently further
+  right than DMInputBox when using the same font and size.  Both use
+  `HitTestTextPosition().X` identically.  Root cause still unknown —
+  may be related to the editor's `maxWidth` parameter on TextLayout or
+  a subtle difference in how the layout engine constructs per-line layouts.
+  Needs investigation.
+- **DMInputBox unit tests** — planned but not yet written.  Should cover
+  text insert, selection, caret movement, clipboard, and boundary clamps.
+- **Paged add-buffer eviction** — deferred from prior session, still
+  pending.  See [12-utf8-add-buffer](12-utf8-add-buffer.md).
+
 ## Verification
 
-1. `dotnet build` — zero errors.
-2. `dotnet test` — all existing tests pass.
+1. `dotnet build` — zero errors, zero warnings.
+2. `dotnet test` — 599 passed (492 Core + 43 Rendering + 64 App), 1 skipped.
 3. Manual testing:
    - Find bar: type search term, verify caret after last character, click
      to reposition, Ctrl+A select all, Ctrl+C copy, arrow keys, Home/End.
@@ -206,5 +278,6 @@ change `InnerTextBox` type, remove padding manipulation.
    - Settings: DMTextBox search filter, command shortcut capture box.
    - DMEditableCombo: history dropdown selection populates text with correct
      caret, clear button clears and refocuses.
-   - Compare caret position vs old Avalonia TextBox — caret should render
-     clearly past the last glyph at all font sizes.
+   - Caret width setting: slider steps 1.0/1.5/2.0/2.5, applies to both
+     editor and chrome text boxes.
+   - Slow scroll: inter-line spacing stays uniform.

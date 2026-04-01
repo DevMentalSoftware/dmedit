@@ -16,15 +16,25 @@ public static class Commands {
     // File
     // =================================================================
 
-    public static readonly Command FileNew = new("File", "New", "_New");
-    public static readonly Command FileOpen = new("File", "Open", "_Open\u2026");
+    public static readonly Command FileNew = new("File", "New", "_New") {
+        DefaultInToolbar = true,
+        ToolbarGlyph = IconGlyphs.Add, ToolbarTooltip = "New",
+    };
+    public static readonly Command FileOpen = new("File", "Open", "_Open\u2026") {
+        ToolbarGlyph = IconGlyphs.Open, ToolbarTooltip = "Open",
+
+    };
     public static readonly Command FileSave = new("File", "Save", "_Save") {
         ToolbarGlyph = IconGlyphs.Save, ToolbarTooltip = "Save",
     };
     public static readonly Command FileSaveAs = new("File", "SaveAs", "Save _As\u2026") {
         ToolbarGlyph = IconGlyphs.SaveAs, ToolbarTooltip = "Save As",
     };
-    public static readonly Command FileSaveAll = new("File", "SaveAll", "Save A_ll") { IsAdvanced = true };
+    public static readonly Command FileSaveAll = new("File", "SaveAll", "Save A_ll") {
+        IsAdvanced = true,
+        ToolbarGlyph = IconGlyphs.SaveAll, ToolbarTooltip = "Save All",
+
+    };
     public static readonly Command FileRevertFile = new("File", "RevertFile", "_Revert File") {
         IsAdvanced = true,
         ToolbarGlyph = IconGlyphs.RevertFile, ToolbarTooltip = "Revert File",
@@ -37,7 +47,11 @@ public static class Commands {
         ToolbarGlyph = IconGlyphs.SaveAsPdf, ToolbarTooltip = "Save As PDF",
     };
     public static readonly Command FileClose = new("File", "Close", "_Close");
-    public static readonly Command FileCloseAll = new("File", "CloseAll", "Close A_ll") { IsAdvanced = true };
+    public static readonly Command FileCloseAll = new("File", "CloseAll", "Close A_ll") {
+        IsAdvanced = true,
+        ToolbarGlyph = IconGlyphs.Close, ToolbarTooltip = "Close All",
+
+    };
     public static readonly Command FileExit = new("File", "Exit", "E_xit");
     public static readonly Command FileToggleReadOnly = new("File", "ToggleReadOnly", "Toggle Read _Only") {
         IsAdvanced = true,
@@ -45,6 +59,10 @@ public static class Commands {
     public static readonly Command FileReloadFile = new("File", "ReloadFile", "Re_load File") {
         IsAdvanced = true,
         ToolbarGlyph = IconGlyphs.ReloadFile, ToolbarTooltip = "Reload File",
+    };
+    public static readonly Command FileRecent = new("File", "Recent", "_Recent") {
+        ToolbarGlyph = IconGlyphs.History, ToolbarTooltip = "Recent",
+        IsToolbarDropdown = true,
     };
     public static readonly Command FileClearRecentFiles = new("File", "ClearRecentFiles", "Clear Recent Files") { IsAdvanced = true };
 
@@ -178,7 +196,10 @@ public static class Commands {
         ToolbarGlyph = IconGlyphs.LineNumbers, ToolbarTooltip = "Line Numbers",
         IsToolbarToggle = true,
     };
-    public static readonly Command ViewStatusBar = new("View", "StatusBar", "_Status Bar");
+    public static readonly Command ViewStatusBar = new("View", "StatusBar", "_Status Bar") {
+        ToolbarGlyph = IconGlyphs.StatusBar, ToolbarTooltip = "Status Bar",
+        IsToolbarToggle = true,
+    };
     public static readonly Command ViewWrapLines = new("View", "WrapLines", "_Wrap Lines") {
         DefaultInToolbar = true, ToolbarGlyph = IconGlyphs.Wrap, ToolbarTooltip = "Wrap Lines",
         IsToolbarToggle = true,
@@ -345,6 +366,7 @@ public static class Commands {
         StartMenu(CommandMenu.File);
         Item(FileNew);
         Item(FileOpen);
+        Item(FileRecent);
         Sep();
         Item(FileSave);
         Item(FileSaveAs);

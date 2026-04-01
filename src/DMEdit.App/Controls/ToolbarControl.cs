@@ -20,6 +20,7 @@ public sealed class ToolbarItem {
     public required string Tooltip { get; init; }
     public bool IsToggle { get; init; }
     public Func<bool>? IsChecked { get; init; }
+    public bool IsDropdown { get; init; }
 }
 
 /// <summary>
@@ -56,7 +57,7 @@ public sealed class ToolbarControl : Control {
 
     public void ApplyTheme(EditorTheme theme) {
         _theme = theme;
-        _foreground = theme.TabPlusForeground;
+        _foreground = theme.TabToolButtonForeground;
         // Match ButtonTheme.axaml exactly
         _hoverBg = theme == EditorTheme.Dark
             ? new SolidColorBrush(Color.FromRgb(0x4A, 0x4A, 0x4A))
@@ -220,7 +221,7 @@ public sealed class ToolbarControl : Control {
             ctx.DrawGeometry(_hoverBg, null, geo);
         }
         var ft = new FormattedText(IconGlyphs.ChevronDown, CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight, IconFont, IconFontSize, _foreground);
+            FlowDirection.LeftToRight, IconFont, 12, _foreground);
         ctx.DrawText(ft, new Point(
             x + (OverflowBtnWidth - ft.Width) / 2,
             y + (ButtonSize - ft.Height) / 2));

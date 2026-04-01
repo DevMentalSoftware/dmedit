@@ -3,6 +3,7 @@
   "bindings": {
     "File.New": "Alt+Insert",
     "File.Open": "",
+    "File.Recent": "",
     "File.Save": "Ctrl+S",
     "File.SaveAs": "",
     "File.SaveAll": "",
