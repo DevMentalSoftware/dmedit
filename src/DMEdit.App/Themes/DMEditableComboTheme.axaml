@@ -9,11 +9,11 @@
 		<Setter Property="Template">
 			<ControlTemplate>
 				<Grid ColumnDefinitions="*,Auto">
-					<TextBox x:Name="PART_TextBox"
-					         Grid.ColumnSpan="2"
-					         Text="{TemplateBinding Text, Mode=TwoWay}"
-					         Watermark="{TemplateBinding Watermark}"
-					         FontSize="{TemplateBinding FontSize}" />
+					<controls:DMInputBox x:Name="PART_TextBox"
+					                     Grid.ColumnSpan="2"
+					                     Text="{TemplateBinding Text, Mode=TwoWay}"
+					                     Watermark="{TemplateBinding Watermark}"
+					                     FontSize="{TemplateBinding FontSize}" />
 					<StackPanel Grid.Column="1"
 					            Orientation="Horizontal"
 					            VerticalAlignment="Stretch"

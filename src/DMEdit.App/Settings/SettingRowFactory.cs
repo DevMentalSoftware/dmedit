@@ -78,7 +78,9 @@ public static class SettingRowFactory {
         SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
         Action<string> onChanged, Border border) {
         var btn = CreateResetIconButton();
-        btn.IsVisible = !Equals(prop.GetValue(settings), desc.DefaultValue);
+        var modified = !Equals(prop.GetValue(settings), desc.DefaultValue);
+        btn.Opacity = modified ? 1 : 0;
+        btn.IsHitTestVisible = modified;
 
         btn.Click += (_, _) => {
             prop.SetValue(settings, desc.DefaultValue);
@@ -284,7 +286,7 @@ public static class SettingRowFactory {
             Value = Convert.ToDecimal(prop.GetValue(settings)),
             Minimum = desc.Min is not null ? Convert.ToDecimal(desc.Min) : 0,
             Maximum = desc.Max is not null ? Convert.ToDecimal(desc.Max) : 1000,
-            Increment = 0.1m,
+            Increment = (decimal)desc.Increment,
             Width = 180,
             HorizontalAlignment = HorizontalAlignment.Left,
             FormatString = "0.0",
@@ -357,9 +359,10 @@ public static class SettingRowFactory {
         var current = prop.GetValue(settings);
         var isDefault = Equals(current, desc.DefaultValue);
         border.BorderBrush = isDefault ? Brushes.Transparent : CurrentTheme.SettingsAccent;
-        // Toggle reset button visibility.
+        // Toggle reset button visibility (Opacity, not IsVisible, to preserve layout).
         if (FindByTag(border, "reset") is Control resetBtn) {
-            resetBtn.IsVisible = !isDefault;
+            resetBtn.Opacity = isDefault ? 0 : 1;
+            resetBtn.IsHitTestVisible = !isDefault;
         }
     }
 
@@ -743,7 +746,8 @@ public static class SettingRowFactory {
         var isModified = settings.EditorFontFamily != null || settings.EditorFontSize != 11;
         border.BorderBrush = isModified ? CurrentTheme.SettingsAccent : Brushes.Transparent;
         if (FindByTag(border, "reset") is Control resetBtn) {
-            resetBtn.IsVisible = isModified;
+            resetBtn.Opacity = isModified ? 1 : 0;
+            resetBtn.IsHitTestVisible = isModified;
         }
     }
 }

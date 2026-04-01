@@ -67,11 +67,8 @@ public class DMEditableCombo : TemplatedControl {
         set => SetValue(ShowClearButtonProperty, value);
     }
 
-    /// <summary>Inner TextBox for attaching key handlers, CaretIndex, SelectAll() etc.</summary>
-    public TextBox? InnerTextBox { get; private set; }
-
-    private Thickness _basePadding;
-    private const double ButtonReserve = 34;
+    /// <summary>Inner DMInputBox for attaching key handlers, CaretIndex, SelectAll() etc.</summary>
+    public DMInputBox? InnerTextBox { get; private set; }
 
     private Button? _clearButton;
     private Button? _dropDownButton;
@@ -82,7 +79,7 @@ public class DMEditableCombo : TemplatedControl {
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e) {
         base.OnApplyTemplate(e);
 
-        InnerTextBox = e.NameScope.Find<TextBox>("PART_TextBox");
+        InnerTextBox = e.NameScope.Find<DMInputBox>("PART_TextBox");
         _clearButton = e.NameScope.Find<Button>("PART_ClearButton");
         _dropDownButton = e.NameScope.Find<Button>("PART_DropDownButton");
         _popup = e.NameScope.Find<Popup>("PART_Popup");
@@ -121,9 +118,7 @@ public class DMEditableCombo : TemplatedControl {
             InnerTextBox.KeyDown += OnInnerKeyDown;
         }
 
-        _basePadding = InnerTextBox?.Padding ?? default;
         UpdateClearButtonVisibility();
-        UpdateTextBoxPadding();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change) {
@@ -133,7 +128,7 @@ public class DMEditableCombo : TemplatedControl {
             UpdateClearButtonVisibility();
         }
         if (change.Property == ShowClearButtonProperty) {
-            UpdateTextBoxPadding();
+            UpdateClearButtonVisibility();
         }
     }
 
@@ -145,14 +140,6 @@ public class DMEditableCombo : TemplatedControl {
         if (_clearButton != null) {
             _clearButton.IsVisible = ShowClearButton && !string.IsNullOrEmpty(Text);
         }
-    }
-
-    private void UpdateTextBoxPadding() {
-        if (InnerTextBox == null) return;
-        double right = _basePadding.Right
-                     + ButtonReserve                                    // dropdown always visible
-                     + (ShowClearButton ? ButtonReserve : 0);
-        InnerTextBox.Padding = new Thickness(_basePadding.Left, _basePadding.Top, right, _basePadding.Bottom);
     }
 
     // -----------------------------------------------------------------

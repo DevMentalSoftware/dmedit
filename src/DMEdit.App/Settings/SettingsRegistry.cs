@@ -24,6 +24,10 @@ public static class SettingsRegistry {
             "When wrapping is enabled we can force wrapping at a particular width when the window is wider than that width.",
             "Display", SettingKind.Int, 100, Min: 0, Max: 10000),
 
+        new("CaretWidth", "Caret Width",
+            "Width of the text caret in pixels. Range: 1.0 – 2.5.",
+            "Display", SettingKind.Double, 1.0, Min: 1.0, Max: 2.5, Increment: 0.5),
+
         new("BrightSelection", "Bright Selection",
             "Use a brighter, more visible selection highlight. Useful on monitors with limited contrast.",
             "Display", SettingKind.Bool, false),

@@ -55,6 +55,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     public static readonly StyledProperty<IBrush> CaretBrushProperty =
         AvaloniaProperty.Register<EditorControl, IBrush>(nameof(CaretBrush), Brushes.Black);
 
+    public static readonly StyledProperty<double> CaretWidthProperty =
+        AvaloniaProperty.Register<EditorControl, double>(nameof(CaretWidth), 1.0);
+
     // -------------------------------------------------------------------------
     // CLR wrappers
     // -------------------------------------------------------------------------
@@ -87,6 +90,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     public IBrush CaretBrush {
         get => GetValue(CaretBrushProperty);
         set => SetValue(CaretBrushProperty, value);
+    }
+
+    public double CaretWidth {
+        get => GetValue(CaretWidthProperty);
+        set => SetValue(CaretWidthProperty, value);
     }
 
     /// <summary>
@@ -623,7 +631,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         using var tl = new TextLayout(
             " ", typeface, FontSize, ForegroundBrush,
             maxWidth: double.PositiveInfinity, maxHeight: double.PositiveInfinity);
-        _rowHeight = tl.Height > 0 ? tl.Height : 20.0;
+        var raw = tl.Height > 0 ? tl.Height : 20.0;
+        // Snap to device pixel multiple so line.Row * rh is always
+        // pixel-aligned and inter-line gaps stay uniform during scrolling.
+        var scale = VisualRoot?.RenderScaling ?? 1.0;
+        _rowHeight = Math.Ceiling(raw * scale) / scale;
         return _rowHeight;
     }
 
@@ -1363,7 +1375,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             context.FillRectangle(new SolidColorBrush(caretColor),
                 new Rect(rect.X + TextOriginX, y, caretWidth, rect.Height));
         } else {
-            context.FillRectangle(CaretBrush, new Rect(rect.X + TextOriginX, y, 1.5, rect.Height));
+            var caretX = rect.X + TextOriginX;
+            var scale = VisualRoot?.RenderScaling ?? 1.0;
+            caretX = Math.Round(caretX * scale) / scale;
+            context.FillRectangle(CaretBrush, new Rect(caretX, y, CaretWidth, rect.Height));
         }
     }
 

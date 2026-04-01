@@ -24,6 +24,7 @@ small one — it is the primary way a fresh session recovers context.
 | [10-session-and-reliability](design-journal/10-session-and-reliability.md) | 2026-03-24 | Session persist bugs, edit serialization, line tree reliability, memory safety, buffer simplification |
 | [11-search-and-memory-safety](design-journal/11-search-and-memory-safety.md) | 2026-03-27 | Horizontal scrollbar, find bar improvements, async match counting, GetText guard, line-at-a-time layout, chunked search, ReplaceAll design |
 | [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md) | 2026-03-29 | ChunkedUtf8Buffer replaces StringBuilder _addBuf, binary session persistence, paged eviction roadmap |
+| [13-custom-textbox](design-journal/13-custom-textbox.md) | 2026-04-01 | DMInputBox: lightweight custom TextBox replacing Avalonia TextPresenter to fix caret bug |
 
 ---
 
@@ -40,6 +41,17 @@ small one — it is the primary way a fresh session recovers context.
   [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **DMInputBox** (2026-04-01) — Lightweight custom single-line text input
+  control (`DMInputBox : Control`) replacing Avalonia's `TextBox` in all
+  DMEdit chrome (DMTextBox, DMEditableCombo, GoToLineWindow).  Renders text,
+  caret, and selection directly via `TextLayout` — same approach as
+  `EditorControl` — to work around Avalonia's caret-positioning bug (#12809).
+  Handles arrow keys, Home/End, Ctrl+word-jump, clipboard, mouse
+  click/drag/double/triple-click, horizontal scrolling, caret blink.
+  Avalonia `TextBox` kept only for multi-line usages (ErrorDialog,
+  SettingRowFactory, ComboBox, NumericUpDown).  See
+  [13-custom-textbox](design-journal/13-custom-textbox.md).
 
 - **UTF-8 Chunked Add Buffer** (2026-03-29) — Replaced `StringBuilder _addBuf` +
   `string _addBufCache` with `ChunkedUtf8Buffer`: variable-size `byte[]` chunks
@@ -247,6 +259,15 @@ small one — it is the primary way a fresh session recovers context.
   `lineIndex * rh` / `scrollY / rh`.
 
 ### In progress
+
+- **DMInputBox custom TextBox** — lightweight single-line text control that
+  replaces Avalonia's TextBox inside DMTextBox and DMEditableCombo.  Uses
+  Avalonia `TextLayout` for measurement/hit-testing with custom `Render`
+  override for text, selection, and caret drawing.  Fixes Avalonia #12809
+  (caret overlaps last glyph).  Drops into existing AXAML templates —
+  wrapper controls keep their overlay-button patterns.  Multi-line usages
+  (ErrorDialog, SettingRowFactory, ComboBox, NUD) stay on stock TextBox.
+  See [13-custom-textbox](design-journal/13-custom-textbox.md).
 
 - **Search Within Selection** — When OpenFindBar is invoked with a multi-line
   selection, the scope dropdown should auto-select "Current Selection" and all

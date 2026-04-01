@@ -17,5 +17,6 @@ public sealed record SettingDescriptor(
     object DefaultValue,
     object? Min = null,
     object? Max = null,
+    double Increment = 0.1,
     Type? EnumType = null,
     string? EnabledWhenKey = null);

@@ -100,6 +100,7 @@ public partial class FindBarControl : UserControl {
         ExpandBtn.Click += (_, _) => {
             _isReplaceMode = !_isReplaceMode;
             ApplyReplaceMode();
+            SearchBox.InnerTextBox?.Focus();
         };
 
         // Wildcard / Regex toggles: mutual exclusion — only one active at a time.

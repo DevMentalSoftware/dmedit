@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using DMEdit.App.Controls;
 using DMEdit.App.Services;
 
 namespace DMEdit.App;
@@ -12,7 +13,7 @@ namespace DMEdit.App;
 /// Accepts input in the form "line" or "line:col".
 /// </summary>
 public class GoToLineWindow : Window {
-    private readonly TextBox _input;
+    private readonly DMInputBox _input;
     private readonly Border _rootBorder;
 
     /// <summary>1-based line number to go to, or <c>null</c> if cancelled.</summary>
@@ -32,7 +33,7 @@ public class GoToLineWindow : Window {
         Background = Brushes.Transparent;
         TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
 
-        _input = new TextBox {
+        _input = new DMInputBox {
             Watermark = "Line[:Column]",
             FontSize = 14,
             Text = currentLine.ToString(),

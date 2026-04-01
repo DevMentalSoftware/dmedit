@@ -1451,6 +1451,8 @@ public partial class MainWindow : Window {
         Editor._clipboardRing.MaxSize = Math.Max(1, _settings.ClipboardRingSize);
         Editor.ExpandSelectionMode = _settings.ExpandSelectionMode;
         Editor.IndentWidth = _settings.IndentWidth;
+        Editor.CaretWidth = _settings.CaretWidth;
+        Application.Current!.Resources["DMEditCaretWidth"] = _settings.CaretWidth;
         Editor.MaxRegexMatchLength = _settings.MaxRegexMatchLength;
 
         UpdateStatusBarVisibility();
@@ -2758,6 +2760,10 @@ public partial class MainWindow : Window {
                     break;
                 case "EditorFontSize":
                     Editor.FontSize = _settings.EditorFontSize.ToPixels();
+                    break;
+                case "CaretWidth":
+                    Editor.CaretWidth = _settings.CaretWidth;
+                    Application.Current!.Resources["DMEditCaretWidth"] = _settings.CaretWidth;
                     break;
                 case "DevMode":
                     UpdateStatusBarVisibility();

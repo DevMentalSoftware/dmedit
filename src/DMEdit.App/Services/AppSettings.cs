@@ -187,6 +187,12 @@ public sealed class AppSettings {
     // -----------------------------------------------------------------
 
     /// <summary>
+    /// Width of the text caret in device-independent pixels.
+    /// Allowed range: 1.0 – 2.5 in 0.5 increments. Default: 1.0.
+    /// </summary>
+    public double CaretWidth { get; set; } = 1.0;
+
+    /// <summary>
     /// Editor font family name. Null means use the built-in default
     /// (Cascadia Code with Consolas / Courier New fallbacks).
     /// </summary>
