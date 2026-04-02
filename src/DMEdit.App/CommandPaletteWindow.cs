@@ -54,7 +54,7 @@ public class CommandPaletteWindow : Window {
         _theme = theme;
         _grouped = settings.CommandPaletteGroupByCategory;
 
-        Title = "Command Palette";
+        Title = "Commands";
         Width = 520;
         Height = 420;
         CanResize = false;

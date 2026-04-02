@@ -12,10 +12,10 @@
 
 ```
 src/
-  DMEdit.Core/             — Document model, PieceTable, IBuffer, blocks, FenwickTree, IO
+  DMEdit.Core/             — Document model, PieceTable, IBuffer, LineIndexTree, blocks, IO
   DMEdit.Rendering/        — TextLayoutEngine (Avalonia TextLayout wrapper)
   DMEdit.App/              — Avalonia desktop app: EditorControl, DualZoneScrollBar, MainWindow
-  DMEdit.Print.Windows/    — Windows printing support
+  DMEdit.Windows/          — Windows-specific features (printing, native clipboard)
 tests/
   DMEdit.Core.Tests/
   DMEdit.Rendering.Tests/

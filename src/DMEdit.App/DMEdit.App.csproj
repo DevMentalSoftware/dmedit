@@ -57,11 +57,11 @@
     </EmbeddedResource>
   </ItemGroup>
 
-  <!-- Copy the Windows-specific print DLL beside the app after build (if present).
-       The solution builds DMEdit.Print.Windows independently; this target just
+  <!-- Copy the Windows-specific DLL beside the app after build (if present).
+       The solution builds DMEdit.Windows independently; this target just
        copies the output so the App can discover it at runtime via reflection.
        No ProjectReference: net10.0 cannot reference net10.0-windows at build time. -->
-  <Target Name="CopyWindowsPrintDll" AfterTargets="Build" Condition="$([MSBuild]::IsOSPlatform('Windows')) And Exists('..\DMEdit.Print.Windows\bin\$(Configuration)\net10.0-windows\DMEdit.Print.Windows.dll')">
-    <Copy SourceFiles="..\DMEdit.Print.Windows\bin\$(Configuration)\net10.0-windows\DMEdit.Print.Windows.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  <Target Name="CopyWindowsDll" AfterTargets="Build" Condition="$([MSBuild]::IsOSPlatform('Windows')) And Exists('..\DMEdit.Windows\bin\$(Configuration)\net10.0-windows\DMEdit.Windows.dll')">
+    <Copy SourceFiles="..\DMEdit.Windows\bin\$(Configuration)\net10.0-windows\DMEdit.Windows.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
   </Target>
 </Project>

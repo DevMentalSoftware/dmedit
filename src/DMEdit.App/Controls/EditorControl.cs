@@ -534,6 +534,26 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _caretTimer.Start();
         _coalesceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
         _coalesceTimer.Tick += (_, _) => FlushCompound();
+        BuildContextMenu();
+    }
+
+    private void BuildContextMenu() {
+        var cut = new MenuItem { Header = "Cu_t", FontSize = 12 };
+        var copy = new MenuItem { Header = "_Copy", FontSize = 12 };
+        var paste = new MenuItem { Header = "_Paste", FontSize = 12 };
+        cut.Click += (_, _) => Cmd.EditCut.Run();
+        copy.Click += (_, _) => Cmd.EditCopy.Run();
+        paste.Click += (_, _) => Cmd.EditPaste.Run();
+        ContextMenu = new ContextMenu {
+            FontSize = 12,
+            Cursor = new Cursor(StandardCursorType.Arrow),
+            Items = { cut, copy, paste },
+        };
+        ContextMenu.Opening += (_, _) => {
+            cut.IsEnabled = Cmd.EditCut.IsEnabled;
+            copy.IsEnabled = Cmd.EditCopy.IsEnabled;
+            paste.IsEnabled = Cmd.EditPaste.IsEnabled;
+        };
     }
 
     // -------------------------------------------------------------------------
@@ -3411,10 +3431,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 e.Pointer.Capture(this);
             }
         } else {
-            if (doc.ColumnSel != null) {
-                doc.ColumnSel = null;
+            // Right-click: preserve selection if clicking within it,
+            // otherwise collapse to the click position.
+            if (!doc.Selection.IsEmpty && ofs >= doc.Selection.Start && ofs <= doc.Selection.End) {
+                // Clicked inside selected text — keep selection for context menu.
+            } else {
+                doc.Selection = Selection.Collapsed(ofs);
             }
-            doc.Selection = Selection.Collapsed(ofs);
         }
         e.Handled = true;
         InvalidateVisual();

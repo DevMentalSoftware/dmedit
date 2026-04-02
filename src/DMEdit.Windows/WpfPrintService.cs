@@ -8,7 +8,7 @@ using DMEdit.Core.Printing;
 using FlowDirection = System.Windows.FlowDirection;
 using PageOrientation = DMEdit.Core.Printing.PageOrientation;
 
-namespace DMEdit.Print.Windows;
+namespace DMEdit.Windows;
 
 /// <summary>
 /// Windows implementation of <see cref="ISystemPrintService"/> using WPF's

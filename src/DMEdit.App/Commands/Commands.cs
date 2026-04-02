@@ -182,9 +182,9 @@ public static class Commands {
     public static readonly Command SearchGoToLine = new("Search", "GoToLine", "_Go to Line") {
         ToolbarGlyph = IconGlyphs.GoToLine, ToolbarTooltip = "Go to Line",
     };
-    public static readonly Command SearchCommandPalette = new("Search", "CommandPalette", "Command _Palette") {
+    public static readonly Command SearchCommandPalette = new("Search", "CommandPalette", "Commands") {
         IsAdvanced = true,
-        ToolbarGlyph = IconGlyphs.CommandPalette, ToolbarTooltip = "Command Palette",
+        ToolbarGlyph = IconGlyphs.CommandPalette, ToolbarTooltip = "Commands",
     };
 
     // =================================================================

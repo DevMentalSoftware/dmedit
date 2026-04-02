@@ -1,5 +1,5 @@
 <Solution>
-  <Project Path="src/DMEdit.Print.Windows/DMEdit.Print.Windows.csproj" />
+  <Project Path="src/DMEdit.Windows/DMEdit.Windows.csproj" />
   <Project Path="src/DMEdit.App/DMEdit.App.csproj" />
   <Project Path="src/DMEdit.Core/DMEdit.Core.csproj" />
   <Project Path="src/DMEdit.Rendering/DMEdit.Rendering.csproj" />

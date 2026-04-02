@@ -5,7 +5,7 @@ using System.Text;
 using DMEdit.Core.Clipboard;
 using DMEdit.Core.Documents;
 
-namespace DMEdit.Print.Windows;
+namespace DMEdit.Windows;
 
 /// <summary>
 /// Windows clipboard service using Win32 P/Invoke. Copies text directly from

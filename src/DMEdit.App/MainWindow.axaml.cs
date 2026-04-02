@@ -70,6 +70,9 @@ public partial class MainWindow : Window {
     // Alt-menu activation: defer to KeyUp so Alt+drag / Alt+Shift+Arrow
     // don't accidentally activate the menu bar.
     private bool _altPressedClean;
+    // Set when TryOpenMenuAccessKey opens a menu via Alt+letter so the
+    // subsequent Alt KeyUp doesn't immediately close it.
+    private bool _menuAccessKeyActive;
 
     public MainWindow() {
         PieceTable.MaxPseudoLine = _settings.MaxPseudoLine;
@@ -695,6 +698,7 @@ public partial class MainWindow : Window {
         // OnKeyUp handler (standard Windows behavior).
         if (e.Key is Key.LeftAlt or Key.RightAlt) {
             _altPressedClean = true;
+            _menuAccessKeyActive = false;
             e.Handled = true;
             return;
         }
@@ -709,6 +713,37 @@ public partial class MainWindow : Window {
             or Key.LeftCtrl or Key.RightCtrl
             or Key.LWin or Key.RWin) {
             return;
+        }
+
+        // Menu is open via access key — intercept letters (plain or
+        // Alt+letter) to activate submenu items before command dispatch
+        // can steal them.  Also handles Escape to dismiss.
+        if (_menuAccessKeyActive || MenuBar.IsKeyboardFocusWithin) {
+            // Check if a submenu is actually still open.
+            bool menuOpen = MenuBar.Items.OfType<MenuItem>()
+                .Any(m => m.IsSubMenuOpen);
+            if (!menuOpen && !MenuBar.IsKeyboardFocusWithin) {
+                _menuAccessKeyActive = false;
+            } else {
+                if (e.Key == Key.Escape) {
+                    MenuBar.Close();
+                    _menuAccessKeyActive = false;
+                    if (_activeTab is not { IsSettings: true }) {
+                        Editor.Focus();
+                    }
+                    e.Handled = true;
+                    return;
+                }
+                // Plain letter or Alt+letter → activate the matching
+                // access key item in the open submenu.
+                if (e.KeyModifiers is KeyModifiers.None or KeyModifiers.Alt
+                    && TryActivateSubmenuAccessKey(e.Key)) {
+                    e.Handled = true;
+                    return;
+                }
+                // Other keys (arrows, Enter, etc.): let menu handle them.
+                return;
+            }
         }
 
         // Incremental search mode: intercept keys before normal dispatch.
@@ -726,16 +761,6 @@ public partial class MainWindow : Window {
                 // OnTextInput fires and our interception there picks it up.
                 return;
             }
-        }
-
-        // Menu bar focused: Escape returns focus to the editor.
-        if (e.Key == Key.Escape && MenuBar.IsKeyboardFocusWithin) {
-            MenuBar.Close();
-            if (_activeTab is not { IsSettings: true }) {
-                Editor.Focus();
-            }
-            e.Handled = true;
-            return;
         }
 
         // Column selection mode: Escape exits back to normal editing.
@@ -826,6 +851,9 @@ public partial class MainWindow : Window {
             e.Handled = true;
             if (wantMenu) {
                 MenuBar.Focus();
+            } else if (_menuAccessKeyActive) {
+                // A menu was opened via Alt+letter (e.g. Alt+F). The Alt
+                // key is now being released — don't close the menu.
             } else {
                 // Alt was consumed as a modifier (e.g. Alt+Up).  Clear the
                 // access-key underlines that Avalonia's AccessKeyHandler may
@@ -869,10 +897,53 @@ public partial class MainWindow : Window {
                 item.Open();
                 item.Focus();
                 _altPressedClean = false;
+                _menuAccessKeyActive = true;
                 e.Handled = true;
                 return;
             }
         }
+    }
+
+    /// <summary>
+    /// When a submenu is open, find the menu item whose access key matches
+    /// the pressed letter and invoke it. Handles Alt+letter within an open
+    /// menu so that e.g. Alt+E, Alt+P invokes Paste.
+    /// </summary>
+    private bool TryActivateSubmenuAccessKey(Key key) {
+        var letter = key.ToString();
+        if (letter.Length != 1) return false;
+        var ch = char.ToUpperInvariant(letter[0]);
+
+        foreach (var topItem in MenuBar.Items.OfType<MenuItem>()) {
+            if (!topItem.IsSubMenuOpen) continue;
+            return ActivateAccessKeyIn(topItem.Items, ch);
+        }
+        return false;
+    }
+
+    private bool ActivateAccessKeyIn(ItemCollection items, char ch) {
+        foreach (var item in items.OfType<MenuItem>()) {
+            if (item.Header is not string header) continue;
+            var idx = header.IndexOf('_');
+            if (idx < 0 || idx + 1 >= header.Length) continue;
+            if (char.ToUpperInvariant(header[idx + 1]) != ch) continue;
+
+            if (item.Items.Count > 0) {
+                // Has a submenu — open it instead of invoking.
+                item.Open();
+                item.Focus();
+            } else {
+                // Leaf item — invoke the click handler.
+                item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                MenuBar.Close();
+                _menuAccessKeyActive = false;
+                if (_activeTab is not { IsSettings: true }) {
+                    Editor.Focus();
+                }
+            }
+            return true;
+        }
+        return false;
     }
 
     private void CancelChord() {

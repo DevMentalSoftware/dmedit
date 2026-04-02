@@ -499,6 +499,19 @@ public sealed class DualZoneScrollBar : Control {
         InteractionEnded?.Invoke();
     }
 
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e) {
+        base.OnPointerCaptureLost(e);
+        if (_isDragging) {
+            _isDragging = false;
+            _isMiddleDrag = false;
+            _outerDragVisualOffset = 0;
+            StopRepeat();
+            _pressedZone = HitZone.None;
+            InvalidateVisual();
+            InteractionEnded?.Invoke();
+        }
+    }
+
     private void UpdateHover(Point pt) {
         var zone = HitTestZone(pt);
         if (zone != _hoverZone) {

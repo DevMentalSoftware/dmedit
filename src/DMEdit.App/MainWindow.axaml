@@ -90,7 +90,7 @@
 						<Separator />
 						<MenuItem Header="_Go to Line" x:Name="MenuGoToLine" />
 						<Separator />
-						<MenuItem Header="Command _Palette" x:Name="MenuCommandPalette" />
+						<MenuItem Header="_Commands" x:Name="MenuCommandPalette" />
 					</MenuItem>
 					<MenuItem Header="_View" x:Name="MenuView">
 						<MenuItem Header="_Line Numbers" x:Name="MenuLineNumbers" />

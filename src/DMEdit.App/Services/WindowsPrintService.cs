@@ -33,7 +33,7 @@ public static class WindowsPrintService {
         }
         try {
             var dir = AppContext.BaseDirectory;
-            var dllPath = Path.Combine(dir, "DMEdit.Print.Windows.dll");
+            var dllPath = Path.Combine(dir, "DMEdit.Windows.dll");
             if (!File.Exists(dllPath)) {
                 Debug.WriteLine($"Windows print DLL not found at: {dllPath}");
                 return null;
@@ -55,7 +55,7 @@ public static class WindowsPrintService {
             };
 
             var asm = Assembly.LoadFrom(dllPath);
-            var type = asm.GetType("DMEdit.Print.Windows.WpfPrintService");
+            var type = asm.GetType("DMEdit.Windows.WpfPrintService");
             if (type is null) {
                 Debug.WriteLine("WpfPrintService type not found in assembly.");
                 return null;

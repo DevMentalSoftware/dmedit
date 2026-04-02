@@ -35,14 +35,14 @@ public static class NativeClipboardDiscovery {
             _ = WindowsPrintService.IsAvailable;
 
             var dir = AppContext.BaseDirectory;
-            var dllPath = Path.Combine(dir, "DMEdit.Print.Windows.dll");
+            var dllPath = Path.Combine(dir, "DMEdit.Windows.dll");
             if (!File.Exists(dllPath)) {
                 Debug.WriteLine($"NativeClipboard: DLL not found at {dllPath}");
                 return null;
             }
 
             var asm = Assembly.LoadFrom(dllPath);
-            var type = asm.GetType("DMEdit.Print.Windows.NativeClipboardService");
+            var type = asm.GetType("DMEdit.Windows.NativeClipboardService");
             if (type == null) {
                 Debug.WriteLine("NativeClipboard: NativeClipboardService type not found in assembly.");
                 return null;
