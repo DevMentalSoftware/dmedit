@@ -1,0 +1,11 @@
+Package: dmedit
+Version: __VERSION__
+Section: editors
+Priority: optional
+Architecture: amd64
+Depends: libgtk-3-0, libx11-6, libxcb1, libxcursor1, libxrandr2, libxi6, libfontconfig1, libfreetype6, libgl1
+Maintainer: Justin Chase <justin@devmental.com>
+Homepage: https://github.com/jchase-ops/DMEdit
+Description: A text editor for plain text and Markdown
+ DMEdit is a lightweight desktop text editor built with Avalonia. It supports
+ large files, WYSIWYG Markdown editing, and a keyboard-driven workflow.

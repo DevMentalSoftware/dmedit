@@ -159,7 +159,3 @@ handles edge cases that would take months to discover through manual testing
 alone.
 
 All bugs are human hallucination.
-
-## License
-
-MIT

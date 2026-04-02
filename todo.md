@@ -1,1 +1,0 @@
-* Make our installer, and ensure "Edit in DMEdit" is added to the Windows Explorer context menu.

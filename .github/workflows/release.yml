@@ -1,0 +1,151 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build DMEdit.Windows
+        run: dotnet build src/DMEdit.Windows/DMEdit.Windows.csproj -c Release
+
+      - name: Publish win-x64
+        run: dotnet publish src/DMEdit.App/DMEdit.App.csproj -c Release -r win-x64 --self-contained true -o dist/win-x64
+
+      - name: Copy Windows DLL
+        run: |
+          Copy-Item "src/DMEdit.Windows/bin/Release/net10.0-windows/DMEdit.Windows.dll" "dist/win-x64/" -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      - name: Create ZIP
+        run: Compress-Archive -Path dist/win-x64/* -DestinationPath dist/dmedit-win-x64.zip
+        shell: pwsh
+
+      - name: Attest artifact
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/dmedit-win-x64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmedit-win-x64
+          path: dist/dmedit-win-x64.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build macOS packages
+        run: |
+          chmod +x packaging/macos/build-macos.sh
+          packaging/macos/build-macos.sh "${{ steps.version.outputs.version }}"
+
+      - name: Attest artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/dmedit-macos-x64.dmg
+            dist/dmedit-macos-arm64.dmg
+
+      - name: Upload x64 DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmedit-macos-x64
+          path: dist/dmedit-macos-x64.dmg
+
+      - name: Upload arm64 DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmedit-macos-arm64
+          path: dist/dmedit-macos-arm64.dmg
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build .deb package
+        run: |
+          chmod +x packaging/linux/build-deb.sh
+          packaging/linux/build-deb.sh "${{ steps.version.outputs.version }}"
+
+      - name: Attest artifact
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/dmedit-linux-x64.deb
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmedit-linux-x64
+          path: dist/dmedit-linux-x64.deb
+
+  create-release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Determine pre-release
+        id: prerelease
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == *-alpha* || "$TAG" == *-beta* || "$TAG" == *-rc* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+          files: |
+            artifacts/dmedit-win-x64/dmedit-win-x64.zip
+            artifacts/dmedit-macos-x64/dmedit-macos-x64.dmg
+            artifacts/dmedit-macos-arm64/dmedit-macos-arm64.dmg
+            artifacts/dmedit-linux-x64/dmedit-linux-x64.deb
