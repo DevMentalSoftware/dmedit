@@ -6,8 +6,9 @@ on:
 
 permissions:
   contents: write
-  id-token: write
-  attestations: write
+  # Uncomment these once the repo is public to enable artifact attestations:
+  # id-token: write
+  # attestations: write
 
 jobs:
   build-windows:
@@ -37,10 +38,11 @@ jobs:
         run: Compress-Archive -Path dist/win-x64/* -DestinationPath dist/dmedit-win-x64.zip
         shell: pwsh
 
-      - name: Attest artifact
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: dist/dmedit-win-x64.zip
+      # TODO: uncomment once repo is public
+      # - name: Attest artifact
+      #   uses: actions/attest-build-provenance@v2
+      #   with:
+      #     subject-path: dist/dmedit-win-x64.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -69,12 +71,13 @@ jobs:
           chmod +x packaging/macos/build-macos.sh
           packaging/macos/build-macos.sh "${{ steps.version.outputs.version }}"
 
-      - name: Attest artifacts
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: |
-            dist/dmedit-macos-x64.dmg
-            dist/dmedit-macos-arm64.dmg
+      # TODO: uncomment once repo is public
+      # - name: Attest artifacts
+      #   uses: actions/attest-build-provenance@v2
+      #   with:
+      #     subject-path: |
+      #       dist/dmedit-macos-x64.dmg
+      #       dist/dmedit-macos-arm64.dmg
 
       - name: Upload x64 DMG
         uses: actions/upload-artifact@v4
@@ -109,10 +112,11 @@ jobs:
           chmod +x packaging/linux/build-deb.sh
           packaging/linux/build-deb.sh "${{ steps.version.outputs.version }}"
 
-      - name: Attest artifact
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: dist/dmedit-linux-x64.deb
+      # TODO: uncomment once repo is public
+      # - name: Attest artifact
+      #   uses: actions/attest-build-provenance@v2
+      #   with:
+      #     subject-path: dist/dmedit-linux-x64.deb
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
