@@ -10,18 +10,16 @@ public sealed class VaryingBulkReplaceEdit : IDocumentEdit {
     private readonly string[] _replacements;
     private readonly Piece[] _savedPieces;
     private readonly int[] _savedLineLengths;
-    private readonly int[] _savedDocLineLengths;
     private readonly long _savedAddBufLen;
 
     public VaryingBulkReplaceEdit(
         (long Pos, int Len)[] matches, string[] replacements,
-        Piece[] savedPieces, int[] savedLineLengths, int[] savedDocLineLengths,
+        Piece[] savedPieces, int[] savedLineLengths,
         long savedAddBufLen) {
         _matches = matches;
         _replacements = replacements;
         _savedPieces = savedPieces;
         _savedLineLengths = savedLineLengths;
-        _savedDocLineLengths = savedDocLineLengths;
         _savedAddBufLen = savedAddBufLen;
     }
 
@@ -41,6 +39,6 @@ public sealed class VaryingBulkReplaceEdit : IDocumentEdit {
     public void Revert(PieceTable table) {
         table.TrimAddBuffer(_savedAddBufLen);
         table.RestorePieces(_savedPieces);
-        table.InstallLineTree(_savedLineLengths, _savedDocLineLengths);
+        table.InstallLineTree(_savedLineLengths);
     }
 }

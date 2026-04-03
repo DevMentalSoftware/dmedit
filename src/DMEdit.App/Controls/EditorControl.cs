@@ -465,6 +465,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     public event Action? StatusUpdated;
 
     /// <summary>
+    /// Fires when a line is too long for normal layout mode.  The editor
+    /// auto-switches to character-wrapping mode; the handler should show
+    /// a user-friendly notification.
+    /// </summary>
+    public event Action<LineTooLongException>? LineTooLongDetected;
+
+    /// <summary>
     /// Fired when a document property (line ending, encoding, etc.) changes
     /// without a content edit. The tab should be marked dirty.
     /// </summary>
@@ -784,7 +791,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// </summary>
     private static double EstimateWrappedLineY(long lineIndex, PieceTable table, int charsPerRow, double rh) {
         if (lineIndex <= 0) return 0;
-        var charsBefore = (long)table.DocLineStartOfs(lineIndex);
+        var charsBefore = (long)table.LineStartOfs(lineIndex);
         if (charsBefore < 0) return lineIndex * rh; // streaming load fallback
         var visualRows = charsPerRow > 0
             ? Math.Max(lineIndex, (long)Math.Ceiling((double)charsBefore / charsPerRow))
@@ -801,8 +808,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (scrollY <= 0 || lineCount <= 0) return 0;
         var targetRow = (long)(scrollY / rh);
         if (charsPerRow <= 0) return Math.Clamp(targetRow, 0, lineCount - 1);
-        var targetCharOfs = Math.Min((long)targetRow * charsPerRow, table.DocLength);
-        var charBasedLine = table.LineFromDocOfs(targetCharOfs);
+        var targetCharOfs = Math.Min((long)targetRow * charsPerRow, table.Length);
+        var charBasedLine = table.LineFromOfs(targetCharOfs);
         return Math.Clamp(Math.Min(targetRow, charBasedLine), 0, lineCount - 1);
     }
 
@@ -840,6 +847,16 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 _extent = new Size(extentW, 0);
                 RenderOffsetY = 0;
             }
+        } catch (LineTooLongException ex) {
+            // Line too long for normal layout — switch to character-wrapping
+            // mode and retry.  Don't set _layoutFailed so the next layout
+            // pass uses char-wrap successfully.
+            _charWrapMode = true;
+            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+            _extent = new Size(extentW, 0);
+            RenderOffsetY = 0;
+            InvalidateMeasure();
+            LineTooLongDetected?.Invoke(ex);
         } catch {
             _layoutFailed = true;
             _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
@@ -895,6 +912,16 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 _extent = new Size(extentW, 0);
                 RenderOffsetY = 0;
             }
+        } catch (LineTooLongException ex) {
+            // Line too long for normal layout — switch to character-wrapping
+            // mode and retry.  Don't set _layoutFailed so the next layout
+            // pass uses char-wrap successfully.
+            _charWrapMode = true;
+            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+            _extent = new Size(extentW, 0);
+            RenderOffsetY = 0;
+            InvalidateMeasure();
+            LineTooLongDetected?.Invoke(ex);
         } catch {
             _layoutFailed = true;
             _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
@@ -994,12 +1021,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             topLine = Math.Min(topLine, lineCount - visibleRows);
         }
 
-        var startOfs = topLine > 0 ? doc.Table.DocLineStartOfs(topLine) : 0L;
+        var startOfs = topLine > 0 ? doc.Table.LineStartOfs(topLine) : 0L;
         long endOfs;
         if (bottomLine >= lineCount) {
             endOfs = doc.Table.Length;
         } else {
-            endOfs = doc.Table.DocLineStartOfs(bottomLine);
+            endOfs = doc.Table.LineStartOfs(bottomLine);
         }
 
         // During streaming/paged loads, LineStartOfs returns -1 when the
@@ -1014,15 +1041,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         var len = (int)(endOfs - startOfs);
 
-        // Sanity check: the visible window spans at most visibleRows lines,
-        // each capped at MaxPseudoLine+1 doc chars.  If len exceeds that, or
-        // the computed range falls outside the actual table content, the line
-        // tree and piece table are in an inconsistent state (e.g. intermediate
-        // state during undo or document reload).  Skip this layout pass —
-        // the next one will see the consistent state.
-        var docLen = doc.Table.DocLength;
-        var maxLayoutChars = visibleRows * (PieceTable.MaxPseudoLine + 1);
-        if (len > maxLayoutChars || startOfs + len > docLen) {
+        // Sanity check: if the computed range falls outside the actual
+        // table content, the line tree and piece table are in an inconsistent
+        // state (e.g. intermediate state during undo or document reload).
+        // Skip this layout pass — the next one will see the consistent state.
+        var docLen = doc.Table.Length;
+        if (startOfs + len > docLen) {
             _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, maxWidth);
             _extent = new Size(extentWidth, totalVisualRows * rh);
             RenderOffsetY = 0;
@@ -1033,7 +1057,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // never materialize multiple lines into a single string.
         _layout = _layoutEngine.LayoutLines(
             doc.Table, topLine, bottomLine, typeface, EffectiveFontSize, ForegroundBrush,
-            maxWidth, startOfs, lineCount, doc.Table.DocLength);
+            maxWidth, startOfs, lineCount, doc.Table.Length);
         _layout.TopLine = topLine;
 
         // When the layout covers the entire document, use exact height
@@ -1135,25 +1159,21 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var topRow = Math.Clamp((long)(_scrollOffset.Y / rh), 0, Math.Max(0, totalRows - 1));
         var visibleRows = (int)Math.Ceiling(_viewport.Height / rh) + 2;
 
-        // ViewportBase = doc-space offset of first visible character.
-        var bufStart = topRow * cpr;
-        var docStart = doc.Table.BufOfsToDocOfs(bufStart);
+        // ViewportBase = offset of first visible character.
+        var startOfs = topRow * cpr;
 
         var lines = new List<LayoutLine>();
         var foreground = ForegroundBrush;
-        var docOfs = 0; // doc-space offset relative to ViewportBase
         for (var i = 0; i < visibleRows; i++) {
             var rowIdx = topRow + i;
             if (rowIdx >= totalRows) break;
-            var rowBufStart = rowIdx * cpr;
-            var len = (int)Math.Min(cpr, bufLen - rowBufStart);
+            var rowStart = rowIdx * cpr;
+            var len = (int)Math.Min(cpr, bufLen - rowStart);
             if (len <= 0) break;
-            var text = doc.Table.GetText(rowBufStart, len);
-            // CharStart is doc-space relative to ViewportBase.
-            var rowDocStart = (int)(doc.Table.BufOfsToDocOfs(rowBufStart) - docStart);
-            var rowDocLen = (int)(doc.Table.BufOfsToDocOfs(rowBufStart + len) - doc.Table.BufOfsToDocOfs(rowBufStart));
+            var text = doc.Table.GetText(rowStart, len);
+            var rowCharStart = (int)(rowStart - startOfs);
             var layout = MakeCharWrapLayout(text, typeface, EffectiveFontSize, foreground);
-            lines.Add(new LayoutLine(rowDocStart, rowDocLen, i, 1, layout));
+            lines.Add(new LayoutLine(rowCharStart, len, i, 1, layout));
         }
 
         if (lines.Count == 0) {
@@ -1161,7 +1181,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             lines.Add(new LayoutLine(0, 0, 0, 1, layout));
         }
 
-        _layout = new LayoutResult(lines, rh, docStart);
+        _layout = new LayoutResult(lines, rh, startOfs);
         _layout.TopLine = topRow;
         _extent = new Size(Math.Max(extentWidth, cpr * cw), totalRows * rh);
         RenderOffsetY = topRow * rh - _scrollOffset.Y;
@@ -1293,11 +1313,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var table = Document?.Table;
         if (table == null || line.CharLen <= 0) return;
 
-        var docOfs = layout.ViewportBase + line.CharStart;
-        var bufOfs = table.DocOfsToBufOfs(docOfs);
-        if (bufOfs < 0 || line.CharLen > table.MaxGetTextLength) return;
-        if (bufOfs + line.CharLen > table.Length) return;
-        var text = table.GetText(bufOfs, line.CharLen);
+        var ofs = layout.ViewportBase + line.CharStart;
+        if (ofs < 0 || line.CharLen > PieceTable.MaxGetTextLength) return;
+        if (ofs + line.CharLen > table.Length) return;
+        var text = table.GetText(ofs, line.CharLen);
         var typeface = new Typeface(FontFamily);
 
         for (var i = 0; i < text.Length; i++) {
@@ -1854,8 +1873,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             doc.History.BeginCompound();
             var pieces = doc.Table.CapturePieces(ofs, doc.Selection.Len);
             var lineInfo = doc.Table.CaptureLineInfo(ofs, doc.Selection.Len);
-            var delEdit = lineInfo is var (sl, ll, dll)
-                ? new DeleteEdit(ofs, doc.Selection.Len, pieces, sl, ll, dll)
+            var delEdit = lineInfo is var (sl, ll)
+                ? new DeleteEdit(ofs, doc.Selection.Len, pieces, sl, ll)
                 : new DeleteEdit(ofs, doc.Selection.Len, pieces);
             doc.History.Push(delEdit, doc.Table, doc.Selection);
         }
@@ -1886,7 +1905,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         // Capture delete pieces before going to background.
         Piece[]? deletePieces = null;
-        (int StartLine, int[] LineLengths, int[] DocLineLengths)? deleteLineInfo = null;
+        (int StartLine, int[] LineLengths)? deleteLineInfo = null;
         if (replacing) {
             deletePieces = doc.Table.CapturePieces(ofs, selBefore.Len);
             deleteLineInfo = doc.Table.CaptureLineInfo(ofs, selBefore.Len);
@@ -2083,7 +2102,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return;
         }
         FlushCompound();
-        doc.Selection = new Selection(0L, doc.Table.DocLength);
+        doc.Selection = new Selection(0L, doc.Table.Length);
         InvalidateVisual();
     }
 
@@ -2207,11 +2226,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (_overwriteMode && doc.Selection.IsEmpty && e.Text != null) {
             var caret = doc.Selection.Caret;
             var table = doc.Table;
-            var bufCaret = table.DocOfsToBufOfs(caret);
-            var bufLen = table.Length;
+            var len = table.Length;
             var charsToOverwrite = 0;
-            for (var i = 0; i < e.Text.Length && bufCaret + charsToOverwrite < bufLen; i++) {
-                var ch = table.GetText(bufCaret + charsToOverwrite, 1);
+            for (var i = 0; i < e.Text.Length && caret + charsToOverwrite < len; i++) {
+                var ch = table.GetText(caret + charsToOverwrite, 1);
                 if (ch[0] is '\r' or '\n') break;
                 charsToOverwrite++;
             }
@@ -2236,7 +2254,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
 
     private void PerformColumnSelectVertical(Document doc, int delta) {
-        if (_wrapLines || doc.Table.HasPseudoLines) return;
+        if (_wrapLines) return;
         FlushCompound();
         var table = doc.Table;
         if (doc.ColumnSel is { } colSel) {
@@ -2246,7 +2264,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         } else {
             // Enter column mode from current caret.
             var caret = doc.Selection.Caret;
-            var line = (int)table.LineFromDocOfs(caret);
+            var line = (int)table.LineFromOfs(caret);
             var col = ColumnSelection.OfsToCol(table, caret, _indentWidth);
             var targetLine = Math.Clamp(line + delta, 0, (int)table.LineCount - 1);
             doc.ColumnSel = new ColumnSelection(line, col, targetLine, col);
@@ -2257,7 +2275,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     }
 
     private void PerformColumnSelectHorizontal(Document doc, int delta) {
-        if (_wrapLines || doc.Table.HasPseudoLines) return;
+        if (_wrapLines) return;
         FlushCompound();
         if (doc.ColumnSel is { } colSel) {
             var newCol = ColumnSelection.NextCharCol(
@@ -2266,7 +2284,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         } else {
             // Enter column mode from current caret.
             var caret = doc.Selection.Caret;
-            var line = (int)doc.Table.LineFromDocOfs(caret);
+            var line = (int)doc.Table.LineFromOfs(caret);
             var col = ColumnSelection.OfsToCol(doc.Table, caret, _indentWidth);
             var newCol = ColumnSelection.NextCharCol(doc.Table, line, col, delta, _indentWidth);
             doc.ColumnSel = new ColumnSelection(line, col, line, newCol);
@@ -2414,7 +2432,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }, isColumnAware: true);
 
         Reg(Cmd.EditDelete, _ => EditDelete(), isColumnAware: true,
-            canExecute: () => HasSelection() || (Document is { } d && d.Selection.Caret < d.Table.DocLength));
+            canExecute: () => HasSelection() || (Document is { } d && d.Selection.Caret < d.Table.Length));
         Reg(Cmd.EditUndo, _ => PerformUndo(), canExecute: () => Document?.CanUndo == true);
         Reg(Cmd.EditRedo, _ => PerformRedo(), canExecute: () => Document?.CanRedo == true);
         Reg(Cmd.EditCut, doc => { _ = CutAsync(); }, isColumnAware: true,
@@ -2508,7 +2526,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         Reg(Cmd.NavMoveDocEnd, doc => {
             FlushCompound();
-            doc.Selection = Selection.Collapsed(doc.Table.DocLength);
+            doc.Selection = Selection.Collapsed(doc.Table.Length);
             ScrollCaretIntoView();
             InvalidateVisual();
             ResetCaretBlink();
@@ -2516,7 +2534,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         Reg(Cmd.NavSelectDocEnd, doc => {
             FlushCompound();
-            doc.Selection = doc.Selection.ExtendTo(doc.Table.DocLength);
+            doc.Selection = doc.Selection.ExtendTo(doc.Table.Length);
             ScrollCaretIntoView();
             InvalidateVisual();
             ResetCaretBlink();
@@ -2681,7 +2699,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     private void MoveCaretHorizontal(Document doc, int delta, bool byWord, bool extend) {
         var caret = doc.Selection.Caret;
         var table = doc.Table;
-        var len = table.DocLength;
+        var len = table.Length;
         long newCaret;
 
         if (!byWord) {
@@ -2711,31 +2729,22 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// snaps it to the nearest valid content position.
     /// </summary>
     private static long SnapOutOfDeadZone(PieceTable table, long ofs, bool forward) {
-        if (ofs <= 0 || ofs >= table.DocLength) return ofs;
-        var line = (int)table.LineFromDocOfs(ofs);
-        var docLineStart = table.DocLineStartOfs(line);
+        if (ofs <= 0 || ofs >= table.Length) return ofs;
+        var line = (int)table.LineFromOfs(ofs);
+        var lineStart = table.LineStartOfs(line);
         var contentLen = table.LineContentLength(line);
-        var contentEnd = docLineStart + contentLen;
+        var contentEnd = lineStart + contentLen;
 
         if (ofs <= contentEnd) {
             // Within content — valid position.
             return ofs;
         }
 
-        // Past content end: we're in the terminator region.
-        var termType = table.GetLineTerminator(line);
-        if (termType == LineTerminatorType.Pseudo) {
-            // Pseudo-line virtual terminator is a valid caret position.
-            // The virtual terminator occupies exactly 1 doc-space position
-            // (contentEnd itself), distinguishing end-of-line from start-of-next.
-            return ofs; // allow resting on the virtual terminator
-        }
-
-        // Real terminator (LF, CR, CRLF) — snap out.
+        // Past content end: we're in the terminator region (LF, CR, CRLF) — snap out.
         if (forward) {
             return line + 1 < table.LineCount
-                ? table.DocLineStartOfs(line + 1)
-                : table.DocLength;
+                ? table.LineStartOfs(line + 1)
+                : table.Length;
         } else {
             return contentEnd;
         }
@@ -2826,13 +2835,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
         var table = doc.Table;
         var caret = doc.Selection.Caret;
-        var line = (int)table.LineFromDocOfs(Math.Min(caret, table.DocLength));
-        var docLineStart = table.DocLineStartOfs(line);
-        if (docLineStart < 0) return;
+        var lineIdx = (int)table.LineFromOfs(Math.Min(caret, table.Length));
+        var lineStart = table.LineStartOfs(lineIdx);
+        if (lineStart < 0) return;
 
         var newCaret = toStart
-            ? docLineStart
-            : docLineStart + table.LineContentLength(line);
+            ? lineStart
+            : lineStart + table.LineContentLength(lineIdx);
         doc.Selection = extend
             ? doc.Selection.ExtendTo(newCaret)
             : Selection.Collapsed(newCaret);
@@ -2846,13 +2855,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return 0L;
         }
         // Use a 1 KB window around the caret — avoids materializing the full document.
-        // Caret is doc-space; translate to buf-space for GetText.
-        var bufCaret = doc.Table.DocOfsToBufOfs(caret);
-        var bufWindowStart = Math.Max(0L, bufCaret - 1024);
-        var windowLen = (int)(bufCaret - bufWindowStart);
+        var windowStart = Math.Max(0L, caret - 1024);
+        var windowLen = (int)(caret - windowStart);
         var buf = ArrayPool<char>.Shared.Rent(windowLen);
         try {
-            CopyFromTable(doc.Table, bufWindowStart, buf, windowLen);
+            CopyFromTable(doc.Table, windowStart, buf, windowLen);
             var text = buf.AsSpan(0, windowLen);
             var pos = windowLen; // position within the window
             // Skip whitespace going left, then skip non-whitespace
@@ -2862,24 +2869,21 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             while (pos > 0 && !char.IsWhiteSpace(text[pos - 1])) {
                 pos--;
             }
-            return doc.Table.BufOfsToDocOfs(bufWindowStart + pos);
+            return windowStart + pos;
         } finally {
             ArrayPool<char>.Shared.Return(buf);
         }
     }
 
     private static long FindWordBoundaryRight(Document doc, long caret) {
-        var docLen = doc.Table.DocLength;
-        if (caret >= docLen) {
-            return docLen;
+        var len = doc.Table.Length;
+        if (caret >= len) {
+            return len;
         }
-        // Caret is doc-space; translate to buf-space for GetText.
-        var bufCaret = doc.Table.DocOfsToBufOfs(caret);
-        var bufLen = doc.Table.Length;
-        var windowLen = (int)Math.Min(1024L, bufLen - bufCaret);
+        var windowLen = (int)Math.Min(1024L, len - caret);
         var buf = ArrayPool<char>.Shared.Rent(windowLen);
         try {
-            CopyFromTable(doc.Table, bufCaret, buf, windowLen);
+            CopyFromTable(doc.Table, caret, buf, windowLen);
             var text = buf.AsSpan(0, windowLen);
             var pos = 0;
             while (pos < text.Length && char.IsWhiteSpace(text[pos])) {
@@ -2904,15 +2908,15 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         FlushCompound();
         _editSw.Restart();
         var nl = doc.LineEndingInfo.NewlineString;
-        var lineIdx = doc.Table.LineFromDocOfs(doc.Selection.Caret);
+        var lineIdx = doc.Table.LineFromOfs(doc.Selection.Caret);
         if (lineIdx + 1 < doc.Table.LineCount) {
-            var nextLineStart = doc.Table.DocLineStartOfs(lineIdx + 1);
+            var nextLineStart = doc.Table.LineStartOfs(lineIdx + 1);
             doc.Selection = Selection.Collapsed(nextLineStart);
             doc.Insert(nl);
             doc.Selection = Selection.Collapsed(nextLineStart);
         } else {
             // Last line — append newline at end
-            doc.Selection = Selection.Collapsed(doc.Table.DocLength);
+            doc.Selection = Selection.Collapsed(doc.Table.Length);
             doc.Insert(nl);
         }
         ScrollCaretIntoView();
@@ -2928,7 +2932,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         FlushCompound();
         _editSw.Restart();
         var nl = doc.LineEndingInfo.NewlineString;
-        var lineStart = doc.Table.DocLineStartOfs(doc.Table.LineFromDocOfs(doc.Selection.Caret));
+        var lineStart = doc.Table.LineStartOfs(doc.Table.LineFromOfs(doc.Selection.Caret));
         doc.Selection = Selection.Collapsed(lineStart);
         doc.Insert(nl);
         doc.Selection = Selection.Collapsed(lineStart);
@@ -2947,44 +2951,37 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var nl = doc.LineEndingInfo.NewlineString;
         var table = doc.Table;
         var caret = doc.Selection.Caret;
-        var lineIdx = table.LineFromDocOfs(caret);
-        var docLineStart = table.DocLineStartOfs(lineIdx);
-        var caretCol = caret - docLineStart;
+        var lineIdx = table.LineFromOfs(caret);
+        var lineStart = table.LineStartOfs(lineIdx);
+        var caretCol = caret - lineStart;
 
-        // Buf-space for text access.
-        var bufLineStart = table.LineStartOfs(lineIdx);
-        long bufLineEnd = lineIdx + 1 < table.LineCount
+        long lineEnd = lineIdx + 1 < table.LineCount
             ? table.LineStartOfs(lineIdx + 1)
             : table.Length;
-        var bufLineLen = (int)(bufLineEnd - bufLineStart);
+        var lineLen = (int)(lineEnd - lineStart);
         string lineText;
-        if (bufLineLen <= table.MaxGetTextLength) {
-            lineText = table.GetText(bufLineStart, bufLineLen);
+        if (lineLen <= PieceTable.MaxGetTextLength) {
+            lineText = table.GetText(lineStart, lineLen);
         } else {
-            var sb = new StringBuilder(bufLineLen);
-            table.ForEachPiece(bufLineStart, bufLineLen, span => sb.Append(span));
+            var sb = new StringBuilder(lineLen);
+            table.ForEachPiece(lineStart, lineLen, span => sb.Append(span));
             lineText = sb.ToString();
         }
 
-        // Doc-space for Selection.
-        long docLineEnd = lineIdx + 1 < table.LineCount
-            ? table.DocLineStartOfs(lineIdx + 1)
-            : table.DocLength;
-
         // If the line doesn't end with a newline (last line), prepend one.
-        if (bufLineEnd == table.Length && (lineText.Length == 0 || lineText[^1] != '\n')) {
+        if (lineEnd == table.Length && (lineText.Length == 0 || lineText[^1] != '\n')) {
             doc.BeginCompound();
-            doc.Selection = Selection.Collapsed(table.DocLength);
+            doc.Selection = Selection.Collapsed(table.Length);
             doc.Insert(nl + lineText);
             doc.EndCompound();
         } else {
-            doc.Selection = Selection.Collapsed(docLineEnd);
+            doc.Selection = Selection.Collapsed(lineEnd);
             doc.Insert(lineText);
         }
         // Place caret on the duplicated line at the same column offset.
         var nlLen = nl.Length;
-        var newDocLineStart = docLineEnd + (lineText.Length > 0 && lineText[^1] != '\n' ? nlLen : 0);
-        doc.Selection = Selection.Collapsed(Math.Min(newDocLineStart + caretCol, table.DocLength));
+        var newLineStart = lineEnd + (lineText.Length > 0 && lineText[^1] != '\n' ? nlLen : 0);
+        doc.Selection = Selection.Collapsed(Math.Min(newLineStart + caretCol, table.Length));
         ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
@@ -3054,7 +3051,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (targetDepth == currentDepth) return;
         var newIndent = BuildIndent(targetDepth, style, tabSize);
         var wsLen = LeadingWhitespaceLength(lineText);
-        var lineStart = table.DocLineStartOfs(lineIdx);
+        var lineStart = table.LineStartOfs(lineIdx);
         if (wsLen > 0 && newIndent.Length == 0) {
             doc.Selection = new Selection(lineStart, lineStart + wsLen);
             doc.DeleteSelection();
@@ -3076,8 +3073,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var style = doc.IndentInfo.Dominant;
         var tabSize = _indentWidth;
 
-        var startLine = table.LineFromDocOfs(sel.Start);
-        var endLine = table.LineFromDocOfs(Math.Max(sel.Start, sel.End - 1));
+        var startLine = table.LineFromOfs(sel.Start);
+        var endLine = table.LineFromOfs(Math.Max(sel.Start, sel.End - 1));
 
         if (sel.IsEmpty || startLine == endLine) {
             // Single line: stateless smart indent.
@@ -3101,7 +3098,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (targetDepth != currentDepth) {
                 var newIndent = BuildIndent(targetDepth, style, tabSize);
                 var wsLen = LeadingWhitespaceLength(lineText);
-                var lineStart = table.DocLineStartOfs(startLine);
+                var lineStart = table.LineStartOfs(startLine);
                 if (wsLen > 0 && newIndent.Length == 0) {
                     // Removing all indentation: just delete the whitespace.
                     doc.Selection = new Selection(lineStart, lineStart + wsLen);
@@ -3128,10 +3125,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 SetLineIndent(doc, table, line, lineText, targetDepth, style, tabSize);
             }
             doc.EndCompound();
-            var rangeStart = table.DocLineStartOfs(startLine);
+            var rangeStart = table.LineStartOfs(startLine);
             var rangeEnd = endLine + 1 < table.LineCount
-                ? table.DocLineStartOfs(endLine + 1)
-                : table.DocLength;
+                ? table.LineStartOfs(endLine + 1)
+                : table.Length;
             doc.Selection = new Selection(rangeStart, rangeEnd);
         }
         ScrollCaretIntoView();
@@ -3153,8 +3150,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var style = doc.IndentInfo.Dominant;
         var tabSize = _indentWidth;
 
-        var startLine = table.LineFromDocOfs(sel.Start);
-        var endLine = table.LineFromDocOfs(Math.Max(sel.Start, sel.End - 1));
+        var startLine = table.LineFromOfs(sel.Start);
+        var endLine = table.LineFromOfs(Math.Max(sel.Start, sel.End - 1));
 
         doc.BeginCompound();
         for (var line = startLine; line <= endLine; line++) {
@@ -3166,10 +3163,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         doc.EndCompound();
 
         if (!sel.IsEmpty && startLine != endLine) {
-            var rangeStart = table.DocLineStartOfs(startLine);
+            var rangeStart = table.LineStartOfs(startLine);
             var rangeEnd = endLine + 1 < table.LineCount
-                ? table.DocLineStartOfs(endLine + 1)
-                : table.DocLength;
+                ? table.LineStartOfs(endLine + 1)
+                : table.Length;
             doc.Selection = new Selection(rangeStart, rangeEnd);
         }
 
@@ -3192,8 +3189,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var style = doc.IndentInfo.Dominant;
         var tabSize = _indentWidth;
 
-        var startLine = table.LineFromDocOfs(sel.Start);
-        var endLine = table.LineFromDocOfs(Math.Max(sel.Start, sel.End - 1));
+        var startLine = table.LineFromOfs(sel.Start);
+        var endLine = table.LineFromOfs(Math.Max(sel.Start, sel.End - 1));
 
         doc.BeginCompound();
         for (var line = startLine; line <= endLine; line++) {
@@ -3203,7 +3200,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             var targetDepth = Math.Max(0, currentDepth - tabSize);
             var newIndent = BuildIndent(targetDepth, style, tabSize);
             var wsLen = LeadingWhitespaceLength(lineText);
-            var lineStart = table.DocLineStartOfs(line);
+            var lineStart = table.LineStartOfs(line);
             if (newIndent.Length == 0) {
                 doc.Selection = new Selection(lineStart, lineStart + wsLen);
                 doc.DeleteSelection();
@@ -3218,13 +3215,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             // Single line: place caret at end of new indentation.
             var newText = table.GetLine(startLine);
             var newWs = LeadingWhitespaceLength(newText);
-            doc.Selection = Selection.Collapsed(table.DocLineStartOfs(startLine) + newWs);
+            doc.Selection = Selection.Collapsed(table.LineStartOfs(startLine) + newWs);
         } else {
             // Re-select the full line range.
-            var rangeStart = table.DocLineStartOfs(startLine);
+            var rangeStart = table.LineStartOfs(startLine);
             var rangeEnd = endLine + 1 < table.LineCount
-                ? table.DocLineStartOfs(endLine + 1)
-                : table.DocLength;
+                ? table.LineStartOfs(endLine + 1)
+                : table.Length;
             doc.Selection = new Selection(rangeStart, rangeEnd);
         }
         ScrollCaretIntoView();
@@ -3277,7 +3274,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     public void GoToPosition(long offset) {
         var doc = Document;
         if (doc == null) return;
-        offset = Math.Clamp(offset, 0, doc.Table.DocLength);
+        offset = Math.Clamp(offset, 0, doc.Table.Length);
         doc.Selection = Core.Documents.Selection.Collapsed(offset);
         ScrollCaretIntoView();
         InvalidateVisual();
@@ -3305,8 +3302,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (_charWrapMode && _charWrapCharsPerRow > 0) {
             // ── Character-wrapping mode ──────────────────────────────
             // All math is O(1) — exact row from character offset.
-            var bufCaret = table.DocOfsToBufOfs(caret);
-            var caretRow = bufCaret / _charWrapCharsPerRow;
+            var caretRow = caret / _charWrapCharsPerRow;
             var caretY = caretRow * rh;
             var totalRows = (long)Math.Ceiling((double)table.Length / _charWrapCharsPerRow);
             _extent = new Size(_extent.Width, totalRows * rh);
@@ -3321,7 +3317,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return;
         }
 
-        var caretLine = table.LineFromDocOfs(caret);
+        var caretLine = table.LineFromOfs(caret);
 
         if (!_wrapLines) {
             // ── Wrapping off ──────────────────────────────────────────
@@ -3397,7 +3393,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Horizontal scroll (wrapping off only).
         // Horizontal extent was already updated above.
         if (!_wrapLines) {
-            var lineStart = table.DocLineStartOfs(caretLine);
+            var lineStart = table.LineStartOfs(caretLine);
             var caretCol = (int)(caret - lineStart);
             var cw = GetCharWidth();
             var caretX = caretCol * cw;
@@ -3432,7 +3428,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (lineCount <= 0) return;
 
         var layout = EnsureLayout();
-        var topLine = table.LineFromDocOfs(layout.ViewportBase);
+        var topLine = table.LineFromOfs(layout.ViewportBase);
         var lastVisibleLine = FindLastVisibleLogicalLine(layout, table);
         var pageLines = Math.Max(1L, lastVisibleLine - topLine);
 
@@ -3484,18 +3480,18 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     private long FindLastVisibleLogicalLine(LayoutResult layout, PieceTable table) {
         var lines = layout.Lines;
         if (lines.Count == 0) {
-            return table.LineFromDocOfs(layout.ViewportBase);
+            return table.LineFromOfs(layout.ViewportBase);
         }
 
         var rh = layout.RowHeight;
         for (var i = lines.Count - 1; i >= 0; i--) {
             var screenBottom = (lines[i].Row + lines[i].HeightInRows) * rh + RenderOffsetY;
             if (screenBottom <= _viewport.Height + 0.5) {
-                return table.LineFromDocOfs(layout.ViewportBase + lines[i].CharStart);
+                return table.LineFromOfs(layout.ViewportBase + lines[i].CharStart);
             }
         }
 
-        return table.LineFromDocOfs(layout.ViewportBase);
+        return table.LineFromOfs(layout.ViewportBase);
     }
 
     // -------------------------------------------------------------------------
@@ -3559,10 +3555,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             }
             var alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
             var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-            if (alt && !_wrapLines && !doc.Table.HasPseudoLines) {
+            if (alt && !_wrapLines) {
                 // Alt+click: start column (block) selection.
                 var table = doc.Table;
-                var line = (int)table.LineFromDocOfs(ofs);
+                var line = (int)table.LineFromOfs(ofs);
                 var col = ColumnSelection.OfsToCol(table, ofs, _indentWidth);
                 doc.ColumnSel = new ColumnSelection(line, col, line, col);
                 doc.Selection = Selection.Collapsed(ofs);
@@ -3619,7 +3615,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var ofs = layout.ViewportBase + localOfs;
         if (_columnDrag && doc.ColumnSel is { } colSel) {
             var table = doc.Table;
-            var line = (int)table.LineFromDocOfs(ofs);
+            var line = (int)table.LineFromOfs(ofs);
             var col = ColumnSelection.OfsToCol(table, ofs, _indentWidth);
             doc.ColumnSel = colSel.ExtendTo(line, col);
         } else {
@@ -3895,8 +3891,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var sel = doc.Selection;
         if (sel.Len > MaxSearchTermLength) return null;
         var table = doc.Table;
-        var startLine = table.LineFromDocOfs(sel.Start);
-        var endLine = table.LineFromDocOfs(sel.End - 1);
+        var startLine = table.LineFromOfs(sel.Start);
+        var endLine = table.LineFromOfs(sel.End - 1);
         if (startLine != endLine) return null;
         return doc.GetSelectedText();
     }

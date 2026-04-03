@@ -24,33 +24,33 @@ public sealed class PieceTable {
     // Provides O(log L) prefix-sum queries for LineStartOfs/LineFromOfs and
     // O(log L) incremental updates for non-newline edits.  Individual values
     // are derived from the tree via ValueAt() — no parallel list is kept.
-    // Lines longer than MaxPseudoLine are split into pseudo-lines so the
-    // layout engine never sees a single enormous line.
     private LineIndexTree? _lineTree;
     private int _maxLineLen = -1;
 
     /// <summary>
-    /// Maximum content characters per pseudo-line.  Set from AppSettings
-    /// at startup.  
+    /// Threshold above which a line is considered "long".  Character-wrapping
+    /// mode handles rendering; this is informational only.
     /// </summary>
-    public static int MaxPseudoLine { get; set; } = 500;
+    internal const int LongLineThreshold = 500;
 
-    // Instance override for tests. -1 means use the static.
-    private readonly int _maxPseudoLine = -1;
-    internal int EffectiveMaxPseudoLine => _maxPseudoLine > 0 ? _maxPseudoLine : MaxPseudoLine;
+    /// <summary>
+    /// Sticky flag set when any line exceeds <see cref="LongLineThreshold"/>.
+    /// Once set, remains true for the lifetime of this PieceTable.
+    /// </summary>
+    public bool HasLongLines { get; private set; }
 
     // -------------------------------------------------------------------------
     // Construction
     // -------------------------------------------------------------------------
 
     /// <summary>Creates an empty piece-table (for untitled/new documents).</summary>
-    public PieceTable(int maxPseudoLine = -1) : this(EmptyBuffer.Instance, maxPseudoLine) {
+    public PieceTable() : this(EmptyBuffer.Instance) {
         BuildLineTree();
     }
 
     /// <summary>Constructs a piece-table from an in-memory string (tests, small files).</summary>
-    internal PieceTable(string originalContent, int maxPseudoLine = -1)
-        : this(new StringBuffer(originalContent), maxPseudoLine) {
+    internal PieceTable(string originalContent)
+        : this(new StringBuffer(originalContent)) {
         BuildLineTree();
     }
 
@@ -59,8 +59,7 @@ public sealed class PieceTable {
     /// The piece-table does NOT take ownership of the buffer; the caller is responsible
     /// for disposing it after the piece-table is no longer needed.
     /// </summary>
-    public PieceTable(IBuffer buf, int maxPseudoLine = -1) {
-        _maxPseudoLine = maxPseudoLine;
+    public PieceTable(IBuffer buf) {
         _buffers.Add(buf);          // index 0 = original buffer
         _buffers.Add(_addBuf);      // index 1 = active add buffer
         _addBufIdx = 1;
@@ -129,18 +128,6 @@ public sealed class PieceTable {
     }
 
     /// <summary>
-    /// Total document length in doc-space (includes virtual pseudo-terminators).
-    /// Equals <see cref="Length"/> when the document has no pseudo-lines.
-    /// </summary>
-    public DocOffset DocLength => LineTree.DocTotalSum();
-
-    /// <summary>
-    /// <c>true</c> when the document contains at least one pseudo-line split
-    /// (i.e. a line exceeded <see cref="MaxPseudoLine"/> and was broken up).
-    /// </summary>
-    public bool HasPseudoLines => DocLength != Length;
-
-    /// <summary>
     /// Number of logical lines (always at least 1).
     /// </summary>
     public long LineCount {
@@ -159,15 +146,12 @@ public sealed class PieceTable {
             // When the line tree is available it maintains a subtree max at
             // every node, so the root gives O(1) accurate max after any edit.
             if (_lineTree != null)
-                return _lineTree.MaxDocValue();
+                return _lineTree.MaxValue();
 
             // Before the line tree is built (e.g. during streaming load),
-            // use the buffer's pre-computed value clamped to MaxPseudoLine.
+            // use the buffer's pre-computed value.
             var bufMax = Buffer.LongestLine;
-            if (bufMax >= 0) {
-                var mpl = EffectiveMaxPseudoLine;
-                return Math.Min(bufMax, mpl + 1);
-            }
+            if (bufMax >= 0) return bufMax;
             return -1;
         }
     }
@@ -207,12 +191,11 @@ public sealed class PieceTable {
     /// </summary>
     public void InsertPiecesAndRestoreLines(
         BufOffset ofs, Piece[] pieces,
-        int lineInfoStart, int[]? lineInfoLengths, int[]? docLineInfoLengths, long len) {
+        int lineInfoStart, int[]? lineInfoLengths, long len) {
 
         InsertPieces(ofs, pieces);
         if (lineInfoLengths != null) {
-            RestoreLines(lineInfoStart, lineInfoLengths,
-                docLineInfoLengths ?? lineInfoLengths);
+            RestoreLines(lineInfoStart, lineInfoLengths);
         } else {
             ReinsertedNonNewlineChars(ofs, len);
         }
@@ -261,16 +244,14 @@ public sealed class PieceTable {
         if (affectedLine >= 0 && !hasNewlines) {
             // No newlines, tree exists: O(log L) incremental update.
             _lineTree!.Update(affectedLine, text.Length);
-            var newLen = _lineTree.DocValueAt(affectedLine);
+            var newLen = _lineTree.ValueAt(affectedLine);
             if (newLen > _maxLineLen)
                 _maxLineLen = newLen;
-            SplitLongLine(affectedLine);
+            CheckLongLine(newLen);
         } else if (affectedLine >= 0 && hasNewlines) {
             // Newlines inserted: splice line lengths via chunked buffer read.
             SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs,
                 _addBuf, addStart, text.Length);
-            var nlCount = (int)(LineFromOfs(Math.Min(ofs + text.Length, Length)) - affectedLine + 1);
-            SplitLongLines(affectedLine, nlCount);
         } else {
             Debug.Assert(false, "Insert called without a line tree.");
             _maxLineLen = -1;
@@ -342,7 +323,6 @@ public sealed class PieceTable {
         } else if (startLine >= 0 && hasNewline) {
             // Newlines deleted: merge lines, O(L) rebuild.
             SpliceDeleteLines(startLine, endLine, ofs, len);
-            SplitLongLine(startLine); // merged line may exceed limit
         } else {
             // startLine < 0 means _lineTree was null when we checked above.
             // This should never happen once the tree is installed — edits
@@ -378,7 +358,7 @@ public sealed class PieceTable {
     /// accidental materialization of multi-GB documents into a single string.
     /// Code that needs larger ranges should use <see cref="ForEachPiece"/>.
     /// </summary>
-    public int MaxGetTextLength => 10_000;
+    public const int MaxGetTextLength = 1_000_000;
 
     /// <summary>Returns a substring of the document.</summary>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -492,7 +472,6 @@ public sealed class PieceTable {
         // Last line with no terminator?
         if (lineIdx + 1 >= tree.Count) return LineTerminatorType.None;
 
-        // Check if this is a pseudo-split (no newline chars at boundary).
         var lastCharOfs = lineStart + fullLen - 1;
         if (lastCharOfs >= Length) return LineTerminatorType.None;
         var lastChar = CharAt(lastCharOfs);
@@ -504,7 +483,7 @@ public sealed class PieceTable {
             return LineTerminatorType.LF;
         }
         if (lastChar == '\r') return LineTerminatorType.CR;
-        return LineTerminatorType.Pseudo;
+        return LineTerminatorType.None;
     }
 
     /// <summary>
@@ -517,88 +496,26 @@ public sealed class PieceTable {
         return fullLen - GetLineTerminator(lineIdx).DeadZoneWidth();
     }
 
-    // -------------------------------------------------------------------------
-    // Doc-space line access (for navigation / caret positioning)
-    // -------------------------------------------------------------------------
-
     /// <summary>
-    /// Returns the doc-space offset at which line <paramref name="lineIdx"/> begins.
-    /// Pseudo-lines have a virtual 1-char gap between them, so doc-space offsets
-    /// are greater than or equal to buf-space offsets.
+    /// Returns a bounded substring of a line, starting at <paramref name="charOffset"/>
+    /// within the line's content, up to <paramref name="maxChars"/> characters.
     /// </summary>
-    public DocOffset DocLineStartOfs(long lineIdx) {
+    public string GetLineChunk(int lineIdx, int charOffset, int maxChars) {
         ArgumentOutOfRangeException.ThrowIfNegative(lineIdx);
-        var tree = LineTree; // forces build if not yet built
-        if (lineIdx >= tree.Count) return -1L;
-        return lineIdx == 0 ? 0 : tree.DocPrefixSum((int)lineIdx - 1);
-    }
+        ArgumentOutOfRangeException.ThrowIfNegative(charOffset);
+        ArgumentOutOfRangeException.ThrowIfNegative(maxChars);
 
-    /// <summary>
-    /// Returns the zero-based line index that contains doc-space offset
-    /// <paramref name="docOfs"/>.
-    /// </summary>
-    public long LineFromDocOfs(DocOffset docOfs) {
-        ArgumentOutOfRangeException.ThrowIfNegative(docOfs);
-        var tree = LineTree;
-        if (tree.Count == 0) return 0;
-        var idx = tree.FindByDocPrefixSum(docOfs + 1);
-        return idx >= 0 ? idx : tree.Count - 1;
-    }
+        var contentLen = LineContentLength(lineIdx);
+        if (charOffset >= contentLen) return string.Empty;
 
-    /// <summary>
-    /// Translates a doc-space offset to a buf-space offset.  O(log n).
-    /// Within a line's content, positions map 1:1.  A position on a
-    /// pseudo-line's virtual terminator maps to the buf position just
-    /// past the line's content (i.e. the start of the next pseudo-line
-    /// in buf-space).
-    /// </summary>
-    public BufOffset DocOfsToBufOfs(DocOffset docOfs) {
-        var tree = LineTree; // forces build — throws implicitly if tree can't be built
-        if (tree.Count == 0) return docOfs;
-        if (docOfs <= 0) return 0;
-        var docTotal = tree.DocTotalSum();
-        if (docOfs >= docTotal) return Length;
-        var line = (int)LineFromDocOfs(docOfs);
-        var docLineStart = line == 0 ? 0L : tree.DocPrefixSum(line - 1);
-        var bufLineStart = line == 0 ? 0L : tree.PrefixSum(line - 1);
-        var localOfs = docOfs - docLineStart;
-        var bufLineLen = tree.ValueAt(line);
-        return bufLineStart + Math.Min(localOfs, bufLineLen);
-    }
+        var lineStart = LineStartOfs(lineIdx);
+        if (lineStart < 0) return string.Empty;
 
-    /// <summary>
-    /// Translates a buf-space offset to a doc-space offset.  O(log n).
-    /// </summary>
-    public DocOffset BufOfsToDocOfs(BufOffset bufOfs) {
-        var tree = LineTree; // forces build
-        if (tree.Count == 0) return bufOfs;
-        if (bufOfs <= 0) return 0;
-        var bufTotal = tree.TotalSum();
-        if (bufOfs >= bufTotal) return DocLength;
-        var line = (int)LineFromOfs(bufOfs);
-        var bufLineStart = line == 0 ? 0L : tree.PrefixSum(line - 1);
-        var docLineStart = line == 0 ? 0L : tree.DocPrefixSum(line - 1);
-        var localOfs = bufOfs - bufLineStart;
-        return docLineStart + localOfs;
-    }
+        var available = contentLen - charOffset;
+        var take = Math.Min(available, maxChars);
+        if (take <= 0) return string.Empty;
 
-    /// <summary>
-    /// Binary search the buffer's line-start index to find which line contains <paramref name="ofs"/>.
-    /// </summary>
-    private static long BinarySearchBufferLines(IBuffer buf, long ofs) {
-        var lc = buf.LineCount;
-        var lo = 0L;
-        var hi = lc - 1;
-        while (lo < hi) {
-            var mid = (lo + hi + 1) / 2;
-            var start = buf.GetLineStart(mid);
-            if (start >= 0 && start <= ofs) {
-                lo = mid;
-            } else {
-                hi = mid - 1;
-            }
-        }
-        return lo;
+        return GetText(lineStart + charOffset, take);
     }
 
     /// <summary>Returns the text content of line <paramref name="lineIdx"/> without any trailing newline.</summary>
@@ -618,8 +535,7 @@ public sealed class PieceTable {
             if (lineEnd < 0) {
                 lineEnd = Length;
             } else if (lineEnd > lineStart) {
-                // Strip trailing newline if present.  Pseudo-line boundaries
-                // have no newline character, so check the actual content.
+                // Strip trailing newline if present.
                 var ch = CharAt(lineEnd - 1);
                 if (ch == '\n') {
                     lineEnd--;
@@ -719,78 +635,13 @@ public sealed class PieceTable {
             _pieces[0] = new Piece(0, 0, bufLen);
         }
 
-        // Check if any entry exceeds EffectiveMaxPseudoLine and needs splitting.
-        var mpl = EffectiveMaxPseudoLine;
-        var needsSplit = false;
-        foreach (var len in lineLengths) {
-            if (len > mpl) { needsSplit = true; break; }
-        }
-
-        if (needsSplit) {
-            // Expand into mutable lists, splitting long entries.
-            // Input lineLengths are buf-space (from PagedFileBuffer scan).
-            var bufExpanded = new List<int>(lineLengths.Length);
-            var docExpanded = new List<int>(lineLengths.Length);
-            foreach (var len in lineLengths) {
-                if (len <= mpl) {
-                    bufExpanded.Add(len);
-                    docExpanded.Add(len);  // no pseudo split: doc == buf
-                } else {
-                    // Determine content vs terminator in the original line.
-                    // The last 1-2 chars may be a real terminator.
-                    // Since these are buf-space values from the initial scan,
-                    // and the buffer hasn't been edited yet, we rely on the
-                    // fact that the split preserves terminators on the last chunk.
-                    var remaining = len;
-                    while (remaining > mpl) {
-                        bufExpanded.Add(mpl);
-                        docExpanded.Add(mpl + 1);  // pseudo-line: doc = buf + 1
-                        remaining -= mpl;
-                    }
-                    if (remaining > 0) {
-                        bufExpanded.Add(remaining);
-                        docExpanded.Add(remaining);  // last chunk: real term, doc == buf
-                    }
-                }
-            }
-            _lineTree = LineIndexTree.FromValues(
-                System.Runtime.InteropServices.CollectionsMarshal.AsSpan(bufExpanded),
-                System.Runtime.InteropServices.CollectionsMarshal.AsSpan(docExpanded));
-            _maxLineLen = mpl + 1; // pseudo-lines have docLen = mpl + 1
-        } else {
-            // No pseudo-lines needed: doc == buf for all lines.
-            _lineTree = LineIndexTree.FromValues(lineLengths, lineLengths);
-            var max = 0;
-            foreach (var len in lineLengths) {
-                if (len > max) max = len;
-            }
-            _maxLineLen = max;
-        }
-        AssertLineTreeValid();
-    }
-
-    /// <summary>
-    /// Installs a pre-split dual-value line tree from previously captured
-    /// buf-space and doc-space lengths.  Used by undo to restore a tree
-    /// that already has pseudo-lines split (no re-splitting needed).
-    /// </summary>
-    public void InstallLineTree(ReadOnlySpan<int> bufLengths, ReadOnlySpan<int> docLengths) {
-        EnsureInitialPiece();
-
-        var bufLen = Buffer.Length;
-        if (_pieces.Count == 0) {
-            if (bufLen > 0) _pieces.Add(new Piece(0, 0, bufLen));
-        } else if (_pieces.Count == 1 && _pieces[0].BufIdx == 0
-                   && _pieces[0].Len != bufLen) {
-            _pieces[0] = new Piece(0, 0, bufLen);
-        }
-
-        _lineTree = LineIndexTree.FromValues(bufLengths, docLengths);
+        _lineTree = LineIndexTree.FromValues(lineLengths);
         var max = 0;
-        foreach (var len in docLengths) {
+        foreach (var len in lineLengths) {
             if (len > max) max = len;
         }
         _maxLineLen = max;
+        if (_maxLineLen > LongLineThreshold) HasLongLines = true;
         AssertLineTreeValid();
     }
 
@@ -805,14 +656,12 @@ public sealed class PieceTable {
         get {
             if (_lineTree != null) return _lineTree;
             BuildLineTree();
-            Debug.Assert(_maxLineLen <= EffectiveMaxPseudoLine + 1,
-                $"BuildLineTree produced _maxLineLen={_maxLineLen} > MaxPseudoLine+1={EffectiveMaxPseudoLine + 1}");
             return _lineTree!;
         }
     }
 
     private void BuildLineTree() {
-        var scanner = new LineScanner(EffectiveMaxPseudoLine);
+        var scanner = new LineScanner();
         var totalLen = Length;
         if (totalLen > 0) {
             VisitPieces(0, totalLen, span => scanner.Scan(span));
@@ -821,18 +670,12 @@ public sealed class PieceTable {
 
         _lineTree = scanner.BuildTree();
 
-
         var maxLen = 0;
-        foreach (var l in scanner.DocLineLengths) {
+        foreach (var l in scanner.LineLengths) {
             if (l > maxLen) maxLen = l;
         }
         _maxLineLen = maxLen;
-
-        // The scanner already handles pseudo-splits, but content + terminator
-        // may still exceed MaxPseudoLine.  Verify and split if needed.
-        if (_maxLineLen > EffectiveMaxPseudoLine + 1) { // +1: doc-space pseudo = mpl+1
-            SplitLongLines(0, _lineTree.Count);
-        }
+        if (_maxLineLen > LongLineThreshold) HasLongLines = true;
     }
 
 
@@ -847,12 +690,6 @@ public sealed class PieceTable {
         return idx >= 0 ? idx : tree.Count - 1;
     }
 
-    /// <summary>
-    /// Splices the line tree after a newline-containing insert.
-    /// The affected line is split into multiple new lines based on the
-    /// newline positions in the inserted text.  O(k log L) via treap
-    /// InsertRange/RemoveAt.
-    /// </summary>
     /// <summary>
     /// Splices the line tree after a newline-containing insert. Scans the
     /// inserted text (via IBuffer) for newlines to compute line lengths.
@@ -887,13 +724,13 @@ public sealed class PieceTable {
         newLines.Add(cur);
 
         // Replace the single line with the new lines.
-        // Real-newline splits: doc == buf for all entries.
-        var span = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(newLines);
+        var span = CollectionsMarshal.AsSpan(newLines);
         _lineTree!.RemoveAt(line);
-        _lineTree.InsertRange(line, span, span);
+        _lineTree.InsertRange(line, span);
         if (_maxLineLen >= 0) {
             foreach (var l in newLines) {
                 if (l > _maxLineLen) _maxLineLen = l;
+                CheckLongLine(l);
             }
         }
     }
@@ -912,66 +749,12 @@ public sealed class PieceTable {
             (endLineLen - ((deleteOfs + deleteLen) - endLineStart)));
 
         _lineTree.RemoveRange(startLine, endLine - startLine + 1);
-        _lineTree.InsertAt(startLine, mergedLen, mergedLen);  // real merge: doc == buf
+        _lineTree.InsertAt(startLine, mergedLen);
         // Merged line might be longer than the current max.
         if (_maxLineLen >= 0 && mergedLen > _maxLineLen) {
             _maxLineLen = mergedLen;
         }
-    }
-
-    /// <summary>
-    /// If the line at <paramref name="lineIdx"/> exceeds <see cref="MaxPseudoLine"/>,
-    /// splits it into chunks of MaxPseudoLine (last chunk gets the remainder).
-    /// </summary>
-    private void SplitLongLine(int lineIdx) {
-        var fullLen = _lineTree!.ValueAt(lineIdx);
-        // Determine how much of the line is content vs terminator.
-        var deadZone = DeriveTerminatorType(lineIdx).DeadZoneWidth();
-        var contentLen = fullLen - deadZone;
-        var mpl = EffectiveMaxPseudoLine;
-        if (contentLen < mpl) return;
-
-        // Split the content into MaxPseudoLine chunks; the terminator
-        // stays attached to the last chunk.  When the content fills an
-        // exact multiple of mpl on an unterminated line, add one extra
-        // empty chunk so the caret has somewhere to land after the last
-        // character (without it, the caret sits at col mpl with no
-        // pseudo-terminator dead zone to snap past).
-        var chunkCount = (contentLen + mpl - 1) / mpl;
-        if (deadZone == 0 && contentLen % mpl == 0)
-            chunkCount++;
-        Span<int> bufChunks = chunkCount <= 64
-            ? stackalloc int[chunkCount]
-            : new int[chunkCount];
-        Span<int> docChunks = chunkCount <= 64
-            ? stackalloc int[chunkCount]
-            : new int[chunkCount];
-        var remaining = contentLen;
-        for (var i = 0; i < chunkCount; i++) {
-            var chunk = Math.Min(mpl, remaining);
-            bufChunks[i] = chunk;
-            docChunks[i] = chunk + 1; // pseudo-line: doc gets virtual terminator
-            remaining -= chunk;
-        }
-        // Last chunk keeps the real terminator, not a pseudo boundary.
-        bufChunks[chunkCount - 1] += deadZone;
-        docChunks[chunkCount - 1] = bufChunks[chunkCount - 1]; // real term: doc == buf
-
-        _lineTree.RemoveAt(lineIdx);
-        _lineTree.InsertRange(lineIdx, bufChunks, docChunks);
-        if (_maxLineLen >= 0 && _maxLineLen > mpl) {
-            _maxLineLen = -1; // conservative recompute
-        }
-    }
-
-    /// <summary>
-    /// Checks lines in the range [startLine, startLine+count) and splits
-    /// any that exceed <see cref="MaxPseudoLine"/>.
-    /// </summary>
-    private void SplitLongLines(int startLine, int count) {
-        for (var i = startLine + count - 1; i >= startLine; i--) {
-            SplitLongLine(i);
-        }
+        CheckLongLine(mergedLen);
     }
 
     /// <summary>
@@ -979,7 +762,7 @@ public sealed class PieceTable {
     /// restore the line tree without scanning characters.  Returns null when
     /// the delete is within a single line (no line structure change).
     /// </summary>
-    public (int StartLine, int[] LineLengths, int[] DocLineLengths)? CaptureLineInfo(BufOffset ofs, long len) {
+    public (int StartLine, int[] LineLengths)? CaptureLineInfo(BufOffset ofs, long len) {
         Debug.Assert(_lineTree != null, "CaptureLineInfo called without a line tree.");
         if (_lineTree == null) return null; // Release safety net
         var startLine = (int)LineFromOfs(ofs);
@@ -993,12 +776,10 @@ public sealed class PieceTable {
         var endLine = (int)LineFromOfs(Math.Min(ofs + len, Length));
         var count = endLine - startLine + 1;
         var lengths = new int[count];
-        var docLengths = new int[count];
         for (var i = 0; i < count; i++) {
             lengths[i] = _lineTree.ValueAt(startLine + i);
-            docLengths[i] = _lineTree.DocValueAt(startLine + i);
         }
-        return (startLine, lengths, docLengths);
+        return (startLine, lengths);
     }
 
     /// <summary>
@@ -1007,16 +788,15 @@ public sealed class PieceTable {
     /// The merged line at <paramref name="startLine"/> is replaced with the
     /// original lines.
     /// </summary>
-    public void RestoreLines(int startLine, int[] lineLengths, int[] docLineLengths) {
+    public void RestoreLines(int startLine, int[] lineLengths) {
 
         Debug.Assert(_lineTree != null, "RestoreLines called without a line tree.");
         if (_lineTree == null) return; // Release safety net
         // Remove the merged line that SpliceDeleteLines created.
         _lineTree.RemoveAt(startLine);
         // Re-insert the original lines.
-        _lineTree.InsertRange(startLine, lineLengths, docLineLengths);
+        _lineTree.InsertRange(startLine, lineLengths);
         _maxLineLen = -1; // conservative recompute
-        SplitLongLines(startLine, lineLengths.Length);
     }
 
     /// <summary>
@@ -1029,9 +809,9 @@ public sealed class PieceTable {
         if (_lineTree == null) return; // Release safety net
         var line = (int)LineFromOfs(ofs);
         _lineTree.Update(line, (int)len);
-        var newLen = _lineTree.DocValueAt(line);
+        var newLen = _lineTree.ValueAt(line);
         if (newLen > _maxLineLen) _maxLineLen = newLen;
-        SplitLongLine(line);
+        CheckLongLine(newLen);
     }
 
     /// <summary>
@@ -1173,14 +953,12 @@ public sealed class PieceTable {
         // Post-mutation: update line tree.
         if (affectedLine >= 0 && !hasNewlines) {
             _lineTree!.Update(affectedLine, len);
-            var newLen = _lineTree.DocValueAt(affectedLine);
+            var newLen = _lineTree.ValueAt(affectedLine);
             if (newLen > _maxLineLen) _maxLineLen = newLen;
-            SplitLongLine(affectedLine);
+            CheckLongLine(newLen);
         } else if (affectedLine >= 0 && hasNewlines) {
             SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs,
                 buf, bufStart, len);
-            var nlCount = (int)(LineFromOfs(Math.Min(ofs + len, Length)) - affectedLine + 1);
-            SplitLongLines(affectedLine, nlCount);
         } else {
             Debug.Assert(false, "InsertFromBuffer called without a line tree.");
             _maxLineLen = -1;
@@ -1191,16 +969,10 @@ public sealed class PieceTable {
     /// <summary>Snapshots the current piece list for later restore (undo).</summary>
     public Piece[] SnapshotPieces() => _pieces.ToArray();
 
-    /// <summary>Snapshots the current buf-space line tree lengths for later restore (undo).</summary>
+    /// <summary>Snapshots the current line tree lengths for later restore (undo).</summary>
     public int[] SnapshotLineLengths() {
         var tree = LineTree;
         return tree.ExtractValues();
-    }
-
-    /// <summary>Snapshots the current doc-space line tree lengths for later restore (undo).</summary>
-    public int[] SnapshotDocLineLengths() {
-        var tree = LineTree;
-        return tree.ExtractDocValues();
     }
 
     /// <summary>
@@ -1373,6 +1145,14 @@ public sealed class PieceTable {
         }
         var p = _pieces[pieceIdx];
         return _buffers[p.BufIdx][p.Start + ofsInPiece];
+    }
+
+    /// <summary>
+    /// Sets <see cref="HasLongLines"/> if <paramref name="lineLen"/> exceeds
+    /// the long-line threshold.
+    /// </summary>
+    private void CheckLongLine(int lineLen) {
+        if (lineLen > LongLineThreshold) HasLongLines = true;
     }
 
     /// <summary>

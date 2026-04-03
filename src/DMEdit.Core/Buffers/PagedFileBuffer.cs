@@ -31,7 +31,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     // -----------------------------------------------------------------
 
     private const int PageSizeBytes = 1024 * 1024; // 1 MB raw bytes per page
-    // No line can exceed MaxPseudoLine after InstallLineTree splits them.
+    // Lines can be arbitrarily long; character-wrapping handles rendering.
 
     /// <summary>
     /// Default maximum number of decoded pages kept in memory.
@@ -70,8 +70,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     // Line index (exact line lengths, built during scan)
     // -----------------------------------------------------------------
 
-    private List<int> _lineLengths = null!;     // buf-space, set by LineScanner during scan
-    private List<int> _docLineLengths = null!;  // doc-space, set by LineScanner during scan
+    private List<int> _lineLengths = null!;     // set by LineScanner during scan
     private long _lineCount;                    // accessed via Interlocked
     private volatile int _longestLine;
     private long _longestRealLine; // longest line ignoring pseudo-splits
@@ -156,7 +155,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         _path = path;
         _byteLen = byteLen;
         MaxPagesInMemory = maxPages;
-        _longestLine = Documents.PieceTable.MaxPseudoLine;
+        _longestLine = 500; // initial estimate, updated during scan
 
         // Pre-allocate page arrays based on file size.
         var estimatedPages = (int)Math.Min((byteLen + PageSizeBytes - 1) / PageSizeBytes, int.MaxValue);
@@ -393,7 +392,6 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                 Interlocked.Exchange(ref _lineCount, scanner.LineCount);
                 lock (_lock) {
                     _lineLengths = scanner.LineLengths;
-                    _docLineLengths = scanner.DocLineLengths;
                 }
 
                 // Retain decoded chars if within the page cache limit.
@@ -426,7 +424,6 @@ public sealed class PagedFileBuffer : IProgressBuffer {
             Interlocked.Exchange(ref _lineCount, scanner.LineCount);
             lock (_lock) {
                 _lineLengths = scanner.LineLengths;
-                _docLineLengths = scanner.DocLineLengths;
                 _terminatorRuns = scanner.TerminatorRuns;
             }
             _lfCount = scanner.LfCount;
@@ -467,19 +464,6 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         lock (_lock) {
             var result = _lineLengths;
             _lineLengths = null!;
-            return result;
-        }
-    }
-
-    /// <summary>
-    /// Returns the doc-space line lengths computed during the scan.
-    /// Only valid after <see cref="LoadComplete"/> has fired.
-    /// The caller takes ownership; the buffer clears its reference.
-    /// </summary>
-    public List<int>? TakeDocLineLengths() {
-        lock (_lock) {
-            var result = _docLineLengths;
-            _docLineLengths = null!;
             return result;
         }
     }

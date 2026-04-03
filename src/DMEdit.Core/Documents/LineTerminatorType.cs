@@ -17,9 +17,6 @@ public enum LineTerminatorType : byte {
 
     /// <summary>Windows-style: <c>\r\n</c> (2 char dead zone).</summary>
     CRLF,
-
-    /// <summary>Pseudo-line split at <see cref="PieceTable.MaxPseudoLine"/> (0 char dead zone).</summary>
-    Pseudo,
 }
 
 public static class LineTerminatorTypeExtensions {
@@ -32,21 +29,6 @@ public static class LineTerminatorTypeExtensions {
         LineTerminatorType.LF => 1,
         LineTerminatorType.CR => 1,
         LineTerminatorType.CRLF => 2,
-        LineTerminatorType.Pseudo => 0,
-        _ => 0,
-    };
-
-    /// <summary>
-    /// Returns the dead zone width in document-offset space.  Same as
-    /// <see cref="DeadZoneWidth"/> for real terminators, but 1 for
-    /// pseudo-terminators (the virtual gap).
-    /// </summary>
-    public static int VirtualDeadZoneWidth(this LineTerminatorType type) => type switch {
-        LineTerminatorType.None => 0,
-        LineTerminatorType.LF => 1,
-        LineTerminatorType.CR => 1,
-        LineTerminatorType.CRLF => 2,
-        LineTerminatorType.Pseudo => 1,
         _ => 0,
     };
 }

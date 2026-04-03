@@ -11,7 +11,6 @@ public sealed class DeleteEdit : IDocumentEdit {
     private Piece[] _pieces;
     private int _lineInfoStart;
     private int[]? _lineInfoLengths;
-    private int[]? _docLineInfoLengths;
     private string? _text; // only set for small deletes or session deserialization
 
     public long Ofs { get; }
@@ -19,19 +18,17 @@ public sealed class DeleteEdit : IDocumentEdit {
 
     /// <summary>Full constructor: pieces + line tree delta for zero-copy undo.</summary>
     public DeleteEdit(long ofs, long len, Piece[] pieces,
-                      int lineInfoStart, int[]? lineInfoLengths,
-                      int[]? docLineInfoLengths) {
+                      int lineInfoStart, int[]? lineInfoLengths) {
         Ofs = ofs;
         Len = len;
         _pieces = pieces;
         _lineInfoStart = lineInfoStart;
         _lineInfoLengths = lineInfoLengths;
-        _docLineInfoLengths = docLineInfoLengths;
     }
 
     /// <summary>Pieces-only constructor (no line tree delta — single-line deletes).</summary>
     public DeleteEdit(long ofs, long len, Piece[] pieces)
-        : this(ofs, len, pieces, -1, null, null) { }
+        : this(ofs, len, pieces, -1, null) { }
 
     /// <summary>Convenience constructor for small deletes where the text is already known.</summary>
     public DeleteEdit(long ofs, string deletedText) {
@@ -78,7 +75,6 @@ public sealed class DeleteEdit : IDocumentEdit {
             if (lineInfo is { } info) {
                 _lineInfoStart = info.StartLine;
                 _lineInfoLengths = info.LineLengths;
-                _docLineInfoLengths = info.DocLineLengths;
             }
         }
         table.Delete(Ofs, Len);
@@ -90,8 +86,7 @@ public sealed class DeleteEdit : IDocumentEdit {
             // no observer can see an inconsistent state (pieces restored
             // but line tree still reflecting the deleted range).
             table.InsertPiecesAndRestoreLines(
-                Ofs, _pieces, _lineInfoStart, _lineInfoLengths,
-                _docLineInfoLengths, Len);
+                Ofs, _pieces, _lineInfoStart, _lineInfoLengths, Len);
         } else {
             // Small delete with pre-materialized text — use string Insert.
             table.Insert(Ofs, _text!);

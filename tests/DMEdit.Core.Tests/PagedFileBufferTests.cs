@@ -602,39 +602,7 @@ public class PagedFileBufferTests : IDisposable {
         Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(1));
     }
 
-    [Fact]
-    public void TerminatorType_501Chars_NoTerminator_PseudoSplit() {
-        // 501 chars, no newline — splits into pseudo-line [500] + [1]
-        var path = WriteTempFile(Chars(501));
-        using var buf = LoadAndWait(path);
-        Assert.Equal(2L, buf.LineCount);
-        Assert.Equal(LineTerminatorType.Pseudo, buf.GetLineTerminator(0));
-        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(1));
-    }
-
-    [Fact]
-    public void TerminatorType_501Chars_LF() {
-        // 501 content + LF — pseudo-split [500] + [1 + LF]
-        var path = WriteTempFile(Chars(501) + "\n");
-        using var buf = LoadAndWait(path);
-        Assert.Equal(3L, buf.LineCount);
-        Assert.Equal(LineTerminatorType.Pseudo, buf.GetLineTerminator(0));
-        Assert.Equal(LineTerminatorType.LF, buf.GetLineTerminator(1));
-        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(2));
-    }
-
-    [Fact]
-    public void TerminatorType_501Chars_CRLF() {
-        // 501 content + CRLF — pseudo-split [500] + [1 + CRLF]
-        var path = WriteTempFile(Chars(501) + "\r\n");
-        using var buf = LoadAndWait(path);
-        Assert.Equal(3L, buf.LineCount);
-        Assert.Equal(LineTerminatorType.Pseudo, buf.GetLineTerminator(0));
-        Assert.Equal(LineTerminatorType.CRLF, buf.GetLineTerminator(1));
-        Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(2));
-    }
-
-    [Fact]
+[Fact]
     public void TerminatorType_UniformCRLF_SingleRun() {
         // Multiple CRLF lines should produce minimal RLE entries
         var path = WriteTempFile("line1\r\nline2\r\nline3\r\n");

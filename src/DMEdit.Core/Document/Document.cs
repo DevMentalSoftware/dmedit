@@ -105,7 +105,7 @@ public sealed class Document {
         long selLen = Selection.Len;
         if (selLen > MaxCopyLength) return null;
         var len = (int)selLen;
-        if (len <= _table.MaxGetTextLength) {
+        if (len <= PieceTable.MaxGetTextLength) {
             return _table.GetText(Selection.Start, len);
         }
         var start = Selection.Start;
@@ -169,20 +169,17 @@ public sealed class Document {
         if (text.Length == 0) {
             return;
         }
-        // Selection is doc-space; PieceTable needs buf-space.
-        var bufOfs = _table.DocOfsToBufOfs(Selection.Start);
+        var ofs = Selection.Start;
         var replacing = !Selection.IsEmpty;
         if (replacing) {
             _history.BeginCompound();
-            var bufEnd = _table.DocOfsToBufOfs(Selection.End);
-            DeleteRange(bufOfs, bufEnd - bufOfs);
+            DeleteRange(ofs, Selection.End - ofs);
         }
-        PushInsert(bufOfs, text);
+        PushInsert(ofs, text);
         if (replacing) {
             _history.EndCompound();
         }
-        // After edit, tree is updated — convert new buf position to doc-space.
-        Selection = Selection.Collapsed(_table.BufOfsToDocOfs(bufOfs + text.Length));
+        Selection = Selection.Collapsed(ofs + text.Length);
         RaiseChanged();
     }
 
@@ -191,10 +188,9 @@ public sealed class Document {
         if (Selection.IsEmpty) {
             return;
         }
-        var bufStart = _table.DocOfsToBufOfs(Selection.Start);
-        var bufEnd = _table.DocOfsToBufOfs(Selection.End);
-        DeleteRange(bufStart, bufEnd - bufStart);
-        Selection = Selection.Collapsed(_table.BufOfsToDocOfs(bufStart));
+        var start = Selection.Start;
+        DeleteRange(start, Selection.End - start);
+        Selection = Selection.Collapsed(start);
         RaiseChanged();
     }
 
@@ -204,19 +200,19 @@ public sealed class Document {
             DeleteSelection();
             return;
         }
-        var bufOfs = _table.DocOfsToBufOfs(Selection.Caret);
-        if (bufOfs == 0L) {
+        var ofs = Selection.Caret;
+        if (ofs == 0L) {
             return;
         }
         // Handle \r\n as a single unit
         var delLen = 1;
-        if (bufOfs >= 2 && _table.GetText(bufOfs - 2, 2) == "\r\n") {
+        if (ofs >= 2 && _table.GetText(ofs - 2, 2) == "\r\n") {
             delLen = 2;
         }
-        var bufDelOfs = bufOfs - delLen;
-        var pieces = _table.CapturePieces(bufDelOfs, delLen);
-        _history.Push(new DeleteEdit(bufDelOfs, delLen, pieces), _table, Selection);
-        Selection = Selection.Collapsed(_table.BufOfsToDocOfs(bufDelOfs));
+        var delOfs = ofs - delLen;
+        var pieces = _table.CapturePieces(delOfs, delLen);
+        _history.Push(new DeleteEdit(delOfs, delLen, pieces), _table, Selection);
+        Selection = Selection.Collapsed(delOfs);
         RaiseChanged();
     }
 
@@ -226,17 +222,17 @@ public sealed class Document {
             DeleteSelection();
             return;
         }
-        var bufOfs = _table.DocOfsToBufOfs(Selection.Caret);
-        if (bufOfs >= _table.Length) {
+        var ofs = Selection.Caret;
+        if (ofs >= _table.Length) {
             return;
         }
         // Handle \r\n as a single unit
         var delLen = 1;
-        if (bufOfs + 1 < _table.Length && _table.GetText(bufOfs, 2) == "\r\n") {
+        if (ofs + 1 < _table.Length && _table.GetText(ofs, 2) == "\r\n") {
             delLen = 2;
         }
-        var pieces = _table.CapturePieces(bufOfs, delLen);
-        _history.Push(new DeleteEdit(bufOfs, delLen, pieces), _table, Selection);
+        var pieces = _table.CapturePieces(ofs, delLen);
+        _history.Push(new DeleteEdit(ofs, delLen, pieces), _table, Selection);
         RaiseChanged();
     }
 
@@ -522,7 +518,7 @@ public sealed class Document {
     /// </summary>
     public void DeleteLine() {
         var caret = Selection.Caret;
-        var lineIdx = _table.LineFromDocOfs(caret);
+        var lineIdx = _table.LineFromOfs(caret);
         var lineCount = _table.LineCount;
         var lineStart = _table.LineStartOfs(lineIdx);
 
@@ -552,7 +548,7 @@ public sealed class Document {
 
         var dlPieces = _table.CapturePieces(deleteStart, len);
         _history.Push(new DeleteEdit(deleteStart, len, dlPieces), _table, Selection);
-        Selection = Selection.Collapsed(_table.BufOfsToDocOfs(Math.Min(deleteStart, _table.Length)));
+        Selection = Selection.Collapsed(Math.Min(deleteStart, _table.Length));
         RaiseChanged();
     }
 
@@ -596,30 +592,29 @@ public sealed class Document {
             return;
         }
 
-        // Translate doc-space Selection to buf-space for text access.
-        var bufSelStart = _table.DocOfsToBufOfs(Selection.Start);
-        var bufSelEnd = _table.DocOfsToBufOfs(Selection.End);
+        var selStart = Selection.Start;
+        var selEnd = Selection.End;
 
-        var (lineStart, lineEnd) = GetLineContentRange(bufSelStart);
+        var (lineStart, lineEnd) = GetLineContentRange(selStart);
 
         // If selection spans multiple lines, treat as containing non-word chars → no-op.
-        if (!Selection.IsEmpty && bufSelEnd > lineEnd) {
+        if (!Selection.IsEmpty && selEnd > lineEnd) {
             return;
         }
 
         // Work in a bounded window around the selection so we don't
         // materialize an entire line (could be multi-GB for single-line files).
         const int windowRadius = 1024;
-        var winStart = Math.Max(lineStart, bufSelStart - windowRadius);
-        var winEnd = Math.Min(lineEnd, bufSelEnd + windowRadius);
+        var winStart = Math.Max(lineStart, selStart - windowRadius);
+        var winEnd = Math.Min(lineEnd, selEnd + windowRadius);
         var winLen = (int)(winEnd - winStart);
         if (winLen == 0) {
             return;
         }
         var winText = _table.GetText(winStart, winLen);
 
-        var selStartInWin = (int)(bufSelStart - winStart);
-        var selEndInWin = (int)(bufSelEnd - winStart);
+        var selStartInWin = (int)(selStart - winStart);
+        var selEndInWin = (int)(selEnd - winStart);
 
         // If selection contains a non-word character → no-op.
         for (var i = selStartInWin; i < selEndInWin; i++) {
@@ -640,10 +635,7 @@ public sealed class Document {
             right++;
         }
 
-        // Convert back to doc-space for Selection.
-        Selection = new Selection(
-            _table.BufOfsToDocOfs(winStart + left),
-            _table.BufOfsToDocOfs(winStart + right));
+        Selection = new Selection(winStart + left, winStart + right);
     }
 
     /// <summary>
@@ -654,11 +646,9 @@ public sealed class Document {
         if (_table.Length == 0) {
             return;
         }
-        var bufCaret = _table.DocOfsToBufOfs(Selection.Caret);
-        var (bufLineStart, bufLineEnd) = GetLineContentRange(bufCaret);
-        Selection = new Selection(
-            _table.BufOfsToDocOfs(bufLineStart),
-            _table.BufOfsToDocOfs(bufLineEnd));
+        var caret = Selection.Caret;
+        var (lineStart, lineEnd) = GetLineContentRange(caret);
+        Selection = new Selection(lineStart, lineEnd);
     }
 
     /// <summary>
@@ -676,39 +666,38 @@ public sealed class Document {
         if (len == 0) {
             return;
         }
-        var docLen = _table.DocLength;
+        var docLen = _table.Length;
 
         // Already the entire document?
         if (Selection.Start == 0 && Selection.End == docLen) {
             return;
         }
 
-        // Translate Selection to buf-space for text access.
-        var bufSelStart = _table.DocOfsToBufOfs(Selection.Start);
-        var bufSelEnd = _table.DocOfsToBufOfs(Selection.End);
+        var selStart = Selection.Start;
+        var selEnd = Selection.End;
 
-        var (lineStart, lineEnd) = GetLineContentRange(bufSelStart);
+        var (lineStart, lineEnd) = GetLineContentRange(selStart);
 
         // If selection spans beyond this line → expand to entire document.
-        if (!Selection.IsEmpty && bufSelEnd > lineEnd) {
+        if (!Selection.IsEmpty && selEnd > lineEnd) {
             Selection = new Selection(0L, docLen);
             return;
         }
 
         // Already the entire line?
-        if (bufSelStart == lineStart && bufSelEnd == lineEnd) {
+        if (selStart == lineStart && selEnd == lineEnd) {
             Selection = new Selection(0L, docLen);
             return;
         }
 
         // Use a bounded window to avoid materializing a multi-GB single line.
         const int windowRadius = 1024;
-        var winStart = Math.Max(lineStart, bufSelStart - windowRadius);
-        var winEnd = Math.Min(lineEnd, bufSelEnd + windowRadius);
+        var winStart = Math.Max(lineStart, selStart - windowRadius);
+        var winEnd = Math.Min(lineEnd, selEnd + windowRadius);
         var winLen = (int)(winEnd - winStart);
         var winText = winLen > 0 ? _table.GetText(winStart, winLen) : "";
-        var selStartInWin = (int)(bufSelStart - winStart);
-        var selEndInWin = (int)(bufSelEnd - winStart);
+        var selStartInWin = (int)(selStart - winStart);
+        var selEndInWin = (int)(selEnd - winStart);
 
         // Compute whitespace-bounded range.
         var wsLeft = selStartInWin;
@@ -743,8 +732,8 @@ public sealed class Document {
             var alreadyAtWhitespace = subLeft == wsLeft && subRight == wsRight;
             if (expanded && !alreadyAtWhitespace) {
                 Selection = new Selection(
-                    _table.BufOfsToDocOfs(winStart + subLeft),
-                    _table.BufOfsToDocOfs(winStart + subRight));
+                    winStart + subLeft,
+                    winStart + subRight);
                 return;
             }
         }
@@ -752,15 +741,13 @@ public sealed class Document {
         // Whitespace boundary level.
         if (!atWhitespaceBoundary) {
             Selection = new Selection(
-                _table.BufOfsToDocOfs(winStart + wsLeft),
-                _table.BufOfsToDocOfs(winStart + wsRight));
+                winStart + wsLeft,
+                winStart + wsRight);
             return;
         }
 
         // Line level.
-        Selection = new Selection(
-            _table.BufOfsToDocOfs(lineStart),
-            _table.BufOfsToDocOfs(lineEnd));
+        Selection = new Selection(lineStart, lineEnd);
     }
 
     /// <summary>
@@ -869,15 +856,14 @@ public sealed class Document {
 
         var savedPieces = _table.SnapshotPieces();
         var savedLines = _table.SnapshotLineLengths();
-        var savedDocLines = _table.SnapshotDocLineLengths();
         var savedAddLen = _table.AddBufferLength;
 
         var edit = new UniformBulkReplaceEdit(
             matchPositions, matchLen, replacement,
-            savedPieces, savedLines, savedDocLines, savedAddLen);
+            savedPieces, savedLines, savedAddLen);
         _history.Push(edit, _table, Selection);
 
-        Selection = Selection.Collapsed(Math.Min(Selection.Caret, _table.DocLength));
+        Selection = Selection.Collapsed(Math.Min(Selection.Caret, _table.Length));
         RaiseChanged();
         return matchPositions.Length;
     }
@@ -892,15 +878,14 @@ public sealed class Document {
 
         var savedPieces = _table.SnapshotPieces();
         var savedLines = _table.SnapshotLineLengths();
-        var savedDocLines = _table.SnapshotDocLineLengths();
         var savedAddLen = _table.AddBufferLength;
 
         var edit = new VaryingBulkReplaceEdit(
             matches, replacements,
-            savedPieces, savedLines, savedDocLines, savedAddLen);
+            savedPieces, savedLines, savedAddLen);
         _history.Push(edit, _table, Selection);
 
-        Selection = Selection.Collapsed(Math.Min(Selection.Caret, _table.DocLength));
+        Selection = Selection.Collapsed(Math.Min(Selection.Caret, _table.Length));
         RaiseChanged();
         return matches.Length;
     }
@@ -1063,12 +1048,12 @@ public sealed class Document {
     public void RecordBackgroundPaste(long ofs, Selection selBefore,
         long addBufStart, int insertLen, bool replacing,
         Piece[]? deletePieces,
-        (int StartLine, int[] LineLengths, int[] DocLineLengths)? deleteLineInfo,
+        (int StartLine, int[] LineLengths)? deleteLineInfo,
         int bufIdx = -1) {
 
         if (replacing && deletePieces != null) {
-            var delEdit = deleteLineInfo is var (sl, ll, dll)
-                ? new DeleteEdit(ofs, selBefore.Len, deletePieces, sl, ll, dll)
+            var delEdit = deleteLineInfo is var (sl, ll)
+                ? new DeleteEdit(ofs, selBefore.Len, deletePieces, sl, ll)
                 : new DeleteEdit(ofs, selBefore.Len, deletePieces);
             var insEdit = new SpanInsertEdit(ofs, addBufStart, insertLen, bufIdx);
             var compound = new CompoundEdit(new List<IDocumentEdit> { delEdit, insEdit });
@@ -1093,8 +1078,8 @@ public sealed class Document {
     private void DeleteRange(long ofs, long len) {
         var pieces = _table.CapturePieces(ofs, len);
         var lineInfo = _table.CaptureLineInfo(ofs, len);
-        var edit = lineInfo is var (sl, ll, dll)
-            ? new DeleteEdit(ofs, len, pieces, sl, ll, dll)
+        var edit = lineInfo is var (sl, ll)
+            ? new DeleteEdit(ofs, len, pieces, sl, ll)
             : new DeleteEdit(ofs, len, pieces);
         _history.Push(edit, _table, Selection);
     }
@@ -1104,10 +1089,10 @@ public sealed class Document {
     /// If selection ends at column 0 of a line, that line is excluded.
     /// </summary>
     private (long firstLine, long lastLine) GetSelectedLineRange() {
-        var startLine = _table.LineFromDocOfs(Selection.Start);
-        var endLine = _table.LineFromDocOfs(Math.Max(Selection.Start, Selection.End - 1));
+        var startLine = _table.LineFromOfs(Selection.Start);
+        var endLine = _table.LineFromOfs(Math.Max(Selection.Start, Selection.End - 1));
         if (!Selection.IsEmpty
-            && Selection.End == _table.DocLineStartOfs(endLine)
+            && Selection.End == _table.LineStartOfs(endLine)
             && endLine > startLine) {
             endLine--;
         }
@@ -1171,12 +1156,9 @@ public sealed class Document {
         _history.EndCompound();
 
         // Adjust selection to follow the moved lines.
-        // selStart/newSelStart are buf-space; convert to doc-space for Selection.
-        var docSelStart = _table.BufOfsToDocOfs(selStart);
-        var docNewSelStart = _table.BufOfsToDocOfs(newSelStart);
-        var anchorDelta = Selection.Anchor - docSelStart;
-        var activeDelta = Selection.Active - docSelStart;
-        Selection = new Selection(docNewSelStart + anchorDelta, docNewSelStart + activeDelta);
+        var anchorDelta = Selection.Anchor - selStart;
+        var activeDelta = Selection.Active - selStart;
+        Selection = new Selection(newSelStart + anchorDelta, newSelStart + activeDelta);
         RaiseChanged();
     }
 

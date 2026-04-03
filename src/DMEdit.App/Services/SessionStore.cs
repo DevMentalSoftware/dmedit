@@ -303,7 +303,7 @@ public static class SessionStore {
     }
 
     private static void RestoreSelection(Document doc, TabEntry entry) {
-        var docLen = doc.Table.DocLength;
+        var docLen = doc.Table.Length;
         doc.Selection = new Selection(
             Math.Clamp(entry.CaretAnchor, 0, docLen),
             Math.Clamp(entry.CaretActive, 0, docLen));

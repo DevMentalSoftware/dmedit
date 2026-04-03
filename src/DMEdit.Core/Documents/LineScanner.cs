@@ -5,24 +5,16 @@ namespace DMEdit.Core.Documents;
 
 /// <summary>
 /// Scans characters and builds line length entries with terminator type tracking.
-/// Handles CR, LF, CRLF detection and pseudo-line splitting at
-/// <see cref="MaxPseudoLine"/> content characters.
+/// Handles CR, LF, CRLF detection.
 /// </summary>
 /// <remarks>
 /// Feed characters via <see cref="Scan(ReadOnlySpan{char})"/> (may be called
 /// multiple times for chunked input), then call <see cref="Finish"/> to emit
 /// the final line.  The result is available via <see cref="LineLengths"/>,
-/// <see cref="DocLineLengths"/>, <see cref="TerminatorRuns"/>, and
-/// <see cref="LineCount"/>.
-///
-/// <see cref="LineLengths"/> stores buf-space lengths (real buffer characters,
-/// same as before).  <see cref="DocLineLengths"/> stores doc-space lengths
-/// (pseudo-lines get +1 for the virtual terminator).
+/// <see cref="TerminatorRuns"/>, and <see cref="LineCount"/>.
 /// </remarks>
 public sealed class LineScanner {
-    private readonly int _maxPseudoLine;
-    private readonly List<int> _lineLengths;     // buf-space lengths (primary)
-    private readonly List<int> _docLineLengths;   // doc-space lengths (secondary)
+    private readonly List<int> _lineLengths;
     private readonly List<(long StartLine, LineTerminatorType Type)> _terminatorRuns = new();
 
     private int _currentLineLen;
@@ -35,7 +27,7 @@ public sealed class LineScanner {
     private int _crlfCount;
     private int _crCount;
 
-    // Longest real line tracking (ignores pseudo-splits).
+    // Longest real line tracking.
     private long _realLineLen;
     private long _longestRealLine;
 
@@ -44,18 +36,15 @@ public sealed class LineScanner {
     private int _tabIndentCount;
     private bool _atLineStart = true;
 
-    public LineScanner(int maxPseudoLine = -1, int estimatedLines = 16) {
-        _maxPseudoLine = maxPseudoLine > 0 ? maxPseudoLine : PieceTable.MaxPseudoLine;
+    public LineScanner(int estimatedLines = 16) {
         _lineLengths = new List<int>(estimatedLines);
-        _docLineLengths = new List<int>(estimatedLines);
     }
 
     /// <summary>Number of lines emitted so far (including the in-progress line).</summary>
     public long LineCount => _lineIndex + 1;
 
-    /// <summary>Line-ending detection counts.</summary>
     /// <summary>
-    /// Longest real (newline-delimited) line seen, ignoring pseudo-splits.
+    /// Longest real (newline-delimited) line seen.
     /// Only complete after <see cref="Finish"/> is called.
     /// </summary>
     public long LongestRealLine => _longestRealLine;
@@ -65,16 +54,10 @@ public sealed class LineScanner {
     public int CrCount => _crCount;
 
     /// <summary>
-    /// The accumulated buf-space line lengths (real buffer characters).
+    /// The accumulated line lengths.
     /// Only complete after <see cref="Finish"/> is called.
     /// </summary>
     public List<int> LineLengths => _lineLengths;
-
-    /// <summary>
-    /// The accumulated doc-space line lengths (pseudo-lines get +1 virtual terminator).
-    /// Only complete after <see cref="Finish"/> is called.
-    /// </summary>
-    public List<int> DocLineLengths => _docLineLengths;
 
     /// <summary>
     /// Run-length encoded terminator types.  Only complete after
@@ -83,8 +66,7 @@ public sealed class LineScanner {
     public List<(long StartLine, LineTerminatorType Type)> TerminatorRuns => _terminatorRuns;
 
     /// <summary>
-    /// Scans a span of characters, emitting line entries as newlines and
-    /// pseudo-line boundaries are encountered.
+    /// Scans a span of characters, emitting line entries as newlines are encountered.
     /// </summary>
     public void Scan(ReadOnlySpan<char> data) {
         for (int i = 0; i < data.Length; i++) {
@@ -94,7 +76,6 @@ public sealed class LineScanner {
                     // \r\n — upgrade previous CR line to CRLF.
                     _crlfCount++;
                     _lineLengths[^1]++;
-                    _docLineLengths[^1]++;
                     UpgradeLastTerminatorToCRLF();
                     _prevWasCr = false;
                     _atLineStart = true;
@@ -105,7 +86,6 @@ public sealed class LineScanner {
                 _realLineLen++;
                 RecordTerminator(LineTerminatorType.LF);
                 _lineLengths.Add(_currentLineLen);
-                _docLineLengths.Add(_currentLineLen);  // LF: doc == buf
                 _lineIndex++;
                 _currentLineLen = 0;
                 if (_realLineLen > _longestRealLine) _longestRealLine = _realLineLen;
@@ -121,7 +101,6 @@ public sealed class LineScanner {
                 _realLineLen++;
                 RecordTerminator(LineTerminatorType.CR);
                 _lineLengths.Add(_currentLineLen);
-                _docLineLengths.Add(_currentLineLen);  // CR: doc == buf
                 _lineIndex++;
                 _currentLineLen = 0;
                 _prevWasCr = true;
@@ -134,15 +113,6 @@ public sealed class LineScanner {
                 }
                 _prevWasCr = false;
                 _realLineLen++;
-
-                // Pseudo-split when content reaches MaxPseudoLine.
-                if (_currentLineLen >= _maxPseudoLine) {
-                    RecordTerminator(LineTerminatorType.Pseudo);
-                    _lineLengths.Add(_currentLineLen);           // buf: real chars only
-                    _docLineLengths.Add(_currentLineLen + 1);    // doc: +1 virtual terminator
-                    _lineIndex++;
-                    _currentLineLen = 0;
-                }
 
                 _currentLineLen++;
 
@@ -168,7 +138,6 @@ public sealed class LineScanner {
         // Emit the final line (content after the last newline, may be empty).
         RecordTerminator(LineTerminatorType.None);
         _lineLengths.Add(_currentLineLen);
-        _docLineLengths.Add(_currentLineLen);  // None: doc == buf
         // Final real-line length tracking.
         if (_realLineLen > _longestRealLine) _longestRealLine = _realLineLen;
     }
@@ -178,9 +147,7 @@ public sealed class LineScanner {
     /// Call after <see cref="Finish"/>.
     /// </summary>
     public LineIndexTree BuildTree() =>
-        LineIndexTree.FromValues(
-            CollectionsMarshal.AsSpan(_lineLengths),
-            CollectionsMarshal.AsSpan(_docLineLengths));
+        LineIndexTree.FromValues(CollectionsMarshal.AsSpan(_lineLengths));
 
     /// <summary>
     /// Returns detected line ending info from the scan counts.

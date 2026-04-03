@@ -8,26 +8,16 @@ namespace DMEdit.Core.Collections;
 /// Supports O(log n) insert/remove of individual elements — unlike a Fenwick tree,
 /// no O(n) rebuild is needed when the element count changes.
 ///
-/// Used by PieceTable for the line-length index.  Each element stores two values:
-/// a primary (buf-space) length and a secondary (doc-space) length.  For lines
-/// without pseudo-terminators these are equal.  Pseudo-lines have doc = buf + 1
-/// (the virtual terminator).  Both have independent prefix sums for O(log n)
-/// offset lookups in either space.
-///
-/// Primary queries (<see cref="PrefixSum"/>, <see cref="FindByPrefixSum"/>,
-/// <see cref="ValueAt"/>) operate in buf-space — all existing code continues
-/// to work unchanged.  Secondary queries (<see cref="DocPrefixSum"/>,
-/// <see cref="DocValueAt"/>) operate in doc-space for navigation.
+/// Used by PieceTable for the line-length index.  Each element stores one value:
+/// the line length (including any terminator).  Provides O(log n) prefix-sum
+/// queries for offset lookups and O(log n) incremental updates.
 /// </summary>
 public sealed class LineIndexTree {
     private const int Nil = -1;
 
-    private int[] _val;   // primary element value (buf-space line length)
-    private long[] _sum;  // primary subtree sum including self
-    private int[] _max;   // primary subtree max including self
-    private int[] _val2;  // secondary element value (doc-space line length)
-    private long[] _sum2; // secondary subtree sum including self
-    private int[] _max2;  // secondary subtree max including self
+    private int[] _val;   // element value (line length)
+    private long[] _sum;  // subtree sum including self
+    private int[] _max;   // subtree max including self
     private int[] _sz;    // subtree size including self
     private int[] _pri;   // random priority (max-heap)
     private int[] _left;
@@ -43,9 +33,6 @@ public sealed class LineIndexTree {
         _val   = new int[capacity];
         _sum   = new long[capacity];
         _max   = new int[capacity];
-        _val2  = new int[capacity];
-        _sum2  = new long[capacity];
-        _max2  = new int[capacity];
         _sz    = new int[capacity];
         _pri   = new int[capacity];
         _left  = new int[capacity];
@@ -53,20 +40,17 @@ public sealed class LineIndexTree {
     }
 
     // -------------------------------------------------------------------
-    //  Public API — queries (primary / buf-space)
+    //  Public API — queries
     // -------------------------------------------------------------------
 
     public int Count => _count;
 
     public long TotalSum() => _root == Nil ? 0 : _sum[_root];
 
-    /// <summary>Returns the maximum primary (buf-space) value across all elements.  O(1).</summary>
+    /// <summary>Returns the maximum value across all elements.  O(1).</summary>
     public int MaxValue() => _root == Nil ? 0 : _max[_root];
 
-    /// <summary>Returns the maximum secondary (doc-space) value across all elements.  O(1).</summary>
-    public int MaxDocValue() => _root == Nil ? 0 : _max2[_root];
-
-    /// <summary>Returns sum of primary (buf) elements [0..i] inclusive (0-based).</summary>
+    /// <summary>Returns sum of elements [0..i] inclusive (0-based).</summary>
     public long PrefixSum(int i) {
         if (i < 0) return 0;
         var node = _root;
@@ -87,7 +71,7 @@ public sealed class LineIndexTree {
     }
 
     /// <summary>
-    /// Finds the smallest 0-based index where the primary (buf) prefix sum reaches or exceeds
+    /// Finds the smallest 0-based index where the prefix sum reaches or exceeds
     /// <paramref name="target"/>.  Returns -1 if total sum &lt; target.
     /// </summary>
     public int FindByPrefixSum(long target) {
@@ -110,7 +94,7 @@ public sealed class LineIndexTree {
         return index; // shouldn't reach here if target <= TotalSum
     }
 
-    /// <summary>Returns the primary (buf) value of the element at 0-based index <paramref name="i"/>.</summary>
+    /// <summary>Returns the value of the element at 0-based index <paramref name="i"/>.</summary>
     public int ValueAt(int i) {
         var node = _root;
         var remaining = i;
@@ -129,79 +113,10 @@ public sealed class LineIndexTree {
     }
 
     // -------------------------------------------------------------------
-    //  Public API — queries (secondary / doc-space)
-    // -------------------------------------------------------------------
-
-    public long DocTotalSum() => _root == Nil ? 0 : _sum2[_root];
-
-    /// <summary>Returns sum of secondary (doc) elements [0..i] inclusive (0-based).</summary>
-    public long DocPrefixSum(int i) {
-        if (i < 0) return 0;
-        var node = _root;
-        var result = 0L;
-        var remaining = i + 1;
-        while (node != Nil) {
-            var leftSize = LeftSize(node);
-            if (remaining <= leftSize) {
-                node = _left[node];
-            } else {
-                result += LeftSum2(node) + _val2[node];
-                remaining -= leftSize + 1;
-                if (remaining == 0) break;
-                node = _right[node];
-            }
-        }
-        return result;
-    }
-
-    /// <summary>
-    /// Finds the smallest 0-based index where the secondary (doc) prefix sum
-    /// reaches or exceeds <paramref name="target"/>.
-    /// Returns -1 if total doc sum &lt; target.
-    /// </summary>
-    public int FindByDocPrefixSum(long target) {
-        if (_root == Nil || target > _sum2[_root]) return -1;
-        if (target <= 0) return 0;
-        var node = _root;
-        var index = 0;
-        while (node != Nil) {
-            var ls = LeftSum2(node);
-            if (target <= ls) {
-                node = _left[node];
-            } else if (target <= ls + _val2[node]) {
-                return index + LeftSize(node);
-            } else {
-                target -= ls + _val2[node];
-                index += LeftSize(node) + 1;
-                node = _right[node];
-            }
-        }
-        return index;
-    }
-
-    /// <summary>Returns the secondary (doc) value of the element at 0-based index <paramref name="i"/>.</summary>
-    public int DocValueAt(int i) {
-        var node = _root;
-        var remaining = i;
-        while (node != Nil) {
-            var leftSize = LeftSize(node);
-            if (remaining < leftSize) {
-                node = _left[node];
-            } else if (remaining == leftSize) {
-                return _val2[node];
-            } else {
-                remaining -= leftSize + 1;
-                node = _right[node];
-            }
-        }
-        throw new ArgumentOutOfRangeException(nameof(i));
-    }
-
-    // -------------------------------------------------------------------
     //  Public API — point update
     // -------------------------------------------------------------------
 
-    /// <summary>Adds <paramref name="delta"/> to both primary and secondary values at index <paramref name="i"/>.</summary>
+    /// <summary>Adds <paramref name="delta"/> to the value at index <paramref name="i"/>.</summary>
     public void Update(int i, int delta) {
         UpdateNode(_root, i, delta);
     }
@@ -209,29 +124,26 @@ public sealed class LineIndexTree {
     private void UpdateNode(int node, int i, int delta) {
         if (node == Nil) throw new ArgumentOutOfRangeException(nameof(i));
         _sum[node] += delta;
-        _sum2[node] += delta;
         var leftSize = LeftSize(node);
         if (i < leftSize) {
             UpdateNode(_left[node], i, delta);
         } else if (i == leftSize) {
             _val[node] += delta;
-            _val2[node] += delta;
         } else {
             UpdateNode(_right[node], i - leftSize - 1, delta);
         }
         // Recompute max bottom-up: unlike sum, max is non-linear and can't be
         // updated with a simple += delta — each ancestor must recompute from children.
         _max[node] = Math.Max(_val[node], Math.Max(LeftMax(node), RightMax(node)));
-        _max2[node] = Math.Max(_val2[node], Math.Max(LeftMax2(node), RightMax2(node)));
     }
 
     // -------------------------------------------------------------------
     //  Public API — structural mutations
     // -------------------------------------------------------------------
 
-    /// <summary>Inserts a dual-valued element at 0-based index <paramref name="i"/>.</summary>
-    public void InsertAt(int i, int bufValue, int docValue) {
-        var newNode = AllocNode(bufValue, docValue);
+    /// <summary>Inserts an element at 0-based index <paramref name="i"/>.</summary>
+    public void InsertAt(int i, int value) {
+        var newNode = AllocNode(value);
         Split(_root, i, out var left, out var right);
         _root = Merge(left, Merge(newNode, right));
     }
@@ -244,10 +156,10 @@ public sealed class LineIndexTree {
         _root = Merge(left, right);
     }
 
-    /// <summary>Inserts multiple dual-valued elements starting at 0-based index <paramref name="i"/>.</summary>
-    public void InsertRange(int i, ReadOnlySpan<int> bufValues, ReadOnlySpan<int> docValues) {
-        if (bufValues.IsEmpty) return;
-        var subtree = BuildBalanced(bufValues, docValues, 0, bufValues.Length - 1);
+    /// <summary>Inserts multiple elements starting at 0-based index <paramref name="i"/>.</summary>
+    public void InsertRange(int i, ReadOnlySpan<int> values) {
+        if (values.IsEmpty) return;
+        var subtree = BuildBalanced(values, 0, values.Length - 1);
         Split(_root, i, out var left, out var right);
         _root = Merge(left, Merge(subtree, right));
     }
@@ -265,41 +177,33 @@ public sealed class LineIndexTree {
     //  Public API — bulk construction
     // -------------------------------------------------------------------
 
-    /// <summary>Creates a new tree from dual value spans.  O(n).</summary>
-    public static LineIndexTree FromValues(ReadOnlySpan<int> bufValues, ReadOnlySpan<int> docValues) {
-        var tree = new LineIndexTree(bufValues.Length);
-        if (bufValues.Length > 0) {
-            tree._root = tree.BulkBuild(bufValues, docValues);
+    /// <summary>Creates a new tree from a value span.  O(n).</summary>
+    public static LineIndexTree FromValues(ReadOnlySpan<int> values) {
+        var tree = new LineIndexTree(values.Length);
+        if (values.Length > 0) {
+            tree._root = tree.BulkBuild(values);
         }
         return tree;
     }
 
-    /// <summary>Replaces all content with new dual values.  O(n).</summary>
-    public void Rebuild(ReadOnlySpan<int> bufValues, ReadOnlySpan<int> docValues) {
+    /// <summary>Replaces all content with new values.  O(n).</summary>
+    public void Rebuild(ReadOnlySpan<int> values) {
         // Reset all state.
         _root = Nil;
         _count = 0;
         _allocated = 0;
         _freeHead = Nil;
-        EnsureCapacity(bufValues.Length);
-        if (bufValues.Length > 0) {
-            _root = BulkBuild(bufValues, docValues);
+        EnsureCapacity(values.Length);
+        if (values.Length > 0) {
+            _root = BulkBuild(values);
         }
     }
 
-    /// <summary>Extracts all primary (buf) values via in-order traversal.  O(n).  For tests/debug.</summary>
+    /// <summary>Extracts all values via in-order traversal.  O(n).  For tests/debug.</summary>
     public int[] ExtractValues() {
         var result = new int[_count];
         var idx = 0;
-        InOrder(_root, result, ref idx, primary: true);
-        return result;
-    }
-
-    /// <summary>Extracts all secondary (doc) values via in-order traversal.  O(n).  For tests/debug.</summary>
-    public int[] ExtractDocValues() {
-        var result = new int[_count];
-        var idx = 0;
-        InOrder(_root, result, ref idx, primary: false);
+        InOrder(_root, result, ref idx);
         return result;
     }
 
@@ -352,14 +256,12 @@ public sealed class LineIndexTree {
     //  Node helpers
     // -------------------------------------------------------------------
 
-    /// <summary>Recomputes Size, both Sums, and both Maxes from children.</summary>
+    /// <summary>Recomputes Size, Sum, and Max from children.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void Push(int node) {
         _sz[node] = 1 + LeftSize(node) + RightSize(node);
         _sum[node] = _val[node] + LeftSum(node) + RightSum(node);
-        _sum2[node] = _val2[node] + LeftSum2(node) + RightSum2(node);
         _max[node] = Math.Max(_val[node], Math.Max(LeftMax(node), RightMax(node)));
-        _max2[node] = Math.Max(_val2[node], Math.Max(LeftMax2(node), RightMax2(node)));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -375,28 +277,16 @@ public sealed class LineIndexTree {
     private long RightSum(int node) => _right[node] == Nil ? 0 : _sum[_right[node]];
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private long LeftSum2(int node) => _left[node] == Nil ? 0 : _sum2[_left[node]];
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private long RightSum2(int node) => _right[node] == Nil ? 0 : _sum2[_right[node]];
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int LeftMax(int node) => _left[node] == Nil ? 0 : _max[_left[node]];
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int RightMax(int node) => _right[node] == Nil ? 0 : _max[_right[node]];
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int LeftMax2(int node) => _left[node] == Nil ? 0 : _max2[_left[node]];
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int RightMax2(int node) => _right[node] == Nil ? 0 : _max2[_right[node]];
-
     // -------------------------------------------------------------------
     //  Node allocation
     // -------------------------------------------------------------------
 
-    private int AllocNode(int bufValue, int docValue) {
+    private int AllocNode(int value) {
         int id;
         if (_freeHead != Nil) {
             id = _freeHead;
@@ -405,12 +295,9 @@ public sealed class LineIndexTree {
             EnsureCapacity(_allocated + 1);
             id = _allocated++;
         }
-        _val[id] = bufValue;
-        _sum[id] = bufValue;
-        _max[id] = bufValue;
-        _val2[id] = docValue;
-        _sum2[id] = docValue;
-        _max2[id] = docValue;
+        _val[id] = value;
+        _sum[id] = value;
+        _max[id] = value;
         _sz[id] = 1;
         _pri[id] = Random.Shared.Next();
         _left[id] = Nil;
@@ -447,9 +334,6 @@ public sealed class LineIndexTree {
         Array.Resize(ref _val,   newCap);
         Array.Resize(ref _sum,   newCap);
         Array.Resize(ref _max,   newCap);
-        Array.Resize(ref _val2,  newCap);
-        Array.Resize(ref _sum2,  newCap);
-        Array.Resize(ref _max2,  newCap);
         Array.Resize(ref _sz,    newCap);
         Array.Resize(ref _pri,   newCap);
         Array.Resize(ref _left,  newCap);
@@ -461,25 +345,22 @@ public sealed class LineIndexTree {
     // -------------------------------------------------------------------
 
     /// <summary>
-    /// Builds a balanced treap from dual value spans in O(n) using a stack-based
+    /// Builds a balanced treap from a value span in O(n) using a stack-based
     /// Cartesian tree algorithm.  Nodes are allocated sequentially.
     /// </summary>
-    private int BulkBuild(ReadOnlySpan<int> bufValues, ReadOnlySpan<int> docValues) {
-        EnsureCapacity(bufValues.Length);
-        Span<int> stack = bufValues.Length <= 1024
-            ? stackalloc int[bufValues.Length]
-            : new int[bufValues.Length];
+    private int BulkBuild(ReadOnlySpan<int> values) {
+        EnsureCapacity(values.Length);
+        Span<int> stack = values.Length <= 1024
+            ? stackalloc int[values.Length]
+            : new int[values.Length];
         var top = -1;
 
         var root = Nil;
-        for (var i = 0; i < bufValues.Length; i++) {
+        for (var i = 0; i < values.Length; i++) {
             var id = _allocated++;
-            _val[id] = bufValues[i];
-            _sum[id] = bufValues[i];
-            _max[id] = bufValues[i];
-            _val2[id] = docValues[i];
-            _sum2[id] = docValues[i];
-            _max2[id] = docValues[i];
+            _val[id] = values[i];
+            _sum[id] = values[i];
+            _max[id] = values[i];
             _sz[id] = 1;
             _pri[id] = Random.Shared.Next();
             _left[id] = Nil;
@@ -508,22 +389,20 @@ public sealed class LineIndexTree {
     }
 
     /// <summary>
-    /// Builds a balanced subtree from dual value spans for InsertRange.
+    /// Builds a balanced subtree from a value span for InsertRange.
     /// Uses the same Cartesian tree algorithm as BulkBuild.
     /// </summary>
-    private int BuildBalanced(ReadOnlySpan<int> bufValues, ReadOnlySpan<int> docValues,
-                              int lo, int hi) {
+    private int BuildBalanced(ReadOnlySpan<int> values, int lo, int hi) {
         if (lo > hi) return Nil;
-        var bufSpan = bufValues[lo..(hi + 1)];
-        var docSpan = docValues[lo..(hi + 1)];
-        Span<int> stack = bufSpan.Length <= 256
-            ? stackalloc int[bufSpan.Length]
-            : new int[bufSpan.Length];
+        var span = values[lo..(hi + 1)];
+        Span<int> stack = span.Length <= 256
+            ? stackalloc int[span.Length]
+            : new int[span.Length];
         var top = -1;
         var root = Nil;
 
-        for (var i = 0; i < bufSpan.Length; i++) {
-            var id = AllocNode(bufSpan[i], docSpan[i]);
+        for (var i = 0; i < span.Length; i++) {
+            var id = AllocNode(span[i]);
             var lastPopped = Nil;
             while (top >= 0 && _pri[stack[top]] < _pri[id]) {
                 lastPopped = stack[top--];
@@ -547,10 +426,10 @@ public sealed class LineIndexTree {
     //  In-order traversal
     // -------------------------------------------------------------------
 
-    private void InOrder(int node, int[] result, ref int idx, bool primary) {
+    private void InOrder(int node, int[] result, ref int idx) {
         if (node == Nil) return;
-        InOrder(_left[node], result, ref idx, primary);
-        result[idx++] = primary ? _val[node] : _val2[node];
-        InOrder(_right[node], result, ref idx, primary);
+        InOrder(_left[node], result, ref idx);
+        result[idx++] = _val[node];
+        InOrder(_right[node], result, ref idx);
     }
 }

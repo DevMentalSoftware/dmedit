@@ -127,7 +127,7 @@ public readonly record struct ColumnSelection(int AnchorLine, int AnchorCol, int
     /// Converts a character offset to a tab-aware visual column.
     /// </summary>
     public static int OfsToCol(PieceTable table, long ofs, int tabSize) {
-        var line = (int)table.LineFromDocOfs(ofs);
+        var line = (int)table.LineFromOfs(ofs);
         var lineStart = table.LineStartOfs(line);
         var charIdx = (int)(ofs - lineStart);
         var lineEnd = LineContentEnd(table, line);

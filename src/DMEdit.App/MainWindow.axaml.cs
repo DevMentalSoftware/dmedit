@@ -75,7 +75,6 @@ public partial class MainWindow : Window {
     private bool _menuAccessKeyActive;
 
     public MainWindow() {
-        PieceTable.MaxPseudoLine = _settings.MaxPseudoLine;
         InitializeComponent();
         RegisterWindowCommands();
         Editor.RegisterCommands();
@@ -1096,14 +1095,8 @@ public partial class MainWindow : Window {
     /// </summary>
     private bool ShouldCharWrap(TabState tab) {
         if (tab.LoadResult?.Buffer is not PagedFileBuffer pb) return false;
-        var longest = pb.LongestRealLine;
-        var lineThreshold = _settings.CharWrapLineThreshold;
-        var sizeKb = pb.ByteLength / 1024.0;
-        var triggerByLine = lineThreshold > 0 && longest > lineThreshold;
-        var triggerBySize = _settings.CharWrapFileSizeKB > 0
-            && longest > 500
-            && sizeKb >= _settings.CharWrapFileSizeKB;
-        return triggerByLine || triggerBySize;
+        var fileSizeKb = pb.ByteLength / 1024.0;
+        return fileSizeKb >= _settings.CharWrapFileSizeKB;
     }
 
     private void ToggleWrapLines() {
@@ -1757,6 +1750,14 @@ public partial class MainWindow : Window {
             }
         };
 
+        Editor.LineTooLongDetected += ex => {
+            // Update tab state to reflect the auto-switch.
+            if (_activeTab != null) _activeTab.CharWrapMode = true;
+            StatusLeft.Text = $"Switched to character-wrapping mode — " +
+                $"file contains a {ex.LineLength:N0}-character line (limit: {ex.MaxLength:N0}). " +
+                "Adjust in Settings > Advanced > Char Wrap Line Threshold.";
+        };
+
         Editor.StatusUpdated += () => {
             if (_settings.DevMode && _settings.ShowStatistics && !_statsTimer.IsEnabled) {
                 _statsTimer.Start();
@@ -1938,11 +1939,11 @@ public partial class MainWindow : Window {
                     var colText = $"{col:N0}".PadLeft(lcWidth);
                     lineCol = $"Row {rowText} Col {colText}";
                 } else {
-                    var caret = Math.Min(doc.Selection.Caret, table.DocLength);
-                    var lineIdx = table.LineFromDocOfs(caret);
-                    var docLineStart = table.DocLineStartOfs(lineIdx);
+                    var caret = Math.Min(doc.Selection.Caret, table.Length);
+                    var lineIdx = table.LineFromOfs(caret);
+                    var lineStart = table.LineStartOfs(lineIdx);
                     var contentLen = table.LineContentLength((int)lineIdx);
-                    var col = Math.Min(caret - docLineStart, contentLen) + 1;
+                    var col = Math.Min(caret - lineStart, contentLen) + 1;
                     var line = lineIdx + 1;
 
                     var lnText = $"{line:N0}".PadLeft(lcWidth);
@@ -2776,21 +2777,14 @@ public partial class MainWindow : Window {
         newTab.Document.EncodingInfo = result.Document.EncodingInfo;
         if (result.Buffer is PagedFileBuffer paged) {
             var lengths = paged.TakeLineLengths();
-            var docLengths = paged.TakeDocLineLengths();
             if (lengths is { Count: > 0 }) {
-                if (docLengths is { Count: > 0 }) {
-                    newTab.Document.Table.InstallLineTree(
-                        CollectionsMarshal.AsSpan(lengths),
-                        CollectionsMarshal.AsSpan(docLengths));
-                } else {
-                    newTab.Document.Table.InstallLineTree(
-                        CollectionsMarshal.AsSpan(lengths));
-                }
+                newTab.Document.Table.InstallLineTree(
+                    CollectionsMarshal.AsSpan(lengths));
             }
         }
 
         // ---- Transfer live editor state → new document ----
-        var newLen = newTab.Document.Table.DocLength;
+        var newLen = newTab.Document.Table.Length;
         var isActive = tab == _activeTab;
 
         if (isActive) {
@@ -2860,7 +2854,7 @@ public partial class MainWindow : Window {
         var table = tab.Document.Table;
         var lineCount = table.LineCount;
         if (lineCount <= 0) return true;
-        var caretLine = table.LineFromDocOfs(tab.Document.Selection.Caret);
+        var caretLine = table.LineFromOfs(tab.Document.Selection.Caret);
         return caretLine >= lineCount - 1;
     }
 
@@ -3050,8 +3044,8 @@ public partial class MainWindow : Window {
         long currentLine = 1;
         if (doc != null) {
             var table = doc.Table;
-            var caret = Math.Min(doc.Selection.Caret, table.DocLength);
-            currentLine = table.LineFromDocOfs(caret) + 1;
+            var caret = Math.Min(doc.Selection.Caret, table.Length);
+            currentLine = table.LineFromOfs(caret) + 1;
         }
 
         var dialog = new GoToLineWindow(_theme, currentLine);
@@ -3060,12 +3054,12 @@ public partial class MainWindow : Window {
         if (dialog.TargetLine is { } targetLine && doc != null) {
             var table = doc.Table;
             var lineIdx = Math.Clamp(targetLine - 1, 0, table.LineCount - 1);
-            var docLineStart = table.DocLineStartOfs(lineIdx);
-            var pos = docLineStart;
+            var lineStart = table.LineStartOfs(lineIdx);
+            var pos = lineStart;
             if (dialog.TargetCol is { } targetCol) {
                 // Clamp column to line content length.
                 var contentLen = table.LineContentLength((int)lineIdx);
-                pos = docLineStart + Math.Clamp(targetCol - 1, 0, contentLen);
+                pos = lineStart + Math.Clamp(targetCol - 1, 0, contentLen);
             }
             Editor.GoToPosition(pos);
         }
@@ -3405,16 +3399,9 @@ public partial class MainWindow : Window {
                 // line-tree maintenance during Insert/Delete/CaptureLineInfo.
                 if (tab.LoadResult?.Buffer is PagedFileBuffer paged) {
                     var lengths = paged.TakeLineLengths();
-                    var docLengths = paged.TakeDocLineLengths();
                     if (lengths is { Count: > 0 }) {
-                        if (docLengths is { Count: > 0 }) {
-                            tab.Document.Table.InstallLineTree(
-                                CollectionsMarshal.AsSpan(lengths),
-                                CollectionsMarshal.AsSpan(docLengths));
-                        } else {
-                            tab.Document.Table.InstallLineTree(
-                                CollectionsMarshal.AsSpan(lengths));
-                        }
+                        tab.Document.Table.InstallLineTree(
+                            CollectionsMarshal.AsSpan(lengths));
                     }
                 }
 
@@ -3476,16 +3463,9 @@ public partial class MainWindow : Window {
                 // This replaces the old PreBuildLineIndex post-scan rescan.
                 if (tab.LoadResult?.Buffer is PagedFileBuffer paged) {
                     var lengths = paged.TakeLineLengths();
-                    var docLengths = paged.TakeDocLineLengths();
                     if (lengths is { Count: > 0 }) {
-                        if (docLengths is { Count: > 0 }) {
-                            tab.Document.Table.InstallLineTree(
-                                CollectionsMarshal.AsSpan(lengths),
-                                CollectionsMarshal.AsSpan(docLengths));
-                        } else {
-                            tab.Document.Table.InstallLineTree(
-                                CollectionsMarshal.AsSpan(lengths));
-                        }
+                        tab.Document.Table.InstallLineTree(
+                            CollectionsMarshal.AsSpan(lengths));
                     }
                 }
 

@@ -51,33 +51,32 @@ public sealed class TextLayoutEngine {
         var lines = new List<LayoutLine>();
         var row = 0;
         if (lineCount < 0) lineCount = table.LineCount;
-        if (docLength < 0) docLength = table.DocLength;
-        var charOfs = 0L; // doc-space accumulator
+        if (docLength < 0) docLength = table.Length;
+        var charOfs = 0L; // character offset accumulator
 
         for (var lineIdx = topLine; lineIdx < bottomLine && lineIdx < lineCount; lineIdx++) {
-            // Buf-space line start for GetText.
-            var bufLineStart = table.LineStartOfs(lineIdx);
-            // Doc-space line boundaries for CharStart accumulation.
-            var docLineEnd = lineIdx + 1 < lineCount
-                ? table.DocLineStartOfs(lineIdx + 1)
+            var lineStart = table.LineStartOfs(lineIdx);
+            var lineEnd = lineIdx + 1 < lineCount
+                ? table.LineStartOfs(lineIdx + 1)
                 : docLength;
-            var docLineStart = table.DocLineStartOfs(lineIdx);
 
             // Skip lines with inconsistent offsets — can happen during
             // streaming load when the background scan mutates line data
             // between reads.
-            if (bufLineStart < 0 || docLineStart < 0 || docLineEnd < docLineStart) continue;
-            var docFullLen = (int)(docLineEnd - docLineStart);
+            if (lineStart < 0 || lineEnd < lineStart) continue;
+            var fullLen = (int)(lineEnd - lineStart);
             var contentLen = table.LineContentLength((int)lineIdx);
-            if (contentLen > table.MaxGetTextLength) continue;
-            var lineText = contentLen > 0 ? table.GetText(bufLineStart, contentLen) : "";
+            if (contentLen > PieceTable.MaxGetTextLength) {
+                throw new LineTooLongException(contentLen, PieceTable.MaxGetTextLength);
+            }
+            var lineText = contentLen > 0 ? table.GetText(lineStart, contentLen) : "";
 
             var layout = MakeTextLayout(lineText, typeface, fontSize, foreground, maxWidth);
             var h = layout.Height > 0 ? layout.Height : rowHeight;
             var heightInRows = Math.Max(1, (int)Math.Round(h / rowHeight));
             lines.Add(new LayoutLine((int)charOfs, contentLen, row, heightInRows, layout));
             row += heightInRows;
-            charOfs += docFullLen;
+            charOfs += fullLen;
         }
 
         if (lines.Count == 0) {

@@ -24,16 +24,10 @@ public static class SettingsRegistry {
             "When wrapping is enabled we can force wrapping at a particular width when the window is wider than that width.",
             "Display", SettingKind.Int, 100, Min: 0, Max: 10000),
 
-        new("CharWrapLineThreshold", "Char Wrap Line Threshold",
-            "Force character-wrapping mode if any line exceeds this many characters, " +
-            "regardless of file size. Set to 0 to disable this trigger.",
-            "Display", SettingKind.Int, 500, Min: 0, Max: 100000, Increment: 100),
-
         new("CharWrapFileSizeKB", "Char Wrap File Size (KB)",
-            "Force character-wrapping mode if any line exceeds 500 characters AND the file " +
-            "size exceeds this threshold (in KB). Allows normal line mode for small files " +
-            "with long lines. Set to 0 to disable this trigger.",
-            "Display", SettingKind.Int, 50, Min: 0, Max: 1000000, Increment: 10),
+            "File size above which character-wrapping mode activates automatically. " +
+            "Lower values improve responsiveness on slower machines.",
+            "Advanced", SettingKind.Int, 50, Min: 10, Max: 10000, Increment: 10),
 
         new("CaretWidth", "Caret Width",
             "Width of the text caret in pixels. Range: 1.0 – 2.5.",

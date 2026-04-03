@@ -141,22 +141,8 @@ public sealed class AppSettings {
     public int IndentWidth { get; set; } = 4;
 
     /// <summary>
-    /// Maximum content characters per pseudo-line.  Lines exceeding this are
-    /// split for display purposes.  Lower values make pseudo-line logic easier
-    /// to observe during development.  Default: 500.
-    /// </summary>
-    public int MaxPseudoLine { get; set; } = 500;
-
-    /// <summary>
-    /// Force character-wrapping mode if any line exceeds this many characters,
-    /// regardless of file size.  Default: 500.
-    /// </summary>
-    public int CharWrapLineThreshold { get; set; } = 500;
-
-    /// <summary>
-    /// Force character-wrapping mode if any line exceeds 500 characters AND the
-    /// file size exceeds this threshold (in KB).  This allows normal line mode
-    /// for small files with moderately long lines.  Default: 50 KB.
+    /// File size threshold (in KB) above which character-wrapping mode activates
+    /// automatically.  Default: 50 KB.
     /// </summary>
     public int CharWrapFileSizeKB { get; set; } = 50;
 
