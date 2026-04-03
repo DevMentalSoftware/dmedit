@@ -325,6 +325,7 @@ public partial class MainWindow : Window {
             }
 
             Editor.IsEditBlocked = tab.IsLoading || tab.IsReadOnly || tab.IsLocked;
+            Editor.CharWrapMode = tab.CharWrapMode;
             Editor.Focus();
 
             // When a loading tab finishes, unblock the editor if it's
@@ -332,7 +333,7 @@ public partial class MainWindow : Window {
             if (tab.IsLoading) {
                 tab.LoadCompleted += () => {
                     if (_activeTab == tab) {
-
+                        Editor.CharWrapMode = tab.CharWrapMode;
                         Editor.Document = tab.Document;
                         Editor.RestoreScrollState(tab);
                         Editor.IsEditBlocked = tab.IsReadOnly || tab.IsLocked;
@@ -1087,6 +1088,22 @@ public partial class MainWindow : Window {
         _statusBarGlyph!.Opacity = show ? 1.0 : 0.0;
         UpdateStatusBarVisibility();
         TabBar.RefreshToolbar();
+    }
+
+    /// <summary>
+    /// Checks whether a tab's document should use character-wrapping mode
+    /// based on longest real line and file size.
+    /// </summary>
+    private bool ShouldCharWrap(TabState tab) {
+        if (tab.LoadResult?.Buffer is not PagedFileBuffer pb) return false;
+        var longest = pb.LongestRealLine;
+        var lineThreshold = _settings.CharWrapLineThreshold;
+        var sizeKb = pb.ByteLength / 1024.0;
+        var triggerByLine = lineThreshold > 0 && longest > lineThreshold;
+        var triggerBySize = _settings.CharWrapFileSizeKB > 0
+            && longest > 500
+            && sizeKb >= _settings.CharWrapFileSizeKB;
+        return triggerByLine || triggerBySize;
     }
 
     private void ToggleWrapLines() {
@@ -1893,28 +1910,47 @@ public partial class MainWindow : Window {
             var table = doc.Table;
             var stillLoading = table.Buffer is { LengthIsKnown: false };
 
-            var lineCount = stillLoading && table.Buffer is { } buf
-                ? buf.LineCount
-                : table.LineCount;
+            long displayCount;
+            string countLabel;
+            if (Editor.CharWrapMode && Editor.CharsPerRow > 0) {
+                displayCount = (long)Math.Ceiling((double)table.Length / Editor.CharsPerRow);
+                countLabel = "rows";
+            } else {
+                displayCount = stillLoading && table.Buffer is { } buf
+                    ? buf.LineCount
+                    : table.LineCount;
+                countLabel = "lines";
+            }
 
-            var lcText = lineCount >= 0 ? $"{lineCount:N0}" : "\u2014";
+            var lcText = displayCount >= 0 ? $"{displayCount:N0}" : "\u2014";
             var lcWidth = lcText.Length;
 
             var lineCol = "";
             // During loading, line-start lookups can fail (pages not in memory).
             if (!stillLoading) {
-                var caret = Math.Min(doc.Selection.Caret, table.DocLength);
-                var lineIdx = table.LineFromDocOfs(caret);
-                var docLineStart = table.DocLineStartOfs(lineIdx);
-                var contentLen = table.LineContentLength((int)lineIdx);
-                var col = Math.Min(caret - docLineStart, contentLen) + 1;
-                var line = lineIdx + 1;
+                if (Editor.CharWrapMode && Editor.CharsPerRow > 0) {
+                    // Character-wrapping mode: show Row / Col.
+                    var caret = Math.Min(doc.Selection.Caret, table.Length);
+                    var cpr = Editor.CharsPerRow;
+                    var row = caret / cpr + 1;
+                    var col = caret % cpr + 1;
+                    var rowText = $"{row:N0}".PadLeft(lcWidth);
+                    var colText = $"{col:N0}".PadLeft(lcWidth);
+                    lineCol = $"Row {rowText} Col {colText}";
+                } else {
+                    var caret = Math.Min(doc.Selection.Caret, table.DocLength);
+                    var lineIdx = table.LineFromDocOfs(caret);
+                    var docLineStart = table.DocLineStartOfs(lineIdx);
+                    var contentLen = table.LineContentLength((int)lineIdx);
+                    var col = Math.Min(caret - docLineStart, contentLen) + 1;
+                    var line = lineIdx + 1;
 
-                var lnText = $"{line:N0}".PadLeft(lcWidth);
-                var maxLineLen = table.MaxLineLength;
-                var chWidth = maxLineLen > 0 ? $"{maxLineLen:N0}".Length : lcWidth;
-                var chText = $"{col:N0}".PadLeft(chWidth);
-                lineCol = $"Ln {lnText} Ch {chText}";
+                    var lnText = $"{line:N0}".PadLeft(lcWidth);
+                    var maxLineLen = table.MaxLineLength;
+                    var chWidth = maxLineLen > 0 ? $"{maxLineLen:N0}".Length : lcWidth;
+                    var chText = $"{col:N0}".PadLeft(chWidth);
+                    lineCol = $"Ln {lnText} Ch {chText}";
+                }
             }
 
             SetText(StatusLineCol, lineCol);
@@ -1923,7 +1959,7 @@ public partial class MainWindow : Window {
 
             if (stillLoading) {
                 StatusSep1b.IsVisible = true;
-                SetText(StatusLineCount, $"{lcText} lines");
+                SetText(StatusLineCount, $"{lcText} {countLabel}");
                 StatusSep2.IsVisible = true;
                 SetText(StatusEncoding, "loading\u2026");
                 StatusSep3.IsVisible = false;
@@ -1932,7 +1968,7 @@ public partial class MainWindow : Window {
                 SetText(StatusIndent, "");
             } else {
                 StatusSep1b.IsVisible = true;
-                SetText(StatusLineCount, $"{lcText} lines");
+                SetText(StatusLineCount, $"{lcText} {countLabel}");
                 StatusSep2.IsVisible = true;
                 SetText(StatusEncoding, doc.EncodingInfo.Label);
                 StatusSep3.IsVisible = true;
@@ -2795,6 +2831,9 @@ public partial class MainWindow : Window {
         // ---- Swap ----
         _tabs[idx] = newTab;
         if (isActive) {
+            newTab.CharWrapMode = ShouldCharWrap(newTab);
+            Editor.CharWrapMode = newTab.CharWrapMode;
+
             _activeTab = newTab;
             Editor.ReplaceDocument(newTab.Document, newTab);
             Editor.PerfStats.FirstChunkTimeMs = 0;
@@ -3385,8 +3424,11 @@ public partial class MainWindow : Window {
                 SnapshotFileStats(tab);
                 _watcher.Watch(tab);
 
+                tab.CharWrapMode = ShouldCharWrap(tab);
+
                 UpdateTabBar();
                 if (_activeTab == tab) {
+                    Editor.CharWrapMode = tab.CharWrapMode;
                     Editor.IsEditBlocked = false;
                     Editor.InvalidateLayout();
                 }
@@ -3450,9 +3492,12 @@ public partial class MainWindow : Window {
                 SnapshotFileStats(tab);
                 _watcher.Watch(tab);
 
+                tab.CharWrapMode = ShouldCharWrap(tab);
+
                 tab.FinishLoading();
                 UpdateTabBar();
                 if (_activeTab == tab) {
+                    Editor.CharWrapMode = tab.CharWrapMode;
                     Editor.IsEditBlocked = false;
                     Editor.InvalidateLayout();
                 }

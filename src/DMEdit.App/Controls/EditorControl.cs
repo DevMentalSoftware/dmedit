@@ -244,6 +244,23 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
     }
 
+    /// <summary>
+    /// When true, the editor uses character-wrapping mode: text wraps at exact
+    /// character positions with O(1) scroll math.  Row N starts at character
+    /// offset <c>N * CharsPerRow</c>.  Intended for large files with long lines.
+    /// </summary>
+    public bool CharWrapMode {
+        get => _charWrapMode;
+        set {
+            if (_charWrapMode == value) return;
+            _charWrapMode = value;
+            InvalidateLayout();
+        }
+    }
+
+    /// <summary>Characters per visual row in character-wrapping mode.</summary>
+    public int CharsPerRow => _charWrapCharsPerRow;
+
     /// <summary>Controls the hierarchy of levels used by Expand Selection.</summary>
     public ExpandSelectionMode ExpandSelectionMode { get; set; } = ExpandSelectionMode.SubwordFirst;
 
@@ -332,6 +349,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     // Word wrap
     private bool _wrapLines = false;
     private int _wrapLinesAt = 100;
+
+    // Character-wrapping mode
+    private bool _charWrapMode;
+    private int _charWrapCharsPerRow;
 
     // Indentation
     private int _indentWidth = 4;
@@ -698,9 +719,14 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             _gutterDigitCnt = 0;
             return;
         }
-        var lineCount = Document?.Table.LineCount ?? 1;
-        if (lineCount < 1) lineCount = 1;
-        _gutterDigitCnt = Math.Max(2, (int)Math.Floor(Math.Log10(lineCount)) + 1);
+        long displayCount;
+        if (_charWrapMode && _charWrapCharsPerRow > 0 && Document?.Table != null) {
+            displayCount = (long)Math.Ceiling((double)Document.Table.Length / _charWrapCharsPerRow);
+        } else {
+            displayCount = Document?.Table.LineCount ?? 1;
+        }
+        if (displayCount < 1) displayCount = 1;
+        _gutterDigitCnt = Math.Max(2, (int)Math.Floor(Math.Log10(displayCount)) + 1);
         _gutterWidth = GutterPadLeft + _gutterDigitCnt * GetCharWidth() + GutterPadRight;
     }
 
@@ -726,6 +752,22 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     private int GetCharsPerRow(double textWidth) {
         if (!double.IsFinite(textWidth) || textWidth <= 0) return 0;
         return Math.Max(1, (int)(textWidth / GetCharWidth()));
+    }
+
+    /// <summary>
+    /// Computes the characters-per-row for character-wrapping mode.
+    /// Rounds down to the nearest full character that fits in the text area.
+    /// When <see cref="WrapLines"/> is on and <see cref="WrapLinesAt"/> is set,
+    /// constrains to that column limit.
+    /// </summary>
+    private int ComputeCharWrapCharsPerRow(double extentWidth) {
+        var cw = GetCharWidth();
+        if (cw <= 0) return 80;
+        var fromViewport = Math.Max(1, (int)(extentWidth / cw));
+        if (_wrapLines && _wrapLinesAt >= 1) {
+            return Math.Min(fromViewport, _wrapLinesAt);
+        }
+        return fromViewport;
     }
 
     /// <summary>
@@ -789,7 +831,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var lineCount = doc?.Table.LineCount ?? 0;
 
         try {
-            if (doc != null && lineCount > 0) {
+            if (_charWrapMode && doc != null && doc.Table.Length > 0) {
+                LayoutCharWrap(doc, typeface, extentW);
+            } else if (doc != null && lineCount > 0) {
                 LayoutWindowed(doc, lineCount, typeface, textW, extentW);
             } else {
                 _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
@@ -842,7 +886,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var lineCount = doc?.Table.LineCount ?? 0;
 
         try {
-            if (doc != null && lineCount > 0) {
+            if (_charWrapMode && doc != null && doc.Table.Length > 0) {
+                LayoutCharWrap(doc, typeface, extentW);
+            } else if (doc != null && lineCount > 0) {
                 LayoutWindowed(doc, lineCount, typeface, textW, extentW);
             } else {
                 _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
@@ -1070,6 +1116,76 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _winRenderOffsetY = RenderOffsetY;
         _winFirstLineHeight = _layout.Lines.Count > 0 ? _layout.Lines[0].HeightInRows * rh : rh;
     }
+
+    /// <summary>
+    /// Character-wrapping layout: row N starts at char <c>N * charsPerRow</c>.
+    /// All scroll math is O(1) — no tree lookups, no estimation.
+    /// </summary>
+    private void LayoutCharWrap(Document doc, Typeface typeface, double extentWidth) {
+        var cw = GetCharWidth();
+        var rh = GetRowHeight();
+        UpdateGutterWidth();
+        _charWrapCharsPerRow = ComputeCharWrapCharsPerRow(extentWidth);
+        var cpr = _charWrapCharsPerRow;
+        if (cpr <= 0) cpr = 1;
+
+        // Use buf-space length for row arithmetic (character count).
+        var bufLen = doc.Table.Length;
+        var totalRows = bufLen > 0 ? (long)Math.Ceiling((double)bufLen / cpr) : 1;
+        var topRow = Math.Clamp((long)(_scrollOffset.Y / rh), 0, Math.Max(0, totalRows - 1));
+        var visibleRows = (int)Math.Ceiling(_viewport.Height / rh) + 2;
+
+        // ViewportBase = doc-space offset of first visible character.
+        var bufStart = topRow * cpr;
+        var docStart = doc.Table.BufOfsToDocOfs(bufStart);
+
+        var lines = new List<LayoutLine>();
+        var foreground = ForegroundBrush;
+        var docOfs = 0; // doc-space offset relative to ViewportBase
+        for (var i = 0; i < visibleRows; i++) {
+            var rowIdx = topRow + i;
+            if (rowIdx >= totalRows) break;
+            var rowBufStart = rowIdx * cpr;
+            var len = (int)Math.Min(cpr, bufLen - rowBufStart);
+            if (len <= 0) break;
+            var text = doc.Table.GetText(rowBufStart, len);
+            // CharStart is doc-space relative to ViewportBase.
+            var rowDocStart = (int)(doc.Table.BufOfsToDocOfs(rowBufStart) - docStart);
+            var rowDocLen = (int)(doc.Table.BufOfsToDocOfs(rowBufStart + len) - doc.Table.BufOfsToDocOfs(rowBufStart));
+            var layout = MakeCharWrapLayout(text, typeface, EffectiveFontSize, foreground);
+            lines.Add(new LayoutLine(rowDocStart, rowDocLen, i, 1, layout));
+        }
+
+        if (lines.Count == 0) {
+            var layout = MakeCharWrapLayout("", typeface, EffectiveFontSize, foreground);
+            lines.Add(new LayoutLine(0, 0, 0, 1, layout));
+        }
+
+        _layout = new LayoutResult(lines, rh, docStart);
+        _layout.TopLine = topRow;
+        _extent = new Size(Math.Max(extentWidth, cpr * cw), totalRows * rh);
+        RenderOffsetY = topRow * rh - _scrollOffset.Y;
+
+        // Clamp scroll and render offset.
+        if (_scrollOffset.Y > ScrollMaximum) {
+            _scrollOffset = new Vector(_scrollOffset.X, ScrollMaximum);
+        }
+        if (RenderOffsetY > 0) RenderOffsetY = 0;
+
+        _winTopLine = topRow;
+        _winScrollOffset = _scrollOffset.Y;
+        _winRenderOffsetY = RenderOffsetY;
+        _winFirstLineHeight = rh;
+    }
+
+    /// <summary>Creates a NoWrap TextLayout for a single char-wrap row.</summary>
+    private static TextLayout MakeCharWrapLayout(
+        string text, Typeface typeface, double fontSize, IBrush foreground) =>
+        new(text, typeface, fontSize, foreground,
+            textAlignment: TextAlignment.Left,
+            textWrapping: TextWrapping.NoWrap,
+            maxWidth: double.PositiveInfinity,
+            maxHeight: double.PositiveInfinity);
 
     // -------------------------------------------------------------------------
     // Rendering
@@ -2689,6 +2805,25 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     }
 
     private void MoveCaretToLineEdge(Document doc, bool toStart, bool extend) {
+        if (_charWrapMode && _charWrapCharsPerRow > 0) {
+            // Use the layout to find the current row's start/end in doc-space.
+            var layout = EnsureLayout();
+            var localCaret = (int)(doc.Selection.Caret - layout.ViewportBase);
+            var line = layout.Lines[0]; // default
+            foreach (var l in layout.Lines) {
+                if (l.CharStart <= localCaret) line = l;
+                else break;
+            }
+            var localTarget = toStart ? line.CharStart : line.CharStart + line.CharLen;
+            var target = layout.ViewportBase + localTarget;
+            doc.Selection = extend
+                ? doc.Selection.ExtendTo(target)
+                : Selection.Collapsed(target);
+            ScrollCaretIntoView();
+            InvalidateVisual();
+            ResetCaretBlink();
+            return;
+        }
         var table = doc.Table;
         var caret = doc.Selection.Caret;
         var line = (int)table.LineFromDocOfs(Math.Min(caret, table.DocLength));
@@ -3166,6 +3301,26 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         var rh = GetRowHeight();
         var vpH = Bounds.Height > 0 ? Bounds.Height : _viewport.Height;
+
+        if (_charWrapMode && _charWrapCharsPerRow > 0) {
+            // ── Character-wrapping mode ──────────────────────────────
+            // All math is O(1) — exact row from character offset.
+            var bufCaret = table.DocOfsToBufOfs(caret);
+            var caretRow = bufCaret / _charWrapCharsPerRow;
+            var caretY = caretRow * rh;
+            var totalRows = (long)Math.Ceiling((double)table.Length / _charWrapCharsPerRow);
+            _extent = new Size(_extent.Width, totalRows * rh);
+
+            if (_scrollOffset.Y > ScrollMaximum) ScrollValue = ScrollMaximum;
+            if (caretY < _scrollOffset.Y) {
+                ScrollValue = caretY;
+            } else if (caretY + rh > _scrollOffset.Y + vpH) {
+                ScrollValue = caretY + rh - vpH;
+            }
+            InvalidateVisual();
+            return;
+        }
+
         var caretLine = table.LineFromDocOfs(caret);
 
         if (!_wrapLines) {

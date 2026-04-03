@@ -148,6 +148,19 @@ public sealed class AppSettings {
     public int MaxPseudoLine { get; set; } = 500;
 
     /// <summary>
+    /// Force character-wrapping mode if any line exceeds this many characters,
+    /// regardless of file size.  Default: 500.
+    /// </summary>
+    public int CharWrapLineThreshold { get; set; } = 500;
+
+    /// <summary>
+    /// Force character-wrapping mode if any line exceeds 500 characters AND the
+    /// file size exceeds this threshold (in KB).  This allows normal line mode
+    /// for small files with moderately long lines.  Default: 50 KB.
+    /// </summary>
+    public int CharWrapFileSizeKB { get; set; } = 50;
+
+    /// <summary>
     /// Default indentation style for new/untitled documents. Files opened from
     /// disk use the detected style instead. Default: Spaces.
     /// </summary>

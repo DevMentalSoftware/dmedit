@@ -72,6 +72,12 @@ public sealed class TabState {
     public bool IsLoading { get; set; }
 
     /// <summary>
+    /// True when this tab's document should use character-wrapping mode.
+    /// Set after load completes based on file size and longest line.
+    /// </summary>
+    public bool CharWrapMode { get; set; }
+
+    /// <summary>
     /// True when the tab has session edits waiting to be replayed after load.
     /// Suppresses incremental rendering so the user doesn't see the base file
     /// content flash before edits are applied.

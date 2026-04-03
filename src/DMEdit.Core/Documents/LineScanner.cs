@@ -35,6 +35,10 @@ public sealed class LineScanner {
     private int _crlfCount;
     private int _crCount;
 
+    // Longest real line tracking (ignores pseudo-splits).
+    private long _realLineLen;
+    private long _longestRealLine;
+
     // Indentation counters.
     private int _spaceIndentCount;
     private int _tabIndentCount;
@@ -50,6 +54,12 @@ public sealed class LineScanner {
     public long LineCount => _lineIndex + 1;
 
     /// <summary>Line-ending detection counts.</summary>
+    /// <summary>
+    /// Longest real (newline-delimited) line seen, ignoring pseudo-splits.
+    /// Only complete after <see cref="Finish"/> is called.
+    /// </summary>
+    public long LongestRealLine => _longestRealLine;
+
     public int LfCount => _lfCount;
     public int CrlfCount => _crlfCount;
     public int CrCount => _crCount;
@@ -92,17 +102,23 @@ public sealed class LineScanner {
                 }
                 _lfCount++;
                 _currentLineLen++;
+                _realLineLen++;
                 RecordTerminator(LineTerminatorType.LF);
                 _lineLengths.Add(_currentLineLen);
                 _docLineLengths.Add(_currentLineLen);  // LF: doc == buf
                 _lineIndex++;
                 _currentLineLen = 0;
+                if (_realLineLen > _longestRealLine) _longestRealLine = _realLineLen;
+                _realLineLen = 0;
                 _atLineStart = true;
             } else if (ch == '\r') {
                 if (_prevWasCr) {
                     _crCount++;
+                    if (_realLineLen > _longestRealLine) _longestRealLine = _realLineLen;
+                    _realLineLen = 0;
                 }
                 _currentLineLen++;
+                _realLineLen++;
                 RecordTerminator(LineTerminatorType.CR);
                 _lineLengths.Add(_currentLineLen);
                 _docLineLengths.Add(_currentLineLen);  // CR: doc == buf
@@ -113,8 +129,11 @@ public sealed class LineScanner {
             } else {
                 if (_prevWasCr) {
                     _crCount++;
+                    if (_realLineLen > _longestRealLine) _longestRealLine = _realLineLen;
+                    _realLineLen = 0;
                 }
                 _prevWasCr = false;
+                _realLineLen++;
 
                 // Pseudo-split when content reaches MaxPseudoLine.
                 if (_currentLineLen >= _maxPseudoLine) {
@@ -150,6 +169,8 @@ public sealed class LineScanner {
         RecordTerminator(LineTerminatorType.None);
         _lineLengths.Add(_currentLineLen);
         _docLineLengths.Add(_currentLineLen);  // None: doc == buf
+        // Final real-line length tracking.
+        if (_realLineLen > _longestRealLine) _longestRealLine = _realLineLen;
     }
 
     /// <summary>

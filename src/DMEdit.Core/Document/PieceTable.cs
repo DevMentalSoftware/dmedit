@@ -378,7 +378,7 @@ public sealed class PieceTable {
     /// accidental materialization of multi-GB documents into a single string.
     /// Code that needs larger ranges should use <see cref="ForEachPiece"/>.
     /// </summary>
-    public int MaxGetTextLength => EffectiveMaxPseudoLine + 2; // +2 for \r\n terminator
+    public int MaxGetTextLength => 10_000;
 
     /// <summary>Returns a substring of the document.</summary>
     /// <exception cref="ArgumentOutOfRangeException">

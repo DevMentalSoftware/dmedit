@@ -33,7 +33,7 @@ public sealed class LayoutResult : IDisposable {
     /// </summary>
     public long TopLine { get; set; }
 
-    internal LayoutResult(IReadOnlyList<LayoutLine> lines, double rowHeight, long viewportBase = 0L) {
+    public LayoutResult(IReadOnlyList<LayoutLine> lines, double rowHeight, long viewportBase = 0L) {
         Lines = lines;
         RowHeight = rowHeight;
         ViewportBase = viewportBase;

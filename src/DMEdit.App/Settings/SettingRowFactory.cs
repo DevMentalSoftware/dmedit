@@ -220,7 +220,7 @@ public static class SettingRowFactory {
             Value = Convert.ToDecimal(prop.GetValue(settings)),
             Minimum = desc.Min is not null ? Convert.ToDecimal(desc.Min) : decimal.MinValue,
             Maximum = desc.Max is not null ? Convert.ToDecimal(desc.Max) : decimal.MaxValue,
-            Increment = 1,
+            Increment = desc.Increment >= 1 ? (decimal)desc.Increment : 1,
             Width = 180,
             HorizontalAlignment = HorizontalAlignment.Left,
             FormatString = "0",

@@ -37,7 +37,7 @@ public sealed class LayoutLine : IDisposable {
     /// </summary>
     public TextLayout Layout { get; }
 
-    internal LayoutLine(int charStart, int charLen, int row, int heightInRows, TextLayout layout) {
+    public LayoutLine(int charStart, int charLen, int row, int heightInRows, TextLayout layout) {
         CharStart = charStart;
         CharLen = charLen;
         Row = row;

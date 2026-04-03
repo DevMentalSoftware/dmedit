@@ -74,6 +74,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     private List<int> _docLineLengths = null!;  // doc-space, set by LineScanner during scan
     private long _lineCount;                    // accessed via Interlocked
     private volatile int _longestLine;
+    private long _longestRealLine; // longest line ignoring pseudo-splits
 
     // Run-length encoded terminator types built by LineScanner.
     private List<(long StartLine, Documents.LineTerminatorType Type)>? _terminatorRuns;
@@ -113,6 +114,9 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     private Encoding _encoding = null!;   // detected from BOM during scan
     private bool _hadBom;                  // whether a BOM was present
     private readonly long _byteLen;
+
+    /// <summary>File size in bytes.</summary>
+    public long ByteLength => _byteLen;
     private long _totalChars;              // accessed via Interlocked
     private volatile bool _done;
     private volatile int _scanFrontier;   // highest page index scanned so far
@@ -179,6 +183,12 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     public long LineCount => Interlocked.Read(ref _lineCount);
 
     public int LongestLine => _longestLine;
+
+    /// <summary>
+    /// Longest real (newline-delimited) line in the file, ignoring pseudo-splits.
+    /// Only valid after <see cref="LoadComplete"/> has fired.
+    /// </summary>
+    public long LongestRealLine => _longestRealLine;
 
     public long GetLineStart(long lineIdx) {
         var lc = Interlocked.Read(ref _lineCount);
@@ -424,6 +434,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
             _crCount = scanner.CrCount;
             _spaceIndentCount = scanner.SpaceIndentCount;
             _tabIndentCount = scanner.TabIndentCount;
+            _longestRealLine = scanner.LongestRealLine;
 
             Interlocked.Exchange(ref _totalChars, cumulativeChars);
             _sha1 = Convert.ToHexStringLower(hasher.GetHashAndReset());
