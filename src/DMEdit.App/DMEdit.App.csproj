@@ -15,10 +15,10 @@
   <ItemGroup>
     <AvaloniaResource Include="app_icon.ico" />
     <AvaloniaResource Include="..\..\resources\FluentSystemIcons-Regular.ttf" Link="Resources\FluentSystemIcons-Regular.ttf" />
+    <AvaloniaResource Include="..\..\resources\dev_mental_head.png" Link="Resources\dev_mental_head.png" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="manual.md" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="about.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Commands\Profiles\*.json" />

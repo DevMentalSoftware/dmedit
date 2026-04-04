@@ -174,7 +174,17 @@ public partial class MainWindow : Window {
 
         // Help items don't have commands.
         MenuManual.Click += (_, _) => OpenHelpDocumentAsync("manual.md", "Manual");
-        MenuAbout.Click += (_, _) => OpenHelpDocumentAsync("about.md", "About");
+        MenuReportBug.Click += (_, _) => Services.GitHubIssueHelper.OpenBugReport(this);
+        MenuSubmitFeedback.Click += async (_, _) => {
+            var doc = _activeTab?.Document?.Table;
+            var name = _activeTab?.DisplayName;
+            var dlg = new SubmitFeedbackDialog(_theme, doc, name);
+            await dlg.ShowDialog(this);
+        };
+        MenuAbout.Click += async (_, _) => {
+            var dlg = new AboutDialog(_theme);
+            await dlg.ShowDialog(this);
+        };
 
         // Dev-only diagnostic commands (visible only in DevMode).
         if (_settings.DevMode) {

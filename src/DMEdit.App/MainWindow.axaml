@@ -110,7 +110,11 @@
 					</MenuItem>
 					<MenuItem Header="_Help" x:Name="MenuHelp">
 						<MenuItem Header="_Manual" x:Name="MenuManual" />
-						<MenuItem Header="_About" x:Name="MenuAbout" />
+						<Separator />
+						<MenuItem Header="Report a _Bug..." x:Name="MenuReportBug" />
+						<MenuItem Header="_Submit Feedback..." x:Name="MenuSubmitFeedback" />
+						<Separator />
+						<MenuItem Header="_About DMEdit" x:Name="MenuAbout" />
 						<Separator x:Name="MenuDevSep" IsVisible="False" />
 						<MenuItem Header="Throw on _UI Thread" x:Name="MenuDevThrowUI" IsVisible="False" />
 						<MenuItem Header="Throw on _Background Thread" x:Name="MenuDevThrowBG" IsVisible="False" />
