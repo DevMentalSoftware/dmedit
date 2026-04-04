@@ -53,6 +53,7 @@ public partial class MainWindow : Window {
     private bool _windowStateReady;
     private TabState? _settingsTab;
     private readonly FileWatcherService _watcher = new();
+    private Task<bool>? _printTask;
     private readonly List<(MenuItem item, Command cmd)> _menuCommandBindings = [];
     private TextBlock? _lineNumGlyph;
     private TextBlock? _statusBarGlyph;
@@ -2576,6 +2577,10 @@ public partial class MainWindow : Window {
     }
 
     private async Task PrintAsync() {
+        if (_printTask is { IsCompleted: false }) {
+            StatusLeft.Text = "A print job is still in progress.";
+            return;
+        }
         if (_activeTab is null or { IsSettings: true }) return;
         if (Editor.CharWrapMode) {
             StatusLeft.Text = "Print is not available in character-wrapping mode.";
@@ -2620,7 +2625,33 @@ public partial class MainWindow : Window {
         _settings.MarginLeftInches = ticket.Settings.Margins.Left / 72.0;
         _settings.ScheduleSave();
 
-        await Task.Run(() => service.Print(doc, ticket));
+        var dialog = new ProgressDialog("Printing", "Preparing\u2026", _theme);
+        var progress = new Progress<(string Message, double Percent)>(p =>
+            dialog.Update(p.Message, p.Percent));
+
+        // Close the dialog when the user clicks Cancel — don't wait for
+        // the print thread to finish (WPF spooler cleanup is slow).
+        dialog.CancellationToken.Register(() =>
+            Dispatcher.UIThread.Post(() => {
+                try { dialog.Close(); } catch (InvalidOperationException) { }
+            }));
+
+        var dialogTask = dialog.ShowDialog(this);
+        _printTask = Task.Run(() => service.Print(doc, ticket, progress,
+            dialog.CancellationToken));
+
+        await Task.WhenAny(_printTask, dialogTask);
+        var wasCancelled = dialog.WasCancelled;
+        try { dialog.Close(); } catch (InvalidOperationException) { }
+        await dialogTask;
+
+        if (wasCancelled) {
+            StatusLeft.Text = "Printing cancelled";
+            return;
+        }
+
+        var ok = await _printTask;
+        StatusLeft.Text = ok ? "Printing complete" : "Print failed.";
     }
 
     private PrintSettings BuildPrintSettings() {

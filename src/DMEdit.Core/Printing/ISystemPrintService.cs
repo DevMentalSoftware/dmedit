@@ -22,5 +22,8 @@ public interface ISystemPrintService {
     /// Called on a background thread; the implementation manages any STA
     /// thread requirements internally.
     /// </summary>
-    void Print(Document doc, PrintJobTicket ticket);
+    /// <returns>True if printing completed, false if cancelled or failed.</returns>
+    bool Print(Document doc, PrintJobTicket ticket,
+        IProgress<(string Message, double Percent)>? progress = null,
+        CancellationToken cancellation = default);
 }

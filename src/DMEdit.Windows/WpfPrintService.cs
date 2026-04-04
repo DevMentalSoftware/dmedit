@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Printing;
 using System.Windows;
@@ -107,12 +108,14 @@ public sealed class WpfPrintService : ISystemPrintService {
         return sb.ToString();
     }
 
-    public void Print(Document doc, PrintJobTicket ticket) {
+    public bool Print(Document doc, PrintJobTicket ticket,
+        IProgress<(string Message, double Percent)>? progress = null,
+        CancellationToken cancellation = default) {
         Exception? error = null;
 
         var thread = new Thread(() => {
             try {
-                PrintOnWpfThread(doc, ticket);
+                PrintOnWpfThread(doc, ticket, progress, cancellation);
             } catch (Exception ex) {
                 error = ex;
             }
@@ -121,12 +124,15 @@ public sealed class WpfPrintService : ISystemPrintService {
         thread.Start();
         thread.Join();
 
-        if (error is not null) {
-            throw new InvalidOperationException("Print failed.", error);
+        if (error is not null && error is not OperationCanceledException) {
+            return false;
         }
+        return !cancellation.IsCancellationRequested;
     }
 
-    private static void PrintOnWpfThread(Document doc, PrintJobTicket ticket) {
+    private static void PrintOnWpfThread(Document doc, PrintJobTicket ticket,
+        IProgress<(string Message, double Percent)>? progress,
+        CancellationToken cancellation) {
         var server = new LocalPrintServer();
         PrintQueue? queue = null;
         try {
@@ -151,7 +157,8 @@ public sealed class WpfPrintService : ISystemPrintService {
         var wpfMarginL = settings.Margins.Left * 96.0 / 72.0;
 
         var paginator = new PlainTextPaginator(
-            doc, wpfPageW, wpfPageH, wpfMarginT, wpfMarginR, wpfMarginB, wpfMarginL);
+            doc, wpfPageW, wpfPageH, wpfMarginT, wpfMarginR, wpfMarginB, wpfMarginL,
+            progress, cancellation);
 
         var pt = queue.DefaultPrintTicket.Clone();
         if (settings.Paper.Id is { } sizeId) {
@@ -169,6 +176,7 @@ public sealed class WpfPrintService : ISystemPrintService {
 
         var writer = PrintQueue.CreateXpsDocumentWriter(queue);
         writer.Write(paginator, pt);
+
     }
 }
 
@@ -193,12 +201,18 @@ file sealed class PlainTextPaginator : DocumentPaginator {
     private readonly double _printableWidth;
     private readonly double _printableHeight;
     private readonly int _linesPerPage;
+    private readonly int _safeCharCount; // lines shorter than this can't wrap
     private readonly List<PageBreak> _pageBreaks;
+    private readonly IProgress<(string Message, double Percent)>? _progress;
+    private readonly CancellationToken _cancellation;
+    private readonly Stopwatch _elapsed = Stopwatch.StartNew();
 
     public PlainTextPaginator(
         Document doc,
         double pageWidth, double pageHeight,
-        double marginTop, double marginRight, double marginBottom, double marginLeft) {
+        double marginTop, double marginRight, double marginBottom, double marginLeft,
+        IProgress<(string Message, double Percent)>? progress = null,
+        CancellationToken cancellation = default) {
         _doc = doc;
         _typeface = new Typeface(DefaultFontFamily);
         _fontSize = DefaultFontSize;
@@ -214,6 +228,11 @@ file sealed class PlainTextPaginator : DocumentPaginator {
         _lineHeight = sample.Height;
 
         _linesPerPage = Math.Max(1, (int)(_printableHeight / _lineHeight));
+        // Compute chars per print row using the monospace font's character width.
+        var charWidth = MakeFormattedText("M").Width;
+        _safeCharCount = charWidth > 0 ? (int)(_printableWidth / charWidth) : int.MaxValue;
+        _progress = progress;
+        _cancellation = cancellation;
         _pageBreaks = ComputePageBreaks();
     }
 
@@ -221,6 +240,29 @@ file sealed class PlainTextPaginator : DocumentPaginator {
         if (pageNumber < 0 || pageNumber >= _pageBreaks.Count) {
             return DocumentPage.Missing;
         }
+
+        // On cancellation, return blank pages so the spooler finishes quickly
+        // instead of blocking for 30+ seconds cleaning up after an exception.
+        if (_cancellation.IsCancellationRequested) {
+            var blank = new DrawingVisual();
+            using (blank.RenderOpen()) { }
+            return new DocumentPage(blank,
+                new Size(_pageWidth, _pageHeight),
+                new Rect(0, 0, _pageWidth, _pageHeight),
+                new Rect(0, 0, _pageWidth, _pageHeight));
+        }
+
+        var total = _pageBreaks.Count;
+        var page1 = pageNumber + 1;
+        var pct = 100.0 * page1 / total;
+        var elapsed = _elapsed.Elapsed;
+        var pagesPerSec = page1 / Math.Max(elapsed.TotalSeconds, 0.001);
+        var remaining = TimeSpan.FromSeconds((total - page1) / pagesPerSec);
+        var eta = remaining.TotalMinutes >= 1
+            ? $"{(int)remaining.TotalMinutes}m {remaining.Seconds}s"
+            : $"{remaining.Seconds}s";
+        _progress?.Report(($"Page {page1:N0} of {total:N0}\n{pagesPerSec:N0} pages/sec, ~{eta} remaining",
+            pct));
 
         var brk = _pageBreaks[pageNumber];
         var visual = new DrawingVisual();
@@ -230,14 +272,23 @@ file sealed class PlainTextPaginator : DocumentPaginator {
             var lineIdx = brk.FirstLogicalLine;
             var wrapIdx = brk.FirstWrapLine;
 
+            var charsPerRow = Math.Max(1, _safeCharCount);
             while (visualLineIdx < _linesPerPage && lineIdx < _doc.Table.LineCount) {
                 var line = _doc.Table.GetLine(lineIdx);
-                var wrappedLines = WrapLine(line);
 
-                for (var w = wrapIdx; w < wrappedLines.Count && visualLineIdx < _linesPerPage; w++) {
-                    var ft = MakeFormattedText(wrappedLines[w]);
-                    ft.MaxTextWidth = _printableWidth;
+                // Split line into fixed-width rows using monospace arithmetic.
+                var rowStart = wrapIdx * charsPerRow;
+                while (rowStart < line.Length && visualLineIdx < _linesPerPage) {
+                    var rowLen = Math.Min(charsPerRow, line.Length - rowStart);
+                    var segment = line.Substring(rowStart, rowLen);
+                    var ft = MakeFormattedText(segment);
                     dc.DrawText(ft, new Point(_marginLeft, y));
+                    y += _lineHeight;
+                    visualLineIdx++;
+                    rowStart += charsPerRow;
+                }
+                // Empty lines still occupy one visual row.
+                if (line.Length == 0 && wrapIdx == 0 && visualLineIdx < _linesPerPage) {
                     y += _lineHeight;
                     visualLineIdx++;
                 }
@@ -269,12 +320,31 @@ file sealed class PlainTextPaginator : DocumentPaginator {
 
     private List<PageBreak> ComputePageBreaks() {
         var breaks = new List<PageBreak> { new(0, 0) };
-        var lineCount = _doc.Table.LineCount;
+        var table = _doc.Table;
+        var lineCount = table.LineCount;
         var visualLinesOnPage = 0;
+        var lastReport = Stopwatch.GetTimestamp();
+        var charsPerRow = Math.Max(1, _safeCharCount);
 
         for (var i = 0L; i < lineCount; i++) {
-            var line = _doc.Table.GetLine(i);
-            var wrappedCount = CountWrappedLines(line);
+            // Report progress at most every 200ms to avoid flooding the UI.
+            if (Stopwatch.GetElapsedTime(lastReport).TotalMilliseconds >= 200) {
+                _cancellation.ThrowIfCancellationRequested();
+                _progress?.Report(($"Measuring line {i:N0} of {lineCount:N0}\u2026",
+                    100.0 * i / lineCount));
+                lastReport = Stopwatch.GetTimestamp();
+            }
+
+            // Compute line length from the line index tree — no text read needed.
+            var lineStart = table.LineStartOfs(i);
+            var nextStart = i + 1 < lineCount
+                ? table.LineStartOfs(i + 1)
+                : _doc.Table.Length;
+            var lineLen = (int)(nextStart - lineStart);
+
+            var wrappedCount = lineLen <= charsPerRow
+                ? 1
+                : (int)Math.Ceiling((double)lineLen / charsPerRow);
 
             for (var w = 0; w < wrappedCount; w++) {
                 visualLinesOnPage++;
@@ -288,70 +358,7 @@ file sealed class PlainTextPaginator : DocumentPaginator {
         return breaks;
     }
 
-    private int CountWrappedLines(string line) {
-        if (string.IsNullOrEmpty(line)) {
-            return 1;
-        }
-        var ft = MakeFormattedText(line);
-        ft.MaxTextWidth = _printableWidth;
-        return Math.Max(1, (int)Math.Ceiling(ft.Height / _lineHeight));
-    }
 
-    private List<string> WrapLine(string line) {
-        if (string.IsNullOrEmpty(line)) {
-            return [""];
-        }
-        var ft = MakeFormattedText(line);
-        ft.MaxTextWidth = _printableWidth;
-        var totalVisual = Math.Max(1, (int)Math.Ceiling(ft.Height / _lineHeight));
-        if (totalVisual <= 1) {
-            return [line];
-        }
-
-        var result = new List<string>();
-        var remaining = line.AsSpan();
-        while (remaining.Length > 0 && result.Count < totalVisual) {
-            var breakPos = FindBreakPosition(remaining);
-            if (breakPos <= 0) {
-                breakPos = 1;
-            }
-            result.Add(remaining[..breakPos].ToString());
-            remaining = remaining[breakPos..];
-        }
-        if (remaining.Length > 0) {
-            result.Add(remaining.ToString());
-        }
-        return result;
-    }
-
-    private int FindBreakPosition(ReadOnlySpan<char> text) {
-        var lo = 1;
-        var hi = text.Length;
-        var best = text.Length;
-
-        while (lo <= hi) {
-            var mid = (lo + hi) / 2;
-            var ft = MakeFormattedText(text[..mid].ToString());
-            if (ft.Width <= _printableWidth) {
-                best = mid;
-                lo = mid + 1;
-            } else {
-                hi = mid - 1;
-            }
-        }
-
-        if (best < text.Length) {
-            var wordBreak = best;
-            while (wordBreak > 0 && !char.IsWhiteSpace(text[wordBreak - 1])) {
-                wordBreak--;
-            }
-            if (wordBreak > 0) {
-                best = wordBreak;
-            }
-        }
-
-        return best;
-    }
 
     private FormattedText MakeFormattedText(string text) {
         return new FormattedText(

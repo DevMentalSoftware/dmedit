@@ -27,6 +27,7 @@ small one — it is the primary way a fresh session recovers context.
 | [13-custom-textbox](design-journal/13-custom-textbox.md) | 2026-04-01 | DMInputBox: lightweight custom TextBox replacing Avalonia TextPresenter to fix caret bug |
 | [14-forced-wrap](design-journal/14-forced-wrap.md) | 2026-04-02 | Attempted forced wrapping for long lines — moved to AlternateLineBranch |
 | [15-char-wrap-mode](design-journal/15-char-wrap-mode.md) | 2026-04-03 | Character-wrapping mode: O(1) scroll math, no pseudo-lines needed |
+| [16-print-progress](design-journal/16-print-progress.md) | 2026-04-03 | Print progress dialog, monospace pagination, cancellation, ETA display |
 
 ---
 
@@ -47,13 +48,45 @@ small one — it is the primary way a fresh session recovers context.
 
 ### Recently completed
 
+- **Print progress dialog + performance** (2026-04-03) — Modal ProgressDialog
+  during printing with two-phase progress: "Measuring line X of Y" then
+  "Page X of Y — N pages/sec, ~Xm Xs remaining".  ComputePageBreaks rewritten
+  to use LineIndexTree arithmetic instead of GetLine + FormattedText per line
+  (29K pages: frozen → 331ms).  GetPage row splitting uses monospace char-width
+  arithmetic instead of WrapLine/FindBreakPosition binary search.  Removed
+  WrapLine, FindBreakPosition, CountWrappedLines.  Cancel closes dialog
+  immediately; print thread finishes in background with blank pages.  Guard
+  against concurrent print jobs via _printTask field.  ISystemPrintService.Print
+  returns bool (no exceptions for errors/cancel).  ProgressDialog: monospace
+  font for stable number layout, 200ms update throttle, optional cancel button
+  via showCancelButton parameter.  Future: GlyphRun rendering to bypass
+  FormattedText entirely.
+  See [16-print-progress](design-journal/16-print-progress.md).
+
+- **CharWrap trigger fix** (2026-04-03) — CharWrap mode now requires both file
+  size >= CharWrapFileSizeKB AND longest real line >= MaxGetTextLength (1M chars).
+  Previously triggered on file size alone, which forced CharWrap on normal large
+  files with short lines.  Removed three early-load sites that pre-set CharWrap
+  based on file size before line scanning; CharWrap now only set post-load via
+  ShouldCharWrap or at runtime via LineTooLongDetected safety net.
+
+- **Settings page fixed width** (2026-04-03) — SettingsContent StackPanel now has
+  MaxWidth=720 and HorizontalAlignment=Left so description text wraps and boolean
+  click targets don't extend to window edge.  Font preview border stretches to
+  fill the fixed width instead of hardcoded 600px.
+
+- **DMInputBox unit tests** (2026-04-03) — 26 tests covering text property
+  basics, caret/selection clamping, SelectAll, SelectedText, IsReadOnly,
+  property defaults, and boundary edge cases.  Added Avalonia.Headless.XUnit
+  to App.Tests project with TestApp for headless test support.
+
 - **Character-wrapping mode + pseudo-line removal** (2026-04-03) — Major
   refactoring: added character-wrapping mode for large files (O(1) scroll math,
   row N = char N * charsPerRow), then removed the entire pseudo-line system
   (SplitLongLine, dual-offset DocOffset/BufOffset, _val2/_sum2 in LineIndexTree,
   LineTerminatorType.Pseudo).  LineIndexTree simplified to single-value treap
   (~340 lines).  Char-wrap triggers on file size > CharWrapFileSizeKB setting
-  (default 50KB) or any line > MaxGetTextLength (1M chars, safety net via
+  (default 50KB) AND longest line >= MaxGetTextLength (1M chars, safety net via
   LineTooLongException).  Features in char-wrap mode: gutter shows row numbers,
   status bar shows Row/Col, tabs/CR/LF render as spaces (with whitespace glyphs
   when ShowWhitespace on), indent/column-sel/line-ending-conversion disabled,
