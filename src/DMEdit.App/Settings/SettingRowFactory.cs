@@ -609,10 +609,9 @@ public static class SettingRowFactory {
             CornerRadius = new CornerRadius(3),
             Padding = new Thickness(8, 6),
             Margin = new Thickness(0, 4, 0, 0),
-            Width = 600,
             Height = 80,
             ClipToBounds = true,
-            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             Tag = "previewBorder",
         };
 

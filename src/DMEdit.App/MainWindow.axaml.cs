@@ -1100,7 +1100,8 @@ public partial class MainWindow : Window {
     private bool ShouldCharWrap(TabState tab) {
         if (tab.LoadResult?.Buffer is not PagedFileBuffer pb) return false;
         var fileSizeKb = pb.ByteLength / 1024.0;
-        return fileSizeKb >= _settings.CharWrapFileSizeKB;
+        return fileSizeKb >= _settings.CharWrapFileSizeKB
+            && pb.LongestRealLine >= PieceTable.MaxGetTextLength;
     }
 
     private void ToggleWrapLines() {
@@ -2121,10 +2122,6 @@ public partial class MainWindow : Window {
                 IsReadOnly = true,
                 IsLocked = true,
             };
-            if (result.Buffer is PagedFileBuffer epb
-                && epb.ByteLength / 1024.0 >= _settings.CharWrapFileSizeKB) {
-                tab.CharWrapMode = true;
-            }
             AddTab(tab);
             SwitchToTab(tab);
             WireFileLoadCompletion(tab);
@@ -2343,12 +2340,6 @@ public partial class MainWindow : Window {
             IsLoading = true,
             IsReadOnly = ro
         };
-        // Set char-wrap early based on file size so the first layout
-        // doesn't try to wrap a huge line in normal mode.
-        if (result.Buffer is PagedFileBuffer earlyPb
-            && earlyPb.ByteLength / 1024.0 >= _settings.CharWrapFileSizeKB) {
-            tab.CharWrapMode = true;
-        }
         AddTab(tab);
         SwitchToTab(tab);
         WireStreamingProgress(sw, tab);
@@ -3380,12 +3371,6 @@ public partial class MainWindow : Window {
         var loadingPairs = new List<(TabState tab, SessionStore.TabEntry entry)>();
         foreach (var entry in entries) {
             var tab = SessionStore.CreateTabFromEntry(entry);
-            // Set char-wrap early based on file size so the first layout
-            // doesn't try to wrap a huge line in normal mode.
-            if (tab.LoadResult?.Buffer is PagedFileBuffer spb
-                && spb.ByteLength / 1024.0 >= _settings.CharWrapFileSizeKB) {
-                tab.CharWrapMode = true;
-            }
             AddTab(tab);
             if (tab.IsLoading) {
                 loadingPairs.Add((tab, entry));

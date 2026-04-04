@@ -32,7 +32,7 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 546** (451 Core + 31 Rendering + 64 App, 1 skipped)
+**Test baseline: 572** (451 Core + 31 Rendering + 90 App, 1 skipped)
 
 ### In progress
 
@@ -40,9 +40,6 @@ small one — it is the primary way a fresh session recovers context.
   than DMInputBox when using the same font/size.  Both use
   `HitTestTextPosition().X` identically.  Root cause unknown; needs investigation.
   See [13-custom-textbox](design-journal/13-custom-textbox.md).
-
-- **DMInputBox unit tests** — planned but not yet written.  Should cover text
-  insert, selection, caret movement, clipboard, and boundary clamps.
 
 - **Paged add-buffer eviction** (future/roadmap) — no code written yet.
   Design idea: older immutable chunks could be paged to disk like
