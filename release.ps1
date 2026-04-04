@@ -16,7 +16,7 @@ param(
     [switch]$DryRun
 )
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $logFile = Join-Path $repoRoot 'release.log'
@@ -46,13 +46,13 @@ if ($status) { Abort 'Working tree is not clean. Commit or stash changes first.'
 $branch = git rev-parse --abbrev-ref HEAD
 if ($branch -ne 'main') { Abort "Not on main branch (currently on '$branch')." }
 
-# Sync with remote: push local commits, pull any remote commits.
+# Sync with remote: pull remote commits first, then push local commits.
 Log 'Syncing with origin...'
-$pushOutput = git push origin main 2>&1
-if ($LASTEXITCODE -ne 0) { Abort "git push failed: $pushOutput" }
-
 $pullOutput = git pull --rebase origin main 2>&1
 if ($LASTEXITCODE -ne 0) { Abort "git pull failed: $pullOutput" }
+
+$pushOutput = git push origin main 2>&1
+if ($LASTEXITCODE -ne 0) { Abort "git push failed: $pushOutput" }
 
 git fetch origin --tags 2>$null
 Log '  Synced.'
