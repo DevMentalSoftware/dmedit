@@ -23,16 +23,15 @@ if ($status) {
     return
 }
 
-# Ensure we're up to date with remote.
-git fetch origin --tags 2>$null
-
-$localHead = git rev-parse HEAD
-$remoteHead = git rev-parse origin/main 2>$null
-if ($localHead -ne $remoteHead) {
-    Write-Warning "Local HEAD ($($localHead.Substring(0,7))) differs from origin/main ($($remoteHead.Substring(0,7)))."
-    $answer = Read-Host "Continue anyway? (y/N)"
-    if ($answer -ne 'y') { return }
+# Ensure we're on main.
+$branch = git rev-parse --abbrev-ref HEAD
+if ($branch -ne 'main') {
+    Write-Error "Not on main branch (currently on '$branch')."
+    return
 }
+
+# Fetch latest from remote.
+git fetch origin --tags 2>$null
 
 # Get commit count for the patch number.
 $commitCount = [int](git rev-list --count HEAD)
@@ -70,13 +69,24 @@ if ($Public) {
     $tag = "v$newMajor.$newMinor.$commitCount-beta.$newBeta"
 }
 
+# Check for unpushed commits.
+$unpushed = git log origin/main..HEAD --oneline
+$unpushedCount = ($unpushed | Measure-Object).Count
+
 Write-Host ""
-Write-Host "  Last tag:  $lastTag"
-Write-Host "  New tag:   $tag"
-Write-Host "  Commits:   $commitCount"
+Write-Host "  Last tag:        $lastTag"
+Write-Host "  New tag:         $tag"
+Write-Host "  Total commits:   $commitCount"
+if ($unpushedCount -gt 0) {
+    Write-Host "  Unpushed:        $unpushedCount commit(s)" -ForegroundColor Yellow
+}
 Write-Host ""
 
 if ($DryRun) {
+    if ($unpushedCount -gt 0) {
+        Write-Host "Unpushed commits:"
+        $unpushed | ForEach-Object { Write-Host "  $_" }
+    }
     Write-Host "(dry run — no changes made)" -ForegroundColor Yellow
     return
 }
@@ -85,6 +95,13 @@ $confirm = Read-Host "Tag and push '$tag'? (y/N)"
 if ($confirm -ne 'y') {
     Write-Host "Cancelled."
     return
+}
+
+# Push commits first (so the tagged commit exists on the remote),
+# then create and push the tag.
+if ($unpushedCount -gt 0) {
+    Write-Host "Pushing $unpushedCount commit(s) to origin/main..."
+    git push origin main
 }
 
 git tag $tag
