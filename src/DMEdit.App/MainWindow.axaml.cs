@@ -76,6 +76,12 @@ public partial class MainWindow : Window {
     // subsequent Alt KeyUp doesn't immediately close it.
     private bool _menuAccessKeyActive;
 
+    /// <summary>
+    /// File paths passed on the command line (e.g. from the Explorer context menu).
+    /// Set by <see cref="App"/> before the window is shown.
+    /// </summary>
+    internal string[]? StartupFiles { get; set; }
+
     public MainWindow() {
         InitializeComponent();
         RegisterWindowCommands();
@@ -272,6 +278,16 @@ public partial class MainWindow : Window {
     }
 
     private async void InitSessionAsync() {
+        // Command-line file arguments (e.g. Explorer context menu) take priority.
+        var files = StartupFiles;
+        if (files is { Length: > 0 }) {
+            foreach (var path in files) {
+                if (File.Exists(path))
+                    await OpenFileInTabAsync(Path.GetFullPath(path));
+            }
+            if (_tabs.Count > 0) return;
+        }
+
         if (!await TryRestoreSessionAsync()) {
             var tab = AddTab(TabState.CreateUntitled(_tabs));
             SwitchToTab(tab);
@@ -2328,6 +2344,16 @@ public partial class MainWindow : Window {
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Called from the single-instance IPC listener when another DMEdit
+    /// process sends a file path (e.g. Explorer context menu with multiple
+    /// files selected). Must be called on the UI thread.
+    /// </summary>
+    internal async void OpenFileFromIpc(string path) {
+        await OpenFileInTabAsync(Path.GetFullPath(path));
+        Activate();
     }
 
     /// <summary>

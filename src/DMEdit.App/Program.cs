@@ -17,6 +17,12 @@ using Velopack.Sources;
 namespace DMEdit.App;
 
 class Program {
+    /// <summary>
+    /// The single-instance service for the owning process. Accessed by
+    /// <see cref="App"/> to start listening and wire up file-open events.
+    /// </summary>
+    internal static SingleInstanceService? SingleInstance { get; private set; }
+
     // Initialization code. Don't use any Avalonia, third-party APIs or any
     // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
     // yet and stuff might break.
@@ -34,8 +40,20 @@ class Program {
         // Register Windows-1252 and other legacy code page encodings.
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
+        // Single-instance: if another DMEdit is already running, hand off
+        // our file argument and exit so all files open in one window.
+        using var singleInstance = new SingleInstanceService();
+        if (!singleInstance.IsOwner) {
+            if (args.Length > 0 && !string.IsNullOrWhiteSpace(args[0])) {
+                SingleInstanceService.SendToOwner(Path.GetFullPath(args[0]));
+            }
+            return;
+        }
+
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+
+        SingleInstance = singleInstance;
 
         try {
             BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
