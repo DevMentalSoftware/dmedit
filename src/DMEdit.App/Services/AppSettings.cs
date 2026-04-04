@@ -375,6 +375,17 @@ public sealed class AppSettings {
     public int ChordTimeoutMs { get; set; } = 3000;
 
     // -----------------------------------------------------------------
+    // Updates
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// When true, updates are downloaded silently on startup and a status
+    /// bar indicator appears when ready. When false, the app still checks
+    /// for updates but only shows a button in Settings to download manually.
+    /// </summary>
+    public bool AutoUpdate { get; set; } = true;
+
+    // -----------------------------------------------------------------
     // Clipboard ring
     // -----------------------------------------------------------------
 

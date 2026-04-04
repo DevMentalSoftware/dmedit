@@ -2,12 +2,13 @@
   <PropertyGroup>
     <MajorVersion>0</MajorVersion>
     <MinorVersion>5</MinorVersion>
-    <PatchVersion>0</PatchVersion>
     <!-- We set InformationalVersion ourselves; stop SourceLink from appending a second hash. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
-  <!-- Derive build number from git commit count so every build is unique. -->
+  <!-- Derive build number from git commit count so every build is unique.
+       Version is 3-part SemVer: Major.Minor.BuildNumber (e.g. 0.5.347).
+       Velopack requires SemVer; the build number as patch keeps auto-increment. -->
   <Target Name="_SetBuildNumber" BeforeTargets="GetAssemblyVersion;GenerateNuspec;_GenerateRestoreProjectSpec">
     <Exec Command="git rev-list --count HEAD" ConsoleToMsBuild="true" StandardOutputImportance="low">
       <Output TaskParameter="ConsoleOutput" PropertyName="BuildNumber" />
@@ -16,10 +17,10 @@
       <Output TaskParameter="ConsoleOutput" PropertyName="GitShortSha" />
     </Exec>
     <PropertyGroup>
-      <Version>$(MajorVersion).$(MinorVersion).$(PatchVersion).$(BuildNumber)</Version>
-      <AssemblyVersion>$(MajorVersion).$(MinorVersion).$(PatchVersion).$(BuildNumber)</AssemblyVersion>
-      <FileVersion>$(MajorVersion).$(MinorVersion).$(PatchVersion).$(BuildNumber)</FileVersion>
-      <InformationalVersion>$(MajorVersion).$(MinorVersion).$(PatchVersion).$(BuildNumber)+$(GitShortSha)</InformationalVersion>
+      <Version>$(MajorVersion).$(MinorVersion).$(BuildNumber)</Version>
+      <AssemblyVersion>$(MajorVersion).$(MinorVersion).$(BuildNumber)</AssemblyVersion>
+      <FileVersion>$(MajorVersion).$(MinorVersion).$(BuildNumber)</FileVersion>
+      <InformationalVersion>$(MajorVersion).$(MinorVersion).$(BuildNumber)+$(GitShortSha)</InformationalVersion>
     </PropertyGroup>
   </Target>
 </Project>

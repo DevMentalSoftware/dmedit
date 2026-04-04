@@ -38,6 +38,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Velopack" Version="0.0.1298" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\DMEdit.Core\DMEdit.Core.csproj" />
     <ProjectReference Include="..\DMEdit.Rendering\DMEdit.Rendering.csproj" />
   </ItemGroup>

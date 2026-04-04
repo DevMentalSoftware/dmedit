@@ -18,6 +18,8 @@ public partial class SettingsControl : UserControl {
     private readonly List<Border> _allRows = [];
     private readonly List<TextBlock> _allHeaders = [];
     private readonly Dictionary<string, List<Border>> _dependentRows = new();
+    private Button? _checkForUpdatesButton;
+    private Border? _updateButtonBorder;
     private string _selectedCategory = "All Settings";
 
     /// <summary>
@@ -34,6 +36,11 @@ public partial class SettingsControl : UserControl {
     /// Fired when a menu or toolbar checkbox changes in the Commands section.
     /// </summary>
     public event Action? MenuOrToolbarChanged;
+
+    /// <summary>
+    /// Fired when the user clicks the "Check for Updates" button.
+    /// </summary>
+    public event Action? CheckForUpdatesRequested;
 
     public SettingsControl() {
         InitializeComponent();
@@ -155,6 +162,27 @@ public partial class SettingsControl : UserControl {
                     UpdateRowEnabled(row, depKey);
                 }
             }
+
+            // "Update to …" button in the Advanced section — hidden until
+            // an update is discovered.
+            if (cat == "Advanced") {
+                _checkForUpdatesButton = new Button {
+                    Content = "Update",
+                    Margin = new Thickness(12, 8, 12, 4),
+                    Padding = new Thickness(12, 4),
+                    IsVisible = false,
+                };
+                _checkForUpdatesButton.Click += (_, _) => CheckForUpdatesRequested?.Invoke();
+                var btnBorder = new Border {
+                    Child = _checkForUpdatesButton,
+                    Padding = new Thickness(0),
+                    Tag = "updateButton",
+                };
+                _updateButtonBorder = btnBorder;
+                _rowsByCategory[cat].Add(btnBorder);
+                _allRows.Add(btnBorder);
+                SettingsContent.Children.Add(btnBorder);
+            }
         }
     }
 
@@ -234,6 +262,28 @@ public partial class SettingsControl : UserControl {
         var available = viewportHeight - headerHeight - sectionMargin
             - SettingsContent.Margin.Bottom;
         _commandsSection.SetAvailableHeight(available);
+    }
+
+    /// <summary>
+    /// Shows the update button with the available version. Call when an
+    /// update has been discovered (whether downloaded or not).
+    /// </summary>
+    public void SetUpdateAvailable(string version, bool downloaded) {
+        if (_checkForUpdatesButton is null) return;
+        _checkForUpdatesButton.IsVisible = true;
+        _checkForUpdatesButton.IsEnabled = true;
+        _checkForUpdatesButton.Content = downloaded
+            ? $"Restart to apply {version}"
+            : $"Update to {version}";
+    }
+
+    /// <summary>
+    /// Shows a "Downloading…" state on the update button.
+    /// </summary>
+    public void SetUpdateDownloading() {
+        if (_checkForUpdatesButton is null) return;
+        _checkForUpdatesButton.IsEnabled = false;
+        _checkForUpdatesButton.Content = "Downloading\u2026";
     }
 
     /// <summary>

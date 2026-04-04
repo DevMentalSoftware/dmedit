@@ -4,10 +4,15 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using DMEdit.App.Services;
 using System;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Velopack;
+using Velopack.Sources;
 
 namespace DMEdit.App;
 
@@ -17,6 +22,15 @@ class Program {
     // yet and stuff might break.
     [STAThread]
     public static void Main(string[] args) {
+        // Velopack bootstrap — must be first, before any UI or framework init.
+        var vpk = VelopackApp.Build()
+            .OnFirstRun(v => RegisterShellIntegration());
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+            vpk.OnAfterInstallFastCallback(v => RegisterShellIntegration())
+               .OnBeforeUninstallFastCallback(v => UnregisterShellIntegration());
+        }
+        vpk.Run();
+
         // Register Windows-1252 and other legacy code page encodings.
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
@@ -166,5 +180,93 @@ class Program {
         ErrorDialog dialog, Window owner, Action onClosed) {
         await dialog.ShowDialog(owner);
         onClosed();
+    }
+
+    // -----------------------------------------------------------------
+    // Shell integration (context menu on Windows, .desktop on Linux)
+    // -----------------------------------------------------------------
+
+    private static void RegisterShellIntegration() {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            RegisterWindowsContextMenu();
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            RegisterLinuxDesktopEntry();
+    }
+
+    private static void UnregisterShellIntegration() {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            UnregisterWindowsContextMenu();
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            UnregisterLinuxDesktopEntry();
+    }
+
+    // -- Windows: Explorer context menu --
+
+    private const string ShellRegKey = @"Software\Classes\*\shell\DMEdit";
+
+    [SupportedOSPlatform("windows")]
+    private static void RegisterWindowsContextMenu() {
+        try {
+            var exe = Environment.ProcessPath;
+            if (exe is null) return;
+
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(ShellRegKey);
+            key.SetValue(null, "DMEdit");
+            key.SetValue("Icon", $"\"{exe}\",0");
+
+            using var cmd = key.CreateSubKey("command");
+            cmd.SetValue(null, $"\"{exe}\" \"%1\"");
+        } catch {
+            // Best-effort — non-fatal.
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void UnregisterWindowsContextMenu() {
+        try {
+            Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(ShellRegKey, throwOnMissingSubKey: false);
+        } catch {
+            // Best-effort — non-fatal.
+        }
+    }
+
+    // -- Linux: .desktop file for app launchers and "Open With" --
+
+    private static readonly string DesktopFilePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".local", "share", "applications", "dmedit.desktop");
+
+    private static void RegisterLinuxDesktopEntry() {
+        try {
+            var exe = Environment.ProcessPath;
+            if (exe is null) return;
+
+            var dir = Path.GetDirectoryName(DesktopFilePath)!;
+            Directory.CreateDirectory(dir);
+
+            File.WriteAllText(DesktopFilePath,
+                $"""
+                [Desktop Entry]
+                Type=Application
+                Name=DMEdit
+                Comment=Text editor for simple and large files
+                Exec="{exe}" %F
+                Icon=dmedit
+                Terminal=false
+                Categories=Utility;TextEditor;
+                MimeType=text/plain;text/markdown;
+                """);
+        } catch {
+            // Best-effort — non-fatal.
+        }
+    }
+
+    private static void UnregisterLinuxDesktopEntry() {
+        try {
+            if (File.Exists(DesktopFilePath))
+                File.Delete(DesktopFilePath);
+        } catch {
+            // Best-effort — non-fatal.
+        }
     }
 }

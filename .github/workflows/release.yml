@@ -23,6 +23,14 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Install vpk
+        run: dotnet tool install -g vpk
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Build DMEdit.Windows
         run: dotnet build src/DMEdit.Windows/DMEdit.Windows.csproj -c Release
 
@@ -34,17 +42,25 @@ jobs:
           Copy-Item "src/DMEdit.Windows/bin/Release/net10.0-windows/DMEdit.Windows.dll" "dist/win-x64/" -ErrorAction SilentlyContinue
         shell: pwsh
 
+      - name: Download previous release (for deltas)
+        run: vpk download github --repoUrl https://github.com/DevMentalSoftware/dmedit --outputDir dist/velopack-win
+        continue-on-error: true
+
+      - name: Pack with Velopack
+        run: vpk pack --packId DMEdit --packVersion ${{ steps.version.outputs.version }} --packDir dist/win-x64 --mainExe dmedit.exe --outputDir dist/velopack-win
+
+      - name: Upload Velopack artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: velopack-win-x64
+          path: dist/velopack-win/*
+
+      # Also keep the ZIP for users who prefer a portable install.
       - name: Create ZIP
         run: Compress-Archive -Path dist/win-x64/* -DestinationPath dist/dmedit-win-x64.zip
         shell: pwsh
 
-      # TODO: uncomment once repo is public
-      # - name: Attest artifact
-      #   uses: actions/attest-build-provenance@v2
-      #   with:
-      #     subject-path: dist/dmedit-win-x64.zip
-
-      - name: Upload artifact
+      - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
           name: dmedit-win-x64
@@ -103,22 +119,36 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Install vpk
+        run: dotnet tool install -g vpk
+
       - name: Extract version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Publish linux-x64
+        run: dotnet publish src/DMEdit.App/DMEdit.App.csproj -c Release -r linux-x64 --self-contained true -o dist/linux-x64
+
+      - name: Download previous release (for deltas)
+        run: vpk download github --repoUrl https://github.com/DevMentalSoftware/dmedit --outputDir dist/velopack-linux
+        continue-on-error: true
+
+      - name: Pack AppImage with Velopack
+        run: vpk pack --packId DMEdit --packVersion ${{ steps.version.outputs.version }} --packDir dist/linux-x64 --mainExe dmedit --outputDir dist/velopack-linux
+
+      - name: Upload Velopack artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: velopack-linux-x64
+          path: dist/velopack-linux/*
+
+      # Also keep the .deb for distro package managers.
       - name: Build .deb package
         run: |
           chmod +x packaging/linux/build-deb.sh
           packaging/linux/build-deb.sh "${{ steps.version.outputs.version }}"
 
-      # TODO: uncomment once repo is public
-      # - name: Attest artifact
-      #   uses: actions/attest-build-provenance@v2
-      #   with:
-      #     subject-path: dist/dmedit-linux-x64.deb
-
-      - name: Upload artifact
+      - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
           name: dmedit-linux-x64
@@ -128,6 +158,14 @@ jobs:
     needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     steps:
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install vpk
+        run: dotnet tool install -g vpk
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -153,3 +191,25 @@ jobs:
             artifacts/dmedit-macos-x64/dmedit-macos-x64.dmg
             artifacts/dmedit-macos-arm64/dmedit-macos-arm64.dmg
             artifacts/dmedit-linux-x64/dmedit-linux-x64.deb
+
+      # Upload Velopack assets (Setup.exe, nupkg, deltas, RELEASES) to the
+      # GitHub Release so the in-app updater can find them.
+      - name: Upload Velopack Windows assets
+        run: |
+          vpk upload github \
+            --repoUrl https://github.com/DevMentalSoftware/dmedit \
+            --tag ${{ github.ref_name }} \
+            --token ${{ secrets.GITHUB_TOKEN }} \
+            --outputDir artifacts/velopack-win-x64 \
+            --merge
+        continue-on-error: true
+
+      - name: Upload Velopack Linux assets
+        run: |
+          vpk upload github \
+            --repoUrl https://github.com/DevMentalSoftware/dmedit \
+            --tag ${{ github.ref_name }} \
+            --token ${{ secrets.GITHUB_TOKEN }} \
+            --outputDir artifacts/velopack-linux-x64 \
+            --merge
+        continue-on-error: true

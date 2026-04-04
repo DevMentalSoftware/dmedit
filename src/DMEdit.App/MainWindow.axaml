@@ -114,9 +114,6 @@
 						<MenuItem Header="_Submit Feedback..." x:Name="MenuSubmitFeedback" />
 						<Separator />
 						<MenuItem Header="_About DMEdit" x:Name="MenuAbout" />
-						<Separator x:Name="MenuDevSep" IsVisible="False" />
-						<MenuItem Header="Throw on _UI Thread" x:Name="MenuDevThrowUI" IsVisible="False" />
-						<MenuItem Header="Throw on _Background Thread" x:Name="MenuDevThrowBG" IsVisible="False" />
 					</MenuItem>
 				</Menu>
 				<controls:ToolbarControl x:Name="Toolbar" Grid.Column="1"
@@ -166,6 +163,22 @@
                                Text="" />
 					<StackPanel HorizontalAlignment="Right"
 					            Orientation="Horizontal">
+						<Border x:Name="BtnUpdate" Background="Transparent"
+						        IsVisible="False"
+						        ToolTip.Tip="Update ready — click to restart">
+							<StackPanel Orientation="Horizontal">
+								<TextBlock x:Name="StatusUpdateGlyph"
+								           FontFamily="avares://dmedit/Resources/FluentSystemIcons-Regular.ttf#FluentSystemIcons-Regular"
+								           FontSize="16"
+								           Padding="6,5,2,5"
+								           Text="&#xE013;" />
+								<TextBlock x:Name="StatusUpdateText"
+								           FontFamily="Cascadia Code, Consolas, Courier New"
+								           FontSize="11"
+								           Padding="0,6,6,6"
+								           Text="" />
+							</StackPanel>
+						</Border>
 						<Border x:Name="BtnLineCol" Background="Transparent">
 							<TextBlock x:Name="StatusLineCol"
 							           FontFamily="Cascadia Code, Consolas, Courier New"

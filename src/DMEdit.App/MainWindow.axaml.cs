@@ -54,6 +54,7 @@ public partial class MainWindow : Window {
     private TabState? _settingsTab;
     private readonly FileWatcherService _watcher = new();
     private Task<bool>? _printTask;
+    private readonly UpdateService _updateService = new();
     private readonly List<(MenuItem item, Command cmd)> _menuCommandBindings = [];
     private TextBlock? _lineNumGlyph;
     private TextBlock? _statusBarGlyph;
@@ -185,22 +186,6 @@ public partial class MainWindow : Window {
             await dlg.ShowDialog(this);
         };
 
-        // Dev-only diagnostic commands (visible only in DevMode).
-        if (_settings.DevMode) {
-            MenuDevSep.IsVisible = true;
-            MenuDevThrowUI.IsVisible = true;
-            MenuDevThrowBG.IsVisible = true;
-        }
-        MenuDevThrowUI.Click += (_, _) =>
-            throw new InvalidOperationException("DevMode test exception on UI thread");
-        MenuDevThrowBG.Click += (_, _) => {
-            new Thread(static () =>
-                throw new InvalidOperationException("DevMode test exception on background thread")) {
-                IsBackground = true,
-                Name = "DevThrowTest",
-            }.Start();
-        };
-
         MenuFile.SubmenuOpened += OnTopMenuOpened;
         MenuEdit.SubmenuOpened += OnTopMenuOpened;
         MenuSearch.SubmenuOpened += OnTopMenuOpened;
@@ -273,6 +258,15 @@ public partial class MainWindow : Window {
                 Editor.Focus();
             }
         };
+
+        // Update check: always check on startup; AutoUpdate controls auto-download.
+        _updateService.UpdateAvailable += OnUpdateAvailable;
+        _updateService.UpdateReady += OnUpdateReady;
+
+        _ = Task.Run(async () => {
+            try { await _updateService.CheckAsync(autoDownload: _settings.AutoUpdate); }
+            catch { /* best-effort */ }
+        });
 
         InitSessionAsync();
     }
@@ -1404,6 +1398,8 @@ public partial class MainWindow : Window {
         StatusSep5.Background = theme.StatusBarForeground;
         // StatusTailGlyph foreground is set dynamically in UpdateStatusBar
         // based on active/inactive state.
+        StatusUpdateGlyph.Foreground = theme.StatusBarWarning;
+        StatusUpdateText.Foreground = theme.StatusBarWarning;
     }
 
     // -------------------------------------------------------------------------
@@ -1873,6 +1869,15 @@ public partial class MainWindow : Window {
             flyout.ShowAt(BtnLineEnding);
         };
 
+        // -- Update → restart to apply --
+        WireHover(BtnUpdate);
+        BtnUpdate.PointerPressed += (_, e) => {
+            if (e.GetCurrentPoint(BtnUpdate).Properties.IsLeftButtonPressed) {
+                e.Handled = true;
+                _updateService.ApplyAndRestart();
+            }
+        };
+
         // -- Tail → toggle by moving caret --
         WireHover(BtnTail);
         BtnTail.PointerPressed += (_, e) => {
@@ -2072,6 +2077,21 @@ public partial class MainWindow : Window {
             : TailInactiveBrush;
 
         ToolTip.SetTip(BtnTail, "Tail");
+    }
+
+    private void OnUpdateAvailable(string version) {
+        Dispatcher.UIThread.Post(() => {
+            SettingsPanel.SetUpdateAvailable(version, downloaded: false);
+        });
+    }
+
+    private void OnUpdateReady() {
+        Dispatcher.UIThread.Post(() => {
+            if (_updateService.AvailableVersion is not { } v) return;
+            BtnUpdate.IsVisible = true;
+            StatusUpdateText.Text = v;
+            SettingsPanel.SetUpdateAvailable(v, downloaded: true);
+        });
     }
 
     private static void SetText(TextBlock tb, string text) {
@@ -3053,9 +3073,6 @@ public partial class MainWindow : Window {
                     break;
                 case "DevMode":
                     UpdateStatusBarVisibility();
-                    MenuDevSep.IsVisible = _settings.DevMode;
-                    MenuDevThrowUI.IsVisible = _settings.DevMode;
-                    MenuDevThrowBG.IsVisible = _settings.DevMode;
                     break;
                 case "TailFile":
                     UpdateTailButton();
@@ -3065,6 +3082,27 @@ public partial class MainWindow : Window {
                     break;
             }
         };
+
+        // "Update to …" button in Advanced settings — downloads then restarts.
+        SettingsPanel.CheckForUpdatesRequested += () => {
+            if (_updateService.IsReadyToApply) {
+                _updateService.ApplyAndRestart();
+                return;
+            }
+            SettingsPanel.SetUpdateDownloading();
+            _ = Task.Run(async () => {
+                try {
+                    await _updateService.DownloadAsync();
+                    Dispatcher.UIThread.Post(() => _updateService.ApplyAndRestart());
+                } catch {
+                    Dispatcher.UIThread.Post(() => {
+                        if (_updateService.AvailableVersion is { } v)
+                            SettingsPanel.SetUpdateAvailable(v, downloaded: false);
+                    });
+                }
+            });
+        };
+
     }
 
     private void OpenSettings() {

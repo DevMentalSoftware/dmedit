@@ -76,6 +76,12 @@ public static class SettingsRegistry {
             "Number of recent files shown in the File menu.",
             "Advanced", SettingKind.Int, 10, Min: 0, Max: 50),
 
+        new("AutoUpdate", "Auto-Update",
+            "Download updates silently on startup and show a restart indicator " +
+            "in the status bar. When off, updates are still detected but require " +
+            "a manual download from Settings.",
+            "Advanced", SettingKind.Bool, true),
+
         new("DevMode", "Developer Mode",
             "Enable developer-mode features (performance stats, detailed errors).",
             "Advanced", SettingKind.Bool, false, Hidden: true),
