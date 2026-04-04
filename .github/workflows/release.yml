@@ -47,7 +47,7 @@ jobs:
         continue-on-error: true
 
       - name: Pack with Velopack
-        run: vpk pack --packId DMEdit --packVersion ${{ steps.version.outputs.version }} --packDir dist/win-x64 --mainExe dmedit.exe --outputDir dist/velopack-win
+        run: vpk pack --packId DMEdit --packVersion ${{ steps.version.outputs.version }} --packDir dist/win-x64 --mainExe dmedit.exe --icon resources/app_icon.ico --outputDir dist/velopack-win
 
       - name: Upload Velopack artifacts
         uses: actions/upload-artifact@v4
