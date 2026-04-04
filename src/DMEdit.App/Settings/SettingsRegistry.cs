@@ -78,11 +78,11 @@ public static class SettingsRegistry {
 
         new("DevMode", "Developer Mode",
             "Enable developer-mode features (performance stats, detailed errors).",
-            "Advanced", SettingKind.Bool, false),
+            "Advanced", SettingKind.Bool, false, Hidden: true),
 
         new("ShowStatistics", "Show Statistics",
             "Show developer performance statistics on the Status Bar.",
-            "Advanced", SettingKind.Bool, true, EnabledWhenKey: "DevMode"),
+            "Advanced", SettingKind.Bool, true, EnabledWhenKey: "DevMode", Hidden: true),
 
         // -- Commands --
         new("ChordTimeoutMs", "Chord Timeout (ms)",

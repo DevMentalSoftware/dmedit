@@ -174,7 +174,6 @@ public partial class MainWindow : Window {
 
         // Help items don't have commands.
         MenuManual.Click += (_, _) => OpenHelpDocumentAsync("manual.md", "Manual");
-        MenuReportBug.Click += (_, _) => Services.GitHubIssueHelper.OpenBugReport(this);
         MenuSubmitFeedback.Click += async (_, _) => {
             var doc = _activeTab?.Document?.Table;
             var name = _activeTab?.DisplayName;

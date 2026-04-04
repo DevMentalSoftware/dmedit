@@ -133,7 +133,10 @@ public partial class SettingsControl : UserControl {
             }
 
             // Setting rows for this category
-            var descriptors = SettingsRegistry.All.Where(d => d.Category == cat);
+            var showHidden = string.Equals(
+                Environment.GetEnvironmentVariable("DMEDIT_DEVMODE"),
+                "true", StringComparison.OrdinalIgnoreCase);
+            var descriptors = SettingsRegistry.All.Where(d => d.Category == cat && (!d.Hidden || showHidden));
             foreach (var desc in descriptors) {
                 var row = SettingRowFactory.CreateRow(desc, _settings, key => {
                     SettingChanged?.Invoke(key);

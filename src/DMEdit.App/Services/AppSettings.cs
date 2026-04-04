@@ -38,7 +38,7 @@ public sealed class AppSettings {
     // Developer mode
     // -----------------------------------------------------------------
 
-    public bool DevMode { get; set; } = true;
+    public bool DevMode { get; set; }
 
     // -----------------------------------------------------------------
     // Scrollbar
@@ -417,18 +417,29 @@ public sealed class AppSettings {
     /// Loads settings from disk. Returns defaults on any failure.
     /// </summary>
     public static AppSettings Load() {
+        AppSettings settings;
         try {
             if (File.Exists(StorePath)) {
                 var json = File.ReadAllText(StorePath);
-                var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOpts);
-                if (settings is not null) {
-                    return settings;
-                }
+                settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOpts) ?? new AppSettings();
+            } else {
+                settings = new AppSettings();
             }
         } catch {
             // Corrupted or unreadable — use defaults.
+            settings = new AppSettings();
         }
-        return new AppSettings();
+
+        // DMEDIT_DEVMODE env var gates whether DevMode can be enabled.
+        // When the env var is absent or not "true", force DevMode off
+        // regardless of the persisted value.
+        if (!string.Equals(
+                Environment.GetEnvironmentVariable("DMEDIT_DEVMODE"),
+                "true", StringComparison.OrdinalIgnoreCase)) {
+            settings.DevMode = false;
+        }
+
+        return settings;
     }
 
     /// <summary>

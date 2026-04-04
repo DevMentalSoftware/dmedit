@@ -138,7 +138,9 @@ public class SubmitFeedbackDialog : Window {
         _bodyBox = new TextBox {
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
-            MinHeight = 120,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalContentAlignment = VerticalAlignment.Top,
             Watermark = "Describe the issue or suggestion...",
             FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
             FontSize = 12,
