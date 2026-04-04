@@ -49,7 +49,6 @@ class Program {
             }
             return;
         }
-
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
 

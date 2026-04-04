@@ -76,13 +76,12 @@ public partial class MainWindow : Window {
     // subsequent Alt KeyUp doesn't immediately close it.
     private bool _menuAccessKeyActive;
 
-    /// <summary>
-    /// File paths passed on the command line (e.g. from the Explorer context menu).
-    /// Set by <see cref="App"/> before the window is shown.
-    /// </summary>
-    internal string[]? StartupFiles { get; set; }
+    private string[]? _startupFiles;
 
-    public MainWindow() {
+    public MainWindow() : this(null) { }
+
+    internal MainWindow(string[]? startupFiles) {
+        _startupFiles = startupFiles;
         InitializeComponent();
         RegisterWindowCommands();
         Editor.RegisterCommands();
@@ -278,19 +277,20 @@ public partial class MainWindow : Window {
     }
 
     private async void InitSessionAsync() {
-        // Command-line file arguments (e.g. Explorer context menu) take priority.
-        var files = StartupFiles;
-        if (files is { Length: > 0 }) {
-            foreach (var path in files) {
-                if (File.Exists(path))
-                    await OpenFileInTabAsync(Path.GetFullPath(path));
-            }
-            if (_tabs.Count > 0) return;
-        }
-
         if (!await TryRestoreSessionAsync()) {
             var tab = AddTab(TabState.CreateUntitled(_tabs));
             SwitchToTab(tab);
+        }
+
+        // Open any files passed on the command line (e.g. Explorer context
+        // menu) as additional tabs, after session restore.
+        var files = _startupFiles;
+        if (files is { Length: > 0 }) {
+            foreach (var path in files) {
+                if (File.Exists(path)) {
+                    await OpenFileInTabAsync(Path.GetFullPath(path));
+                }
+            }
         }
     }
 

@@ -16,7 +16,7 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var mainWindow = new MainWindow { StartupFiles = desktop.Args };
+            var mainWindow = new MainWindow(desktop.Args);
             desktop.MainWindow = mainWindow;
 
             // Start listening for file-open requests from secondary instances
