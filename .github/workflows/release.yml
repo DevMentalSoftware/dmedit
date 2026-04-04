@@ -201,6 +201,7 @@ jobs:
             --tag ${{ github.ref_name }} \
             --token ${{ secrets.GITHUB_TOKEN }} \
             --outputDir artifacts/velopack-win-x64 \
+            --channel win \
             --merge
         continue-on-error: true
 
@@ -211,5 +212,6 @@ jobs:
             --tag ${{ github.ref_name }} \
             --token ${{ secrets.GITHUB_TOKEN }} \
             --outputDir artifacts/velopack-linux-x64 \
+            --channel linux \
             --merge
         continue-on-error: true
