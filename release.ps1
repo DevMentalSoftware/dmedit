@@ -6,6 +6,8 @@
 #   .\release.ps1 -Major       # Bump major (e.g. v1.0.226-beta.1)
 #   .\release.ps1 -Minor       # Bump minor (e.g. v0.6.226-beta.1)
 #   .\release.ps1 -DryRun      # Show what would happen without doing it
+#
+# All output is written to release.log in the repo root.
 
 param(
     [switch]$Public,
@@ -16,21 +18,36 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$logFile = Join-Path $repoRoot 'release.log'
+
+function Log($msg) {
+    $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $msg"
+    Write-Host $line
+    Add-Content -Path $logFile -Value $line
+}
+
+function Abort($msg) {
+    Log "ERROR: $msg"
+    Log ''
+    Log 'Release aborted.'
+    exit 1
+}
+
+# Start fresh log for this run.
+Set-Content -Path $logFile -Value "=== DMEdit Release $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ==="
+Log ''
+
 # Ensure working tree is clean.
 $status = git status --porcelain
-if ($status) {
-    Write-Error "Working tree is not clean. Commit or stash changes first."
-    return
-}
+if ($status) { Abort 'Working tree is not clean. Commit or stash changes first.' }
 
 # Ensure we're on main.
 $branch = git rev-parse --abbrev-ref HEAD
-if ($branch -ne 'main') {
-    Write-Error "Not on main branch (currently on '$branch')."
-    return
-}
+if ($branch -ne 'main') { Abort "Not on main branch (currently on '$branch')." }
 
 # Fetch latest from remote.
+Log 'Fetching from origin...'
 git fetch origin --tags 2>$null
 
 # Get commit count for the patch number.
@@ -43,8 +60,7 @@ if ($lastTag -match '^v(\d+)\.(\d+)\.\d+(?:-beta\.(\d+))?$') {
     $curMinor = [int]$Matches[2]
     $curBeta  = if ($Matches[3]) { [int]$Matches[3] } else { 0 }
 } else {
-    Write-Error "Cannot parse last tag: $lastTag"
-    return
+    Abort "Cannot parse last tag: $lastTag"
 }
 
 # Determine new version.
@@ -54,59 +70,53 @@ $newMinor = $curMinor
 if ($Major) {
     $newMajor++
     $newMinor = 0
-    $curBeta = 0  # reset beta
+    $curBeta = 0
 } elseif ($Minor) {
     $newMinor++
-    $curBeta = 0  # reset beta
+    $curBeta = 0
 }
 
 if ($Public) {
     $tag = "v$newMajor.$newMinor.$commitCount"
 } else {
     $newBeta = $curBeta + 1
-    # Reset beta if major or minor changed.
     if ($Major -or $Minor) { $newBeta = 1 }
     $tag = "v$newMajor.$newMinor.$commitCount-beta.$newBeta"
 }
 
 # Check for unpushed commits.
-$unpushed = git log origin/main..HEAD --oneline
-$unpushedCount = ($unpushed | Measure-Object).Count
+$unpushed = @(git log origin/main..HEAD --oneline)
+$unpushedCount = $unpushed.Count
 
-Write-Host ""
-Write-Host "  Last tag:        $lastTag"
-Write-Host "  New tag:         $tag"
-Write-Host "  Total commits:   $commitCount"
+Log "Last tag:        $lastTag"
+Log "New tag:         $tag"
+Log "Total commits:   $commitCount"
+Log "Unpushed:        $unpushedCount"
 if ($unpushedCount -gt 0) {
-    Write-Host "  Unpushed:        $unpushedCount commit(s)" -ForegroundColor Yellow
+    $unpushed | ForEach-Object { Log "  $_" }
 }
-Write-Host ""
+Log ''
 
 if ($DryRun) {
-    if ($unpushedCount -gt 0) {
-        Write-Host "Unpushed commits:"
-        $unpushed | ForEach-Object { Write-Host "  $_" }
-    }
-    Write-Host "(dry run — no changes made)" -ForegroundColor Yellow
-    return
+    Log '(dry run - no changes made)'
+    Log "Log written to: $logFile"
+    exit 0
 }
 
-$confirm = Read-Host "Tag and push '$tag'? (y/N)"
-if ($confirm -ne 'y') {
-    Write-Host "Cancelled."
-    return
-}
-
-# Push commits first (so the tagged commit exists on the remote),
-# then create and push the tag.
+# Push commits first so the tagged commit exists on the remote.
 if ($unpushedCount -gt 0) {
-    Write-Host "Pushing $unpushedCount commit(s) to origin/main..."
-    git push origin main
+    Log "Pushing $unpushedCount commit(s) to origin/main..."
+    git push origin main 2>&1 | ForEach-Object { Log "  $_" }
 }
 
+Log "Tagging $tag..."
 git tag $tag
-git push origin $tag
 
-Write-Host ""
-Write-Host "Pushed $tag — GitHub Actions release workflow will start shortly." -ForegroundColor Green
-Write-Host "https://github.com/DevMentalSoftware/dmedit/actions" -ForegroundColor Cyan
+Log "Pushing tag $tag..."
+git push origin $tag 2>&1 | ForEach-Object { Log "  $_" }
+
+Log ''
+Log "Done. GitHub Actions release workflow will start shortly."
+Log "https://github.com/DevMentalSoftware/dmedit/actions"
+Log ''
+Log "Log written to: $logFile"
