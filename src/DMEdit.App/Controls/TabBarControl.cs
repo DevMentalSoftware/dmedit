@@ -1187,6 +1187,15 @@ public sealed class TabBarControl : Control {
             return;
         }
 
+        // Middle-click closes a tab.
+        if (props.IsMiddleButtonPressed
+            && zone is HitZone.Tab or HitZone.CloseButton or HitZone.ErrorIcon
+            && idx >= 0 && idx < _tabs.Count) {
+            TabCloseClicked?.Invoke(idx);
+            e.Handled = true;
+            return;
+        }
+
         if (!props.IsLeftButtonPressed) return;
 
         LastPointerPressedArgs = e;
