@@ -46,11 +46,18 @@ if ($status) { Abort 'Working tree is not clean. Commit or stash changes first.'
 $branch = git rev-parse --abbrev-ref HEAD
 if ($branch -ne 'main') { Abort "Not on main branch (currently on '$branch')." }
 
-# Fetch latest from remote.
-Log 'Fetching from origin...'
-git fetch origin --tags 2>$null
+# Sync with remote: push local commits, pull any remote commits.
+Log 'Syncing with origin...'
+$pushOutput = git push origin main 2>&1
+if ($LASTEXITCODE -ne 0) { Abort "git push failed: $pushOutput" }
 
-# Get commit count for the patch number.
+$pullOutput = git pull --rebase origin main 2>&1
+if ($LASTEXITCODE -ne 0) { Abort "git pull failed: $pullOutput" }
+
+git fetch origin --tags 2>$null
+Log '  Synced.'
+
+# Now compute the version from the fully-synced history.
 $commitCount = [int](git rev-list --count HEAD)
 
 # Find the latest tag to determine current major.minor and beta number.
@@ -84,17 +91,9 @@ if ($Public) {
     $tag = "v$newMajor.$newMinor.$commitCount-beta.$newBeta"
 }
 
-# Check for unpushed commits.
-$unpushed = @(git log origin/main..HEAD --oneline)
-$unpushedCount = $unpushed.Count
-
 Log "Last tag:        $lastTag"
 Log "New tag:         $tag"
 Log "Total commits:   $commitCount"
-Log "Unpushed:        $unpushedCount"
-if ($unpushedCount -gt 0) {
-    $unpushed | ForEach-Object { Log "  $_" }
-}
 Log ''
 
 if ($DryRun) {
@@ -103,17 +102,14 @@ if ($DryRun) {
     exit 0
 }
 
-# Push commits first so the tagged commit exists on the remote.
-if ($unpushedCount -gt 0) {
-    Log "Pushing $unpushedCount commit(s) to origin/main..."
-    git push origin main 2>&1 | ForEach-Object { Log "  $_" }
-}
-
 Log "Tagging $tag..."
 git tag $tag
+if ($LASTEXITCODE -ne 0) { Abort "git tag failed." }
 
 Log "Pushing tag $tag..."
-git push origin $tag 2>&1 | ForEach-Object { Log "  $_" }
+$tagOutput = git push origin $tag 2>&1
+if ($LASTEXITCODE -ne 0) { Abort "git push origin $tag failed: $tagOutput" }
+Log "  Tag pushed."
 
 Log ''
 Log "Done. GitHub Actions release workflow will start shortly."
