@@ -335,12 +335,17 @@ file sealed class PlainTextPaginator : DocumentPaginator {
                 lastReport = Stopwatch.GetTimestamp();
             }
 
-            // Compute line length from the line index tree — no text read needed.
+            // Compute line content length (excluding newline) from the tree.
             var lineStart = table.LineStartOfs(i);
             var nextStart = i + 1 < lineCount
                 ? table.LineStartOfs(i + 1)
                 : _doc.Table.Length;
-            var lineLen = (int)(nextStart - lineStart);
+            // Subtract up to 2 chars for the newline (CRLF=2, CR/LF=1).
+            // GetLine() strips newlines, so the measurement must match.
+            // Conservative: subtract 2 for non-last lines (off by at most
+            // 1 char for LF-only, negligible for pagination).
+            var rawLen = (int)(nextStart - lineStart);
+            var lineLen = i + 1 < lineCount ? Math.Max(0, rawLen - 2) : rawLen;
 
             var wrappedCount = lineLen <= charsPerRow
                 ? 1
