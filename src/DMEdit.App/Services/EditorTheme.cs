@@ -28,10 +28,9 @@ public sealed class EditorTheme {
         new SolidColorBrush(Color.FromArgb(0x10, 0x00, 0x00, 0x00)), 1);
 
     // -- Whitespace glyphs --
-    public IBrush WhitespaceGlyphBrush { get; init; } =
-        new SolidColorBrush(Color.FromArgb(0x60, 0x80, 0x80, 0x80));
-    public IPen WhitespaceGlyphPen { get; init; } = new Pen(
-        new SolidColorBrush(Color.FromArgb(0x60, 0x80, 0x80, 0x80)), 1);
+    private static readonly Color WhitespaceGlyphLight = Color.FromArgb(0xFF, 0x80, 0x80, 0x80);
+    public IBrush WhitespaceGlyphBrush { get; init; } = new SolidColorBrush(WhitespaceGlyphLight);
+    public IPen WhitespaceGlyphPen { get; init; } = new Pen(new SolidColorBrush(WhitespaceGlyphLight), 1);
 
     // -- Tab bar --
     public IBrush TabBarBackground { get; init; } =
@@ -126,6 +125,8 @@ public sealed class EditorTheme {
 
     public static EditorTheme Light { get; } = new();
 
+    private static readonly Color WhitespaceGlyphDark = Color.FromArgb(0xFF, 0xB0, 0xB0, 0xB0);
+
     public static EditorTheme Dark { get; } = new() {
         // Editor surface
         EditorBackground = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x25)),
@@ -143,9 +144,8 @@ public sealed class EditorTheme {
             new SolidColorBrush(Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)), 1),
 
         // Whitespace glyphs
-        WhitespaceGlyphBrush = new SolidColorBrush(Color.FromArgb(0x50, 0x60, 0x60, 0x60)),
-        WhitespaceGlyphPen = new Pen(
-            new SolidColorBrush(Color.FromArgb(0x50, 0x60, 0x60, 0x60)), 1),
+        WhitespaceGlyphBrush = new SolidColorBrush(WhitespaceGlyphDark),
+        WhitespaceGlyphPen = new Pen(new SolidColorBrush(WhitespaceGlyphDark), 1),
 
         // Tab bar
         TabBarBackground = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)),

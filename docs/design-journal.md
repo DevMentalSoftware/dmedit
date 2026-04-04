@@ -32,7 +32,7 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 599** (492 Core + 43 Rendering + 64 App, 1 skipped)
+**Test baseline: 546** (451 Core + 31 Rendering + 64 App, 1 skipped)
 
 ### In progress
 
@@ -49,6 +49,21 @@ small one — it is the primary way a fresh session recovers context.
   PagedFileBuffer.  See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **Character-wrapping mode + pseudo-line removal** (2026-04-03) — Major
+  refactoring: added character-wrapping mode for large files (O(1) scroll math,
+  row N = char N * charsPerRow), then removed the entire pseudo-line system
+  (SplitLongLine, dual-offset DocOffset/BufOffset, _val2/_sum2 in LineIndexTree,
+  LineTerminatorType.Pseudo).  LineIndexTree simplified to single-value treap
+  (~340 lines).  Char-wrap triggers on file size > CharWrapFileSizeKB setting
+  (default 50KB) or any line > MaxGetTextLength (1M chars, safety net via
+  LineTooLongException).  Features in char-wrap mode: gutter shows row numbers,
+  status bar shows Row/Col, tabs/CR/LF render as spaces (with whitespace glyphs
+  when ShowWhitespace on), indent/column-sel/line-ending-conversion disabled,
+  print/PDF disabled.  Scroll preserves caret screen position on resize.
+  Per-tab CharWrapMode on TabState.  AlternateLineBranch preserved with earlier
+  forced-wrapping attempt.
+  See [15-char-wrap-mode](design-journal/15-char-wrap-mode.md).
 
 - **Tab Toolbar + context menu fixes** (2026-04-01) — Replaced the tab bar "+"
   button with a configurable toolbar ("TabToolbar") docked right of the last tab.

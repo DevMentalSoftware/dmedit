@@ -338,6 +338,10 @@ public partial class MainWindow : Window {
                         Editor.IsEditBlocked = tab.IsReadOnly || tab.IsLocked;
                         Editor.ResetCaretBlink();
                         Editor.InvalidateLayout();
+                        if (tab.CharWrapMode) Dispatcher.UIThread.Post(() => {
+                        Editor.InvalidateLayout();
+                        Editor.ScrollCaretIntoView();
+                    }, DispatcherPriority.Background);
                     }
                 };
             }
@@ -1849,6 +1853,7 @@ public partial class MainWindow : Window {
                 var item = new MenuItem { Header = label };
                 var target = le;
                 item.Click += (_, _) => {
+                    if (Editor.CharWrapMode) return;
                     doc.ConvertLineEndings(target);
                     Editor.RaiseMetadataChanged();
                 };
@@ -1936,7 +1941,8 @@ public partial class MainWindow : Window {
                     var row = caret / cpr + 1;
                     var col = caret % cpr + 1;
                     var rowText = $"{row:N0}".PadLeft(lcWidth);
-                    var colText = $"{col:N0}".PadLeft(lcWidth);
+                    var colWidth = $"{cpr:N0}".Length;
+                    var colText = $"{col:N0}".PadLeft(colWidth);
                     lineCol = $"Row {rowText} Col {colText}";
                 } else {
                     var caret = Math.Min(doc.Selection.Caret, table.Length);
@@ -1967,12 +1973,23 @@ public partial class MainWindow : Window {
                 SetText(StatusLineEnding, "");
                 StatusSep4.IsVisible = false;
                 SetText(StatusIndent, "");
+            } else if (Editor.CharWrapMode) {
+                // Char-wrap mode: show row count and encoding, hide line-ending and indent.
+                StatusSep1b.IsVisible = true;
+                SetText(StatusLineCount, $"{lcText} {countLabel}");
+                StatusSep2.IsVisible = true;
+                SetText(StatusEncoding, doc.EncodingInfo.Label);
+                StatusSep3.IsVisible = false;
+                BtnLineEnding.IsVisible = false;
+                StatusSep4.IsVisible = false;
+                BtnIndent.IsVisible = false;
             } else {
                 StatusSep1b.IsVisible = true;
                 SetText(StatusLineCount, $"{lcText} {countLabel}");
                 StatusSep2.IsVisible = true;
                 SetText(StatusEncoding, doc.EncodingInfo.Label);
                 StatusSep3.IsVisible = true;
+                BtnLineEnding.IsVisible = true;
 
                 var lei = doc.LineEndingInfo;
                 SetText(StatusLineEnding, lei.Label);
@@ -1992,6 +2009,7 @@ public partial class MainWindow : Window {
                 }
 
                 StatusSep4.IsVisible = true;
+                BtnIndent.IsVisible = true;
                 SetText(StatusIndent, doc.IndentInfo.Label);
 
                 var indBrush = doc.IndentInfo.IsMixed ? _theme.StatusBarWarning : _theme.StatusBarForeground;
@@ -2103,6 +2121,10 @@ public partial class MainWindow : Window {
                 IsReadOnly = true,
                 IsLocked = true,
             };
+            if (result.Buffer is PagedFileBuffer epb
+                && epb.ByteLength / 1024.0 >= _settings.CharWrapFileSizeKB) {
+                tab.CharWrapMode = true;
+            }
             AddTab(tab);
             SwitchToTab(tab);
             WireFileLoadCompletion(tab);
@@ -2321,6 +2343,12 @@ public partial class MainWindow : Window {
             IsLoading = true,
             IsReadOnly = ro
         };
+        // Set char-wrap early based on file size so the first layout
+        // doesn't try to wrap a huge line in normal mode.
+        if (result.Buffer is PagedFileBuffer earlyPb
+            && earlyPb.ByteLength / 1024.0 >= _settings.CharWrapFileSizeKB) {
+            tab.CharWrapMode = true;
+        }
         AddTab(tab);
         SwitchToTab(tab);
         WireStreamingProgress(sw, tab);
@@ -2558,6 +2586,10 @@ public partial class MainWindow : Window {
 
     private async Task PrintAsync() {
         if (_activeTab is null or { IsSettings: true }) return;
+        if (Editor.CharWrapMode) {
+            StatusLeft.Text = "Print is not available in character-wrapping mode.";
+            return;
+        }
         var service = WindowsPrintService.Service;
         if (service is null) return;
 
@@ -2632,6 +2664,10 @@ public partial class MainWindow : Window {
 
     private async Task SaveAsPdfAsync() {
         if (_activeTab is null or { IsSettings: true }) return;
+        if (Editor.CharWrapMode) {
+            StatusLeft.Text = "Save as PDF is not available in character-wrapping mode.";
+            return;
+        }
 
         var suggestedName = Path.GetFileNameWithoutExtension(
             _activeTab.FilePath ?? "Untitled") + ".pdf";
@@ -3043,25 +3079,41 @@ public partial class MainWindow : Window {
         var doc = _activeTab is not { IsSettings: true } ? Editor.Document : null;
         long currentLine = 1;
         if (doc != null) {
-            var table = doc.Table;
-            var caret = Math.Min(doc.Selection.Caret, table.Length);
-            currentLine = table.LineFromOfs(caret) + 1;
+            if (Editor.CharWrapMode && Editor.CharsPerRow > 0) {
+                var caret = Math.Min(doc.Selection.Caret, doc.Table.Length);
+                currentLine = caret / Editor.CharsPerRow + 1;
+            } else {
+                var table = doc.Table;
+                var caret = Math.Min(doc.Selection.Caret, table.Length);
+                currentLine = table.LineFromOfs(caret) + 1;
+            }
         }
 
         var dialog = new GoToLineWindow(_theme, currentLine);
         await dialog.ShowDialog(this);
 
         if (dialog.TargetLine is { } targetLine && doc != null) {
-            var table = doc.Table;
-            var lineIdx = Math.Clamp(targetLine - 1, 0, table.LineCount - 1);
-            var lineStart = table.LineStartOfs(lineIdx);
-            var pos = lineStart;
-            if (dialog.TargetCol is { } targetCol) {
-                // Clamp column to line content length.
-                var contentLen = table.LineContentLength((int)lineIdx);
-                pos = lineStart + Math.Clamp(targetCol - 1, 0, contentLen);
+            if (Editor.CharWrapMode && Editor.CharsPerRow > 0) {
+                // In char-wrap mode, targetLine = row number, targetCol = column.
+                var cpr = Editor.CharsPerRow;
+                var rowStart = (targetLine - 1) * cpr;
+                var pos = rowStart;
+                if (dialog.TargetCol is { } targetCol) {
+                    pos += Math.Clamp(targetCol - 1, 0, cpr - 1);
+                }
+                pos = Math.Clamp(pos, 0, doc.Table.Length);
+                Editor.GoToPosition(pos);
+            } else {
+                var table = doc.Table;
+                var lineIdx = Math.Clamp(targetLine - 1, 0, table.LineCount - 1);
+                var lineStart = table.LineStartOfs(lineIdx);
+                var pos = lineStart;
+                if (dialog.TargetCol is { } targetCol) {
+                    var contentLen = table.LineContentLength((int)lineIdx);
+                    pos = lineStart + Math.Clamp(targetCol - 1, 0, contentLen);
+                }
+                Editor.GoToPosition(pos);
             }
-            Editor.GoToPosition(pos);
         }
     }
 
@@ -3328,6 +3380,12 @@ public partial class MainWindow : Window {
         var loadingPairs = new List<(TabState tab, SessionStore.TabEntry entry)>();
         foreach (var entry in entries) {
             var tab = SessionStore.CreateTabFromEntry(entry);
+            // Set char-wrap early based on file size so the first layout
+            // doesn't try to wrap a huge line in normal mode.
+            if (tab.LoadResult?.Buffer is PagedFileBuffer spb
+                && spb.ByteLength / 1024.0 >= _settings.CharWrapFileSizeKB) {
+                tab.CharWrapMode = true;
+            }
             AddTab(tab);
             if (tab.IsLoading) {
                 loadingPairs.Add((tab, entry));
@@ -3405,19 +3463,25 @@ public partial class MainWindow : Window {
                     }
                 }
 
+                // Set char-wrap mode BEFORE edit replay so that the
+                // LoadCompleted callback sees the correct mode.
+                tab.CharWrapMode = ShouldCharWrap(tab);
+
                 // Conflict detection + edit replay (Loaded already completed).
                 SessionStore.FinishLoad(tab, entry);
 
                 SnapshotFileStats(tab);
                 _watcher.Watch(tab);
 
-                tab.CharWrapMode = ShouldCharWrap(tab);
-
                 UpdateTabBar();
                 if (_activeTab == tab) {
                     Editor.CharWrapMode = tab.CharWrapMode;
                     Editor.IsEditBlocked = false;
                     Editor.InvalidateLayout();
+                    if (tab.CharWrapMode) Dispatcher.UIThread.Post(() => {
+                        Editor.InvalidateLayout();
+                        Editor.ScrollCaretIntoView();
+                    }, DispatcherPriority.Background);
                 }
 
                 // Session load timing: update as each tab finishes so the
@@ -3480,6 +3544,10 @@ public partial class MainWindow : Window {
                     Editor.CharWrapMode = tab.CharWrapMode;
                     Editor.IsEditBlocked = false;
                     Editor.InvalidateLayout();
+                    if (tab.CharWrapMode) Dispatcher.UIThread.Post(() => {
+                        Editor.InvalidateLayout();
+                        Editor.ScrollCaretIntoView();
+                    }, DispatcherPriority.Background);
                 }
             });
         });

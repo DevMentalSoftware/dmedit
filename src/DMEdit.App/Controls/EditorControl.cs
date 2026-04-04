@@ -227,6 +227,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 HScrollValue = 0;
             }
             InvalidateLayout();
+            if (_charWrapMode) {
+                Dispatcher.UIThread.Post(ScrollCaretIntoView,
+                    Avalonia.Threading.DispatcherPriority.Background);
+            }
         }
     }
 
@@ -241,6 +245,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (_wrapLinesAt == value) return;
             _wrapLinesAt = value;
             InvalidateLayout();
+            if (_charWrapMode) {
+                Dispatcher.UIThread.Post(ScrollCaretIntoView,
+                    Avalonia.Threading.DispatcherPriority.Background);
+            }
         }
     }
 
@@ -1149,6 +1157,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var cw = GetCharWidth();
         var rh = GetRowHeight();
         UpdateGutterWidth();
+        var prevCpr = _charWrapCharsPerRow;
         _charWrapCharsPerRow = ComputeCharWrapCharsPerRow(extentWidth);
         var cpr = _charWrapCharsPerRow;
         if (cpr <= 0) cpr = 1;
@@ -1156,6 +1165,30 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Use buf-space length for row arithmetic (character count).
         var bufLen = doc.Table.Length;
         var totalRows = bufLen > 0 ? (long)Math.Ceiling((double)bufLen / cpr) : 1;
+        // When cpr changes (resize, wrap toggle), adjust scroll so the caret
+        // stays at the same screen position.
+        var oldMaxScroll = ScrollMaximum;
+        var wasAtBottom = oldMaxScroll > 0 && _scrollOffset.Y >= oldMaxScroll - 1;
+        var maxScroll = Math.Max(0, totalRows * rh - _viewport.Height);
+        if (wasAtBottom) {
+            _scrollOffset = new Vector(_scrollOffset.X, maxScroll);
+        } else {
+            // Keep the caret at the same screen-relative Y position.
+            var caretOfs = doc.Selection.Caret;
+            if (prevCpr > 0 && prevCpr != cpr) {
+                var caretRow = caretOfs / cpr;
+                var caretY = caretRow * rh;
+                // Where was the caret on screen before?
+                var oldCaretRow = caretOfs / prevCpr;
+                var oldCaretY = oldCaretRow * rh;
+                var oldScreenY = oldCaretY - _scrollOffset.Y;
+                // Adjust scroll so caret stays at the same screen Y.
+                var newScrollY = Math.Clamp(caretY - oldScreenY, 0, maxScroll);
+                _scrollOffset = new Vector(_scrollOffset.X, newScrollY);
+            } else if (_scrollOffset.Y > maxScroll) {
+                _scrollOffset = new Vector(_scrollOffset.X, maxScroll);
+            }
+        }
         var topRow = Math.Clamp((long)(_scrollOffset.Y / rh), 0, Math.Max(0, totalRows - 1));
         var visibleRows = (int)Math.Ceiling(_viewport.Height / rh) + 2;
 
@@ -1170,7 +1203,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             var rowStart = rowIdx * cpr;
             var len = (int)Math.Min(cpr, bufLen - rowStart);
             if (len <= 0) break;
-            var text = doc.Table.GetText(rowStart, len);
+            var rawText = doc.Table.GetText(rowStart, len);
+            var text = SanitizeCharWrapText(rawText);
             var rowCharStart = (int)(rowStart - startOfs);
             var layout = MakeCharWrapLayout(text, typeface, EffectiveFontSize, foreground);
             lines.Add(new LayoutLine(rowCharStart, len, i, 1, layout));
@@ -1196,6 +1230,26 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _winScrollOffset = _scrollOffset.Y;
         _winRenderOffsetY = RenderOffsetY;
         _winFirstLineHeight = rh;
+    }
+
+    /// <summary>
+    /// Replaces tab, CR, and LF characters with single-width display glyphs
+    /// so every character occupies exactly one monospace cell.  When
+    /// ShowWhitespace is off, control chars become spaces; when on, they
+    /// use visible glyphs.
+    /// </summary>
+    private string SanitizeCharWrapText(string raw) {
+        // Fast path: no control chars.
+        if (raw.AsSpan().IndexOfAny('\t', '\r', '\n') < 0) return raw;
+
+        var sb = new StringBuilder(raw.Length);
+        foreach (var ch in raw) {
+            sb.Append(ch switch {
+                '\t' or '\r' or '\n' => ' ',
+                _ => ch,
+            });
+        }
+        return sb.ToString();
     }
 
     /// <summary>Creates a NoWrap TextLayout for a single char-wrap row.</summary>
@@ -1319,9 +1373,19 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var text = table.GetText(ofs, line.CharLen);
         var typeface = new Typeface(FontFamily);
 
+        // In char-wrap mode, read the raw text (before sanitization) to detect
+        // CR/LF characters that were replaced with spaces.
+        string? rawText = null;
+        if (_charWrapMode && ofs + line.CharLen <= table.Length) {
+            rawText = table.GetText(ofs, line.CharLen);
+        }
+
         for (var i = 0; i < text.Length; i++) {
             var ch = text[i];
-            if (ch != ' ' && ch != '\t' && ch != '\u00A0') continue;
+            // In char-wrap mode, check the raw character for CR/LF.
+            var rawCh = rawText != null && i < rawText.Length ? rawText[i] : ch;
+            if (ch != ' ' && ch != '\t' && ch != '\u00A0'
+                && rawCh != '\r' && rawCh != '\n') continue;
 
             var hit = line.Layout.HitTestTextPosition(i);
             var x = TextOriginX + hit.X;
@@ -1351,6 +1415,16 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 ctx.DrawLine(_theme.WhitespaceGlyphPen,
                     new Point(right - arrowSize, midY + arrowSize),
                     new Point(right, midY));
+            } else if (rawCh == '\r' || rawCh == '\n') {
+                // CR/LF in char-wrap mode — draw a centered glyph.
+                var glyph = rawCh == '\r' ? "CR" : "LF";
+                using var tl = new TextLayout(glyph, typeface, EffectiveFontSize * 0.5,
+                    _theme.WhitespaceGlyphBrush, textAlignment: TextAlignment.Left);
+                var glyphW = tl.WidthIncludingTrailingWhitespace;
+                var cw = GetCharWidth();
+                var dx = (cw - glyphW) / 2;
+                var dy = rh * 0.28; // vertically center the smaller text
+                tl.Draw(ctx, new Point(x + dx, y + dy));
             } else {
                 // Space → · (U+00B7), NBSP → ␣ (U+2423)
                 var glyph = ch == ' ' ? "\u00B7" : "\u2423";
@@ -2591,11 +2665,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // -- Indent conversion --
 
         Reg(Cmd.EditIndentToSpaces, doc => {
+            if (_charWrapMode) return;
             FlushCompound();
             doc.ConvertIndentation(Core.Documents.IndentStyle.Spaces, _indentWidth);
             InvalidateLayout();
         });
         Reg(Cmd.EditIndentToTabs, doc => {
+            if (_charWrapMode) return;
             FlushCompound();
             doc.ConvertIndentation(Core.Documents.IndentStyle.Tabs, _indentWidth);
             InvalidateLayout();
@@ -2710,11 +2786,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 : FindWordBoundaryRight(doc, caret);
         }
 
-        // Skip over dead zones (line terminators).  When moving right past
-        // the last content character of a line, jump to the start of the
-        // next line.  When moving left into a dead zone, jump to the end
-        // of the previous line's content.
-        newCaret = SnapOutOfDeadZone(table, newCaret, delta > 0);
+        // Skip over dead zones (line terminators) — but not in char-wrap
+        // mode where CR/LF are visible characters.
+        if (!_charWrapMode) {
+            newCaret = SnapOutOfDeadZone(table, newCaret, delta > 0);
+        }
 
         doc.Selection = extend
             ? doc.Selection.ExtendTo(newCaret)
@@ -2815,16 +2891,15 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     private void MoveCaretToLineEdge(Document doc, bool toStart, bool extend) {
         if (_charWrapMode && _charWrapCharsPerRow > 0) {
-            // Use the layout to find the current row's start/end in doc-space.
-            var layout = EnsureLayout();
-            var localCaret = (int)(doc.Selection.Caret - layout.ViewportBase);
-            var line = layout.Lines[0]; // default
-            foreach (var l in layout.Lines) {
-                if (l.CharStart <= localCaret) line = l;
-                else break;
-            }
-            var localTarget = toStart ? line.CharStart : line.CharStart + line.CharLen;
-            var target = layout.ViewportBase + localTarget;
+            // Compute row start/end from buf-space character offset.
+            var caretOfs = doc.Selection.Caret;
+            var cpr = _charWrapCharsPerRow;
+            var docLen = doc.Table.Length;
+            var currentRow = caretOfs / cpr;
+            var rowStart = currentRow * cpr;
+            // End = last char of this row (not first char of next row).
+            var rowEnd = Math.Min(rowStart + cpr - 1, docLen);
+            var target = toStart ? rowStart : rowEnd;
             doc.Selection = extend
                 ? doc.Selection.ExtendTo(target)
                 : Selection.Collapsed(target);
@@ -3144,6 +3219,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     private void PerformSimpleIndent() {
         var doc = Document;
         if (doc == null) return;
+        if (_charWrapMode) return; // indent not supported in char-wrap mode
         _editSw.Restart();
         var table = doc.Table;
         var sel = doc.Selection;
@@ -3183,6 +3259,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     private void PerformOutdent() {
         var doc = Document;
         if (doc == null) return;
+        if (_charWrapMode) return; // outdent not supported in char-wrap mode
         _editSw.Restart();
         var table = doc.Table;
         var sel = doc.Selection;
@@ -3282,7 +3359,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         Focus();
     }
 
-    private void ScrollCaretIntoView() {
+    public void ScrollCaretIntoView() {
         var doc = Document;
         if (doc == null) return;
         if (IsLoading) {
@@ -3299,18 +3376,18 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var rh = GetRowHeight();
         var vpH = Bounds.Height > 0 ? Bounds.Height : _viewport.Height;
 
-        if (_charWrapMode && _charWrapCharsPerRow > 0) {
+        if (_charWrapMode) {
             // ── Character-wrapping mode ──────────────────────────────
-            // All math is O(1) — exact row from character offset.
-            var caretRow = caret / _charWrapCharsPerRow;
+            // Use the cpr from the last layout (set by LayoutCharWrap).
+            var cpr = _charWrapCharsPerRow > 0 ? _charWrapCharsPerRow : 80;
+            var caretRow = caret / cpr;
             var caretY = caretRow * rh;
-            var totalRows = (long)Math.Ceiling((double)table.Length / _charWrapCharsPerRow);
-            _extent = new Size(_extent.Width, totalRows * rh);
 
             if (_scrollOffset.Y > ScrollMaximum) ScrollValue = ScrollMaximum;
             if (caretY < _scrollOffset.Y) {
                 ScrollValue = caretY;
-            } else if (caretY + rh > _scrollOffset.Y + vpH) {
+            } else if (caretY + rh > _scrollOffset.Y + vpH + 1) {
+                // +1 tolerance for sub-pixel rounding at the bottom edge.
                 ScrollValue = caretY + rh - vpH;
             }
             InvalidateVisual();
@@ -3555,7 +3632,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             }
             var alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
             var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-            if (alt && !_wrapLines) {
+            if (alt && !_wrapLines && !_charWrapMode) {
                 // Alt+click: start column (block) selection.
                 var table = doc.Table;
                 var line = (int)table.LineFromOfs(ofs);
