@@ -29,6 +29,7 @@ small one — it is the primary way a fresh session recovers context.
 | [15-char-wrap-mode](design-journal/15-char-wrap-mode.md) | 2026-04-03 | Character-wrapping mode: O(1) scroll math, no pseudo-lines needed |
 | [16-print-progress](design-journal/16-print-progress.md) | 2026-04-03 | Print progress dialog, monospace pagination, cancellation, ETA display |
 | [17-editing-polish](design-journal/17-editing-polish.md) | 2026-04-06 | Auto-indent on Enter, smart deindent Backspace, smart Home, trailing whitespace cleanup |
+| [18-wrap-indicators](design-journal/18-wrap-indicators.md) | 2026-04-06 | Wrap symbol glyph at wrap column; hanging indent analysis (deferred) |
 
 ---
 
@@ -48,6 +49,16 @@ small one — it is the primary way a fresh session recovers context.
   PagedFileBuffer.  See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **Wrap indicators + UseWrapColumn** (2026-04-06) — `UseWrapColumn` boolean
+  setting (default true) replaces the non-obvious `WrapLinesAt=0` pattern for
+  disabling column-limited wrapping.  `WrapLinesAt` greyed out in Settings when
+  off.  `ShowWrapSymbol` setting (default true) draws a geometric arrow at the
+  wrap column for each wrapped visual row.  Symbol drawn via `DrawLine` (not
+  text glyph) for font-independent rendering.  Extra 12 px right-side padding
+  when active.  Works for both column-limited and viewport-edge wrapping.
+  Hanging indent analyzed and deferred — requires splitting TextLayout objects.
+  See [18-wrap-indicators](design-journal/18-wrap-indicators.md).
 
 - **Cold startup optimization** (2026-04-06) — Investigated ~2s cold start on Windows.
   ReadyToRun (`PublishReadyToRun=true`) added to all platform release builds — noticeable

@@ -32,6 +32,10 @@ public sealed class EditorTheme {
     public IBrush WhitespaceGlyphBrush { get; init; } = new SolidColorBrush(WhitespaceGlyphLight);
     public IPen WhitespaceGlyphPen { get; init; } = new Pen(new SolidColorBrush(WhitespaceGlyphLight), 1);
 
+    // -- Wrap symbol --
+    private static readonly Color AccentBlue = Color.FromRgb(0x00, 0x78, 0xD7);
+    public IPen WrapSymbolPen { get; init; } = new Pen(new SolidColorBrush(AccentBlue), 1);
+
     // -- Tab bar --
     public IBrush TabBarBackground { get; init; } =
         new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));

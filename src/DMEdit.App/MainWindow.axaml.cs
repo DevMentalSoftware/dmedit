@@ -1562,12 +1562,14 @@ public partial class MainWindow : Window {
 
         // Wrap Lines + column limit
         Editor.WrapLines = _settings.WrapLines;
+        Editor.UseWrapColumn = _settings.UseWrapColumn;
         Editor.WrapLinesAt = _settings.WrapLinesAt;
         _wrapLinesGlyph = CreateMenuCheckGlyph(_settings.WrapLines);
         MenuWrapLines.Icon = _wrapLinesGlyph;
 
-        // Show Whitespace
+        // Show Whitespace + Wrap Symbol
         Editor.ShowWhitespace = _settings.ShowWhitespace;
+        Editor.ShowWrapSymbol = _settings.ShowWrapSymbol;
         _whitespaceGlyph = CreateMenuCheckGlyph(_settings.ShowWhitespace);
         MenuWhitespace.Icon = _whitespaceGlyph;
 
@@ -3063,8 +3065,14 @@ public partial class MainWindow : Window {
                     _whitespaceGlyph!.Opacity = _settings.ShowWhitespace ? 1.0 : 0.0;
                     Toolbar.Refresh();
                     break;
+                case "UseWrapColumn":
+                    Editor.UseWrapColumn = _settings.UseWrapColumn;
+                    break;
                 case "WrapLinesAt":
                     Editor.WrapLinesAt = _settings.WrapLinesAt;
+                    break;
+                case "ShowWrapSymbol":
+                    Editor.ShowWrapSymbol = _settings.ShowWrapSymbol;
                     break;
                 case "BrightSelection":
                     ApplySelectionBrushes();

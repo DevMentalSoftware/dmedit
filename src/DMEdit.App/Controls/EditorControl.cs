@@ -309,6 +309,26 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
     }
 
+    /// <summary>Whether the WrapLinesAt column limit is enforced.</summary>
+    public bool UseWrapColumn {
+        get => _useWrapColumn;
+        set {
+            if (_useWrapColumn == value) return;
+            _useWrapColumn = value;
+            InvalidateLayout();
+        }
+    }
+
+    /// <summary>Whether a wrap indicator glyph is drawn at the wrap column for wrapped lines.</summary>
+    public bool ShowWrapSymbol {
+        get => _showWrapSymbol;
+        set {
+            if (_showWrapSymbol == value) return;
+            _showWrapSymbol = value;
+            InvalidateLayout();
+        }
+    }
+
     /// <summary>Applies a new theme, pushing colors into styled properties and fields.</summary>
     public void ApplyTheme(EditorTheme theme) {
         _theme = theme;
@@ -356,7 +376,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     // Word wrap
     private bool _wrapLines = false;
+    private bool _useWrapColumn = true;
     private int _wrapLinesAt = 100;
+
+    /// <summary>True when both UseWrapColumn is on and a valid column limit is set.</summary>
+    private bool WrapColumnActive => _useWrapColumn && _wrapLinesAt >= 1;
 
     // Character-wrapping mode
     private bool _charWrapMode;
@@ -367,6 +391,10 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     // Whitespace visibility
     private bool _showWhitespace;
+
+    // Wrap symbol
+    private bool _showWrapSymbol = true;
+    private const double WrapSymbolPadRight = 12;
 
     // Line number gutter
     private bool _showLineNumbers = true;
@@ -753,11 +781,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// </summary>
     private double GetTextWidth(double extentWidth) {
         if (!_wrapLines) return double.PositiveInfinity;
-        if (_wrapLinesAt >= 1) {
+        // Reserve space for the wrap symbol so it doesn't overlap the scrollbar.
+        var available = _showWrapSymbol ? extentWidth - WrapSymbolPadRight : extentWidth;
+        if (WrapColumnActive) {
             var colLimit = _wrapLinesAt * GetCharWidth();
-            return Math.Min(extentWidth, colLimit);
+            return Math.Min(available, colLimit);
         }
-        return extentWidth;
+        return available;
     }
 
     /// <summary>
@@ -779,7 +809,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var cw = GetCharWidth();
         if (cw <= 0) return 80;
         var fromViewport = Math.Max(1, (int)(extentWidth / cw));
-        if (_wrapLines && _wrapLinesAt >= 1) {
+        if (_wrapLines && WrapColumnActive) {
             return Math.Min(fromViewport, _wrapLinesAt);
         }
         return fromViewport;
@@ -1283,10 +1313,16 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             : default;
 
         // Column guide line
-        if (_wrapLines && _wrapLinesAt >= 1) {
-            var guideX = 2 + TextOriginX + _wrapLinesAt * GetCharWidth();
-            if (guideX < Bounds.Width) {
-                context.DrawLine(_theme.GuideLinePen, new Point(guideX, 0), new Point(guideX, Bounds.Height));
+        if (_wrapLines && WrapColumnActive) {
+            var colLimit = _wrapLinesAt * GetCharWidth();
+            var available = Math.Max(100, Bounds.Width - _gutterWidth)
+                - (_showWrapSymbol ? WrapSymbolPadRight : 0);
+            // Only draw the guide when the column limit is actually constraining.
+            if (colLimit < available) {
+                var guideX = 2 + TextOriginX + colLimit;
+                if (guideX < Bounds.Width) {
+                    context.DrawLine(_theme.GuideLinePen, new Point(guideX, 0), new Point(guideX, Bounds.Height));
+                }
             }
         }
 
@@ -1313,6 +1349,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (_showWhitespace) {
                 DrawWhitespace(context, layout, line, y, rh);
             }
+        }
+
+        // Draw wrap symbols for lines that word-wrap
+        if (_showWrapSymbol && _wrapLines && !_charWrapMode) {
+            DrawWrapSymbols(context, layout, rh);
         }
 
         // Draw caret (hidden during any scroll-drag operation)
@@ -1360,6 +1401,39 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 textAlignment: TextAlignment.Right,
                 maxWidth: numW);
             tl.Draw(context, new Point(0, y));
+        }
+    }
+
+    private void DrawWrapSymbols(DrawingContext ctx, LayoutResult layout, double rh) {
+        // Place the icon at the actual wrap edge — the same point that
+        // GetTextWidth computes.  This tracks smoothly through the
+        // transition between column-limited and viewport-limited wrapping.
+        var extentW = Math.Max(100, _viewport.Width - _gutterWidth);
+        var textW = GetTextWidth(extentW);
+        if (!double.IsFinite(textW)) return; // wrapping off
+        var symbolX = TextOriginX + textW;
+
+        // Draw a wrap indicator using the Fluent icon font.
+        var brush = _theme.WrapSymbolPen.Brush;
+        var fontSize = EffectiveFontSize * 0.8;
+        using var glyphLayout = new TextLayout(
+            IconGlyphs.WrapEnd, IconGlyphs.Face, fontSize, brush);
+        var glyphH = glyphLayout.Height;
+        var glyphW = glyphLayout.WidthIncludingTrailingWhitespace;
+
+        foreach (var line in layout.Lines) {
+            if (line.HeightInRows <= 1) continue;
+            var lineY = line.Row * rh + RenderOffsetY;
+            if (lineY + line.HeightInRows * rh < 0) continue;
+            if (lineY > Bounds.Height) break;
+
+            for (var r = 0; r < line.HeightInRows - 1; r++) {
+                // Center the icon in the reserved padding gap between
+                // the wrap edge and the scrollbar.
+                var x = 1 + symbolX + (WrapSymbolPadRight - glyphW) * 0.5;
+                var y = lineY + r * rh + (rh - glyphH) * 0.5;
+                glyphLayout.Draw(ctx, new Point(x, y));
+            }
         }
     }
 

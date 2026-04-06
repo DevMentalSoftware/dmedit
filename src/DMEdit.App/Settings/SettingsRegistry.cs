@@ -20,9 +20,17 @@ public static class SettingsRegistry {
 
     public static readonly IReadOnlyList<SettingDescriptor> All = [
         // -- Display --
-        new("WrapLinesAt", "Wrap Lines At",
-            "When wrapping is enabled we can force wrapping at a particular width when the window is wider than that width.",
-            "Display", SettingKind.Int, 100, Min: 0, Max: 10000),
+        new("UseWrapColumn", "Use Wrap Column",
+            "When enabled, lines wrap at the Wrap Column limit instead of the viewport edge.",
+            "Display", SettingKind.Bool, true),
+
+        new("WrapLinesAt", "Wrap Column",
+            "Column at which lines wrap when Use Wrap Column is enabled.",
+            "Display", SettingKind.Int, 100, Min: 1, Max: 10000, EnabledWhenKey: "UseWrapColumn"),
+
+        new("ShowWrapSymbol", "Show Wrap Symbol",
+            "Show a wrap indicator glyph at the wrap column for lines that word-wrap to the next row.",
+            "Display", SettingKind.Bool, true),
 
         new("CharWrapFileSizeKB", "Char Wrap File Size (KB)",
             "File size above which character-wrapping mode activates automatically. " +

@@ -116,6 +116,12 @@ public sealed class AppSettings {
     public bool ShowWhitespace { get; set; }
 
     /// <summary>
+    /// Show a wrap indicator glyph at the wrap column for lines that wrap.
+    /// Only visible when <see cref="WrapLines"/> is true. Default: true.
+    /// </summary>
+    public bool ShowWrapSymbol { get; set; } = true;
+
+    /// <summary>
     /// Use a brighter, more visible selection highlight color instead of the
     /// default subtle tint. Useful on monitors with limited contrast.
     /// </summary>
@@ -128,9 +134,16 @@ public sealed class AppSettings {
     public bool WrapLines { get; set; } = true;
 
     /// <summary>
-    /// Maximum number of columns before a line wraps. Wrapping occurs at the
-    /// viewport edge or this column limit, whichever is narrower. Only has
-    /// effect when <see cref="WrapLines"/> is true. Default: 100.
+    /// When true, lines wrap at the <see cref="WrapLinesAt"/> column limit
+    /// (or the viewport edge, whichever is narrower).  When false, lines
+    /// wrap at the viewport edge only.  Default: true.
+    /// </summary>
+    public bool UseWrapColumn { get; set; } = true;
+
+    /// <summary>
+    /// Maximum number of columns before a line wraps. Only has effect when
+    /// both <see cref="WrapLines"/> and <see cref="UseWrapColumn"/> are true.
+    /// Default: 100.
     /// </summary>
     public int WrapLinesAt { get; set; } = 100;
 
