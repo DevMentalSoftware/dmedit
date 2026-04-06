@@ -73,7 +73,6 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     private List<int> _lineLengths = null!;     // set by LineScanner during scan
     private long _lineCount;                    // accessed via Interlocked
     private volatile int _longestLine;
-    private long _longestRealLine; // longest line ignoring pseudo-splits
 
     // Run-length encoded terminator types built by LineScanner.
     private List<(long StartLine, Documents.LineTerminatorType Type)>? _terminatorRuns;
@@ -155,7 +154,6 @@ public sealed class PagedFileBuffer : IProgressBuffer {
         _path = path;
         _byteLen = byteLen;
         MaxPagesInMemory = maxPages;
-        _longestLine = 500; // initial estimate, updated during scan
 
         // Pre-allocate page arrays based on file size.
         var estimatedPages = (int)Math.Min((byteLen + PageSizeBytes - 1) / PageSizeBytes, int.MaxValue);
@@ -182,12 +180,6 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     public long LineCount => Interlocked.Read(ref _lineCount);
 
     public int LongestLine => _longestLine;
-
-    /// <summary>
-    /// Longest real (newline-delimited) line in the file, ignoring pseudo-splits.
-    /// Only valid after <see cref="LoadComplete"/> has fired.
-    /// </summary>
-    public long LongestRealLine => _longestRealLine;
 
     public long GetLineStart(long lineIdx) {
         var lc = Interlocked.Read(ref _lineCount);
@@ -388,8 +380,9 @@ public sealed class PagedFileBuffer : IProgressBuffer {
                 // Scan for newlines, line lengths, and terminator types.
                 scanner.Scan(charBuf.AsSpan(0, charCount));
 
-                // Sync line count for progress reporting.
+                // Sync line count and longest-line for progress reporting.
                 Interlocked.Exchange(ref _lineCount, scanner.LineCount);
+                _longestLine = scanner.LongestLine;
                 lock (_lock) {
                     _lineLengths = scanner.LineLengths;
                 }
@@ -431,7 +424,7 @@ public sealed class PagedFileBuffer : IProgressBuffer {
             _crCount = scanner.CrCount;
             _spaceIndentCount = scanner.SpaceIndentCount;
             _tabIndentCount = scanner.TabIndentCount;
-            _longestRealLine = scanner.LongestRealLine;
+            _longestLine = scanner.LongestLine;
 
             Interlocked.Exchange(ref _totalChars, cumulativeChars);
             _sha1 = Convert.ToHexStringLower(hasher.GetHashAndReset());

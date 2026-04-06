@@ -1115,13 +1115,13 @@ public partial class MainWindow : Window {
 
     /// <summary>
     /// Checks whether a tab's document should use character-wrapping mode
-    /// based on longest real line and file size.
+    /// based on longest line and file size.
     /// </summary>
     private bool ShouldCharWrap(TabState tab) {
         if (tab.LoadResult?.Buffer is not PagedFileBuffer pb) return false;
         var fileSizeKb = pb.ByteLength / 1024.0;
         return fileSizeKb >= _settings.CharWrapFileSizeKB
-            && pb.LongestRealLine >= PieceTable.MaxGetTextLength;
+            && pb.LongestLine >= PieceTable.MaxGetTextLength;
     }
 
     private void ToggleWrapLines() {

@@ -27,9 +27,11 @@ public sealed class LineScanner {
     private int _crlfCount;
     private int _crCount;
 
-    // Longest real line tracking.
-    private long _realLineLen;
-    private long _longestRealLine;
+    // Longest line tracking.  _runningLineLen spans CR→LF as a single CRLF
+    // line (unlike _currentLineLen, which is reset when the CR entry is
+    // emitted and then retroactively extended by the \n branch).
+    private int _runningLineLen;
+    private int _longestLine;
 
     // Indentation counters.
     private int _spaceIndentCount;
@@ -44,10 +46,11 @@ public sealed class LineScanner {
     public long LineCount => _lineIndex + 1;
 
     /// <summary>
-    /// Longest real (newline-delimited) line seen.
-    /// Only complete after <see cref="Finish"/> is called.
+    /// Longest line (including terminator chars) seen so far.  Updated
+    /// incrementally during <see cref="Scan"/>; final value is available
+    /// after <see cref="Finish"/> is called.
     /// </summary>
-    public long LongestRealLine => _longestRealLine;
+    public int LongestLine => _longestLine;
 
     public int LfCount => _lfCount;
     public int CrlfCount => _crlfCount;
@@ -77,28 +80,32 @@ public sealed class LineScanner {
                     _crlfCount++;
                     _lineLengths[^1]++;
                     UpgradeLastTerminatorToCRLF();
+                    _runningLineLen++; // account for the LF
+                    if (_runningLineLen > _longestLine) _longestLine = _runningLineLen;
+                    _runningLineLen = 0;
                     _prevWasCr = false;
                     _atLineStart = true;
                     continue;
                 }
                 _lfCount++;
                 _currentLineLen++;
-                _realLineLen++;
+                _runningLineLen++;
                 RecordTerminator(LineTerminatorType.LF);
                 _lineLengths.Add(_currentLineLen);
                 _lineIndex++;
                 _currentLineLen = 0;
-                if (_realLineLen > _longestRealLine) _longestRealLine = _realLineLen;
-                _realLineLen = 0;
+                if (_runningLineLen > _longestLine) _longestLine = _runningLineLen;
+                _runningLineLen = 0;
                 _atLineStart = true;
             } else if (ch == '\r') {
                 if (_prevWasCr) {
+                    // Previous bare CR finalises as its own line.
                     _crCount++;
-                    if (_realLineLen > _longestRealLine) _longestRealLine = _realLineLen;
-                    _realLineLen = 0;
+                    if (_runningLineLen > _longestLine) _longestLine = _runningLineLen;
+                    _runningLineLen = 0;
                 }
                 _currentLineLen++;
-                _realLineLen++;
+                _runningLineLen++;
                 RecordTerminator(LineTerminatorType.CR);
                 _lineLengths.Add(_currentLineLen);
                 _lineIndex++;
@@ -107,12 +114,13 @@ public sealed class LineScanner {
                 _atLineStart = true;
             } else {
                 if (_prevWasCr) {
+                    // Previous bare CR finalises (this char belongs to the next line).
                     _crCount++;
-                    if (_realLineLen > _longestRealLine) _longestRealLine = _realLineLen;
-                    _realLineLen = 0;
+                    if (_runningLineLen > _longestLine) _longestLine = _runningLineLen;
+                    _runningLineLen = 0;
                 }
                 _prevWasCr = false;
-                _realLineLen++;
+                _runningLineLen++;
 
                 _currentLineLen++;
 
@@ -132,14 +140,16 @@ public sealed class LineScanner {
     /// </summary>
     public void Finish() {
         if (_prevWasCr) {
+            // Trailing bare CR: finalise its line-length bookkeeping.
             _crCount++;
+            if (_runningLineLen > _longestLine) _longestLine = _runningLineLen;
+            _runningLineLen = 0;
             _prevWasCr = false;
         }
         // Emit the final line (content after the last newline, may be empty).
         RecordTerminator(LineTerminatorType.None);
         _lineLengths.Add(_currentLineLen);
-        // Final real-line length tracking.
-        if (_realLineLen > _longestRealLine) _longestRealLine = _realLineLen;
+        if (_runningLineLen > _longestLine) _longestLine = _runningLineLen;
     }
 
     /// <summary>
