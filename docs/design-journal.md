@@ -28,6 +28,7 @@ small one — it is the primary way a fresh session recovers context.
 | [14-forced-wrap](design-journal/14-forced-wrap.md) | 2026-04-02 | Attempted forced wrapping for long lines — moved to AlternateLineBranch |
 | [15-char-wrap-mode](design-journal/15-char-wrap-mode.md) | 2026-04-03 | Character-wrapping mode: O(1) scroll math, no pseudo-lines needed |
 | [16-print-progress](design-journal/16-print-progress.md) | 2026-04-03 | Print progress dialog, monospace pagination, cancellation, ETA display |
+| [17-editing-polish](design-journal/17-editing-polish.md) | 2026-04-06 | Auto-indent on Enter, smart deindent Backspace, smart Home, trailing whitespace cleanup |
 
 ---
 
@@ -47,6 +48,14 @@ small one — it is the primary way a fresh session recovers context.
   PagedFileBuffer.  See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **Editing polish** (2026-04-06) — Auto-indent on Enter (all three newline
+  commands copy leading whitespace from current line).  Smart deindent on
+  Backspace (snaps to previous indent stop when in leading spaces).  Smart Home
+  (toggles between first non-whitespace and column 0).  Trailing whitespace
+  cleanup on Enter (strips trailing spaces from old line).  Also: LICENSE
+  updated to 2026 DevMental Software LLC; AboutDialog minimize button disabled.
+  See [17-editing-polish](design-journal/17-editing-polish.md).
 
 - **Print progress dialog + performance** (2026-04-03) — Modal ProgressDialog
   during printing with two-phase progress: "Measuring line X of Y" then

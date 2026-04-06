@@ -2497,7 +2497,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         Reg(Cmd.EditBackspace, doc => {
             Coalesce("backspace");
             _editSw.Restart();
-            doc.DeleteBackward();
+            if (doc.Selection.IsEmpty && TrySmartDeindent(doc)) {
+                // Smart deindent handled the deletion.
+            } else {
+                doc.DeleteBackward();
+            }
             ScrollCaretIntoView();
             _editSw.Stop();
             PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
@@ -2536,7 +2540,24 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         Reg(Cmd.EditNewline, doc => {
             FlushCompound();
             _editSw.Restart();
-            doc.Insert(doc.LineEndingInfo.NewlineString);
+            var table = doc.Table;
+            var lineIdx = table.LineFromOfs(doc.Selection.Caret);
+            var lineText = table.GetLine(lineIdx);
+            var indent = GetLeadingWhitespace(lineText);
+            var nl = doc.LineEndingInfo.NewlineString;
+            var lineStart = table.LineStartOfs(lineIdx);
+            var caretCol = (int)(doc.Selection.Caret - lineStart);
+
+            // Strip trailing whitespace from the current line when pressing Enter.
+            // If the caret is at or past the last non-whitespace character,
+            // delete from last non-ws to the caret, then insert the newline.
+            var trimmedLen = lineText.TrimEnd().Length;
+            if (caretCol >= trimmedLen && caretCol > trimmedLen) {
+                doc.Selection = new Selection(lineStart + trimmedLen, lineStart + caretCol);
+                doc.Insert(nl + indent);
+            } else {
+                doc.Insert(nl + indent);
+            }
             ScrollCaretIntoView();
             _editSw.Stop();
             PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
@@ -2914,9 +2935,15 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var lineStart = table.LineStartOfs(lineIdx);
         if (lineStart < 0) return;
 
-        var newCaret = toStart
-            ? lineStart
-            : lineStart + table.LineContentLength(lineIdx);
+        long newCaret;
+        if (toStart) {
+            // Smart Home: toggle between first non-whitespace and column 0.
+            var wsLen = LeadingWhitespaceLength(table.GetLine(lineIdx));
+            var firstNonWs = lineStart + wsLen;
+            newCaret = caret == firstNonWs ? lineStart : firstNonWs;
+        } else {
+            newCaret = lineStart + table.LineContentLength(lineIdx);
+        }
         doc.Selection = extend
             ? doc.Selection.ExtendTo(newCaret)
             : Selection.Collapsed(newCaret);
@@ -2984,15 +3011,16 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _editSw.Restart();
         var nl = doc.LineEndingInfo.NewlineString;
         var lineIdx = doc.Table.LineFromOfs(doc.Selection.Caret);
+        var indent = GetLeadingWhitespace(doc.Table.GetLine(lineIdx));
         if (lineIdx + 1 < doc.Table.LineCount) {
             var nextLineStart = doc.Table.LineStartOfs(lineIdx + 1);
             doc.Selection = Selection.Collapsed(nextLineStart);
-            doc.Insert(nl);
-            doc.Selection = Selection.Collapsed(nextLineStart);
+            doc.Insert(indent + nl);
+            doc.Selection = Selection.Collapsed(nextLineStart + indent.Length);
         } else {
             // Last line — append newline at end
             doc.Selection = Selection.Collapsed(doc.Table.Length);
-            doc.Insert(nl);
+            doc.Insert(nl + indent);
         }
         ScrollCaretIntoView();
         _editSw.Stop();
@@ -3007,10 +3035,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         FlushCompound();
         _editSw.Restart();
         var nl = doc.LineEndingInfo.NewlineString;
-        var lineStart = doc.Table.LineStartOfs(doc.Table.LineFromOfs(doc.Selection.Caret));
+        var lineIdx = doc.Table.LineFromOfs(doc.Selection.Caret);
+        var indent = GetLeadingWhitespace(doc.Table.GetLine(lineIdx));
+        var lineStart = doc.Table.LineStartOfs(lineIdx);
         doc.Selection = Selection.Collapsed(lineStart);
-        doc.Insert(nl);
-        doc.Selection = Selection.Collapsed(lineStart);
+        doc.Insert(indent + nl);
+        doc.Selection = Selection.Collapsed(lineStart + indent.Length);
         ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
@@ -3093,12 +3123,49 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     }
 
     /// <summary>
+    /// When the caret is inside leading whitespace on a spaces-indent document,
+    /// deletes back to the previous indent stop. Returns true if handled.
+    /// </summary>
+    private bool TrySmartDeindent(Core.Documents.Document doc) {
+        if (doc.IndentInfo.Dominant != IndentStyle.Spaces) return false;
+
+        var table = doc.Table;
+        var caret = doc.Selection.Caret;
+        var lineIdx = table.LineFromOfs(caret);
+        var lineStart = table.LineStartOfs(lineIdx);
+        var col = (int)(caret - lineStart); // character offset within line
+        if (col == 0) return false; // at start of line — normal backspace deletes newline
+
+        var lineText = table.GetLine(lineIdx);
+        var wsLen = LeadingWhitespaceLength(lineText);
+        if (col > wsLen) return false; // caret is past leading whitespace
+
+        // All characters before the caret in this line must be spaces
+        // (mixed tabs would be ambiguous — fall through to normal backspace).
+        for (var i = 0; i < col; i++) {
+            if (lineText[i] != ' ') return false;
+        }
+
+        // Snap back to the previous indent stop.
+        var prevStop = ((col - 1) / _indentWidth) * _indentWidth;
+        var deleteCount = col - prevStop;
+        doc.Selection = new Selection(lineStart + prevStop, lineStart + col);
+        doc.DeleteSelection();
+        return true;
+    }
+
+    /// <summary>
     /// Returns the number of leading whitespace characters in the line text.
     /// </summary>
     private static int LeadingWhitespaceLength(string lineText) {
         var i = 0;
         while (i < lineText.Length && (lineText[i] == ' ' || lineText[i] == '\t')) i++;
         return i;
+    }
+
+    private static string GetLeadingWhitespace(string lineText) {
+        var len = LeadingWhitespaceLength(lineText);
+        return len > 0 ? lineText[..len] : string.Empty;
     }
 
     /// <summary>
