@@ -236,3 +236,38 @@ placeholders render in place of text. `ProgressChanged` fires per page load, tri
 
 Test count: **253** (232 Core + 21 Rendering).
 
+## 2026-04-06 — Cold startup optimization
+
+Investigated ~2 second cold startup on Windows (from taskbar click). Profiler showed
+warm startup is fast — nearly all time is Avalonia framework init
+(`StartWithClassicDesktopLifetime`, `Window.ctor`, `TextLayout.ctor`) and JIT.
+
+### Applied
+
+- **ReadyToRun (R2R)**: Added `PublishReadyToRun=true` to `release.yml` (Windows +
+  Linux publish commands) and `packaging/macos/build-macos.sh`. Pre-compiles IL to
+  native code at publish time, eliminating JIT overhead on cold start. Noticeable
+  improvement.
+
+### Tried and ruled out
+
+- **PublishSingleFile**: No additional benefit on top of R2R (NVMe makes file I/O
+  count irrelevant).
+- **Removing `WithInterFont()`**: Inter font assembly is tiny relative to Avalonia —
+  no measurable difference.
+- **Windows Defender exclusion**: Added build output to `ExclusionPath` — no change.
+- **Deferring settings panel init**: Moved `SettingsPanel.Initialize` (~130 control
+  rows) from `MainWindow` constructor to first `OpenSettings()` call. No perceptible
+  difference because Avalonia framework init dominates. Reverted.
+- **Trimming (`PublishTrimmed`)**: Ruled out without testing. Primary benefit is
+  deployment size, not startup speed. Would require JSON source generators for
+  `AppSettings`/`SessionManifest` serialization and risks breaking Velopack reflection
+  and runtime-loaded `DMEdit.Windows.dll`.
+
+### Findings
+
+- ~1 second overhead launching from taskbar shortcut vs double-clicking exe directly.
+  Shortcut points to `dmedit.exe` (not a Velopack stub). This is Windows shell
+  activation overhead — not controllable from the app.
+- RAMMap standby-list flush did not reproduce cold start delay on NVMe hardware.
+- Remaining startup time is Avalonia framework init, outside our control.

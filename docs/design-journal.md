@@ -14,7 +14,7 @@ small one — it is the primary way a fresh session recovers context.
 |------|-------|-------|
 | [01-foundations](design-journal/01-foundations.md) | 2026-02-26 | Core editor, IBuffer abstraction, windowed layout, dual-zone scrollbar design |
 | [02-document-model](design-journal/02-document-model.md) | 2026-02-26 | Variable heights, WYSIWYG block tree, persistence architecture |
-| [03-performance](design-journal/03-performance.md) | 2026-02-28 | Perf stats, streaming I/O, paged buffer, ZIP support |
+| [03-performance](design-journal/03-performance.md) | 2026-02-28, 2026-04-06 | Perf stats, streaming I/O, paged buffer, ZIP support, cold startup optimization |
 | [04-ux](design-journal/04-ux.md) | 2026-02-28 | Undo selection, caret/scroll UX, selection rounded corners |
 | [05-features](design-journal/05-features.md) | 2026-03-02 – 2026-03-04 | Feature backlog, editing commands, status bar, line numbers, tab bar |
 | [06-settings](design-journal/06-settings.md) | 2026-03-05 | Edit coalescing undo, settings document tab |
@@ -48,6 +48,13 @@ small one — it is the primary way a fresh session recovers context.
   PagedFileBuffer.  See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **Cold startup optimization** (2026-04-06) — Investigated ~2s cold start on Windows.
+  ReadyToRun (`PublishReadyToRun=true`) added to all platform release builds — noticeable
+  improvement. Ruled out: SingleFile, InterFont removal, Defender exclusion, settings
+  panel deferral, trimming. ~1s taskbar-vs-exe overhead is Windows shell activation,
+  not controllable. Remaining time is Avalonia framework init.
+  See [03-performance](design-journal/03-performance.md).
 
 - **Editing polish** (2026-04-06) — Auto-indent on Enter (all three newline
   commands copy leading whitespace from current line).  Smart deindent on

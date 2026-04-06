@@ -32,6 +32,7 @@ build_arch() {
         -c Release \
         -r "$rid" \
         --self-contained true \
+        -p:PublishReadyToRun=true \
         -o "$publish_dir"
 
     # Assemble .app bundle
