@@ -119,10 +119,25 @@ public sealed class WpfPrintService : ISystemPrintService {
             } catch (Exception ex) {
                 error = ex;
             }
-        });
+        }) {
+            // Background so the OS can terminate it on app exit — WPF's
+            // XpsDocumentWriter.Write is synchronous and uncancellable, and
+            // a foreground thread stuck in the spooler blocks process exit.
+            IsBackground = true,
+        };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        thread.Join();
+
+        // Poll Join so we can return promptly when the caller cancels.
+        // On cancel we give the paginator a brief grace period to bail out
+        // cleanly, then abandon the thread (it's a background thread so it
+        // won't keep the process alive).
+        while (!thread.Join(100)) {
+            if (cancellation.IsCancellationRequested) {
+                thread.Join(500);
+                break;
+            }
+        }
 
         if (error is not null && error is not OperationCanceledException) {
             return false;
