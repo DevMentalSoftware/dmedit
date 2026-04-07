@@ -47,7 +47,11 @@ jobs:
         continue-on-error: true
 
       - name: Pack with Velopack
-        run: vpk pack --packId DMEdit --packVersion ${{ steps.version.outputs.version }} --packDir dist/win-x64 --mainExe dmedit.exe --icon resources/app_icon.ico --outputDir dist/velopack-win
+        # --noPortable: we publish dmedit-win-x64.zip from the Compress-Archive
+        # step below as the portable Windows download, so suppress Velopack's
+        # duplicate DMEdit-win-Portable.zip output to avoid two near-identical
+        # ZIPs on the release page.
+        run: vpk pack --packId DMEdit --packVersion ${{ steps.version.outputs.version }} --packDir dist/win-x64 --mainExe dmedit.exe --icon resources/app_icon.ico --outputDir dist/velopack-win --noPortable
 
       - name: Upload Velopack artifacts
         uses: actions/upload-artifact@v4

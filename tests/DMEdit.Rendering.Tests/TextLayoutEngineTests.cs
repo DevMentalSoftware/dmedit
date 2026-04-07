@@ -209,6 +209,14 @@ public class TextLayoutEngineTests {
             Brushes.Black, maxWidth, 0);
     }
 
+    private static LayoutResult DoLayoutLinesSlow(string text, double maxWidth = WideViewport) {
+        var table = MakeTable(text);
+        return Engine().LayoutLines(
+            table, 0, table.LineCount, DefaultTypeface, FontSize,
+            Brushes.Black, maxWidth, 0,
+            useFastTextLayout: false);
+    }
+
     [AvaloniaFact]
     public void LayoutLines_SingleLine() {
         using var r = DoLayoutLines("hello");
@@ -309,5 +317,160 @@ public class TextLayoutEngineTests {
     }
 
     // (Pseudo-line layout tests removed — pseudo-line system no longer exists.)
+
+    // -------------------------------------------------------------------------
+    // Slow-path hardening — binary file viewing crash (real user report v0.5.231)
+    // -------------------------------------------------------------------------
+    //
+    // The crash was: Avalonia's TextLayout PerformTextWrapping → ShapedTextRun.Split
+    // throwing "Cannot split: requested length N consumes entire run." when
+    // the user scrolled through a binary file.  Mono fast path bails on
+    // control chars (c < 32), so binary lines hit the TextLayout slow path.
+    //
+    // SanitizeForTextLayout strips control chars (≠ tab) and lone surrogates
+    // length-preservingly so offsets stay valid; MakeTextLayoutSafe wraps the
+    // construct call with NoWrap retry + empty fallback for any leftover
+    // crashes.  These tests assert the editor stays alive on hostile input.
+
+    [AvaloniaFact]
+    public void LayoutLines_BinaryGarbage_DoesNotThrow() {
+        // Random low-ASCII bytes including NUL, BEL, ESC etc — typical
+        // binary file content that bails the mono path.
+        var binary = "\x00\x01\x02\x03\x04hello\x07\x08\x0B\x0C\x0Eworld\x1B\x1F";
+        using var r = DoLayoutLines(binary, maxWidth: 80.0);
+        Assert.Single(r.Lines);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_BinaryGarbage_PreservesCharLen() {
+        // Length-preserving sanitization: replaced characters become a
+        // single U+FFFD each, so CharLen still equals the input length.
+        var binary = "\x00\x01\x02hi\x1B";
+        using var r = DoLayoutLines(binary);
+        Assert.Equal(binary.Length, r.Lines[0].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_LoneHighSurrogate_DoesNotThrow() {
+        // Lone high surrogate without a paired low — illegal Unicode that
+        // historically broke shaping.  Sanitizer replaces with U+FFFD.
+        var bad = "abc\uD800def";
+        using var r = DoLayoutLines(bad, maxWidth: 60.0);
+        Assert.Single(r.Lines);
+        Assert.Equal(bad.Length, r.Lines[0].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_LoneLowSurrogate_DoesNotThrow() {
+        var bad = "abc\uDC00def";
+        using var r = DoLayoutLines(bad);
+        Assert.Single(r.Lines);
+        Assert.Equal(bad.Length, r.Lines[0].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_ValidSurrogatePair_PreservedThroughSanitize() {
+        // U+1F600 GRINNING FACE = D83D DE00 — must round-trip unchanged.
+        var emoji = "hi \uD83D\uDE00 there";
+        using var r = DoLayoutLines(emoji);
+        Assert.Single(r.Lines);
+        Assert.Equal(emoji.Length, r.Lines[0].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLines_BinaryGarbage_NarrowWrap_DoesNotThrow() {
+        // The original crash signature: long line, narrow wrap width, mixed
+        // control chars and high bytes — the combination that exercises
+        // PerformTextWrapping the most.  Skip CR/LF so it stays one line.
+        var sb = new System.Text.StringBuilder();
+        for (var i = 0; i < 200; i++) {
+            var c = (char)(i % 256);
+            if (c == '\r' || c == '\n') c = '_';
+            sb.Append(c);
+        }
+        using var r = DoLayoutLines(sb.ToString(), maxWidth: 50.0);
+        Assert.Single(r.Lines);
+    }
+
+    [AvaloniaFact]
+    public void SanitizeForTextLayout_CleanText_ReturnsSameInstance() {
+        var clean = "hello world";
+        Assert.Same(clean, TextLayoutEngine.SanitizeForTextLayout(clean));
+    }
+
+    [AvaloniaFact]
+    public void SanitizeForTextLayout_PreservesTab() {
+        var withTab = "a\tb";
+        Assert.Same(withTab, TextLayoutEngine.SanitizeForTextLayout(withTab));
+    }
+
+    [AvaloniaFact]
+    public void SanitizeForTextLayout_ReplacesNul() {
+        // Note: \u0000 not \x00 — C# \x is variable-length hex and would eat
+        // the trailing 'b' as another hex digit.
+        var bad = "a\u0000b";
+        Assert.Equal("a\uFFFDb", TextLayoutEngine.SanitizeForTextLayout(bad));
+    }
+
+    [AvaloniaFact]
+    public void SanitizeForTextLayout_ReplacesLoneHighSurrogate() {
+        var bad = "a\uD800b";
+        Assert.Equal("a\uFFFDb", TextLayoutEngine.SanitizeForTextLayout(bad));
+    }
+
+    [AvaloniaFact]
+    public void SanitizeForTextLayout_ReplacesLoneLowSurrogate() {
+        var bad = "a\uDC00b";
+        Assert.Equal("a\uFFFDb", TextLayoutEngine.SanitizeForTextLayout(bad));
+    }
+
+    [AvaloniaFact]
+    public void SanitizeForTextLayout_PreservesValidSurrogatePair() {
+        var good = "a\uD83D\uDE00b";
+        Assert.Same(good, TextLayoutEngine.SanitizeForTextLayout(good));
+    }
+
+    // -------------------------------------------------------------------------
+    // Slow-path-only variants — simulate user setting "Disable fast path" or
+    // the previous beta where TextLayout was the only path.  Same hostile
+    // inputs as above but with useFastTextLayout: false so even monospace
+    // ASCII routes through Avalonia.
+    // -------------------------------------------------------------------------
+
+    [AvaloniaFact]
+    public void LayoutLinesSlow_BinaryGarbage_DoesNotThrow() {
+        var binary = "\x00\x01\x02\x03\x04hello\x07\x08\x0B\x0C\x0Eworld\x1B\x1F";
+        using var r = DoLayoutLinesSlow(binary, maxWidth: 80.0);
+        Assert.Single(r.Lines);
+        Assert.Equal(binary.Length, r.Lines[0].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLinesSlow_LoneSurrogate_DoesNotThrow() {
+        var bad = "abc\uD800def\uDC00ghi";
+        using var r = DoLayoutLinesSlow(bad, maxWidth: 60.0);
+        Assert.Single(r.Lines);
+        Assert.Equal(bad.Length, r.Lines[0].CharLen);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLinesSlow_BinaryGarbage_NarrowWrap_DoesNotThrow() {
+        var sb = new System.Text.StringBuilder();
+        for (var i = 0; i < 200; i++) {
+            var c = (char)(i % 256);
+            if (c == '\r' || c == '\n') c = '_';
+            sb.Append(c);
+        }
+        using var r = DoLayoutLinesSlow(sb.ToString(), maxWidth: 50.0);
+        Assert.Single(r.Lines);
+    }
+
+    [AvaloniaFact]
+    public void LayoutLinesSlow_PlainAsciiStillWorks() {
+        // Sanity check: forcing the slow path doesn't break the happy path.
+        using var r = DoLayoutLinesSlow("hello world");
+        Assert.Single(r.Lines);
+        Assert.Equal(11, r.Lines[0].CharLen);
+    }
 
 }

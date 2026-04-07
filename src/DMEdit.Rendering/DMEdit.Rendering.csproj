@@ -14,4 +14,8 @@
     <ProjectReference Include="..\DMEdit.Core\DMEdit.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="DMEdit.Rendering.Tests" />
+  </ItemGroup>
+
 </Project>

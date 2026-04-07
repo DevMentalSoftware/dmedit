@@ -1,3 +1,4 @@
+using System.Text;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
@@ -122,10 +123,16 @@ public sealed class TextLayoutEngine {
             }
 
             // Slow path: Avalonia TextLayout handles wrap and hit-test.
-            var layout = MakeTextLayout(lineText, typeface, fontSize, foreground, maxWidth);
-            var h = layout.Height > 0 ? layout.Height : rowHeight;
+            // Sanitize binary garbage / lone surrogates first — Avalonia's
+            // PerformTextWrapping has known crashes around shaped runs that
+            // mix control chars and complex grapheme clusters, which is
+            // exactly what binary file viewing produces.  Sanitization is
+            // length-preserving so all CharStart/CharLen offsets stay valid.
+            var safeText = SanitizeForTextLayout(lineText);
+            var slowLayout = MakeTextLayoutSafe(safeText, typeface, fontSize, foreground, maxWidth);
+            var h = slowLayout.Height > 0 ? slowLayout.Height : rowHeight;
             var slowHeightInRows = Math.Max(1, (int)Math.Round(h / rowHeight));
-            lines.Add(new LayoutLine((int)charOfs, contentLen, row, slowHeightInRows, layout));
+            lines.Add(new LayoutLine((int)charOfs, contentLen, row, slowHeightInRows, slowLayout));
             row += slowHeightInRows;
             charOfs += fullLen;
         }
@@ -223,6 +230,85 @@ public sealed class TextLayoutEngine {
             textWrapping: wrapping,
             maxWidth: effectiveMaxWidth,
             maxHeight: double.PositiveInfinity);
+    }
+
+    /// <summary>
+    /// Builds a <see cref="TextLayout"/> with two layers of fallback for
+    /// content that trips Avalonia's text formatter.  The known case (real
+    /// user crash 0.5.231 — binary file scrolling) is
+    /// <c>InvalidOperationException: Cannot split: requested length N consumes
+    /// entire run</c> from <c>ShapedTextRun.Split</c> via
+    /// <c>PerformTextWrapping</c>.  Falling back to NoWrap bypasses
+    /// <c>PerformTextWrapping</c> entirely; the line will overflow horizontally
+    /// rather than crash the dispatcher.  As a last resort we drop the line
+    /// content — the <see cref="LayoutLine"/> still occupies its char range
+    /// so document offsets remain consistent.
+    /// </summary>
+    private static TextLayout MakeTextLayoutSafe(
+        string text,
+        Typeface typeface,
+        double fontSize,
+        IBrush foreground,
+        double maxWidth) {
+        try {
+            return MakeTextLayout(text, typeface, fontSize, foreground, maxWidth);
+        } catch (InvalidOperationException) {
+        }
+        try {
+            return MakeTextLayout(text, typeface, fontSize, foreground, double.PositiveInfinity);
+        } catch (InvalidOperationException) {
+        }
+        return MakeTextLayout("", typeface, fontSize, foreground, double.PositiveInfinity);
+    }
+
+    /// <summary>
+    /// Replaces characters that Avalonia's text formatter is known to choke
+    /// on with U+FFFD REPLACEMENT CHARACTER.  Length-preserving so caller's
+    /// CharStart/CharLen offsets remain accurate.  Specifically scrubs:
+    /// <list type="bullet">
+    /// <item>C0 control characters other than tab (binary file bytes 0x00–0x1F)</item>
+    /// <item>Lone (unpaired) UTF-16 surrogates (illegal Unicode that can
+    ///       sneak in through external paste / IME / corrupted streams)</item>
+    /// </list>
+    /// Returns the original instance when the input is already clean (no
+    /// allocation in the common case).
+    /// </summary>
+    internal static string SanitizeForTextLayout(string text) {
+        var bad = false;
+        for (var i = 0; i < text.Length; i++) {
+            var c = text[i];
+            if (c < 32 && c != '\t') { bad = true; break; }
+            if (char.IsHighSurrogate(c)) {
+                if (i + 1 >= text.Length || !char.IsLowSurrogate(text[i + 1])) {
+                    bad = true; break;
+                }
+                i++;
+            } else if (char.IsLowSurrogate(c)) {
+                bad = true; break;
+            }
+        }
+        if (!bad) return text;
+
+        var sb = new StringBuilder(text.Length);
+        for (var i = 0; i < text.Length; i++) {
+            var c = text[i];
+            if (c < 32 && c != '\t') {
+                sb.Append('\uFFFD');
+            } else if (char.IsHighSurrogate(c)) {
+                if (i + 1 < text.Length && char.IsLowSurrogate(text[i + 1])) {
+                    sb.Append(c);
+                    sb.Append(text[i + 1]);
+                    i++;
+                } else {
+                    sb.Append('\uFFFD');
+                }
+            } else if (char.IsLowSurrogate(c)) {
+                sb.Append('\uFFFD');
+            } else {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
     }
 
     /// <summary>Finds the line whose pixel-Y range contains <paramref name="y"/>.</summary>

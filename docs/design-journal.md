@@ -33,12 +33,13 @@ small one — it is the primary way a fresh session recovers context.
 | [19-glyphrun-print](design-journal/19-glyphrun-print.md) | 2026-04-06 | GlyphRun fast path for WPF printing (~55–70% faster), word-break wrap restored, print error plumbing overhaul, hanging indent unblocked |
 | [20-hanging-indent](design-journal/20-hanging-indent.md) | 2026-04-06 | Hanging indent on wrapped rows, Avalonia monospace GlyphRun fast path, first step toward removing TextLayout from the editor |
 | [21-ascii-fast-path](design-journal/21-ascii-fast-path.md) | 2026-04-07 | ChunkedUtf8Buffer per-chunk IsAllAscii flag — column-mode insert ~28× faster, all CharAt-touching code paths benefit |
+| [22-textlayout-crash-hardening](design-journal/22-textlayout-crash-hardening.md) | 2026-04-07 | Slow-path TextLayout sanitize + try/catch fallback — fixes real user crash scrolling a binary file (Avalonia split bug) |
 
 ---
 
 ## Current State
 
-**Test baseline: 631** (510 Core + 31 Rendering + 90 App, 1 skipped)
+**Test baseline: 657** (521 Core + 47 Rendering + 89 App, 1 skipped)
 
 ### In progress
 
@@ -74,6 +75,19 @@ small one — it is the primary way a fresh session recovers context.
   See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **TextLayout slow-path crash hardening** (2026-04-07) — Real user crash
+  v0.5.231 scrolling a binary file: Avalonia's `PerformTextWrapping` →
+  `ShapedTextRun.Split` threw `InvalidOperationException: Cannot split:
+  requested length 3 consumes entire run`.  Two-layer fix in
+  `TextLayoutEngine.LayoutLines` slow path: length-preserving
+  `SanitizeForTextLayout` (control chars ≠ tab → U+FFFD, lone surrogates
+  → U+FFFD) + `MakeTextLayoutSafe` (catch `InvalidOperationException`,
+  retry with `NoWrap`, last-resort empty layout).  Sanitization is
+  hygiene; the catch is the load-bearing defense — surrogates and
+  combining marks can interact across code units in ways no per-char
+  scrub can predict.  16 new tests in DMEdit.Rendering.Tests.
+  See [22-textlayout-crash-hardening](design-journal/22-textlayout-crash-hardening.md).
 
 - **ChunkedUtf8Buffer ASCII fast path** (2026-04-07) — Per-chunk
   `IsAllAscii` flag short-circuits `FindByteOffsetInChunk`.  Column-mode
@@ -239,6 +253,46 @@ small one — it is the primary way a fresh session recovers context.
   See [07-commands](design-journal/07-commands.md).
 
 ### Key deferred items
+
+- **"Non-responsive after crash" report (byron, 2026-04-07)** — User hit
+  the binary-file Avalonia split crash (entry 22), tried to relaunch
+  dmedit.exe, and the relaunched process was non-responsive.  No
+  additional crash report files were written.  Running the Velopack-emitted
+  Portable.zip from `Downloads\DMEdit-win-Portable\current\`, no Update.exe
+  in play, no actual update available (no new beta since adding Velopack).
+  We do **not** know which path is hanging — at least six possibilities
+  weren't ruled out: hung zombie original + `SingleInstanceService`
+  hand-off swallowing the new launch, `vpk.Run()` wedging on the Portable
+  layout, Avalonia init hang, session-restore hang on a file the previous
+  process left half-written, settings/lock-file hang, or "not a hang at
+  all, just an invisible early-exit."  Diagnostic question to ask next
+  time it happens: in Task Manager, was the original (crashed) dmedit.exe
+  still present when the new one was launched?  That single answer
+  collapses the search space.  Defensive work that was scoped but not
+  shipped:
+  - **Startup breadcrumb log** in `%AppData%/DMEdit/startup.log` —
+    PID/parent PID/args at `Main` entry, after `vpk.Run()`, after
+    `SingleInstanceService` ctor (with `IsOwner`), before/after Avalonia
+    `StartWithClassicDesktopLifetime`, after `MainWindow` shown, on exit.
+    ~30 lines, no behavior change, would diagnose any future report in one read.
+  - **Hard watchdog in `Program.HandleFatalException`** — fire-and-forget
+    `Task.Delay(10s)` then `Environment.FailFast`.  No matter what the
+    dialog flow does, the process must die within 10s of a fatal exception.
+    Independently correct regardless of whether it's the cause here.
+    Currently nothing forces `Process.Kill()` if the dialog flow itself
+    hangs (e.g., `done.Wait()` on the background-thread path waiting on
+    a `ManualResetEventSlim` that nobody sets).
+  - **`SingleInstanceService` mutex pattern** — `new Mutex(initiallyOwned:
+    true, name, out createdNew)` is documented as racy; MS recommends
+    `new Mutex(false, name)` + `WaitOne(0)` with `AbandonedMutexException`
+    catch.  Correctness fix; not provably load-bearing for this report
+    but worth doing on its own merit.
+  - **Pipe-ping liveness check** — secondary instance pings the named
+    pipe with ~500ms timeout before deferring to the "owner."  Handles
+    the hung-but-not-dead-owner case the mutex change can't.
+  - **Visible feedback when a launch is consumed by the existing instance** —
+    flash taskbar / focus existing window on `FileRequested` (and on an
+    empty ping if we add one).  UX paper cut that compounds with the worse bug.
 
 - **Preserve caret/selection viewport position on wrap toggle** — caret
   and selection anchor should keep their visual row-from-top when
