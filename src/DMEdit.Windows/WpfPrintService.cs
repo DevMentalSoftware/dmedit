@@ -108,7 +108,7 @@ public sealed class WpfPrintService : ISystemPrintService {
         return sb.ToString();
     }
 
-    public bool Print(Document doc, PrintJobTicket ticket,
+    public PrintResult Print(Document doc, PrintJobTicket ticket,
         IProgress<(string Message, double Percent)>? progress = null,
         CancellationToken cancellation = default) {
         Exception? error = null;
@@ -116,6 +116,17 @@ public sealed class WpfPrintService : ISystemPrintService {
         var thread = new Thread(() => {
             try {
                 PrintOnWpfThread(doc, ticket, progress, cancellation);
+            } catch (System.Runtime.CompilerServices.RuntimeWrappedException rwe) {
+                // WPF's managed-C++ internals (System.Printing /
+                // PresentationCore) sometimes throw non-Exception objects.
+                // Unwrap so Message is a single readable line; the full dump
+                // including stack traces ends up in ToString() → ErrorDetails.
+                var wrapped = rwe.WrappedException;
+                var typeName = wrapped?.GetType().FullName ?? "(null)";
+                var wrappedStr = wrapped?.ToString() ?? "(no detail)";
+                error = new InvalidOperationException(
+                    $"WPF print threw a non-Exception: [{typeName}] {wrappedStr}",
+                    rwe);
             } catch (Exception ex) {
                 error = ex;
             }
@@ -140,9 +151,15 @@ public sealed class WpfPrintService : ISystemPrintService {
         }
 
         if (error is not null && error is not OperationCanceledException) {
-            return false;
+            // Format the exception fully (including inner exceptions) on the
+            // print thread side so the caller only sees plain strings — no
+            // Exception objects crossing thread boundaries.
+            return PrintResult.Failed(error.Message, error.ToString());
         }
-        return !cancellation.IsCancellationRequested;
+        if (cancellation.IsCancellationRequested) {
+            return PrintResult.CancelledResult();
+        }
+        return PrintResult.Ok();
     }
 
     private static void PrintOnWpfThread(Document doc, PrintJobTicket ticket,
@@ -173,6 +190,7 @@ public sealed class WpfPrintService : ISystemPrintService {
 
         var paginator = new PlainTextPaginator(
             doc, wpfPageW, wpfPageH, wpfMarginT, wpfMarginR, wpfMarginB, wpfMarginL,
+            ticket.FontFamily, ticket.FontSizePoints, ticket.UseGlyphRun,
             progress, cancellation);
 
         var pt = queue.DefaultPrintTicket.Clone();
@@ -203,7 +221,9 @@ public sealed class WpfPrintService : ISystemPrintService {
 file sealed class PlainTextPaginator : DocumentPaginator {
 
     private const string DefaultFontFamily = "Cascadia Code, Consolas, Courier New";
-    private const double DefaultFontSize = 11.0;
+    // Default 11 *typographic points*, converted to WPF DIPs (1/96 inch)
+    // below.  Used only when the ticket doesn't supply a size.
+    private const double DefaultFontSizePoints = 11.0;
 
     private readonly Document _doc;
     private readonly Typeface _typeface;
@@ -220,6 +240,16 @@ file sealed class PlainTextPaginator : DocumentPaginator {
     private readonly List<PageBreak> _pageBreaks;
     private readonly IProgress<(string Message, double Percent)>? _progress;
     private readonly CancellationToken _cancellation;
+
+    // GlyphRun fast path.  Each monospace row is drawn via DrawGlyphRun with
+    // a glyph-index array looked up through CharacterToGlyphMap — dramatically
+    // faster than per-row FormattedText.  If glyph-typeface resolution fails
+    // (e.g. the configured font isn't installed) or a row contains a codepoint
+    // the face has no glyph for, that row falls back to FormattedText.
+    private readonly GlyphTypeface? _glyphTypeface;
+    private readonly ushort[] _asciiGlyphs = new ushort[128];
+    private readonly double _glyphAdvance;
+    private readonly double _glyphBaseline;
 
     // Rolling-window rate tracking for the "pages/sec" readout.  The clock
     // starts on the first GetPage call (not in the constructor, which does
@@ -240,11 +270,18 @@ file sealed class PlainTextPaginator : DocumentPaginator {
         Document doc,
         double pageWidth, double pageHeight,
         double marginTop, double marginRight, double marginBottom, double marginLeft,
+        string? fontFamily = null,
+        double? fontSizePoints = null,
+        bool useGlyphRun = true,
         IProgress<(string Message, double Percent)>? progress = null,
         CancellationToken cancellation = default) {
         _doc = doc;
-        _typeface = new Typeface(DefaultFontFamily);
-        _fontSize = DefaultFontSize;
+        _typeface = new Typeface(fontFamily ?? DefaultFontFamily);
+        // WPF's emSize is in DIPs (1/96 inch), but the user / settings
+        // express the editor font in typographic points (1/72 inch).
+        // Convert pt → DIP so the printout matches the editor visually.
+        var sizePts = fontSizePoints ?? DefaultFontSizePoints;
+        _fontSize = sizePts * 96.0 / 72.0;
 
         _pageWidth = pageWidth;
         _pageHeight = pageHeight;
@@ -262,6 +299,49 @@ file sealed class PlainTextPaginator : DocumentPaginator {
         _safeCharCount = charWidth > 0 ? (int)(_printableWidth / charWidth) : int.MaxValue;
         _progress = progress;
         _cancellation = cancellation;
+
+        // Try to resolve a GlyphTypeface for the monospace fast path.  A
+        // multi-family fallback Typeface (e.g. "Cascadia Code, Consolas,
+        // Courier New") will not resolve directly via TryGetGlyphTypeface
+        // because WPF does fallback resolution inside FormattedText shaping,
+        // not at typeface construction.  So we walk the family list and pick
+        // the first single-family Typeface that resolves.
+        GlyphTypeface? gtf = null;
+        if (useGlyphRun) {
+            if (!_typeface.TryGetGlyphTypeface(out gtf)) {
+                foreach (var family in DefaultFontFamily.Split(',')) {
+                    var trimmed = family.Trim();
+                    if (trimmed.Length == 0) continue;
+                    try {
+                        var single = new Typeface(trimmed);
+                        if (single.TryGetGlyphTypeface(out gtf)) break;
+                    } catch {
+                        // Bad family name — try the next one.
+                    }
+                }
+            }
+        }
+        if (gtf is not null) {
+            _glyphTypeface = gtf;
+            _glyphBaseline = gtf.Baseline * _fontSize;
+            // Log which concrete face the GlyphRun fast path landed on, so
+            // we can tell if the fallback chain picked something unexpected.
+            var familyName = gtf.FamilyNames.Values.FirstOrDefault() ?? "(unknown)";
+            string fileName;
+            try { fileName = System.IO.Path.GetFileName(gtf.FontUri.LocalPath); }
+            catch { fileName = "(no file)"; }
+            System.Diagnostics.Trace.WriteLine(
+                $"[WpfPrintService] GlyphRun face: {familyName} — {fileName}");
+            var map = gtf.CharacterToGlyphMap;
+            ushort fallbackGlyph = 0;
+            if (map.TryGetValue(' ', out var g)) fallbackGlyph = g;
+            else if (map.TryGetValue('M', out g)) fallbackGlyph = g;
+            _glyphAdvance = gtf.AdvanceWidths[fallbackGlyph] * _fontSize;
+            for (var i = 32; i < 128; i++) {
+                _asciiGlyphs[i] = map.TryGetValue(i, out var gi) ? gi : fallbackGlyph;
+            }
+        }
+
         _pageBreaks = ComputePageBreaks();
     }
 
@@ -332,16 +412,23 @@ file sealed class PlainTextPaginator : DocumentPaginator {
             while (visualLineIdx < _linesPerPage && lineIdx < _doc.Table.LineCount) {
                 var line = _doc.Table.GetLine(lineIdx);
 
-                // Split line into fixed-width rows using monospace arithmetic.
-                var rowStart = wrapIdx * charsPerRow;
+                // Word-break wrap.  Walk the line computing row boundaries
+                // via NextRow, which matches ComputePageBreaks so page
+                // breaks land where the paginator decided they would.
+                // wrapIdx tells us how many rows at the start of this line
+                // belong to the previous page and should be skipped.
+                var rowStart = 0;
+                var skipped = 0;
                 while (rowStart < line.Length && visualLineIdx < _linesPerPage) {
-                    var rowLen = Math.Min(charsPerRow, line.Length - rowStart);
-                    var segment = line.Substring(rowStart, rowLen);
-                    var ft = MakeFormattedText(segment);
-                    dc.DrawText(ft, new Point(_marginLeft, y));
-                    y += _lineHeight;
-                    visualLineIdx++;
-                    rowStart += charsPerRow;
+                    var (drawLen, nextStart) = NextRow(line, rowStart, charsPerRow);
+                    if (skipped < wrapIdx) {
+                        skipped++;
+                    } else {
+                        DrawRow(dc, line, rowStart, drawLen, _marginLeft, y);
+                        y += _lineHeight;
+                        visualLineIdx++;
+                    }
+                    rowStart = nextStart;
                 }
                 // Empty lines still occupy one visual row.
                 if (line.Length == 0 && wrapIdx == 0 && visualLineIdx < _linesPerPage) {
@@ -403,16 +490,32 @@ file sealed class PlainTextPaginator : DocumentPaginator {
             var rawLen = (int)(nextStart - lineStart);
             var lineLen = i + 1 < lineCount ? Math.Max(0, rawLen - 2) : rawLen;
 
-            var wrappedCount = lineLen <= charsPerRow
-                ? 1
-                : (int)Math.Ceiling((double)lineLen / charsPerRow);
+            // Short-line fast path: 1 row, no text read needed.
+            if (lineLen <= charsPerRow) {
+                visualLinesOnPage++;
+                if (visualLinesOnPage > _linesPerPage) {
+                    breaks.Add(new PageBreak(i, 0));
+                    visualLinesOnPage = 1;
+                }
+                continue;
+            }
 
-            for (var w = 0; w < wrappedCount; w++) {
+            // Long line: read once and walk word-breaks.  We have to
+            // materialize the line text here to find space positions; GetPage
+            // does the same walk and must see the same breaks so pagination
+            // stays consistent with rendering.
+            var text = table.GetLine(i);
+            var pos = 0;
+            var w = 0;
+            while (pos < text.Length) {
+                var step = NextRow(text, pos, charsPerRow);
                 visualLinesOnPage++;
                 if (visualLinesOnPage > _linesPerPage) {
                     breaks.Add(new PageBreak(i, w));
                     visualLinesOnPage = 1;
                 }
+                pos = step.NextStart;
+                w++;
             }
         }
 
@@ -420,6 +523,87 @@ file sealed class PlainTextPaginator : DocumentPaginator {
     }
 
 
+
+    /// <summary>
+    /// Draws one visual row of <paramref name="line"/> at (<paramref name="x"/>,
+    /// <paramref name="y"/>).  Uses the <see cref="GlyphRun"/> fast path when
+    /// the glyph typeface resolved and every character is printable ASCII;
+    /// otherwise falls back to <see cref="FormattedText"/> so tabs, box
+    /// drawing, CJK, etc. still render correctly.
+    /// </summary>
+    private void DrawRow(DrawingContext dc, string line, int rowStart, int rowLen, double x, double y) {
+        if (_glyphTypeface is null) {
+            SlowPath(dc, line, rowStart, rowLen, x, y);
+            return;
+        }
+
+        // Try to build the glyph array.  ASCII 32-126 is a direct table lookup;
+        // everything else goes through CharacterToGlyphMap so any codepoint the
+        // font has a glyph for still fast-paths.  Tabs and other control chars
+        // fall through to FormattedText because their advance isn't uniform.
+        var glyphs = new ushort[rowLen];
+        var advances = new double[rowLen];
+        var map = _glyphTypeface.CharacterToGlyphMap;
+        for (var i = 0; i < rowLen; i++) {
+            var c = line[rowStart + i];
+            ushort g;
+            if (c >= 32 && c < 128) {
+                g = _asciiGlyphs[c];
+            } else if (c < 32 || !map.TryGetValue(c, out g)) {
+                SlowPath(dc, line, rowStart, rowLen, x, y);
+                return;
+            }
+            glyphs[i] = g;
+            advances[i] = _glyphAdvance;
+        }
+
+        var run = new GlyphRun(
+            _glyphTypeface,
+            bidiLevel: 0,
+            isSideways: false,
+            renderingEmSize: _fontSize,
+            pixelsPerDip: 1.0f,
+            glyphIndices: glyphs,
+            baselineOrigin: new Point(x, y + _glyphBaseline),
+            advanceWidths: advances,
+            glyphOffsets: null,
+            characters: null,
+            deviceFontName: null,
+            clusterMap: null,
+            caretStops: null,
+            language: null);
+        dc.DrawGlyphRun(Brushes.Black, run);
+    }
+
+    /// <summary>
+    /// Computes the break position for the next visual row starting at
+    /// <paramref name="rowStart"/> in <paramref name="line"/>.  Word-break
+    /// rules: if a space exists inside the row width, break at the last
+    /// space — the space itself is dropped from the drawn row and the next
+    /// row starts after it.  If no space is found (a very long unbroken
+    /// token), fall back to a hard break at <paramref name="charsPerRow"/>.
+    /// Used by both <see cref="ComputePageBreaks"/> and
+    /// <see cref="GetPage"/> so pagination and rendering stay in sync.
+    /// </summary>
+    private static (int DrawLen, int NextStart) NextRow(string line, int rowStart, int charsPerRow) {
+        var remaining = line.Length - rowStart;
+        if (remaining <= charsPerRow) {
+            return (remaining, line.Length);
+        }
+        var hardLimit = rowStart + charsPerRow;
+        for (var i = hardLimit - 1; i > rowStart; i--) {
+            if (line[i] == ' ') {
+                return (i - rowStart, i + 1);
+            }
+        }
+        return (charsPerRow, hardLimit);
+    }
+
+    private void SlowPath(DrawingContext dc, string line, int rowStart, int rowLen, double x, double y) {
+        var segment = line.Substring(rowStart, rowLen);
+        var ft = MakeFormattedText(segment);
+        dc.DrawText(ft, new Point(x, y));
+    }
 
     private FormattedText MakeFormattedText(string text) {
         return new FormattedText(

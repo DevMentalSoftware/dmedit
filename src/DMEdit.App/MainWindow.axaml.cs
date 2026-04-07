@@ -53,7 +53,7 @@ public partial class MainWindow : Window {
     private bool _windowStateReady;
     private TabState? _settingsTab;
     private readonly FileWatcherService _watcher = new();
-    private Task<bool>? _printTask;
+    private Task<PrintResult>? _printTask;
     private readonly UpdateService _updateService = new();
     private readonly List<(MenuItem item, Command cmd)> _menuCommandBindings = [];
     private TextBlock? _lineNumGlyph;
@@ -1010,8 +1010,17 @@ public partial class MainWindow : Window {
         Cmd.FileClose.Wire(
             () => { if (_activeTab != null) _ = PromptAndCloseTabAsync(_activeTab); });
         Cmd.FileCloseAll.Wire(() => _ = CloseAllTabsAsync());
-        Cmd.FilePrint.Wire(
-            () => { if (WindowsPrintService.IsAvailable) _ = PrintAsync(); });
+        Cmd.FilePrint.Wire(() => {
+            if (WindowsPrintService.IsAvailable) {
+                _ = PrintAsync();
+                return;
+            }
+            // Surface the discovery reason so a silent-no-op click never
+            // happens again — if DMEdit.Windows.dll fails to load (stale
+            // build, missing runtime pack, wrong OS) the user sees why.
+            StatusLeft.Text = "Print unavailable: "
+                + (WindowsPrintService.DiscoveryError ?? "reason unknown.");
+        });
         Cmd.FileSaveAsPdf.Wire(() => _ = SaveAsPdfAsync());
         Cmd.FileExit.Wire(Close);
         Cmd.FileToggleReadOnly.Wire(ToggleActiveReadOnly,
@@ -2669,6 +2678,17 @@ public partial class MainWindow : Window {
 
         if (dlg.JobTicket is not { } ticket) return;
 
+        // Apply the hidden diagnostic toggle for GlyphRun printing.  Users
+        // with no settings.json entry get the default (true).
+        ticket.UseGlyphRun = _settings.UseGlyphRunPrinting;
+
+        // Make the printout match the editor's font and size.  Without this
+        // the print path falls back to its hardcoded defaults and the
+        // visible point size is wrong (e.g. WPF's emSize is in DIPs, so a
+        // hardcoded "11" comes out as 8.25pt).
+        ticket.FontFamily = SettingRowFactory.GetEffectiveFontFamily(_settings);
+        ticket.FontSizePoints = _settings.EditorFontSize;
+
         // Persist the chosen settings on the document.
         doc.PrintSettings = ticket.Settings;
 
@@ -2707,8 +2727,29 @@ public partial class MainWindow : Window {
             return;
         }
 
-        var ok = await _printTask;
-        StatusLeft.Text = ok ? "Printing complete" : "Print failed.";
+        var result = await _printTask;
+        if (result.Success) {
+            StatusLeft.Text = "Printing complete";
+            return;
+        }
+        if (result.Cancelled) {
+            StatusLeft.Text = "Printing cancelled";
+            return;
+        }
+
+        StatusLeft.Text = "Print failed.";
+        const string FriendlyDetail =
+            "An error occurred while printing and the job was not sent to the printer.\n\n" +
+            "If this keeps happening, check that the printer is connected and powered on, " +
+            "and that no jobs are stuck or paused in the Windows print queue.";
+        var err = new ErrorDialog(
+            title: "Print failed",
+            detail: FriendlyDetail,
+            buttons: [ErrorDialogButton.OK],
+            stackTrace: result.ErrorDetails,
+            devMode: _settings.DevMode,
+            theme: _theme);
+        await err.ShowDialog(this);
     }
 
     private PrintSettings BuildPrintSettings() {

@@ -30,6 +30,7 @@ small one — it is the primary way a fresh session recovers context.
 | [16-print-progress](design-journal/16-print-progress.md) | 2026-04-03 | Print progress dialog, monospace pagination, cancellation, ETA display |
 | [17-editing-polish](design-journal/17-editing-polish.md) | 2026-04-06 | Auto-indent on Enter, smart deindent Backspace, smart Home, trailing whitespace cleanup |
 | [18-wrap-indicators](design-journal/18-wrap-indicators.md) | 2026-04-06 | Wrap symbol glyph at wrap column; hanging indent analysis (deferred) |
+| [19-glyphrun-print](design-journal/19-glyphrun-print.md) | 2026-04-06 | GlyphRun fast path for WPF printing (~55–70% faster), word-break wrap restored, print error plumbing overhaul, hanging indent unblocked |
 
 ---
 
@@ -38,6 +39,18 @@ small one — it is the primary way a fresh session recovers context.
 **Test baseline: 572** (451 Core + 31 Rendering + 90 App, 1 skipped)
 
 ### In progress
+
+- **Hanging indent** — implement in both Avalonia editor and WPF print paths.
+  Unblocked by the GlyphRun print work in entry 19, which proved out per-row
+  glyph-level drawing.  Planned approach: monospace row layout that emits a
+  list of row spans per logical line, each drawn via `DrawGlyphRun` (WPF) /
+  `DrawingContext.DrawGlyphRun` (Avalonia) at
+  `(baseX + (isContinuation ? hangingIndent : 0), rowY)`.  **Scope:
+  monospace + GlyphRun only** — lines that fall through to `FormattedText`
+  / `TextLayout` (proportional fonts, missing glyphs) render flush as
+  today.  Avoids reimplementing word-wrap and per-row positioning inside
+  the proportional-font path.
+  See [19-glyphrun-print](design-journal/19-glyphrun-print.md).
 
 - **EditorControl caret X offset** — caret renders consistently further right
   than DMInputBox when using the same font/size.  Both use
@@ -49,6 +62,38 @@ small one — it is the primary way a fresh session recovers context.
   PagedFileBuffer.  See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **GlyphRun print path + word-break restoration + error plumbing**
+  (2026-04-06) — Replaced per-row `FormattedText` drawing in WPF printing
+  with direct `DrawGlyphRun` calls, lifting Release throughput from 59–68
+  to ~101 pages/sec on a ~29K-page test doc (~55–70% faster).  Typeface
+  resolution walks the comma-separated family list to get a concrete
+  `GlyphTypeface` — multi-family fallback strings don't resolve directly
+  via `TryGetGlyphTypeface` because WPF defers font fallback to
+  `FormattedText` shaping.  Word-break wrap restored via shared `NextRow`
+  helper used by both `ComputePageBreaks` and `GetPage` so pagination and
+  rendering stay in sync.  Hidden `UseGlyphRunPrinting` AppSetting flows
+  to `PrintJobTicket.UseGlyphRun` for diagnostic opt-out.  New ceiling
+  is in `system.printing.dll` (XPS serialization) and not worth chasing.
+  Started as a spike but ended up production-quality, so it shipped as
+  a finished perf feature.  As a side benefit, the per-row glyph-level
+  drawing primitives unblock hanging-indent support for monospace fonts
+  (next feature).
+  **Print error plumbing overhaul** landed as collateral:
+  `ISystemPrintService.Print` returns `PrintResult` with
+  success/cancel/error info instead of `bool`; `RuntimeWrappedException`
+  unwrap surfaces WPF's managed-C++ non-Exception throws readably;
+  `PrintAsync` shows a friendly top message with raw detail only in the
+  DevMode expander;
+  `AppSettings.DevModeAllowed` centralizes the DevMode gate (Debug
+  unconditionally, Release via `DMEDIT_DEVMODE` env var);
+  `WindowsPrintService` switches from `Debug.WriteLine` to
+  `Trace.WriteLine`, exposes `DiscoveryError`, and the Print command now
+  surfaces "Print unavailable: …" in the status bar instead of silently
+  no-opping when discovery fails (with a specific hint for the stale
+  `DMEdit.Windows.dll` case).  Chosen `GlyphRun` face is logged via
+  `Trace.WriteLine` at paginator startup.
+  See [19-glyphrun-print](design-journal/19-glyphrun-print.md).
 
 - **Wrap indicators + UseWrapColumn** (2026-04-06) — `UseWrapColumn` boolean
   setting (default true) replaces the non-obvious `WrapLinesAt=0` pattern for
@@ -415,6 +460,19 @@ small one — it is the primary way a fresh session recovers context.
   - [Delayed Clipboard Rendering Explainer (MSEdge)](https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/DelayedClipboard/DelayedClipboardRenderingExplainer.md)
   - [WM_RENDERFORMAT message — Win32 API](https://learn.microsoft.com/en-us/windows/win32/dataxchg/wm-renderformat)
   - [30-second timeout for delay-rendered clipboard — The Old New Thing](https://devblogs.microsoft.com/oldnewthing/20220609-00/?p=106731)
+- **ErrorDialog → "Report a Bug" button** — `ErrorDialog` currently offers
+  `CopyDetails` (copies `stackTrace ?? detail` to the clipboard).  Should also
+  expose an optional `ReportBug` button that calls
+  `GitHubIssueHelper.OpenFeedbackIssue(title, body, crashLogContent: stackTrace, owner)`.
+  The helper already assembles a pre-filled GitHub issue URL with system info
+  and a collapsed crash-report `<details>` block, so the wiring is a handful
+  of lines.  Caller passes the button via the `buttons:` array when the error
+  is genuinely reportable (e.g. unexpected save failure, unhandled crash),
+  and omits it when the error is almost certainly environmental (e.g. a busy
+  printer or a file permission denial) — shipping a bug report for those
+  wastes the user's and maintainer's time.  `PrintAsync` falls in the
+  "environmental" bucket today and deliberately doesn't offer the button.
+
 - **Windows installer (Velopack + GitHub Releases)** — use Velopack to produce a
   self-contained installer with auto-update support. Deploy via GitHub Releases (free,
   no infrastructure). Steps: add `Velopack` NuGet package, wire `UpdateManager` for

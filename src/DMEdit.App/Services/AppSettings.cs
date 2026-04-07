@@ -433,6 +433,16 @@ public sealed class AppSettings {
     /// <summary>Last-used left margin in inches.</summary>
     public double? MarginLeftInches { get; set; }
 
+    /// <summary>
+    /// Hidden diagnostic toggle for the WPF print path.  When true (default),
+    /// monospace rows are drawn via the <c>GlyphRun</c> fast path which
+    /// dramatically outperforms <c>FormattedText</c>.  Turn off to fall back
+    /// to the legacy <c>FormattedText</c> drawing path — useful only for
+    /// diagnosing visual differences or ruling out a GlyphRun regression.
+    /// Not exposed in the Settings UI; edit settings.json directly.
+    /// </summary>
+    public bool UseGlyphRunPrinting { get; set; } = true;
+
     // -----------------------------------------------------------------
     // Load / Save
     // -----------------------------------------------------------------
@@ -454,16 +464,34 @@ public sealed class AppSettings {
             settings = new AppSettings();
         }
 
-        // DMEDIT_DEVMODE env var gates whether DevMode can be enabled.
-        // When the env var is absent or not "true", force DevMode off
-        // regardless of the persisted value.
-        if (!string.Equals(
-                Environment.GetEnvironmentVariable("DMEDIT_DEVMODE"),
-                "true", StringComparison.OrdinalIgnoreCase)) {
+        // DevMode is only allowed in Debug builds or when the DMEDIT_DEVMODE
+        // env var is "true".  Otherwise the persisted value is forced off so
+        // release builds shipped to end users can't accidentally expose the
+        // Dev menu, sample documents, stats bar, etc.
+        if (!DevModeAllowed) {
             settings.DevMode = false;
         }
 
         return settings;
+    }
+
+    /// <summary>
+    /// Whether DevMode is permitted to be enabled in this process.  True for
+    /// Debug builds unconditionally, and for Release builds only when the
+    /// <c>DMEDIT_DEVMODE</c> environment variable is set to <c>"true"</c>.
+    /// The actual <see cref="DevMode"/> boolean is a separate, user-toggleable
+    /// setting that only takes effect when this gate is open.
+    /// </summary>
+    public static bool DevModeAllowed {
+        get {
+#if DEBUG
+            return true;
+#else
+            return string.Equals(
+                Environment.GetEnvironmentVariable("DMEDIT_DEVMODE"),
+                "true", StringComparison.OrdinalIgnoreCase);
+#endif
+        }
     }
 
     /// <summary>
