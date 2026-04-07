@@ -220,7 +220,21 @@ file sealed class PlainTextPaginator : DocumentPaginator {
     private readonly List<PageBreak> _pageBreaks;
     private readonly IProgress<(string Message, double Percent)>? _progress;
     private readonly CancellationToken _cancellation;
-    private readonly Stopwatch _elapsed = Stopwatch.StartNew();
+
+    // Rolling-window rate tracking for the "pages/sec" readout.  The clock
+    // starts on the first GetPage call (not in the constructor, which does
+    // the potentially-slow pagination pass) so the reported rate reflects
+    // actual render throughput rather than an ever-increasing cumulative
+    // average that drags in the startup cost.
+    private readonly Stopwatch _renderElapsed = new();
+    private readonly Queue<(TimeSpan Time, int Page)> _rateSamples = new();
+    private static readonly TimeSpan RateWindow = TimeSpan.FromSeconds(3);
+    // Throttle progress reports: at 60+ pages/sec the UI dispatcher can't
+    // consume a report per page, the queue backs up unbounded, and the user
+    // sees historical values replayed from the backlog — which looks like
+    // the rate is slowly ramping up when it's actually stable.
+    private static readonly TimeSpan ReportInterval = TimeSpan.FromMilliseconds(100);
+    private TimeSpan _lastReportTime = TimeSpan.FromSeconds(-1);
 
     public PlainTextPaginator(
         Document doc,
@@ -270,14 +284,41 @@ file sealed class PlainTextPaginator : DocumentPaginator {
         var total = _pageBreaks.Count;
         var page1 = pageNumber + 1;
         var pct = 100.0 * page1 / total;
-        var elapsed = _elapsed.Elapsed;
-        var pagesPerSec = page1 / Math.Max(elapsed.TotalSeconds, 0.001);
-        var remaining = TimeSpan.FromSeconds((total - page1) / pagesPerSec);
-        var eta = remaining.TotalMinutes >= 1
-            ? $"{(int)remaining.TotalMinutes}m {remaining.Seconds}s"
-            : $"{remaining.Seconds}s";
-        _progress?.Report(($"Page {page1:N0} of {total:N0}\n{pagesPerSec:N0} pages/sec, ~{eta} remaining",
-            pct));
+
+        // Start the render clock on the first page, not in the constructor.
+        if (!_renderElapsed.IsRunning) _renderElapsed.Start();
+        var now = _renderElapsed.Elapsed;
+
+        // Maintain a rolling window of (time, page) samples so we can report
+        // a rate based on the last few seconds rather than a cumulative mean.
+        _rateSamples.Enqueue((now, page1));
+        while (_rateSamples.Count > 1 && now - _rateSamples.Peek().Time > RateWindow) {
+            _rateSamples.Dequeue();
+        }
+
+        // Throttle progress reports to at most one per ReportInterval so we
+        // don't flood the UI dispatcher. Always report the final page.
+        var isLastPage = page1 == total;
+        if (now - _lastReportTime >= ReportInterval || isLastPage) {
+            _lastReportTime = now;
+
+            string status;
+            // Need at least ~0.5s of window data before the rate is meaningful.
+            var oldest = _rateSamples.Peek();
+            var windowDt = (now - oldest.Time).TotalSeconds;
+            if (_rateSamples.Count >= 2 && windowDt >= 0.5) {
+                var windowDp = page1 - oldest.Page;
+                var pagesPerSec = windowDp / windowDt;
+                var remaining = TimeSpan.FromSeconds((total - page1) / Math.Max(pagesPerSec, 0.001));
+                var eta = remaining.TotalMinutes >= 1
+                    ? $"{(int)remaining.TotalMinutes}m {remaining.Seconds}s"
+                    : $"{remaining.Seconds}s";
+                status = $"Page {page1:N0} of {total:N0}\n{pagesPerSec:N0} pages/sec, ~{eta} remaining";
+            } else {
+                status = $"Page {page1:N0} of {total:N0}\ncalculating rate\u2026";
+            }
+            _progress?.Report((status, pct));
+        }
 
         var brk = _pageBreaks[pageNumber];
         var visual = new DrawingVisual();
