@@ -1832,7 +1832,9 @@ public partial class MainWindow : Window {
         var replaceAll = s.ReplaceAllTimeMs > 0 ? $" | ReplAll: {s.ReplaceAllTimeMs:F1}ms" : "";
         var ioText =
             $"Load: {load} | Save: {save}{replaceAll} | " +
-            $"Mem: {s.MemoryMb:F0} MB (max {s.PeakMemoryMb:F0} MB)";
+            $"Mem: {s.MemoryMb:F0} MB (max {s.PeakMemoryMb:F0} MB) | " +
+            $"GC: {s.Gen0}/{s.Gen1}/{s.Gen2} | " +
+            $"Inv/Rnd: {s.LayoutInvalidations}/{s.RenderCalls}";
         if (StatsBarIO.Text != ioText) StatsBarIO.Text = ioText;
     }
 

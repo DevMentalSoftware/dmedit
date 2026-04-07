@@ -535,6 +535,30 @@ small one — it is the primary way a fresh session recovers context.
   instead of treating tab as a single cell.  Bootstraps the column-width
   accumulator that elastic tabstops will need later (entry 20 *Future*).
 
+- **Column-mode rapid insert slows exponentially over time** — Holding
+  a key with ~20 active carets in column-selection mode produces
+  inserts that start fast and slow to a crawl after ~20–40 chars.
+  The total work per insert appears to grow with the number of inserts
+  already performed, not the number of cursors (which is constant).
+  Almost certainly pre-existing — the new caret-layer code adds only
+  O(N carets) flat per insert, which is linear in cursor count and
+  constant per insert.  Suspect locations to investigate, in order of
+  likelihood:
+  1. **Per-cursor compound-edit coalescing** in
+     `Document.InsertAtCursors` / `BulkReplaceVarying`.  If each cursor
+     accumulates its own compound entry and the list merge scans from
+     the end with O(existing entries) work per addition, total work
+     across N inserts at C cursors is O(C × N²).
+  2. **`ColumnSelection.MaterializeCarets`** — verify it's not
+     re-walking the line tree per cursor with super-linear cost.
+  3. **`ColumnSelection` line/col state** — if cursor positions are
+     stored as absolute offsets that need re-translation through the
+     line tree on every materialization, repeated edits compound the
+     cost.
+  Profile with a synthetic "hold key for 5 seconds in 20-cursor column
+  mode" reproducer; the call tree should immediately point at the
+  quadratic site.
+
 - **Per-frame `FormattedText` churn in ToolbarControl and TabBarControl**
   — Object Allocation Tracking found ~1,312 `TextLineImpl`s allocated by
   `ToolbarControl.Render` and ~60 by `TabBarControl.Render` over a
