@@ -149,7 +149,21 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     // -------------------------------------------------------------------------
 
     private readonly TextLayoutEngine _layoutEngine = new();
-    private LayoutResult? _layout;
+    // Backed by a property setter that disposes the previous LayoutResult
+    // so TextLayout / GlyphRun resources inside it are released promptly
+    // instead of waiting for GC.  Previously the ~10 assignment sites
+    // orphaned the old layout, which was mostly survivable for managed
+    // TextLayout but leaks native GlyphRun resources on the mono path.
+    private LayoutResult? _layoutBacking;
+    private LayoutResult? _layout {
+        get => _layoutBacking;
+        set {
+            if (!ReferenceEquals(_layoutBacking, value)) {
+                _layoutBacking?.Dispose();
+            }
+            _layoutBacking = value;
+        }
+    }
     /// <summary>
     /// Set when a layout pass throws an unrecoverable exception.  Once set,
     /// all subsequent layout/render attempts return an empty layout so the
@@ -329,6 +343,20 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
     }
 
+    /// <summary>
+    /// Whether wrapped continuation rows are indented by half of one indent
+    /// level (the "hanging indent" effect).  Currently only honored on the
+    /// monospace GlyphRun fast path; proportional fonts ignore this setting.
+    /// </summary>
+    public bool HangingIndent {
+        get => _hangingIndent;
+        set {
+            if (_hangingIndent == value) return;
+            _hangingIndent = value;
+            InvalidateLayout();
+        }
+    }
+
     /// <summary>Applies a new theme, pushing colors into styled properties and fields.</summary>
     public void ApplyTheme(EditorTheme theme) {
         _theme = theme;
@@ -395,6 +423,31 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     // Wrap symbol
     private bool _showWrapSymbol = true;
     private const double WrapSymbolPadRight = 12;
+    // Cached TextLayout for the wrap-symbol glyph.  Previously rebuilt on
+    // every Render() call (i.e. every caret blink) which was a significant
+    // per-frame allocation: TextLayout construction runs text shaping and
+    // allocates one or more GlyphRun objects internally.  Invalidated when
+    // font size, theme brush, or font family change.
+    private TextLayout? _wrapSymbolLayout;
+    private double _wrapSymbolLayoutFontSize;
+    private IBrush? _wrapSymbolLayoutBrush;
+
+    // Cached TextLayouts for gutter line numbers.  DrawGutter previously
+    // created a fresh TextLayout per visible line per Render() — 50 allocs
+    // + 50 text-shaping passes per caret blink on a typical viewport.
+    // Now keyed by the digit string; invalidated when font size, font
+    // family, gutter width, or gutter brush change.
+    private readonly Dictionary<string, TextLayout> _gutterNumCache = new();
+    private double _gutterCacheFontSize;
+    private double _gutterCacheMaxWidth;
+    private IBrush? _gutterCacheBrush;
+    private string? _gutterCacheFontFamily;
+
+    // Hanging indent on wrapped continuation rows.  Only takes effect when
+    // wrapping is on, the editor font resolves to a single GlyphTypeface,
+    // and that face is monospace — the GlyphRun fast path applies.  See
+    // design journal 20 for the rationale.
+    private bool _hangingIndent = true;
 
     // Line number gutter
     private bool _showLineNumbers = true;
@@ -1092,10 +1145,15 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
 
         // Layout one line at a time directly from the PieceTable so we
-        // never materialize multiple lines into a single string.
+        // never materialize multiple lines into a single string.  Hanging
+        // indent engages only on the monospace fast path — proportional
+        // typefaces ignore the column count.
+        var hangingIndentChars = _hangingIndent && _wrapLines && !_charWrapMode
+            ? Math.Max(0, _indentWidth / 2)
+            : 0;
         _layout = _layoutEngine.LayoutLines(
             doc.Table, topLine, bottomLine, typeface, EffectiveFontSize, ForegroundBrush,
-            maxWidth, startOfs, lineCount, doc.Table.Length);
+            maxWidth, startOfs, lineCount, doc.Table.Length, hangingIndentChars);
         _layout.TopLine = topLine;
 
         // When the layout covers the entire document, use exact height
@@ -1345,7 +1403,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (y > Bounds.Height) {
                 break; // below viewport
             }
-            line.Layout.Draw(context, new Point(TextOriginX, y));
+            line.Render(context, new Point(TextOriginX, y), ForegroundBrush);
             if (_showWhitespace) {
                 DrawWhitespace(context, layout, line, y, rh);
             }
@@ -1384,8 +1442,26 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         if (!_showLineNumbers || table == null || layout.Lines.Count == 0) return;
 
-        var typeface = new Typeface(FontFamily);
+        var fontSize = EffectiveFontSize;
         var numW = _gutterWidth - GutterPadRight;
+        var brush = _theme.GutterForeground;
+        var fontFam = FontFamily.Name;
+
+        // Invalidate the cache if anything that affects the rendered layout
+        // of a digit string has changed.
+        if (_gutterCacheFontSize != fontSize
+            || _gutterCacheMaxWidth != numW
+            || !ReferenceEquals(_gutterCacheBrush, brush)
+            || _gutterCacheFontFamily != fontFam) {
+            foreach (var cached in _gutterNumCache.Values) cached.Dispose();
+            _gutterNumCache.Clear();
+            _gutterCacheFontSize = fontSize;
+            _gutterCacheMaxWidth = numW;
+            _gutterCacheBrush = brush;
+            _gutterCacheFontFamily = fontFam;
+        }
+
+        var typeface = new Typeface(FontFamily);
         var firstLineIdx = layout.TopLine;
 
         for (var i = 0; i < layout.Lines.Count; i++) {
@@ -1396,10 +1472,23 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
             var lineNum = firstLineIdx + i + 1;
             var numText = lineNum.ToString();
-            using var tl = new TextLayout(
-                numText, typeface, EffectiveFontSize, _theme.GutterForeground,
-                textAlignment: TextAlignment.Right,
-                maxWidth: numW);
+            if (!_gutterNumCache.TryGetValue(numText, out var tl)) {
+                tl = new TextLayout(
+                    numText, typeface, fontSize, brush,
+                    textAlignment: TextAlignment.Right,
+                    maxWidth: numW);
+                _gutterNumCache[numText] = tl;
+                // Soft cap so the cache doesn't grow unbounded if the user
+                // jumps around a huge file.  Drop the oldest half when we
+                // exceed the cap — crude but bounded.
+                if (_gutterNumCache.Count > 512) {
+                    var toRemove = _gutterNumCache.Keys.Take(256).ToList();
+                    foreach (var k in toRemove) {
+                        _gutterNumCache[k].Dispose();
+                        _gutterNumCache.Remove(k);
+                    }
+                }
+            }
             tl.Draw(context, new Point(0, y));
         }
     }
@@ -1413,11 +1502,21 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         if (!double.IsFinite(textW)) return; // wrapping off
         var symbolX = TextOriginX + textW;
 
-        // Draw a wrap indicator using the Fluent icon font.
+        // Draw a wrap indicator using the Fluent icon font.  Cache the
+        // TextLayout across renders — it depends only on font size and
+        // brush, both stable between caret blinks.
         var brush = _theme.WrapSymbolPen.Brush;
         var fontSize = EffectiveFontSize * 0.8;
-        using var glyphLayout = new TextLayout(
-            IconGlyphs.WrapEnd, IconGlyphs.Face, fontSize, brush);
+        if (_wrapSymbolLayout is null
+            || _wrapSymbolLayoutFontSize != fontSize
+            || !ReferenceEquals(_wrapSymbolLayoutBrush, brush)) {
+            _wrapSymbolLayout?.Dispose();
+            _wrapSymbolLayout = new TextLayout(
+                IconGlyphs.WrapEnd, IconGlyphs.Face, fontSize, brush);
+            _wrapSymbolLayoutFontSize = fontSize;
+            _wrapSymbolLayoutBrush = brush;
+        }
+        var glyphLayout = _wrapSymbolLayout;
         var glyphH = glyphLayout.Height;
         var glyphW = glyphLayout.WidthIncludingTrailingWhitespace;
 
@@ -1461,12 +1560,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (ch != ' ' && ch != '\t' && ch != '\u00A0'
                 && rawCh != '\r' && rawCh != '\n') continue;
 
-            var hit = line.Layout.HitTestTextPosition(i);
+            var hit = line.HitTestTextPosition(i);
             var x = TextOriginX + hit.X;
 
             if (ch == '\t') {
                 // Draw arrow spanning the tab's width
-                var hitNext = line.Layout.HitTestTextPosition(i + 1);
+                var hitNext = line.HitTestTextPosition(i + 1);
                 var x1 = TextOriginX + hit.X;
                 var x2 = TextOriginX + hitNext.X;
                 if (x2 <= x1) continue;
@@ -1563,7 +1662,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 continue;
             }
 
-            foreach (var rect in line.Layout.HitTestTextRange(rangeStart, rangeLen)) {
+            foreach (var rect in line.HitTestTextRange(rangeStart, rangeLen)) {
                 rects.Add(new Rect(rect.X + TextOriginX, lineY + rect.Y, rect.Width, rect.Height));
             }
         }
@@ -1791,7 +1890,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 if (rangeLen <= 0) {
                     continue;
                 }
-                foreach (var rect in line.Layout.HitTestTextRange(rangeStart, rangeLen)) {
+                foreach (var rect in line.HitTestTextRange(rangeStart, rangeLen)) {
                     rects.Add(new Rect(rect.X + TextOriginX, lineY + rect.Y, rect.Width, rect.Height));
                 }
             }

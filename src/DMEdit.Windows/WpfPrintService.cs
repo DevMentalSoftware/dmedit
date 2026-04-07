@@ -190,8 +190,8 @@ public sealed class WpfPrintService : ISystemPrintService {
 
         var paginator = new PlainTextPaginator(
             doc, wpfPageW, wpfPageH, wpfMarginT, wpfMarginR, wpfMarginB, wpfMarginL,
-            ticket.FontFamily, ticket.FontSizePoints, ticket.UseGlyphRun,
-            progress, cancellation);
+            ticket.FontFamily, ticket.FontSizePoints, ticket.IndentWidth,
+            ticket.UseGlyphRun, progress, cancellation);
 
         var pt = queue.DefaultPrintTicket.Clone();
         if (settings.Paper.Id is { } sizeId) {
@@ -237,6 +237,12 @@ file sealed class PlainTextPaginator : DocumentPaginator {
     private readonly double _printableHeight;
     private readonly int _linesPerPage;
     private readonly int _safeCharCount; // lines shorter than this can't wrap
+    // Hanging indent applied to wrapped continuation rows so wrapped text is
+    // visually offset from the first row.  Half of one indent column,
+    // measured in characters and pixels (monospace assumption — see entry 19
+    // for the proportional-font follow-up).
+    private readonly int _hangingIndentChars;
+    private readonly double _hangingIndentPx;
     private readonly List<PageBreak> _pageBreaks;
     private readonly IProgress<(string Message, double Percent)>? _progress;
     private readonly CancellationToken _cancellation;
@@ -272,6 +278,7 @@ file sealed class PlainTextPaginator : DocumentPaginator {
         double marginTop, double marginRight, double marginBottom, double marginLeft,
         string? fontFamily = null,
         double? fontSizePoints = null,
+        int indentWidth = 4,
         bool useGlyphRun = true,
         IProgress<(string Message, double Percent)>? progress = null,
         CancellationToken cancellation = default) {
@@ -297,6 +304,18 @@ file sealed class PlainTextPaginator : DocumentPaginator {
         // Compute chars per print row using the monospace font's character width.
         var charWidth = MakeFormattedText("M").Width;
         _safeCharCount = charWidth > 0 ? (int)(_printableWidth / charWidth) : int.MaxValue;
+
+        // Hanging indent: half of one indent column.  Continuation rows of a
+        // wrapped line are offset right by this amount and have their
+        // available char count reduced accordingly so word-wrap stays inside
+        // the printable area.  Clamp so we always leave at least 1 char of
+        // wrap width even with very wide indents on narrow paper.
+        _hangingIndentChars = Math.Max(0, indentWidth / 2);
+        if (_hangingIndentChars >= _safeCharCount) {
+            _hangingIndentChars = Math.Max(0, _safeCharCount - 1);
+        }
+        _hangingIndentPx = _hangingIndentChars * charWidth;
+
         _progress = progress;
         _cancellation = cancellation;
 
@@ -409,6 +428,7 @@ file sealed class PlainTextPaginator : DocumentPaginator {
             var wrapIdx = brk.FirstWrapLine;
 
             var charsPerRow = Math.Max(1, _safeCharCount);
+            var continuationCharsPerRow = Math.Max(1, charsPerRow - _hangingIndentChars);
             while (visualLineIdx < _linesPerPage && lineIdx < _doc.Table.LineCount) {
                 var line = _doc.Table.GetLine(lineIdx);
 
@@ -416,19 +436,31 @@ file sealed class PlainTextPaginator : DocumentPaginator {
                 // via NextRow, which matches ComputePageBreaks so page
                 // breaks land where the paginator decided they would.
                 // wrapIdx tells us how many rows at the start of this line
-                // belong to the previous page and should be skipped.
+                // belong to the previous page and should be skipped.  Note
+                // we still walk all rows from the start of the line — the
+                // word-break positions depend on the line text and a
+                // continuation row carried over from the previous page must
+                // begin at the same character position the previous page
+                // would have computed.
                 var rowStart = 0;
                 var skipped = 0;
+                var rowInLine = 0;
                 while (rowStart < line.Length && visualLineIdx < _linesPerPage) {
-                    var (drawLen, nextStart) = NextRow(line, rowStart, charsPerRow);
+                    var rowChars = rowInLine == 0 ? charsPerRow : continuationCharsPerRow;
+                    var (drawLen, nextStart) = NextRow(line, rowStart, rowChars);
                     if (skipped < wrapIdx) {
                         skipped++;
                     } else {
-                        DrawRow(dc, line, rowStart, drawLen, _marginLeft, y);
+                        // Continuation rows are offset right by the hanging
+                        // indent so wrapped text is visually distinct from
+                        // the first row of each logical line.
+                        var rowX = _marginLeft + (rowInLine == 0 ? 0 : _hangingIndentPx);
+                        DrawRow(dc, line, rowStart, drawLen, rowX, y);
                         y += _lineHeight;
                         visualLineIdx++;
                     }
                     rowStart = nextStart;
+                    rowInLine++;
                 }
                 // Empty lines still occupy one visual row.
                 if (line.Length == 0 && wrapIdx == 0 && visualLineIdx < _linesPerPage) {
@@ -503,12 +535,15 @@ file sealed class PlainTextPaginator : DocumentPaginator {
             // Long line: read once and walk word-breaks.  We have to
             // materialize the line text here to find space positions; GetPage
             // does the same walk and must see the same breaks so pagination
-            // stays consistent with rendering.
+            // stays consistent with rendering.  First row uses the full
+            // charsPerRow; continuation rows use the hanging-indent reduction.
             var text = table.GetLine(i);
             var pos = 0;
             var w = 0;
+            var continuationCharsPerRow = Math.Max(1, charsPerRow - _hangingIndentChars);
             while (pos < text.Length) {
-                var step = NextRow(text, pos, charsPerRow);
+                var rowChars = w == 0 ? charsPerRow : continuationCharsPerRow;
+                var step = NextRow(text, pos, rowChars);
                 visualLinesOnPage++;
                 if (visualLinesOnPage > _linesPerPage) {
                     breaks.Add(new PageBreak(i, w));

@@ -29,6 +29,13 @@ public sealed class PrintJobTicket {
     public double? FontSizePoints { get; set; }
 
     /// <summary>
+    /// Editor indent width in columns (e.g. 4 for "4 spaces per indent").
+    /// Used to compute the hanging indent applied to wrapped continuation
+    /// rows: continuation rows are offset right by half of one indent.
+    /// </summary>
+    public int IndentWidth { get; set; } = 4;
+
+    /// <summary>
     /// Hidden diagnostic toggle: when true (default), the WPF print path
     /// draws each monospace row via <c>GlyphRun</c> for performance.  When
     /// false, it falls back to the legacy <c>FormattedText</c> path — useful

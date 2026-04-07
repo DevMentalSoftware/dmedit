@@ -32,6 +32,11 @@ public static class SettingsRegistry {
             "Show a wrap indicator glyph at the wrap column for lines that word-wrap to the next row.",
             "Display", SettingKind.Bool, true),
 
+        new("HangingIndent", "Hanging Indent",
+            "Indent wrapped continuation rows by half of one indent level so wrapped text " +
+            "is visually offset from the first row.  Currently applies only to monospace fonts.",
+            "Display", SettingKind.Bool, true),
+
         new("CharWrapFileSizeKB", "Char Wrap File Size (KB)",
             "File size above which character-wrapping mode activates automatically. " +
             "Lower values improve responsiveness on slower machines.",

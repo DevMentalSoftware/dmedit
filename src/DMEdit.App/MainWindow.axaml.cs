@@ -1576,9 +1576,10 @@ public partial class MainWindow : Window {
         _wrapLinesGlyph = CreateMenuCheckGlyph(_settings.WrapLines);
         MenuWrapLines.Icon = _wrapLinesGlyph;
 
-        // Show Whitespace + Wrap Symbol
+        // Show Whitespace + Wrap Symbol + Hanging Indent
         Editor.ShowWhitespace = _settings.ShowWhitespace;
         Editor.ShowWrapSymbol = _settings.ShowWrapSymbol;
+        Editor.HangingIndent = _settings.HangingIndent;
         _whitespaceGlyph = CreateMenuCheckGlyph(_settings.ShowWhitespace);
         MenuWhitespace.Icon = _whitespaceGlyph;
 
@@ -2688,6 +2689,7 @@ public partial class MainWindow : Window {
         // hardcoded "11" comes out as 8.25pt).
         ticket.FontFamily = SettingRowFactory.GetEffectiveFontFamily(_settings);
         ticket.FontSizePoints = _settings.EditorFontSize;
+        ticket.IndentWidth = _settings.IndentWidth;
 
         // Persist the chosen settings on the document.
         doc.PrintSettings = ticket.Settings;
@@ -3114,6 +3116,9 @@ public partial class MainWindow : Window {
                     break;
                 case "ShowWrapSymbol":
                     Editor.ShowWrapSymbol = _settings.ShowWrapSymbol;
+                    break;
+                case "HangingIndent":
+                    Editor.HangingIndent = _settings.HangingIndent;
                     break;
                 case "BrightSelection":
                     ApplySelectionBrushes();

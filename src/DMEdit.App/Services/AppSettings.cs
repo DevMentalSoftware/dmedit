@@ -122,6 +122,14 @@ public sealed class AppSettings {
     public bool ShowWrapSymbol { get; set; } = true;
 
     /// <summary>
+    /// Indent wrapped continuation rows by half of one indent level so wrapped
+    /// text is visually offset from the first row of each logical line.
+    /// Only takes effect when wrapping is on, the editor font is monospace,
+    /// and the GlyphRun fast path is engaged.  Default: true.
+    /// </summary>
+    public bool HangingIndent { get; set; } = true;
+
+    /// <summary>
     /// Use a brighter, more visible selection highlight color instead of the
     /// default subtle tint. Useful on monitors with limited contrast.
     /// </summary>

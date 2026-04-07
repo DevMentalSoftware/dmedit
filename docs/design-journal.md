@@ -31,6 +31,7 @@ small one — it is the primary way a fresh session recovers context.
 | [17-editing-polish](design-journal/17-editing-polish.md) | 2026-04-06 | Auto-indent on Enter, smart deindent Backspace, smart Home, trailing whitespace cleanup |
 | [18-wrap-indicators](design-journal/18-wrap-indicators.md) | 2026-04-06 | Wrap symbol glyph at wrap column; hanging indent analysis (deferred) |
 | [19-glyphrun-print](design-journal/19-glyphrun-print.md) | 2026-04-06 | GlyphRun fast path for WPF printing (~55–70% faster), word-break wrap restored, print error plumbing overhaul, hanging indent unblocked |
+| [20-hanging-indent](design-journal/20-hanging-indent.md) | 2026-04-06 | Hanging indent on wrapped rows, Avalonia monospace GlyphRun fast path, first step toward removing TextLayout from the editor |
 
 ---
 
@@ -40,28 +41,43 @@ small one — it is the primary way a fresh session recovers context.
 
 ### In progress
 
-- **Hanging indent** — implement in both Avalonia editor and WPF print paths.
-  Unblocked by the GlyphRun print work in entry 19, which proved out per-row
-  glyph-level drawing.  Planned approach: monospace row layout that emits a
-  list of row spans per logical line, each drawn via `DrawGlyphRun` (WPF) /
-  `DrawingContext.DrawGlyphRun` (Avalonia) at
-  `(baseX + (isContinuation ? hangingIndent : 0), rowY)`.  **Scope:
-  monospace + GlyphRun only** — lines that fall through to `FormattedText`
-  / `TextLayout` (proportional fonts, missing glyphs) render flush as
-  today.  Avoids reimplementing word-wrap and per-row positioning inside
-  the proportional-font path.
-  See [19-glyphrun-print](design-journal/19-glyphrun-print.md).
-
 - **EditorControl caret X offset** — caret renders consistently further right
   than DMInputBox when using the same font/size.  Both use
   `HitTestTextPosition().X` identically.  Root cause unknown; needs investigation.
-  See [13-custom-textbox](design-journal/13-custom-textbox.md).
+  See [13-custom-textbox](design-journal/13-custom-textbox.md).  Note: the
+  new monospace GlyphRun path in entry 20 may already address this for
+  the editor itself — DMInputBox would need its own migration to benefit.
 
 - **Paged add-buffer eviction** (future/roadmap) — no code written yet.
   Design idea: older immutable chunks could be paged to disk like
   PagedFileBuffer.  See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **Hanging indent + Avalonia monospace GlyphRun path** (2026-04-06) —
+  Wrapped continuation rows of a logical line are indented by half of one
+  indent level (2 columns for the default 4-column indent) so wrapped
+  text is visually distinct from the first row.  `HangingIndent` setting
+  in Display, default on.  Implemented on both sides:
+  **Print**: `PrintJobTicket.IndentWidth` flows to the paginator, which
+  reduces effective `charsPerRow` for continuation rows and adds a pixel
+  offset to the X position in `GetPage`.  No measurable throughput impact.
+  **Editor**: new `MonoLayoutContext` + `MonoLineLayout` types under
+  `DMEdit.Rendering.Layout` implement a GlyphRun fast path for lines
+  whose typeface resolves to a monospace `IGlyphTypeface` and whose text
+  has no control characters.  `LayoutLine` is now a sum type carrying
+  either a `TextLayout` (slow path) or a `MonoLineLayout` (fast path)
+  with new dispatch methods `Render`, `HitTestTextPosition`,
+  `HitTestTextRange`, `HitTestPoint`.  `TextLayoutEngine.LayoutLines`
+  classifies each line independently — tab-bearing lines fall back to
+  `TextLayout` for now.  `EditorControl`'s 5 direct `line.Layout.X` call
+  sites migrated to the path-agnostic methods.  Hit-test on the fast
+  path is pure arithmetic over `CharWidth` and a row-span list.  This is
+  the first step toward the long-term goal of removing `TextLayout` from
+  the editor path entirely; future work (tracked in entry 20) covers tab
+  support, per-character advances for proportional fonts, and elastic
+  tabstops for proportional source-code rendering.
+  See [20-hanging-indent](design-journal/20-hanging-indent.md).
 
 - **GlyphRun print path + word-break restoration + error plumbing**
   (2026-04-06) — Replaced per-row `FormattedText` drawing in WPF printing
@@ -428,6 +444,139 @@ small one — it is the primary way a fresh session recovers context.
 
 
 ### Key deferred items
+
+- **Preserve caret/selection viewport position on wrap toggle** — when
+  turning WordWrap on or off, the caret (and active selection anchor)
+  should stay as close as possible to the same **visual row-from-top**
+  position in the viewport.  Example: a word selected 3 rows from the
+  bottom, turn wrapping on so the doc now has 3× as many visual rows —
+  the selection should still be 3 rows from the bottom (horizontal
+  position may shift because the wrap break falls elsewhere).  Same
+  symmetrically when turning wrap off.  We recently fixed a related
+  scroll-preservation bug but this specific case regressed or was never
+  covered.  Touch points: the WordWrap toggle handler and
+  `EditorControl.InvalidateLayout` / `ScrollCaretIntoView`.
+
+- **Render churn during caret blink with selection present** — memory
+  usage visibly fluctuates with every caret pulse when text is selected,
+  which means we're redrawing the whole text layer on every blink cycle
+  (it should only be the caret rectangle).  Investigate the invalidation
+  scope triggered by the caret timer: `InvalidateVisual` is probably
+  being called where `InvalidateVisual` over a sub-rect would suffice, or
+  the caret blink is triggering a full `InvalidateLayout`.  May be
+  amplified by the new mono path's per-draw allocations (see below) —
+  each caret pulse now allocates `ushort[]` + `GlyphRun` per visible
+  row, where the old `TextLayout` path reused internal caches.
+
+- **Home/End on wrapped continuation rows** — when the caret is inside
+  a wrapped visual row but not already at the row's start, `Home` should
+  move to the start of the *row*, not the start of the logical line.
+  If already at the row's start, `Home` should then jump to the start
+  of the logical line.  Same for `End` symmetrically.  Matches standard
+  editor behavior on wrapped text.  Requires the caret/keybinding
+  handler to know the current visual row's char range — trivial on the
+  new mono path (it's literally a `RowSpan` lookup on `MonoLineLayout`),
+  less trivial on the `TextLayout` slow path (need to walk `TextLines`).
+
+- **"Editor Font" reset button in Settings** — the font family and font
+  size rows in Settings → Display each lack a reset-to-default button.
+  User expectation is a single reset on the "Editor Font" row that
+  restores both family and size together.  Lives in
+  `SettingRowFactory` / the font picker row builder.
+
+- **Memory growth while scrolling a large document** — peak and current
+  memory usage now climb while scrolling through a large file; pre-spike
+  the same file was bounded around 250 MB.  Almost certainly caused by
+  the new mono path in `MonoLineLayout.Draw`, which allocates a fresh
+  `ushort[span.CharLen]` glyph buffer *and* a fresh `GlyphRun` object
+  per row per draw call.  The old `TextLayout` path built its glyph
+  runs once at layout time and reused them on every draw; we should
+  match that pattern by caching the glyph arrays (and potentially the
+  `GlyphRun` instances, if `GlyphRun.BaselineOrigin` can be safely
+  mutated between draws — otherwise fall back to `PushTransform`).
+  `GlyphRun` is `IDisposable`; if it holds native HarfBuzz buffers,
+  relying on finalizers may also be compounding the growth.  Disposing
+  `MonoLineLayout`s properly from `LayoutLine.Dispose` is part of the
+  fix — currently only `Layout?.Dispose()` runs, `Mono` is left to GC.
+
+- **CharWrap mode not triggering on 1 MB single-line file** — a 1 MB
+  file consisting of one long line did not enter CharWrap mode despite
+  the file-size-KB threshold being 50 KB.  Opposite problem to the one
+  fixed 2026-04-03 (large file with short lines incorrectly entered
+  CharWrap).  Suspect the "long line detected" branch in the loader
+  isn't taking effect on the single-line case, or the
+  `LineTooLongDetected` safety net isn't running before the layout
+  pipeline allocates a layout for the whole line.  Needs investigation
+  in the load / scan path.
+
+- **Small event-handler closure leaks (DMEdit-owned)** — Visual Studio's
+  Memory Insights flagged a handful of compiler-generated closures
+  rooted past their useful life.  Total ~3 KB so this is hygiene, not
+  a real memory issue, but each one is a code smell pointing at an
+  event subscription that didn't get unsubscribed.  Specific suspects
+  to walk down with debug symbols / dotPeek:
+  `MainWindow+<>c__DisplayClass157_1` (472 B — largest),
+  `MainWindow+<>c__DisplayClass34_0` / `_35_0` (32–40 B),
+  `EditorControl+<>c__DisplayClass216_0` (40 B),
+  `FileLoader+<>c__DisplayClass1_0` (72 B),
+  `App+<>c__DisplayClass1_0` (24 B).
+  Also two `DispatcherTimer+<>c__DisplayClass18_0` instances (144 B
+  each) — likely the caret-blink timer plus another, suggesting we may
+  be re-creating the timer lambda when we shouldn't.
+
+- **Tab handling on the monospace fast path** — currently any line with
+  a tab character falls back to `TextLayout` (entry 20 limitation).
+  Two reasons to revisit: (1) tab-bearing lines miss out on the
+  hanging-indent feature; (2) `GlyphInfo[]` arrays from `TextLayout`
+  show up as ~230 KB of sparse-array waste in Memory Insights — finishing
+  tab support shrinks the slow-path footprint as a side benefit.
+  Implementation: column-aware advance in `MonoLineLayout.NextRow` and
+  `Draw` (`(col / indentWidth + 1) * indentWidth` for next tab stop)
+  instead of treating tab as a single cell.  Bootstraps the column-width
+  accumulator that elastic tabstops will need later (entry 20 *Future*).
+
+- **Per-frame `FormattedText` churn in ToolbarControl and TabBarControl**
+  — Object Allocation Tracking found ~1,312 `TextLineImpl`s allocated by
+  `ToolbarControl.Render` and ~60 by `TabBarControl.Render` over a
+  ~50-second steady-state recording.  Both controls call
+  `new FormattedText(...)` per visible item per Render pass, and
+  Avalonia internally builds a full `TextLineImpl` / `ShapedTextRun` /
+  `GlyphRun` / `GlyphRunImpl` / `ShapedBuffer` chain for each.  Same
+  fix pattern as the `DrawGutter` cache added 2026-04-06: a per-control
+  `Dictionary<string, FormattedText>` keyed by (label/glyph + visual
+  state), invalidated when theme/font changes, with a soft cap to
+  prevent unbounded growth.  ToolbarControl is the dominant offender
+  (~95% of the slow-path text allocations); TabBarControl is secondary.
+  Net memory is stable so this is GC churn / sawtooth amplitude only,
+  not a leak.  Worth fixing as part of a general "eliminate per-frame
+  allocations across the chrome" pass.
+
+- **Caret blink could redraw only the caret rect, not the whole control**
+  — Currently `OnCaretTick` calls `InvalidateVisual()` which forces a
+  full `Render()` pass, including the toolbar / tab bar / gutter / text
+  lines.  Object Allocation Tracking confirmed the editor's text path is
+  now allocation-clean (the new mono path caches its GlyphRuns, the
+  gutter and wrap-symbol are cached, the layout setter disposes
+  properly), so the only allocations during pure idle blink are the 3
+  Avalonia scene-graph nodes per visible row (`RenderDataPushMatrixNode`,
+  `RenderDataGlyphRunNode`, `IRef<IGlyphRunImpl>`) — unavoidable in
+  Avalonia 11.x's retained-mode pipeline.  These could be eliminated
+  during pure caret blink by moving the caret to a sibling Control with
+  its own narrow `Render` override that only paints the caret rectangle.
+  Caret blink would then invalidate only that control, leaving the
+  editor's text scene unchanged frame-to-frame.  Bigger refactor than
+  the cache pattern but completely removes the per-frame editor text
+  cost during idle.
+
+- **Avalonia upstream issues (file if motivated)** — Memory Insights
+  also flagged things outside our control that are worth reporting:
+  (1) `NameRecord` string interning — every system font's
+  copyright/description string ("Microsoft supplied font…", "Sitka is a
+  family of optically scaled typefaces…") is stored once per font face
+  rather than shared, ~150 KB at startup.  (2) AXAML resource URIs
+  duplicated in two forms (`file://…` and `…`), each repeated 100–235
+  times across themes.  Both are one-time startup costs, not per-frame.
+  Not blocking; file as enhancement requests on the Avalonia repo.
 
 - Block model / WYSIWYG editor is fully designed and partially implemented but not wired
   into the running editor (see [02-document-model](design-journal/02-document-model.md))
