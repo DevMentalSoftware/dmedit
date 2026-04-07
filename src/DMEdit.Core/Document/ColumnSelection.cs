@@ -103,12 +103,46 @@ public readonly record struct ColumnSelection(int AnchorLine, int AnchorCol, int
     /// Tabs expand to the next multiple of <paramref name="tabSize"/>. Returns
     /// the character index (clamped to <paramref name="lineLen"/>).
     /// </summary>
+    /// <remarks>
+    /// Hot path for column-mode editing: this is called per cursor for every
+    /// call to <see cref="MaterializeCarets"/>, which itself runs many times
+    /// per insert via <see cref="DMEdit.Core.Documents.Document.InsertAtCursors"/>.
+    /// Tab-free lines (the overwhelming common case) take a fast path that
+    /// scans the line for a tab character via SIMD-friendly span IndexOf,
+    /// then returns immediately when none is found — col equals char index
+    /// directly.  Tab-bearing lines fall through to the character-stepping
+    /// loop starting from the first tab position so we don't waste work on
+    /// the tab-free prefix.
+    /// </remarks>
     public static int ColToCharIdx(PieceTable table, long lineStart, int lineLen, int targetCol, int tabSize) {
         if (targetCol <= 0 || lineLen == 0) {
             return 0;
         }
-        var col = 0;
-        for (var i = 0; i < lineLen; i++) {
+
+        // Tab-free fast path: walk the line as native spans and look for
+        // the first tab character.  If none is found, the column is the
+        // character index (clamped) directly — no per-char CharAt calls.
+        // If a tab is found, we know the prefix is tab-free so we can
+        // start the slow per-char loop from the tab's position.
+        var firstTabIdx = FindFirstTab(table, lineStart, lineLen);
+
+        if (firstTabIdx < 0) {
+            // No tabs anywhere on the line — col equals char index.
+            return Math.Min(targetCol, lineLen);
+        }
+
+        // The first `firstTabIdx` characters are all non-tab, so the column
+        // count up to that position is exactly firstTabIdx.  If the target
+        // column is reached before the first tab, return immediately.
+        if (targetCol <= firstTabIdx) {
+            return targetCol;
+        }
+
+        // Tab-bearing tail: walk char by char from the first tab.  This is
+        // the original slow path, but bounded to the tail rather than the
+        // entire line.
+        var col = firstTabIdx;
+        for (var i = firstTabIdx; i < lineLen; i++) {
             if (col >= targetCol) {
                 return i;
             }
@@ -167,6 +201,28 @@ public readonly record struct ColumnSelection(int AnchorLine, int AnchorCol, int
             }
         }
         return Math.Max(0, targetCol - endCol);
+    }
+
+    /// <summary>
+    /// Returns the character index (relative to <paramref name="lineStart"/>)
+    /// of the first <c>\t</c> character within the first <paramref name="length"/>
+    /// characters of the line, or -1 if none exists.  Walks pieces via
+    /// <see cref="PieceTable.ForEachPiece"/> so each piece's text is scanned
+    /// with a single SIMD-accelerated <c>IndexOf('\t')</c>.
+    /// </summary>
+    private static int FindFirstTab(PieceTable table, long lineStart, int length) {
+        if (length <= 0) return -1;
+        var firstTabIdx = -1;
+        var scanned = 0;
+        table.ForEachPiece(lineStart, length, span => {
+            if (firstTabIdx >= 0) return; // already found
+            var idx = span.IndexOf('\t');
+            if (idx >= 0) {
+                firstTabIdx = scanned + idx;
+            }
+            scanned += span.Length;
+        });
+        return firstTabIdx;
     }
 
     /// <summary>

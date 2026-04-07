@@ -1046,7 +1046,6 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     }
 
     protected override Size MeasureOverride(Size availableSize) {
-        var measureSw = System.Diagnostics.Stopwatch.StartNew();
         _layout?.Dispose();
         _layout = null;
         var oldViewportW = _viewport.Width;
@@ -1110,21 +1109,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         RaiseScrollInvalidated();
         FireScrollChanged();
-        var totalMs = measureSw.Elapsed.TotalMilliseconds;
-        var visibleLines = _layout?.Lines.Count ?? 0;
-        PerfLog.Write($"[Measure] totalMs={totalMs:F2} visibleLines={visibleLines}");
         return availableSize;
     }
 
     protected override Size ArrangeOverride(Size finalSize) {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
         var size = base.ArrangeOverride(finalSize);
-        var baseMs = sw.Elapsed.TotalMilliseconds;
-        sw.Restart();
         UpdateCaretLayers();
-        var caretMs = sw.Elapsed.TotalMilliseconds;
-        var cursorCount = (Document?.ColumnSel?.MaterializeCarets(Document.Table, _indentWidth).Count) ?? 1;
-        PerfLog.Write($"[Arrange] baseMs={baseMs:F2} updateCaretMs={caretMs:F2} cursors={cursorCount}");
         return size;
     }
 
@@ -1137,13 +1127,6 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// Off-viewport carets are arranged to a zero-size rect so they paint
     /// nothing without needing to remove them from VisualChildren.
     /// </summary>
-    // Diagnostic toggle: when true, UpdateCaretLayers does NOT arrange the
-    // per-column caret pool — only the primary caret.  Used to A/B test
-    // whether per-cursor work in arrange is the source of column-mode
-    // insert slowdown.  Off by default (visible side effect: column carets
-    // don't appear).
-    private static bool _skipColumnCaretArrange;
-
     private void UpdateCaretLayers() {
         if (_primaryCaret is null) return;
         var doc = Document;
@@ -1175,27 +1158,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _primaryCaret.CaretWidth = CaretWidth;
 
         if (doc!.ColumnSel is { } colSel) {
-            // DIAGNOSTIC: when set, skip the per-cursor arrange entirely
-            // and only arrange the primary caret.  Used to A/B test whether
-            // per-cursor HitTestTextPosition (which triggers Avalonia
-            // TextLayout lazy shaping) is the source of column-mode rapid
-            // insert slowdown.  Set true via the immediate window.
-            if (_skipColumnCaretArrange) {
-                ArrangeCaretAt(_primaryCaret, layout!, doc.Selection.Caret);
-                for (var i = 0; i < _columnCaretPool.Count; i++) {
-                    _columnCaretPool[i].Arrange(emptyRect);
-                }
-                return;
-            }
-
             // Column-selection multi-cursor.  The first cursor goes to
             // _primaryCaret; the rest come from the pool, growing as
             // needed.  Pool entries beyond the cursor count are arranged
             // to zero so they paint nothing.
-            var diagSw = System.Diagnostics.Stopwatch.StartNew();
             var carets = colSel.MaterializeCarets(doc.Table, _indentWidth);
-            var materializeMs = diagSw.Elapsed.TotalMilliseconds;
-            diagSw.Restart();
             if (carets.Count == 0) {
                 _primaryCaret.Arrange(emptyRect);
                 for (var i = 0; i < _columnCaretPool.Count; i++) {
@@ -1230,8 +1197,6 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             for (var i = carets.Count - 1; i < _columnCaretPool.Count; i++) {
                 _columnCaretPool[i].Arrange(emptyRect);
             }
-            var arrangeMs = diagSw.Elapsed.TotalMilliseconds;
-            PerfLog.Write($"[CaretCol] cursors={carets.Count} materializeMs={materializeMs:F2} arrangeMs={arrangeMs:F2}");
             return;
         }
 
@@ -2729,10 +2694,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         doc.Insert(e.Text!);
         ScrollCaretIntoView();
         _editSw.Stop();
-        var editMs = _editSw.Elapsed.TotalMilliseconds;
-        PerfStats.Edit.Record(editMs);
-        var cursorCount = doc.ColumnSel?.MaterializeCarets(doc.Table, _indentWidth).Count ?? 1;
-        PerfLog.Write($"[Insert] cursors={cursorCount} editMs={editMs:F2}");
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         e.Handled = true;
         InvalidateLayout();
         ResetCaretBlink();

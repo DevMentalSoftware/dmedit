@@ -535,29 +535,58 @@ small one — it is the primary way a fresh session recovers context.
   instead of treating tab as a single cell.  Bootstraps the column-width
   accumulator that elastic tabstops will need later (entry 20 *Future*).
 
-- **Column-mode rapid insert slows exponentially over time** — Holding
-  a key with ~20 active carets in column-selection mode produces
-  inserts that start fast and slow to a crawl after ~20–40 chars.
-  The total work per insert appears to grow with the number of inserts
-  already performed, not the number of cursors (which is constant).
-  Almost certainly pre-existing — the new caret-layer code adds only
-  O(N carets) flat per insert, which is linear in cursor count and
-  constant per insert.  Suspect locations to investigate, in order of
-  likelihood:
-  1. **Per-cursor compound-edit coalescing** in
-     `Document.InsertAtCursors` / `BulkReplaceVarying`.  If each cursor
-     accumulates its own compound entry and the list merge scans from
-     the end with O(existing entries) work per addition, total work
-     across N inserts at C cursors is O(C × N²).
-  2. **`ColumnSelection.MaterializeCarets`** — verify it's not
-     re-walking the line tree per cursor with super-linear cost.
-  3. **`ColumnSelection` line/col state** — if cursor positions are
-     stored as absolute offsets that need re-translation through the
-     line tree on every materialization, repeated edits compound the
-     cost.
-  Profile with a synthetic "hold key for 5 seconds in 20-cursor column
-  mode" reproducer; the call tree should immediately point at the
-  quadratic site.
+- **Column-mode rapid insert slows with line length × cursor count**
+  (pre-existing — predates the GlyphRun spike, observed by bisecting
+  to even very old commits).  Diagnosed 2026-04-07 with `PerfLog`
+  instrumentation under the GlyphRun branch.  Per-insert wall clock
+  in 30-cursor × 200-char-line × Release configuration:
+  - `Document.InsertAtCursors` ~120ms (grows with line length)
+  - `MeasureOverride` ~19ms (relayout)
+  - `MaterializeCarets` from `UpdateCaretLayers` ~22ms (grows with line length)
+  - Render ~100ms (cycles ~280ms apart, ~100ms unaccounted)
+  Total ~280ms per insert.
+
+  **Root cause**: `ColumnSelection.ColToCharIdx` walks the line text
+  one char at a time via `PieceTable.CharAt(lineStart + i)` to convert
+  a visual column to a character index.  This is needed for
+  tab-aware columns, but lines without tabs can shortcut completely:
+  if there are no tabs in the line, `targetCol == charIdx` directly.
+  `MaterializeCarets` calls `ColToCharIdx` per line, and `Document.InsertAtCursors`
+  + the rest of the column-mode editing path call `MaterializeCarets`
+  multiple times per insert (Document.cs has 6+ call sites).  With
+  30 cursors × 200-char lines × ~5 calls per insert, that's ~30,000
+  `CharAt` walks per character of input.
+
+  **Mitigation landed 2026-04-07**: tab-free fast path in `ColToCharIdx`
+  via a `FindFirstTab` helper that walks pieces with `ForEachPiece` and
+  scans each piece via `span.IndexOf('\t')` (SIMD on .NET 10+).  When
+  no tab is found anywhere on the line, the column equals the char
+  index directly — no per-char `CharAt` calls.  Edit time on the
+  30-cursor × 200-char-line test dropped from 217ms to 187ms (~14%).
+
+  **Tried and reverted**: applying the same fast path to `PaddingNeeded`
+  and `OfsToCol` made things *worse* (Edit went 187ms → 212ms).  The
+  `ForEachPiece` lambda allocates a closure per call (`firstTabIdx` and
+  `scanned` are captured), and the additional ~31 closures per insert
+  cost more than the per-char `CharAt` loop they replaced.  `ColToCharIdx`
+  net wins despite the closure cost only because its replacement scope
+  is bigger (~91 calls per insert) and the SIMD `IndexOf` over 200 chars
+  is so much faster than 200 `CharAt` calls + branch mispredicts that
+  it absorbs the closure overhead.
+
+  **Remaining work**, in priority order:
+  1. **Eliminate the `FindFirstTab` closure** — rewrite as either a
+     `ref struct` enumerator or by manually walking pieces via
+     `PieceTable.FindPiece` + direct buffer access.  Once allocation-free,
+     the same fast path can be applied to `PaddingNeeded` and `OfsToCol`
+     without the regression we just observed.
+  2. **Deduplicate `MaterializeCarets` calls** inside
+     `Document.InsertAtCursors`.  Currently `Materialize` runs once at
+     the top, then `MaterializeCarets` runs at the end for the stream
+     selection update — both walk all 30 lines.  Compute once and reuse.
+  3. **Cache "first tab position" per line in PieceTable** as part of
+     line metadata.  Makes the fast path O(1) per line instead of O(scan).
+     Lower priority because (1) and (2) probably get most of the win.
 
 - **Per-frame `FormattedText` churn in ToolbarControl and TabBarControl**
   — Object Allocation Tracking found ~1,312 `TextLineImpl`s allocated by
