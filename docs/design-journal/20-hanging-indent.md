@@ -133,22 +133,61 @@ in design em size" but the stored sign varies across graphics stacks
 `Math.Abs` on the raw value to get a positive pixel distance regardless —
 sidesteps a runtime-only surprise.
 
-## Remaining limitations (first pass)
+## Consequences
 
-- **Tab-bearing lines fall back to `TextLayout`** and therefore get no
-  hanging indent.  Adding tab support to the fast path requires
-  column-aware advance tracking in `NextRow` and `Draw`: treat a tab as
-  advancing to the next tab stop (`(col / indentWidth + 1) * indentWidth`)
-  rather than a single cell.
-- **Char widths from `CharacterToGlyphMap` advances vs TextLayout's
-  `GetCharWidth`.**  Both measure the same thing through different code
-  paths; on a truly monospace font they match, but a sub-pixel drift is
-  possible and would cause wrap positions to disagree by one column at
-  the margin.  Not observed in practice yet.
-- **Font fallback for missing glyphs on an otherwise-mono line** still
-  forces that line to the slow path.  Fine for code and prose, not so
-  fine for documents sprinkled with box-drawing or emoji.
-- **Non-monospace fonts** get no hanging indent at all.  See *Future*.
+Having two coexisting rendering paths (monospace GlyphRun fast path and
+`TextLayout` slow path) means every per-line decision about which path
+runs has user-visible effects.  A single unsupported character anywhere
+on a line forces that whole line back to `TextLayout`, and any feature
+implemented only on the fast path silently disappears for that line.
+The behavioural consequences of the current first-pass implementation:
+
+- **No ligatures.**  `MonoLineLayout` looks up one glyph per character
+  through `MonoLayoutContext.TryGetGlyph` and builds the `GlyphRun` from
+  that array directly — there is no shaping pass, so ligature sequences
+  like `=>`, `!=`, or `->` render as their individual component glyphs.
+  `TextLayout` lines, by contrast, shape normally.  Depending on the
+  user's font, this means toggling between a ligatured line and a
+  non-ligatured line inside the same document just by whether the line
+  happens to contain a tab.
+- **Emoji and other non-BMP characters force fallback.**  `TryGetGlyph`
+  takes a `char`, not a codepoint, so surrogate pairs can't be looked
+  up.  Any line containing an emoji, supplementary-plane CJK, etc., goes
+  through `TextLayout`.
+- **Tab-bearing lines fall back to `TextLayout`.**  `TryBuild` rejects
+  every char `< 32`; tab in particular needs column-aware advance, which
+  the fast path does not yet implement.  A follow-up column-width
+  accumulator in `NextRow` / `Draw` (`(col / indentWidth + 1) * indentWidth`)
+  would unblock this and also bootstraps the elastic-tabstops work in
+  *Future*.
+- **Any character the resolved face has no glyph for forces fallback.**
+  No font-fallback chain on the fast path — one box-drawing char the
+  user's mono font doesn't ship with sends the whole line to
+  `TextLayout`.  Fine for code and prose, worse for documents with
+  incidental symbols.
+- **`TextLayout` fallback lines get no hanging indent.**  Hanging indent
+  is implemented only inside `MonoLineLayout` (per-row `XOffset` on the
+  `RowSpan` list); the `TextLayout` path has no equivalent hook.  This
+  is the most visible cross-cutting consequence: any line that falls
+  back for *any* of the reasons above loses hanging indent on its
+  wrapped rows while the surrounding lines keep it.  Adding
+  hanging-indent support to the `TextLayout` path is non-trivial and is
+  tracked as a deferred follow-up in entry 21.
+- **`UseFastTextLayout` escape hatch.**  Users who prefer font ligatures
+  over speed and hanging indent can disable the fast path entirely via
+  the "Fast Text Layout" toggle in Settings → Display.  When off,
+  `TextLayoutEngine.LayoutLines` is told to skip `TryBuildMonoContext`,
+  so every line routes through `TextLayout` and ligatures shape
+  normally.  The Hanging Indent toggle is shown disabled in that state
+  to reinforce the tradeoff.
+- **Non-monospace fonts never engage the fast path at all**, so they
+  get no hanging indent for any line.  See *Future* for the proper fix
+  (per-character glyph-advance tracking and elastic tabstops).
+- **Char widths from `CharacterToGlyphMap` advances vs `TextLayout`'s
+  `GetCharWidth`** measure the same thing through different code paths;
+  on a truly monospace font they match, but a sub-pixel drift is
+  possible and would make wrap positions disagree by one column at the
+  margin between fast and slow lines.  Not observed in practice yet.
 
 ## Future — proportional fonts done right
 

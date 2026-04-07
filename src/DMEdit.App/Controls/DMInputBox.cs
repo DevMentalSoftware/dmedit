@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Threading;
+using DMEdit.Core.Documents;
 
 namespace DMEdit.App.Controls;
 
@@ -471,12 +472,12 @@ public class DMInputBox : Control {
 
         switch (e.Key) {
             case Key.Left:
-                MoveCaret(ctrl ? PrevWordBoundary(text, CaretIndex) : Math.Max(0, CaretIndex - 1), shift);
+                MoveCaret(ctrl ? PrevWordBoundary(text, CaretIndex) : CodepointBoundary.StepLeft(text, Math.Min(CaretIndex, text.Length)), shift);
                 e.Handled = true;
                 break;
 
             case Key.Right:
-                MoveCaret(ctrl ? NextWordBoundary(text, CaretIndex) : Math.Min(text.Length, CaretIndex + 1), shift);
+                MoveCaret(ctrl ? NextWordBoundary(text, CaretIndex) : CodepointBoundary.StepRight(text, Math.Min(CaretIndex, text.Length)), shift);
                 e.Handled = true;
                 break;
 
@@ -550,7 +551,9 @@ public class DMInputBox : Control {
         }
         var caretIdx = Math.Clamp(CaretIndex, 0, text.Length);
         if (caretIdx == 0) return;
-        var target = wordMode ? PrevWordBoundary(text, caretIdx) : caretIdx - 1;
+        var target = wordMode
+            ? PrevWordBoundary(text, caretIdx)
+            : CodepointBoundary.StepLeft(text, caretIdx);
         DeleteRange(text, target, caretIdx);
     }
 
@@ -563,7 +566,9 @@ public class DMInputBox : Control {
         }
         var caretIdx = Math.Clamp(CaretIndex, 0, text.Length);
         if (caretIdx >= text.Length) return;
-        var target = wordMode ? NextWordBoundary(text, caretIdx) : caretIdx + 1;
+        var target = wordMode
+            ? NextWordBoundary(text, caretIdx)
+            : CodepointBoundary.StepRight(text, caretIdx);
         DeleteRange(text, caretIdx, target);
     }
 

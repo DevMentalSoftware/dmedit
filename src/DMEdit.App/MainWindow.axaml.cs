@@ -1580,6 +1580,7 @@ public partial class MainWindow : Window {
         Editor.ShowWhitespace = _settings.ShowWhitespace;
         Editor.ShowWrapSymbol = _settings.ShowWrapSymbol;
         Editor.HangingIndent = _settings.HangingIndent;
+        Editor.UseFastTextLayout = _settings.UseFastTextLayout;
         _whitespaceGlyph = CreateMenuCheckGlyph(_settings.ShowWhitespace);
         MenuWhitespace.Icon = _whitespaceGlyph;
 
@@ -3121,6 +3122,9 @@ public partial class MainWindow : Window {
                     break;
                 case "HangingIndent":
                     Editor.HangingIndent = _settings.HangingIndent;
+                    break;
+                case "UseFastTextLayout":
+                    Editor.UseFastTextLayout = _settings.UseFastTextLayout;
                     break;
                 case "BrightSelection":
                     ApplySelectionBrushes();

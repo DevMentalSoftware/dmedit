@@ -206,6 +206,26 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
             // Decode as many chars as we need from this chunk.
             var decoded = DecodeUpToNChars(src, dest.Slice(destPos), charsRemaining,
                 out var bytesConsumed);
+
+            // Forward-progress safety net.  DecodeUpToNChars guarantees
+            // progress on a non-empty src, but if a future bug regresses
+            // that guarantee, advance to the next chunk rather than
+            // spinning.  Without this, an orphan surrogate or a request
+            // for an odd char count straddling a 4-byte sequence used to
+            // hang the editor (caller in a tight render loop, no exit).
+            if (decoded == 0 && bytesConsumed == 0) {
+                if (bytesAvail > 0) {
+                    // Skip the malformed sequence at the chunk head.
+                    if (charsRemaining > 0 && destPos < dest.Length) {
+                        dest[destPos++] = '\uFFFD';
+                        charsRemaining--;
+                    }
+                }
+                ci++;
+                byteOfs = 0;
+                continue;
+            }
+
             destPos += decoded;
             charsRemaining -= decoded;
             byteOfs += bytesConsumed;
@@ -238,6 +258,18 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
                 var want = (int)Math.Min(charsRemaining, decodeBuf.Length);
                 var decoded = DecodeUpToNChars(src, decodeBuf, want,
                     out var bytesConsumed);
+
+                // Forward-progress safety net (see CopyTo for full rationale).
+                if (decoded == 0 && bytesConsumed == 0) {
+                    if (bytesAvail > 0 && charsRemaining > 0) {
+                        decodeBuf[0] = '\uFFFD';
+                        visitor(decodeBuf.AsSpan(0, 1));
+                        charsRemaining--;
+                    }
+                    ci++;
+                    byteOfs = 0;
+                    continue;
+                }
 
                 if (decoded > 0) {
                     visitor(decodeBuf.AsSpan(0, decoded));
@@ -288,9 +320,24 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
             var charsRemaining = charLen;
             while (charsRemaining > 0 && ci < _chunks.Count) {
                 ref var chunk = ref ChunkRef(ci);
-                var src = chunk.Data.AsSpan(byteOfs, chunk.BytesUsed - byteOfs);
+                var bytesAvail = chunk.BytesUsed - byteOfs;
+                var src = chunk.Data.AsSpan(byteOfs, bytesAvail);
                 var want = Math.Min(charsRemaining, decodeBuf.Length);
                 var decoded = DecodeUpToNChars(src, decodeBuf, want, out var bytesConsumed);
+
+                // Forward-progress safety net (see CopyTo for full rationale).
+                if (decoded == 0 && bytesConsumed == 0) {
+                    if (bytesAvail > 0) {
+                        // U+FFFD doesn't match c1 or c2 (which we required to
+                        // be ASCII at the top), so just advance and keep going.
+                        pos++;
+                        charsRemaining--;
+                    }
+                    ci++;
+                    byteOfs = 0;
+                    continue;
+                }
+
                 var span = decodeBuf.AsSpan(0, decoded);
                 var idx = span.IndexOfAny(c1, c2);
                 if (idx >= 0) return pos + idx;
@@ -586,6 +633,31 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
         }
 
         bytesConsumed = byteLimit;
+
+        // Forward-progress guarantee.  If we couldn't consume anything from
+        // the head of src — typically because the caller asked for an odd
+        // number of chars and the next sequence is a 4-byte / surrogate-pair
+        // (charsProduced == 2 > maxChars == 1), or because the caller's
+        // request lands inside a previously-split surrogate pair — we MUST
+        // advance past at least one byte and emit at least one char,
+        // otherwise the outer copy loop in CopyTo / Visit / IndexOfAny
+        // sees no progress and spins forever.  Emit a replacement char
+        // (U+FFFD) and skip whatever malformed or unsplittable bytes are
+        // at the head.
+        if (byteLimit == 0 && src.Length > 0 && maxChars > 0 && dest.Length > 0) {
+            var b = src[0];
+            int skipBytes;
+            if (b < 0x80) skipBytes = 1;
+            else if ((b & 0xE0) == 0xC0) skipBytes = 2;
+            else if ((b & 0xF0) == 0xE0) skipBytes = 3;
+            else skipBytes = 4;
+            // Cap at what's actually available.
+            if (skipBytes > src.Length) skipBytes = src.Length;
+            dest[0] = '\uFFFD';
+            bytesConsumed = skipBytes;
+            return 1;
+        }
+
         if (byteLimit == 0) return 0;
 
         return Encoding.UTF8.GetChars(src[..byteLimit], dest);

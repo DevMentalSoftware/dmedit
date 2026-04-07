@@ -35,6 +35,12 @@ public static class SettingsRegistry {
         new("HangingIndent", "Hanging Indent",
             "Indent wrapped continuation rows by half of one indent level so wrapped text " +
             "is visually offset from the first row.  Currently applies only to monospace fonts.",
+            "Display", SettingKind.Bool, true, EnabledWhenKey: "UseFastTextLayout"),
+
+        new("UseFastTextLayout", "Fast Text Layout",
+            "Render monospace lines through the GlyphRun fast path.  Much faster and enables " +
+            "hanging indent, but disables font ligatures (e.g. => rendered as a single glyph).  " +
+            "Turn off if you prefer ligatures over speed and hanging indent.",
             "Display", SettingKind.Bool, true),
 
         new("CharWrapFileSizeKB", "Char Wrap File Size (KB)",

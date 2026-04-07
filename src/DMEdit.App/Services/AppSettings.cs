@@ -130,6 +130,15 @@ public sealed class AppSettings {
     public bool HangingIndent { get; set; } = true;
 
     /// <summary>
+    /// Route monospace lines through the <c>MonoLineLayout</c> GlyphRun fast
+    /// path when possible.  Turning this off forces every line through
+    /// Avalonia's <c>TextLayout</c>, which is slower and disables hanging
+    /// indent but enables ligatures (e.g. <c>=&gt;</c> rendered as a single
+    /// shaped glyph) and full Unicode shaping.  Default: true.
+    /// </summary>
+    public bool UseFastTextLayout { get; set; } = true;
+
+    /// <summary>
     /// Use a brighter, more visible selection highlight color instead of the
     /// default subtle tint. Useful on monitors with limited contrast.
     /// </summary>

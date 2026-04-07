@@ -128,14 +128,14 @@ public readonly record struct ColumnSelection(int AnchorLine, int AnchorCol, int
 
         if (firstTabIdx < 0) {
             // No tabs anywhere on the line — col equals char index.
-            return Math.Min(targetCol, lineLen);
+            return SnapCharIdxToBoundary(table, lineStart, Math.Min(targetCol, lineLen));
         }
 
         // The first `firstTabIdx` characters are all non-tab, so the column
         // count up to that position is exactly firstTabIdx.  If the target
         // column is reached before the first tab, return immediately.
         if (targetCol <= firstTabIdx) {
-            return targetCol;
+            return SnapCharIdxToBoundary(table, lineStart, targetCol);
         }
 
         // Tab-bearing tail: walk char by char from the first tab.  This is
@@ -144,7 +144,7 @@ public readonly record struct ColumnSelection(int AnchorLine, int AnchorCol, int
         var col = firstTabIdx;
         for (var i = firstTabIdx; i < lineLen; i++) {
             if (col >= targetCol) {
-                return i;
+                return SnapCharIdxToBoundary(table, lineStart, i);
             }
             var ch = table.CharAt(lineStart + i);
             if (ch == '\t') {
@@ -158,9 +158,25 @@ public readonly record struct ColumnSelection(int AnchorLine, int AnchorCol, int
     }
 
     /// <summary>
-    /// Converts a character offset to a tab-aware visual column.
+    /// If <paramref name="charIdx"/> relative to <paramref name="lineStart"/>
+    /// lands on the low half of a surrogate pair, snaps it forward to the
+    /// position after the pair so the caller never hands a mid-pair offset
+    /// to an edit operation.
+    /// </summary>
+    private static int SnapCharIdxToBoundary(PieceTable table, long lineStart, int charIdx) {
+        if (charIdx <= 0) return charIdx;
+        var snapped = CodepointBoundary.SnapToBoundary(table, lineStart + charIdx, forward: true);
+        return (int)(snapped - lineStart);
+    }
+
+    /// <summary>
+    /// Converts a character offset to a tab-aware visual column.  If
+    /// <paramref name="ofs"/> lands in the middle of a surrogate pair, it
+    /// is first snapped backward to the start of the pair — callers never
+    /// get a column value that corresponds to a half code point.
     /// </summary>
     public static int OfsToCol(PieceTable table, long ofs, int tabSize) {
+        ofs = CodepointBoundary.SnapToBoundary(table, ofs, forward: false);
         var line = (int)table.LineFromOfs(ofs);
         var lineStart = table.LineStartOfs(line);
         var charIdx = (int)(ofs - lineStart);
@@ -273,7 +289,12 @@ public readonly record struct ColumnSelection(int AnchorLine, int AnchorCol, int
         }
 
         var charIdx = ColToCharIdx(table, lineStart, lineLen, currentCol, tabSize);
-        var newCharIdx = charIdx + direction;
+        // Step by a whole code point so an emoji under the caret moves as
+        // one unit — direction=+1 over a surrogate pair advances by 2.
+        var newCharIdxLong = direction < 0
+            ? CodepointBoundary.StepLeft(table, lineStart + charIdx) - lineStart
+            : CodepointBoundary.StepRight(table, lineStart + charIdx) - lineStart;
+        var newCharIdx = (int)newCharIdxLong;
         if (newCharIdx < 0) return 0;
         if (newCharIdx >= lineLen) return endCol;
         return OfsToCol(table, lineStart + newCharIdx, tabSize);

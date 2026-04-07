@@ -375,6 +375,22 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
     }
 
+    /// <summary>
+    /// When true (default), monospace lines go through the <c>MonoLineLayout</c>
+    /// GlyphRun fast path — faster rendering and enables hanging indent, but
+    /// no font ligatures.  When false, every line routes through Avalonia's
+    /// <c>TextLayout</c>, which is slower and has no hanging indent but
+    /// renders ligatures like <c>=&gt;</c> as single shaped glyphs.
+    /// </summary>
+    public bool UseFastTextLayout {
+        get => _useFastTextLayout;
+        set {
+            if (_useFastTextLayout == value) return;
+            _useFastTextLayout = value;
+            InvalidateLayout();
+        }
+    }
+
     /// <summary>Applies a new theme, pushing colors into styled properties and fields.</summary>
     public void ApplyTheme(EditorTheme theme) {
         _theme = theme;
@@ -466,6 +482,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     // and that face is monospace — the GlyphRun fast path applies.  See
     // design journal 20 for the rationale.
     private bool _hangingIndent = true;
+
+    // Escape hatch for users who want ligatures at the cost of speed and
+    // hanging indent.  When false, LayoutLines is told to skip building a
+    // MonoLayoutContext so every line falls back to TextLayout.
+    private bool _useFastTextLayout = true;
 
     // Line number gutter
     private bool _showLineNumbers = true;
@@ -607,7 +628,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (_overwriteMode == value) return;
             _overwriteMode = value;
             OverwriteModeChanged?.Invoke(this, EventArgs.Empty);
-            InvalidateVisual();
+            // The caret layer's width (thin bar vs block) is recomputed in
+            // UpdateCaretLayers/ArrangeCaretAt from ArrangeOverride — neither
+            // is driven by InvalidateVisual.  ResetCaretBlink forces an
+            // arrange pass and also makes the caret immediately visible so
+            // the user sees the new shape on the toggle instead of waiting
+            // for the next blink tick.
+            ResetCaretBlink();
         }
     }
 
@@ -1230,9 +1257,16 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         double widthForLayer;
         if (_overwriteMode) {
             // Block-style: layer width matches the underlying glyph cell.
+            // Step by one code point so a surrogate pair draws as one block.
             var blockW = rect.Height * 0.55; // fallback ~em-width
             if (localCaret < totalChars) {
-                var nextRect = _layoutEngine.GetCaretBounds(localCaret + 1, layout);
+                var docOfs = layout.ViewportBase + localCaret;
+                var table = Document?.Table;
+                var stepW = table != null
+                    ? (int)(CodepointBoundary.StepRight(table, docOfs) - docOfs)
+                    : 1;
+                if (stepW < 1) stepW = 1;
+                var nextRect = _layoutEngine.GetCaretBounds(localCaret + stepW, layout);
                 var w = nextRect.X - rect.X;
                 if (w > 0) blockW = w;
             }
@@ -1374,7 +1408,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             : 0;
         _layout = _layoutEngine.LayoutLines(
             doc.Table, topLine, bottomLine, typeface, EffectiveFontSize, ForegroundBrush,
-            maxWidth, startOfs, lineCount, doc.Table.Length, hangingIndentChars);
+            maxWidth, startOfs, lineCount, doc.Table.Length, hangingIndentChars,
+            _useFastTextLayout);
         _layout.TopLine = topLine;
 
         // When the layout covers the entire document, use exact height
@@ -2673,17 +2708,25 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         Coalesce("char");
 
-        // In overwrite mode, select the next character(s) so Insert replaces them.
+        // In overwrite mode, select the next code point(s) so Insert replaces them.
         // Don't overwrite past line endings (standard overwrite behavior).
+        // Walk both the typed text and the buffer by whole code points so a
+        // surrogate pair under the caret is consumed as one unit.
         if (_overwriteMode && doc.Selection.IsEmpty && e.Text != null) {
             var caret = doc.Selection.Caret;
             var table = doc.Table;
             var len = table.Length;
             var charsToOverwrite = 0;
-            for (var i = 0; i < e.Text.Length && caret + charsToOverwrite < len; i++) {
+            var typedIdx = 0;
+            while (typedIdx < e.Text.Length && caret + charsToOverwrite < len) {
+                var bufW = CodepointBoundary.WidthAt(table, caret + charsToOverwrite);
                 var ch = table.GetText(caret + charsToOverwrite, 1);
                 if (ch[0] is '\r' or '\n') break;
-                charsToOverwrite++;
+                charsToOverwrite += bufW;
+                typedIdx += char.IsHighSurrogate(e.Text[typedIdx])
+                    && typedIdx + 1 < e.Text.Length
+                    && char.IsLowSurrogate(e.Text[typedIdx + 1])
+                    ? 2 : 1;
             }
             if (charsToOverwrite > 0) {
                 doc.Selection = new Selection(caret, caret + charsToOverwrite);
@@ -3178,7 +3221,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         long newCaret;
 
         if (!byWord) {
-            newCaret = Math.Clamp(caret + delta, 0L, len);
+            // Step by one code point so surrogate pairs move together.
+            newCaret = delta < 0
+                ? CodepointBoundary.StepLeft(table, caret)
+                : CodepointBoundary.StepRight(table, caret);
+            newCaret = Math.Clamp(newCaret, 0L, len);
         } else {
             newCaret = delta < 0
                 ? FindWordBoundaryLeft(doc, caret)

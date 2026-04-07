@@ -45,7 +45,8 @@ public sealed class TextLayoutEngine {
         long viewportBase,
         long lineCount = -1,
         long docLength = -1,
-        int hangingIndentChars = 0) {
+        int hangingIndentChars = 0,
+        bool useFastTextLayout = true) {
 
         using var spaceLayout = MakeTextLayout(" ", typeface, fontSize, foreground, double.PositiveInfinity);
         var rowHeight = spaceLayout.Height;
@@ -54,8 +55,12 @@ public sealed class TextLayoutEngine {
         // If the typeface doesn't resolve to a single concrete face (e.g. a
         // comma-separated fallback family), or the face isn't monospace, we
         // skip building any MonoLineLayout and everything falls back to
-        // TextLayout — the existing proportional-safe path.
-        var monoCtx = TryBuildMonoContext(typeface, fontSize, rowHeight, hangingIndentChars, foreground);
+        // TextLayout — the existing proportional-safe path.  The caller can
+        // also force the TextLayout path (for font ligatures at the cost of
+        // speed and hanging indent) by passing useFastTextLayout: false.
+        var monoCtx = useFastTextLayout
+            ? TryBuildMonoContext(typeface, fontSize, rowHeight, hangingIndentChars, foreground)
+            : null;
 
         var lines = new List<LayoutLine>();
         var row = 0;
