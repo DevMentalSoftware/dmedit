@@ -25,6 +25,12 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
         public byte[] Data;
         public int BytesUsed;
         public int CharCount;
+        // True when every byte in [0, BytesUsed) is < 0x80, which means
+        // 1 byte == 1 char and char-offset → byte-offset translation is
+        // O(1) instead of O(charIndex).  Set during the Append* paths and
+        // cleared as soon as a non-ASCII byte appears in the chunk.  Most
+        // source code is ASCII, so this is the dominant case.
+        public bool IsAllAscii;
     }
 
     private readonly List<Chunk> _chunks = new();
@@ -88,6 +94,12 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
             encoder.Convert(remaining, dest, flush: true,
                 out var charsUsed, out var bytesUsed, out _);
 
+            // 1 byte == 1 char ⇒ this slice was all-ASCII.  Any mismatch
+            // means at least one multi-byte sequence, which permanently
+            // taints the chunk for the IsAllAscii fast path.
+            if (bytesUsed != charsUsed) {
+                chunk.IsAllAscii = false;
+            }
             chunk.BytesUsed += bytesUsed;
             chunk.CharCount += charsUsed;
             _totalChars += charsUsed;
@@ -137,6 +149,11 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
             var slice = remaining[..take];
             var charCount = Encoding.UTF8.GetCharCount(slice);
             slice.CopyTo(chunk.Data.AsSpan(chunk.BytesUsed));
+            // 1 byte == 1 char ⇒ all-ASCII slice.  Mismatch ⇒ chunk now
+            // contains a multi-byte sequence and the fast path is off.
+            if (take != charCount) {
+                chunk.IsAllAscii = false;
+            }
             chunk.BytesUsed += take;
             chunk.CharCount += charCount;
             _totalChars += charCount;
@@ -366,6 +383,7 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
             Data = new byte[size],
             BytesUsed = 0,
             CharCount = 0,
+            IsAllAscii = true,  // empty chunk is trivially all-ASCII
         });
     }
 
@@ -448,6 +466,15 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
     private static int FindByteOffsetInChunk(ref Chunk chunk, int charIndex) {
         if (charIndex == 0) return 0;
         if (charIndex == chunk.CharCount) return chunk.BytesUsed;
+
+        // ASCII fast path: byte index == char index, no scan needed.
+        // Tracked per-chunk in IsAllAscii (set on construction, cleared
+        // any time a multi-byte sequence is appended).  Most code is
+        // ASCII so this skips the entire UTF-8 decode loop in the
+        // overwhelming common case.
+        if (chunk.IsAllAscii) {
+            return charIndex;
+        }
 
         var span = chunk.Data.AsSpan(0, chunk.BytesUsed);
         var bytePos = 0;
