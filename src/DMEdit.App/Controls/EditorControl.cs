@@ -1009,6 +1009,18 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     }
 
     /// <summary>
+    /// Wraps <see cref="TextLayoutEngine.LayoutEmpty"/> with the editor's
+    /// pixel-snapped row height.  Every empty layout built from EditorControl
+    /// must use the same row height as the main layout path so scroll math,
+    /// extent height, and caret visibility checks all agree — otherwise the
+    /// raw engine row height drifts from <see cref="GetRowHeight"/>'s snapped
+    /// value and causes off-by-a-pixel-per-row errors that accumulate at
+    /// large line numbers (see journal entry 21).
+    /// </summary>
+    private LayoutResult BuildEmptyLayout(Typeface typeface, double maxWidth) =>
+        _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, maxWidth, GetRowHeight());
+
+    /// <summary>
     /// Builds or retrieves the current layout.
     /// Only the visible window of text is fetched and laid out (windowed layout).
     /// </summary>
@@ -1017,8 +1029,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return _layout;
         }
         if (_layoutFailed) {
-            _layout = _layoutEngine.LayoutEmpty(
-                new Typeface(FontFamily), EffectiveFontSize, ForegroundBrush, 100);
+            _layout = BuildEmptyLayout(new Typeface(FontFamily), 100);
             return _layout;
         }
         _perfSw.Restart();
@@ -1038,7 +1049,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             } else if (doc != null && lineCount > 0) {
                 LayoutWindowed(doc, lineCount, typeface, textW, extentW);
             } else {
-                _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+                _layout = BuildEmptyLayout(typeface, textW);
                 _extent = new Size(extentW, 0);
                 RenderOffsetY = 0;
             }
@@ -1047,14 +1058,14 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             // mode and retry.  Don't set _layoutFailed so the next layout
             // pass uses char-wrap successfully.
             _charWrapMode = true;
-            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+            _layout = BuildEmptyLayout(typeface, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
             InvalidateMeasure();
             LineTooLongDetected?.Invoke(ex);
         } catch {
             _layoutFailed = true;
-            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+            _layout = BuildEmptyLayout(typeface, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
             throw;
@@ -1079,8 +1090,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _viewport = availableSize;
 
         if (_layoutFailed) {
-            _layout = _layoutEngine.LayoutEmpty(
-                new Typeface(FontFamily), EffectiveFontSize, ForegroundBrush, 100);
+            _layout = BuildEmptyLayout(new Typeface(FontFamily), 100);
             return availableSize;
         }
 
@@ -1103,7 +1113,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             } else if (doc != null && lineCount > 0) {
                 LayoutWindowed(doc, lineCount, typeface, textW, extentW);
             } else {
-                _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+                _layout = BuildEmptyLayout(typeface, textW);
                 _extent = new Size(extentW, 0);
                 RenderOffsetY = 0;
             }
@@ -1112,14 +1122,14 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             // mode and retry.  Don't set _layoutFailed so the next layout
             // pass uses char-wrap successfully.
             _charWrapMode = true;
-            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+            _layout = BuildEmptyLayout(typeface, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
             InvalidateMeasure();
             LineTooLongDetected?.Invoke(ex);
         } catch {
             _layoutFailed = true;
-            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+            _layout = BuildEmptyLayout(typeface, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
             throw;
@@ -1379,7 +1389,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // required page isn't in memory yet. Layout empty text — the next
         // ProgressChanged event will trigger re-layout once data is available.
         if (startOfs < 0 || endOfs < 0) {
-            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, maxWidth);
+            _layout = BuildEmptyLayout(typeface, maxWidth);
             _extent = new Size(extentWidth, totalVisualRows * rh);
             RenderOffsetY = 0;
             return;
@@ -1393,7 +1403,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Skip this layout pass — the next one will see the consistent state.
         var docLen = doc.Table.Length;
         if (startOfs + len > docLen) {
-            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, maxWidth);
+            _layout = BuildEmptyLayout(typeface, maxWidth);
             _extent = new Size(extentWidth, totalVisualRows * rh);
             RenderOffsetY = 0;
             return;
@@ -1409,7 +1419,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _layout = _layoutEngine.LayoutLines(
             doc.Table, topLine, bottomLine, typeface, EffectiveFontSize, ForegroundBrush,
             maxWidth, startOfs, lineCount, doc.Table.Length, hangingIndentChars,
-            _useFastTextLayout);
+            _useFastTextLayout, rh);
         _layout.TopLine = topLine;
 
         // When the layout covers the entire document, use exact height

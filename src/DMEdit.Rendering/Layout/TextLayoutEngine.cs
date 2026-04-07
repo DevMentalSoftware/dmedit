@@ -24,10 +24,15 @@ public sealed class TextLayoutEngine {
 
     /// <summary>
     /// Creates a layout for an empty document (single empty line).
+    /// <paramref name="rowHeightOverride"/>, if &gt; 0, replaces the computed
+    /// per-row pixel height so callers can force pixel-snapping alignment
+    /// with their own scroll math.
     /// </summary>
     public LayoutResult LayoutEmpty(
-        Typeface typeface, double fontSize, IBrush foreground, double maxWidth) =>
-        LayoutLines(new PieceTable(), 0, 1, typeface, fontSize, foreground, maxWidth, 0);
+        Typeface typeface, double fontSize, IBrush foreground, double maxWidth,
+        double rowHeightOverride = 0) =>
+        LayoutLines(new PieceTable(), 0, 1, typeface, fontSize, foreground, maxWidth, 0,
+            rowHeightOverride: rowHeightOverride);
 
     /// <summary>
     /// Lays out visible lines directly from the <see cref="PieceTable"/>,
@@ -46,10 +51,17 @@ public sealed class TextLayoutEngine {
         long lineCount = -1,
         long docLength = -1,
         int hangingIndentChars = 0,
-        bool useFastTextLayout = true) {
+        bool useFastTextLayout = true,
+        double rowHeightOverride = 0) {
 
         using var spaceLayout = MakeTextLayout(" ", typeface, fontSize, foreground, double.PositiveInfinity);
-        var rowHeight = spaceLayout.Height;
+        // The caller may pass a pre-snapped row height that matches its own
+        // scroll-math (e.g. EditorControl snaps to device pixel multiples to
+        // eliminate inter-line jitter).  When both sides use the same value,
+        // line Y positions stay in agreement with the scroll extent and the
+        // caret visibility check, which matters at large line numbers where
+        // a sub-pixel drift per row accumulates past a full line.
+        var rowHeight = rowHeightOverride > 0 ? rowHeightOverride : spaceLayout.Height;
 
         // Resolve a monospace fast-path context once for the whole window.
         // If the typeface doesn't resolve to a single concrete face (e.g. a
