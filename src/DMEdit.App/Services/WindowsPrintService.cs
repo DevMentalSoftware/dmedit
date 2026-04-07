@@ -27,16 +27,23 @@ public static class WindowsPrintService {
     /// </summary>
     public static ISystemPrintService? Service => Instance.Value;
 
+    /// <summary>
+    /// If discovery failed, the reason — set once during the Lazy
+    /// initialization and safe to read afterwards.  Callers can surface this
+    /// in a status-bar message or error dialog when <see cref="IsAvailable"/>
+    /// is false.  Null when discovery hasn't run yet or when it succeeded.
+    /// </summary>
+    public static string? DiscoveryError { get; private set; }
+
     private static ISystemPrintService? Discover() {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
-            return null;
+            return Fail("Not running on Windows.");
         }
         try {
             var dir = AppContext.BaseDirectory;
             var dllPath = Path.Combine(dir, "DMEdit.Windows.dll");
             if (!File.Exists(dllPath)) {
-                Debug.WriteLine($"Windows print DLL not found at: {dllPath}");
-                return null;
+                return Fail($"Windows print DLL not found at: {dllPath}");
             }
 
             // The app targets net10.0 (not net10.0-windows), so WPF framework
@@ -44,8 +51,7 @@ public static class WindowsPrintService {
             // that finds them in the Windows Desktop runtime pack.
             var wpfDir = FindWpfRuntimeDir();
             if (wpfDir is null) {
-                Debug.WriteLine("Windows Desktop runtime pack not found.");
-                return null;
+                return Fail("Windows Desktop runtime pack not found.");
             }
             AppDomain.CurrentDomain.AssemblyResolve += (_, args) => {
                 var name = new AssemblyName(args.Name).Name;
@@ -57,19 +63,29 @@ public static class WindowsPrintService {
             var asm = Assembly.LoadFrom(dllPath);
             var type = asm.GetType("DMEdit.Windows.WpfPrintService");
             if (type is null) {
-                Debug.WriteLine("WpfPrintService type not found in assembly.");
-                return null;
+                return Fail("WpfPrintService type not found in assembly.");
             }
 
-            var instance = Activator.CreateInstance(type) as ISystemPrintService;
-            if (instance is null) {
-                Debug.WriteLine("WpfPrintService does not implement ISystemPrintService.");
+            var rawInstance = Activator.CreateInstance(type);
+            if (rawInstance is not ISystemPrintService instance) {
+                // Most common cause: a stale DMEdit.Windows.dll built against
+                // an older ISystemPrintService signature.  Surface a specific
+                // hint because silent failure here has burned us before.
+                return Fail(
+                    $"WpfPrintService (type={rawInstance?.GetType().FullName ?? "null"}) " +
+                    "does not implement the current ISystemPrintService interface. " +
+                    "This usually means DMEdit.Windows.dll is stale — rebuild the solution.");
             }
             return instance;
         } catch (Exception ex) {
-            Debug.WriteLine($"Failed to load Windows print assembly: {ex.Message}");
-            return null;
+            return Fail($"Failed to load Windows print assembly: {ex}");
         }
+    }
+
+    private static ISystemPrintService? Fail(string reason) {
+        DiscoveryError = reason;
+        Trace.WriteLine($"[WindowsPrintService] {reason}");
+        return null;
     }
 
     /// <summary>

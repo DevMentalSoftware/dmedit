@@ -53,7 +53,7 @@ public partial class MainWindow : Window {
     private bool _windowStateReady;
     private TabState? _settingsTab;
     private readonly FileWatcherService _watcher = new();
-    private Task<bool>? _printTask;
+    private Task<PrintResult>? _printTask;
     private readonly UpdateService _updateService = new();
     private readonly List<(MenuItem item, Command cmd)> _menuCommandBindings = [];
     private TextBlock? _lineNumGlyph;
@@ -1010,8 +1010,17 @@ public partial class MainWindow : Window {
         Cmd.FileClose.Wire(
             () => { if (_activeTab != null) _ = PromptAndCloseTabAsync(_activeTab); });
         Cmd.FileCloseAll.Wire(() => _ = CloseAllTabsAsync());
-        Cmd.FilePrint.Wire(
-            () => { if (WindowsPrintService.IsAvailable) _ = PrintAsync(); });
+        Cmd.FilePrint.Wire(() => {
+            if (WindowsPrintService.IsAvailable) {
+                _ = PrintAsync();
+                return;
+            }
+            // Surface the discovery reason so a silent-no-op click never
+            // happens again — if DMEdit.Windows.dll fails to load (stale
+            // build, missing runtime pack, wrong OS) the user sees why.
+            StatusLeft.Text = "Print unavailable: "
+                + (WindowsPrintService.DiscoveryError ?? "reason unknown.");
+        });
         Cmd.FileSaveAsPdf.Wire(() => _ = SaveAsPdfAsync());
         Cmd.FileExit.Wire(Close);
         Cmd.FileToggleReadOnly.Wire(ToggleActiveReadOnly,
@@ -1115,13 +1124,13 @@ public partial class MainWindow : Window {
 
     /// <summary>
     /// Checks whether a tab's document should use character-wrapping mode
-    /// based on longest real line and file size.
+    /// based on longest line and file size.
     /// </summary>
     private bool ShouldCharWrap(TabState tab) {
         if (tab.LoadResult?.Buffer is not PagedFileBuffer pb) return false;
         var fileSizeKb = pb.ByteLength / 1024.0;
         return fileSizeKb >= _settings.CharWrapFileSizeKB
-            && pb.LongestRealLine >= PieceTable.MaxGetTextLength;
+            && pb.LongestLine >= PieceTable.MaxGetTextLength;
     }
 
     private void ToggleWrapLines() {
@@ -1562,12 +1571,16 @@ public partial class MainWindow : Window {
 
         // Wrap Lines + column limit
         Editor.WrapLines = _settings.WrapLines;
+        Editor.UseWrapColumn = _settings.UseWrapColumn;
         Editor.WrapLinesAt = _settings.WrapLinesAt;
         _wrapLinesGlyph = CreateMenuCheckGlyph(_settings.WrapLines);
         MenuWrapLines.Icon = _wrapLinesGlyph;
 
-        // Show Whitespace
+        // Show Whitespace + Wrap Symbol + Hanging Indent
         Editor.ShowWhitespace = _settings.ShowWhitespace;
+        Editor.ShowWrapSymbol = _settings.ShowWrapSymbol;
+        Editor.HangingIndent = _settings.HangingIndent;
+        Editor.UseFastTextLayout = _settings.UseFastTextLayout;
         _whitespaceGlyph = CreateMenuCheckGlyph(_settings.ShowWhitespace);
         MenuWhitespace.Icon = _whitespaceGlyph;
 
@@ -1820,7 +1833,9 @@ public partial class MainWindow : Window {
         var replaceAll = s.ReplaceAllTimeMs > 0 ? $" | ReplAll: {s.ReplaceAllTimeMs:F1}ms" : "";
         var ioText =
             $"Load: {load} | Save: {save}{replaceAll} | " +
-            $"Mem: {s.MemoryMb:F0} MB (max {s.PeakMemoryMb:F0} MB)";
+            $"Mem: {s.MemoryMb:F0} MB (max {s.PeakMemoryMb:F0} MB) | " +
+            $"GC: {s.Gen0}/{s.Gen1}/{s.Gen2} | " +
+            $"Inv/Rnd: {s.LayoutInvalidations}/{s.RenderCalls}";
         if (StatsBarIO.Text != ioText) StatsBarIO.Text = ioText;
     }
 
@@ -2667,6 +2682,18 @@ public partial class MainWindow : Window {
 
         if (dlg.JobTicket is not { } ticket) return;
 
+        // Apply the hidden diagnostic toggle for GlyphRun printing.  Users
+        // with no settings.json entry get the default (true).
+        ticket.UseGlyphRun = _settings.UseGlyphRunPrinting;
+
+        // Make the printout match the editor's font and size.  Without this
+        // the print path falls back to its hardcoded defaults and the
+        // visible point size is wrong (e.g. WPF's emSize is in DIPs, so a
+        // hardcoded "11" comes out as 8.25pt).
+        ticket.FontFamily = SettingRowFactory.GetEffectiveFontFamily(_settings);
+        ticket.FontSizePoints = _settings.EditorFontSize;
+        ticket.IndentWidth = _settings.IndentWidth;
+
         // Persist the chosen settings on the document.
         doc.PrintSettings = ticket.Settings;
 
@@ -2705,8 +2732,29 @@ public partial class MainWindow : Window {
             return;
         }
 
-        var ok = await _printTask;
-        StatusLeft.Text = ok ? "Printing complete" : "Print failed.";
+        var result = await _printTask;
+        if (result.Success) {
+            StatusLeft.Text = "Printing complete";
+            return;
+        }
+        if (result.Cancelled) {
+            StatusLeft.Text = "Printing cancelled";
+            return;
+        }
+
+        StatusLeft.Text = "Print failed.";
+        const string FriendlyDetail =
+            "An error occurred while printing and the job was not sent to the printer.\n\n" +
+            "If this keeps happening, check that the printer is connected and powered on, " +
+            "and that no jobs are stuck or paused in the Windows print queue.";
+        var err = new ErrorDialog(
+            title: "Print failed",
+            detail: FriendlyDetail,
+            buttons: [ErrorDialogButton.OK],
+            stackTrace: result.ErrorDetails,
+            devMode: _settings.DevMode,
+            theme: _theme);
+        await err.ShowDialog(this);
     }
 
     private PrintSettings BuildPrintSettings() {
@@ -3063,8 +3111,20 @@ public partial class MainWindow : Window {
                     _whitespaceGlyph!.Opacity = _settings.ShowWhitespace ? 1.0 : 0.0;
                     Toolbar.Refresh();
                     break;
+                case "UseWrapColumn":
+                    Editor.UseWrapColumn = _settings.UseWrapColumn;
+                    break;
                 case "WrapLinesAt":
                     Editor.WrapLinesAt = _settings.WrapLinesAt;
+                    break;
+                case "ShowWrapSymbol":
+                    Editor.ShowWrapSymbol = _settings.ShowWrapSymbol;
+                    break;
+                case "HangingIndent":
+                    Editor.HangingIndent = _settings.HangingIndent;
+                    break;
+                case "UseFastTextLayout":
+                    Editor.UseFastTextLayout = _settings.UseFastTextLayout;
                     break;
                 case "BrightSelection":
                     ApplySelectionBrushes();

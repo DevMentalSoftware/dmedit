@@ -116,6 +116,29 @@ public sealed class AppSettings {
     public bool ShowWhitespace { get; set; }
 
     /// <summary>
+    /// Show a wrap indicator glyph at the wrap column for lines that wrap.
+    /// Only visible when <see cref="WrapLines"/> is true. Default: true.
+    /// </summary>
+    public bool ShowWrapSymbol { get; set; } = true;
+
+    /// <summary>
+    /// Indent wrapped continuation rows by half of one indent level so wrapped
+    /// text is visually offset from the first row of each logical line.
+    /// Only takes effect when wrapping is on, the editor font is monospace,
+    /// and the GlyphRun fast path is engaged.  Default: true.
+    /// </summary>
+    public bool HangingIndent { get; set; } = true;
+
+    /// <summary>
+    /// Route monospace lines through the <c>MonoLineLayout</c> GlyphRun fast
+    /// path when possible.  Turning this off forces every line through
+    /// Avalonia's <c>TextLayout</c>, which is slower and disables hanging
+    /// indent but enables ligatures (e.g. <c>=&gt;</c> rendered as a single
+    /// shaped glyph) and full Unicode shaping.  Default: true.
+    /// </summary>
+    public bool UseFastTextLayout { get; set; } = true;
+
+    /// <summary>
     /// Use a brighter, more visible selection highlight color instead of the
     /// default subtle tint. Useful on monitors with limited contrast.
     /// </summary>
@@ -128,9 +151,16 @@ public sealed class AppSettings {
     public bool WrapLines { get; set; } = true;
 
     /// <summary>
-    /// Maximum number of columns before a line wraps. Wrapping occurs at the
-    /// viewport edge or this column limit, whichever is narrower. Only has
-    /// effect when <see cref="WrapLines"/> is true. Default: 100.
+    /// When true, lines wrap at the <see cref="WrapLinesAt"/> column limit
+    /// (or the viewport edge, whichever is narrower).  When false, lines
+    /// wrap at the viewport edge only.  Default: true.
+    /// </summary>
+    public bool UseWrapColumn { get; set; } = true;
+
+    /// <summary>
+    /// Maximum number of columns before a line wraps. Only has effect when
+    /// both <see cref="WrapLines"/> and <see cref="UseWrapColumn"/> are true.
+    /// Default: 100.
     /// </summary>
     public int WrapLinesAt { get; set; } = 100;
 
@@ -420,6 +450,16 @@ public sealed class AppSettings {
     /// <summary>Last-used left margin in inches.</summary>
     public double? MarginLeftInches { get; set; }
 
+    /// <summary>
+    /// Hidden diagnostic toggle for the WPF print path.  When true (default),
+    /// monospace rows are drawn via the <c>GlyphRun</c> fast path which
+    /// dramatically outperforms <c>FormattedText</c>.  Turn off to fall back
+    /// to the legacy <c>FormattedText</c> drawing path — useful only for
+    /// diagnosing visual differences or ruling out a GlyphRun regression.
+    /// Not exposed in the Settings UI; edit settings.json directly.
+    /// </summary>
+    public bool UseGlyphRunPrinting { get; set; } = true;
+
     // -----------------------------------------------------------------
     // Load / Save
     // -----------------------------------------------------------------
@@ -441,16 +481,34 @@ public sealed class AppSettings {
             settings = new AppSettings();
         }
 
-        // DMEDIT_DEVMODE env var gates whether DevMode can be enabled.
-        // When the env var is absent or not "true", force DevMode off
-        // regardless of the persisted value.
-        if (!string.Equals(
-                Environment.GetEnvironmentVariable("DMEDIT_DEVMODE"),
-                "true", StringComparison.OrdinalIgnoreCase)) {
+        // DevMode is only allowed in Debug builds or when the DMEDIT_DEVMODE
+        // env var is "true".  Otherwise the persisted value is forced off so
+        // release builds shipped to end users can't accidentally expose the
+        // Dev menu, sample documents, stats bar, etc.
+        if (!DevModeAllowed) {
             settings.DevMode = false;
         }
 
         return settings;
+    }
+
+    /// <summary>
+    /// Whether DevMode is permitted to be enabled in this process.  True for
+    /// Debug builds unconditionally, and for Release builds only when the
+    /// <c>DMEDIT_DEVMODE</c> environment variable is set to <c>"true"</c>.
+    /// The actual <see cref="DevMode"/> boolean is a separate, user-toggleable
+    /// setting that only takes effect when this gate is open.
+    /// </summary>
+    public static bool DevModeAllowed {
+        get {
+#if DEBUG
+            return true;
+#else
+            return string.Equals(
+                Environment.GetEnvironmentVariable("DMEDIT_DEVMODE"),
+                "true", StringComparison.OrdinalIgnoreCase);
+#endif
+        }
     }
 
     /// <summary>

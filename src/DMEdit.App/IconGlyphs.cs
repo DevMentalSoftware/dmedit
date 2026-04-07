@@ -79,4 +79,6 @@ static class IconGlyphs {
     public const string Minimize     = "\uEBD0";  // ─  ic_fluent_subtract_20_regular
     public const string Maximize     = "\uE7EB";  // □  ic_fluent_maximize_20_regular
     public const string Restore      = "\uEB96";  // ⧉  ic_fluent_square_multiple_20_regular
+
+    public const string WrapEnd      =   "\uF8D5";
 }

@@ -35,7 +35,7 @@ jobs:
         run: dotnet build src/DMEdit.Windows/DMEdit.Windows.csproj -c Release
 
       - name: Publish win-x64
-        run: dotnet publish src/DMEdit.App/DMEdit.App.csproj -c Release -r win-x64 --self-contained true -o dist/win-x64
+        run: dotnet publish src/DMEdit.App/DMEdit.App.csproj -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true -o dist/win-x64
 
       - name: Copy Windows DLL
         run: |
@@ -127,7 +127,7 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Publish linux-x64
-        run: dotnet publish src/DMEdit.App/DMEdit.App.csproj -c Release -r linux-x64 --self-contained true -o dist/linux-x64
+        run: dotnet publish src/DMEdit.App/DMEdit.App.csproj -c Release -r linux-x64 --self-contained true -p:PublishReadyToRun=true -o dist/linux-x64
 
       - name: Download previous release (for deltas)
         run: vpk download github --repoUrl https://github.com/DevMentalSoftware/dmedit --outputDir dist/velopack-linux

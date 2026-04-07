@@ -169,6 +169,7 @@ public sealed class Document {
         if (text.Length == 0) {
             return;
         }
+        text = SanitizeSurrogates(text);
         var ofs = Selection.Start;
         var replacing = !Selection.IsEmpty;
         if (replacing) {
@@ -204,12 +205,13 @@ public sealed class Document {
         if (ofs == 0L) {
             return;
         }
-        // Handle \r\n as a single unit
-        var delLen = 1;
-        if (ofs >= 2 && _table.GetText(ofs - 2, 2) == "\r\n") {
-            delLen = 2;
+        // Step back one code point so a surrogate pair is treated as a unit.
+        // Also collapse \r\n into a single Backspace.
+        var delOfs = CodepointBoundary.StepLeft(_table, ofs);
+        if (ofs - delOfs == 1 && ofs >= 2 && _table.GetText(ofs - 2, 2) == "\r\n") {
+            delOfs = ofs - 2;
         }
-        var delOfs = ofs - delLen;
+        var delLen = (int)(ofs - delOfs);
         var pieces = _table.CapturePieces(delOfs, delLen);
         _history.Push(new DeleteEdit(delOfs, delLen, pieces), _table, Selection);
         Selection = Selection.Collapsed(delOfs);
@@ -226,11 +228,13 @@ public sealed class Document {
         if (ofs >= _table.Length) {
             return;
         }
-        // Handle \r\n as a single unit
-        var delLen = 1;
-        if (ofs + 1 < _table.Length && _table.GetText(ofs, 2) == "\r\n") {
-            delLen = 2;
+        // Step forward one code point so a surrogate pair is treated as a unit.
+        // Also collapse \r\n into a single Delete.
+        var endOfs = CodepointBoundary.StepRight(_table, ofs);
+        if (endOfs - ofs == 1 && ofs + 1 < _table.Length && _table.GetText(ofs, 2) == "\r\n") {
+            endOfs = ofs + 2;
         }
+        var delLen = (int)(endOfs - ofs);
         var pieces = _table.CapturePieces(ofs, delLen);
         _history.Push(new DeleteEdit(ofs, delLen, pieces), _table, Selection);
         RaiseChanged();
@@ -616,26 +620,45 @@ public sealed class Document {
         var selStartInWin = (int)(selStart - winStart);
         var selEndInWin = (int)(selEnd - winStart);
 
-        // If selection contains a non-word character → no-op.
-        for (var i = selStartInWin; i < selEndInWin; i++) {
-            if (!IsWordChar(winText[i])) {
+        // If selection contains a non-word code point → no-op.  Walks by
+        // rune so that a surrogate pair is treated as one unit.
+        for (var i = selStartInWin; i < selEndInWin; ) {
+            if (!IsWordRune(winText, i)) {
                 return;
             }
+            i = CodepointBoundary.StepRight(winText, i);
         }
 
         // Expand backward from selection start to non-word or window start.
         var left = selStartInWin;
-        while (left > 0 && IsWordChar(winText[left - 1])) {
-            left--;
+        while (left > 0) {
+            var prev = CodepointBoundary.StepLeft(winText, left);
+            if (!IsWordRune(winText, prev)) break;
+            left = prev;
         }
 
         // Expand forward from selection end to non-word or window end.
         var right = selEndInWin;
-        while (right < winLen && IsWordChar(winText[right])) {
-            right++;
+        while (right < winLen) {
+            if (!IsWordRune(winText, right)) break;
+            right = CodepointBoundary.StepRight(winText, right);
         }
 
         Selection = new Selection(winStart + left, winStart + right);
+    }
+
+    /// <summary>
+    /// Returns true if the Unicode code point starting at
+    /// <paramref name="idx"/> in <paramref name="text"/> is a word character
+    /// (letter, digit, or underscore).  Rune-aware so a surrogate pair
+    /// representing a non-BMP letter counts as one word character instead
+    /// of two non-word halves.  Lone surrogates are never word characters.
+    /// </summary>
+    private static bool IsWordRune(ReadOnlySpan<char> text, int idx) {
+        if ((uint)idx >= (uint)text.Length) return false;
+        var status = Rune.DecodeFromUtf16(text[idx..], out var rune, out _);
+        if (status != System.Buffers.OperationStatus.Done) return false;
+        return Rune.IsLetterOrDigit(rune) || rune.Value == '_';
     }
 
     /// <summary>
@@ -699,14 +722,19 @@ public sealed class Document {
         var selStartInWin = (int)(selStart - winStart);
         var selEndInWin = (int)(selEnd - winStart);
 
-        // Compute whitespace-bounded range.
+        // Compute whitespace-bounded range.  Whitespace is always BMP, so
+        // stopping on a whitespace transition is pair-aligned even when
+        // walking by code units — but we still step by code points so any
+        // "stopped in non-whitespace" branch never lands inside a pair.
         var wsLeft = selStartInWin;
-        while (wsLeft > 0 && !char.IsWhiteSpace(winText[wsLeft - 1])) {
-            wsLeft--;
+        while (wsLeft > 0) {
+            var prev = CodepointBoundary.StepLeft(winText, wsLeft);
+            if (char.IsWhiteSpace(winText[prev])) break;
+            wsLeft = prev;
         }
         var wsRight = selEndInWin;
         while (wsRight < winLen && !char.IsWhiteSpace(winText[wsRight])) {
-            wsRight++;
+            wsRight = CodepointBoundary.StepRight(winText, wsRight);
         }
 
         var atWhitespaceBoundary = selStartInWin == wsLeft && selEndInWin == wsRight;
@@ -715,16 +743,16 @@ public sealed class Document {
             // Try subword expansion, constrained within the whitespace-bounded word.
             var subLeft = selStartInWin;
             if (subLeft > wsLeft) {
-                subLeft--;
+                subLeft = CodepointBoundary.StepLeft(winText, subLeft);
                 while (subLeft > wsLeft && !IsSubwordBoundary(winText, subLeft)) {
-                    subLeft--;
+                    subLeft = CodepointBoundary.StepLeft(winText, subLeft);
                 }
             }
             var subRight = selEndInWin;
             if (subRight < wsRight) {
-                subRight++;
+                subRight = CodepointBoundary.StepRight(winText, subRight);
                 while (subRight < wsRight && !IsSubwordBoundary(winText, subRight)) {
-                    subRight++;
+                    subRight = CodepointBoundary.StepRight(winText, subRight);
                 }
             }
 
@@ -780,29 +808,51 @@ public sealed class Document {
     /// <summary>
     /// Returns true if position <paramref name="i"/> in the text is a subword
     /// boundary: camelCase transitions, underscore, digit/letter transitions,
-    /// or non-alphanumeric characters.
+    /// or non-alphanumeric characters.  Rune-aware: a position inside a
+    /// surrogate pair is never a boundary, and the predicates run against
+    /// whole code points.
     /// </summary>
-    private static bool IsSubwordBoundary(string text, int i) {
+    private static bool IsSubwordBoundary(ReadOnlySpan<char> text, int i) {
         if (i <= 0 || i >= text.Length) {
             return false;
         }
-        var prev = text[i - 1];
-        var curr = text[i];
+        // Inside a surrogate pair is not a valid boundary.
+        if (char.IsLowSurrogate(text[i]) && char.IsHighSurrogate(text[i - 1])) {
+            return false;
+        }
+
+        // Decode the rune ending at i (one code point back from i).
+        var prevStart = CodepointBoundary.StepLeft(text, i);
+        if (Rune.DecodeFromUtf16(text[prevStart..i], out var prev, out _)
+            != System.Buffers.OperationStatus.Done) {
+            return true;
+        }
+        // Decode the rune starting at i.
+        if (Rune.DecodeFromUtf16(text[i..], out var curr, out _)
+            != System.Buffers.OperationStatus.Done) {
+            return true;
+        }
 
         // Non-alphanumeric on either side is always a boundary.
-        if (!char.IsLetterOrDigit(prev) || !char.IsLetterOrDigit(curr)) {
+        if (!Rune.IsLetterOrDigit(prev) || !Rune.IsLetterOrDigit(curr)) {
             return true;
         }
         // lowercase → Uppercase  (e.g. "camelCase" → boundary before 'C')
-        if (char.IsLower(prev) && char.IsUpper(curr)) {
+        if (Rune.IsLower(prev) && Rune.IsUpper(curr)) {
             return true;
         }
         // Uppercase → Uppercase+lowercase  (e.g. "HTMLParser" → boundary before 'P')
-        if (char.IsUpper(prev) && char.IsUpper(curr) && i + 1 < text.Length && char.IsLower(text[i + 1])) {
-            return true;
+        if (Rune.IsUpper(prev) && Rune.IsUpper(curr)) {
+            var afterCurr = i + curr.Utf16SequenceLength;
+            if (afterCurr < text.Length
+                && Rune.DecodeFromUtf16(text[afterCurr..], out var next, out _)
+                   == System.Buffers.OperationStatus.Done
+                && Rune.IsLower(next)) {
+                return true;
+            }
         }
         // digit ↔ letter transition
-        if (char.IsDigit(prev) != char.IsDigit(curr)) {
+        if (Rune.IsDigit(prev) != Rune.IsDigit(curr)) {
             return true;
         }
         return false;
@@ -1071,8 +1121,54 @@ public sealed class Document {
     /// <see cref="SpanInsertEdit"/> that references it.
     /// </summary>
     private void PushInsert(long ofs, string text) {
+        text = SanitizeSurrogates(text);
         var bufStart = _table.AppendToAddBuffer(text);
         _history.Push(new SpanInsertEdit(ofs, bufStart, text.Length), _table, Selection);
+    }
+
+    /// <summary>
+    /// Replaces every lone (unpaired) UTF-16 surrogate in <paramref name="text"/>
+    /// with U+FFFD REPLACEMENT CHARACTER.  Lone surrogates are illegal in
+    /// well-formed Unicode and break anything that round-trips text through
+    /// UTF-8 or JSON, so we never let one enter the buffer.  Returns the
+    /// original instance if it was already well-formed (no allocation).
+    /// </summary>
+    internal static string SanitizeSurrogates(string text) {
+        // Fast scan: look for any unpaired surrogate.
+        var bad = false;
+        for (var i = 0; i < text.Length; i++) {
+            var c = text[i];
+            if (char.IsHighSurrogate(c)) {
+                if (i + 1 >= text.Length || !char.IsLowSurrogate(text[i + 1])) {
+                    bad = true;
+                    break;
+                }
+                i++; // skip the paired low surrogate
+            } else if (char.IsLowSurrogate(c)) {
+                bad = true;
+                break;
+            }
+        }
+        if (!bad) return text;
+
+        var sb = new StringBuilder(text.Length);
+        for (var i = 0; i < text.Length; i++) {
+            var c = text[i];
+            if (char.IsHighSurrogate(c)) {
+                if (i + 1 < text.Length && char.IsLowSurrogate(text[i + 1])) {
+                    sb.Append(c);
+                    sb.Append(text[i + 1]);
+                    i++;
+                } else {
+                    sb.Append('\uFFFD');
+                }
+            } else if (char.IsLowSurrogate(c)) {
+                sb.Append('\uFFFD');
+            } else {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
     }
 
     private void DeleteRange(long ofs, long len) {

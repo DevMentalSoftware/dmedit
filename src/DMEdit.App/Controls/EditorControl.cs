@@ -149,6 +149,18 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     // -------------------------------------------------------------------------
 
     private readonly TextLayoutEngine _layoutEngine = new();
+    // Plain field — we deliberately do NOT eagerly dispose the previous
+    // LayoutResult on assignment.  Eager dispose was tried briefly to make
+    // GlyphRun native handle releases prompt; it produced an exponential
+    // slowdown during column-mode rapid inserts because each insert
+    // triggered Skia/HarfBuzz native releases (one per visible row) which
+    // accumulated GC pressure across generations.  Now we let the previous
+    // LayoutResult drift to the next Gen 0 collection like the beta did,
+    // and rely on InvalidateLayout()'s explicit Dispose for the case where
+    // we know the layout is being torn down for good (font change, document
+    // swap, etc.).  The cached GlyphRuns inside MonoLineLayout are reused
+    // across draws (per-row caching, see entry 21) so per-draw allocation
+    // is unaffected by the orphan-and-GC strategy used here.
     private LayoutResult? _layout;
     /// <summary>
     /// Set when a layout pass throws an unrecoverable exception.  Once set,
@@ -157,6 +169,26 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// </summary>
     private bool _layoutFailed;
     private bool _caretVisible = true;
+    // True while we are inside Render() — guards against firing
+    // HScrollChanged / ScrollChanged synchronously, which would invalidate
+    // sibling controls (scrollbar, etc.) during the render pass and trip
+    // Avalonia's "Visual was invalidated during the render pass" check.
+    // When set, event invocations defer to the next dispatcher tick.
+    private bool _inRenderPass;
+    // Child overlay that paints the caret rectangle.  Living in its own
+    // Control means caret blink can InvalidateVisual just the layer (~20 px
+    // of dirty rect) instead of the whole EditorControl, which would force
+    // the entire scene-graph for every visible row to be rebuilt every
+    // ~530 ms.  See design journal entry 21 for the per-blink allocation
+    // story that motivated this split.
+    private CaretLayer? _primaryCaret;
+    // Pool of additional caret layers used by column-selection (multi-cursor)
+    // editing.  Index 0 of the visible carets always corresponds to
+    // _primaryCaret; entries beyond that come from this pool.  Layers are
+    // added to VisualChildren on demand and reused — never removed — so the
+    // pool grows up to the largest column-selection ever seen and stays
+    // there.
+    private readonly List<CaretLayer> _columnCaretPool = new();
     private bool _keepScrollOnSwap;
     private readonly DispatcherTimer _caretTimer;
     private bool _pointerDown;
@@ -309,6 +341,56 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
     }
 
+    /// <summary>Whether the WrapLinesAt column limit is enforced.</summary>
+    public bool UseWrapColumn {
+        get => _useWrapColumn;
+        set {
+            if (_useWrapColumn == value) return;
+            _useWrapColumn = value;
+            InvalidateLayout();
+        }
+    }
+
+    /// <summary>Whether a wrap indicator glyph is drawn at the wrap column for wrapped lines.</summary>
+    public bool ShowWrapSymbol {
+        get => _showWrapSymbol;
+        set {
+            if (_showWrapSymbol == value) return;
+            _showWrapSymbol = value;
+            InvalidateLayout();
+        }
+    }
+
+    /// <summary>
+    /// Whether wrapped continuation rows are indented by half of one indent
+    /// level (the "hanging indent" effect).  Currently only honored on the
+    /// monospace GlyphRun fast path; proportional fonts ignore this setting.
+    /// </summary>
+    public bool HangingIndent {
+        get => _hangingIndent;
+        set {
+            if (_hangingIndent == value) return;
+            _hangingIndent = value;
+            InvalidateLayout();
+        }
+    }
+
+    /// <summary>
+    /// When true (default), monospace lines go through the <c>MonoLineLayout</c>
+    /// GlyphRun fast path — faster rendering and enables hanging indent, but
+    /// no font ligatures.  When false, every line routes through Avalonia's
+    /// <c>TextLayout</c>, which is slower and has no hanging indent but
+    /// renders ligatures like <c>=&gt;</c> as single shaped glyphs.
+    /// </summary>
+    public bool UseFastTextLayout {
+        get => _useFastTextLayout;
+        set {
+            if (_useFastTextLayout == value) return;
+            _useFastTextLayout = value;
+            InvalidateLayout();
+        }
+    }
+
     /// <summary>Applies a new theme, pushing colors into styled properties and fields.</summary>
     public void ApplyTheme(EditorTheme theme) {
         _theme = theme;
@@ -344,7 +426,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (Math.Abs(_scrollOffset.X - clamped) < 0.01) return;
             _scrollOffset = new Vector(clamped, _scrollOffset.Y);
             InvalidateVisual();
-            HScrollChanged?.Invoke();
+            FireHScrollChanged();
         }
     }
 
@@ -356,7 +438,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     // Word wrap
     private bool _wrapLines = false;
+    private bool _useWrapColumn = true;
     private int _wrapLinesAt = 100;
+
+    /// <summary>True when both UseWrapColumn is on and a valid column limit is set.</summary>
+    private bool WrapColumnActive => _useWrapColumn && _wrapLinesAt >= 1;
 
     // Character-wrapping mode
     private bool _charWrapMode;
@@ -367,6 +453,40 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     // Whitespace visibility
     private bool _showWhitespace;
+
+    // Wrap symbol
+    private bool _showWrapSymbol = true;
+    private const double WrapSymbolPadRight = 12;
+    // Cached TextLayout for the wrap-symbol glyph.  Previously rebuilt on
+    // every Render() call (i.e. every caret blink) which was a significant
+    // per-frame allocation: TextLayout construction runs text shaping and
+    // allocates one or more GlyphRun objects internally.  Invalidated when
+    // font size, theme brush, or font family change.
+    private TextLayout? _wrapSymbolLayout;
+    private double _wrapSymbolLayoutFontSize;
+    private IBrush? _wrapSymbolLayoutBrush;
+
+    // Cached TextLayouts for gutter line numbers.  DrawGutter previously
+    // created a fresh TextLayout per visible line per Render() — 50 allocs
+    // + 50 text-shaping passes per caret blink on a typical viewport.
+    // Now keyed by the digit string; invalidated when font size, font
+    // family, gutter width, or gutter brush change.
+    private readonly Dictionary<string, TextLayout> _gutterNumCache = new();
+    private double _gutterCacheFontSize;
+    private double _gutterCacheMaxWidth;
+    private IBrush? _gutterCacheBrush;
+    private string? _gutterCacheFontFamily;
+
+    // Hanging indent on wrapped continuation rows.  Only takes effect when
+    // wrapping is on, the editor font resolves to a single GlyphTypeface,
+    // and that face is monospace — the GlyphRun fast path applies.  See
+    // design journal 20 for the rationale.
+    private bool _hangingIndent = true;
+
+    // Escape hatch for users who want ligatures at the cost of speed and
+    // hanging indent.  When false, LayoutLines is told to skip building a
+    // MonoLayoutContext so every line falls back to TextLayout.
+    private bool _useFastTextLayout = true;
 
     // Line number gutter
     private bool _showLineNumbers = true;
@@ -447,6 +567,16 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         public double MemoryMb { get; set; }
         /// <summary>Peak GC memory seen this session in MB.</summary>
         public double PeakMemoryMb { get; set; }
+        /// <summary>Cumulative Gen 0 GC count (snapshot).</summary>
+        public int Gen0 { get; set; }
+        /// <summary>Cumulative Gen 1 GC count (snapshot).</summary>
+        public int Gen1 { get; set; }
+        /// <summary>Cumulative Gen 2 GC count (snapshot).</summary>
+        public int Gen2 { get; set; }
+        /// <summary>Cumulative count of InvalidateLayout calls.</summary>
+        public long LayoutInvalidations { get; set; }
+        /// <summary>Cumulative count of Render calls.</summary>
+        public long RenderCalls { get; set; }
 
         /// <summary>Samples current GC memory and updates peak.</summary>
         public void SampleMemory() {
@@ -454,6 +584,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (MemoryMb > PeakMemoryMb) {
                 PeakMemoryMb = MemoryMb;
             }
+            Gen0 = GC.CollectionCount(0);
+            Gen1 = GC.CollectionCount(1);
+            Gen2 = GC.CollectionCount(2);
         }
 
         public void Reset() {
@@ -495,7 +628,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (_overwriteMode == value) return;
             _overwriteMode = value;
             OverwriteModeChanged?.Invoke(this, EventArgs.Empty);
-            InvalidateVisual();
+            // The caret layer's width (thin bar vs block) is recomputed in
+            // UpdateCaretLayers/ArrangeCaretAt from ArrangeOverride — neither
+            // is driven by InvalidateVisual.  ResetCaretBlink forces an
+            // arrange pass and also makes the caret immediately visible so
+            // the user sees the new shape on the toggle instead of waiting
+            // for the next blink tick.
+            ResetCaretBlink();
         }
     }
 
@@ -512,6 +651,29 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     /// <summary>Fired when scroll state changes (offset, extent, or viewport).</summary>
     public event EventHandler? ScrollChanged;
+
+    /// <summary>
+    /// Fires <see cref="HScrollChanged"/>, deferring to the next dispatcher
+    /// tick if we are currently inside a render pass.  Sibling controls
+    /// (the scrollbars) react to this event by setting their own properties,
+    /// which mutate the visual tree — and Avalonia forbids visual tree
+    /// mutation during render.
+    /// </summary>
+    private void FireHScrollChanged() {
+        if (_inRenderPass) {
+            Dispatcher.UIThread.Post(() => HScrollChanged?.Invoke());
+        } else {
+            HScrollChanged?.Invoke();
+        }
+    }
+
+    private void FireScrollChanged() {
+        if (_inRenderPass) {
+            Dispatcher.UIThread.Post(() => ScrollChanged?.Invoke(this, EventArgs.Empty));
+        } else {
+            ScrollChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     /// <summary>Maximum scroll offset (extent height − viewport height). Always ≥ 0.</summary>
     public double ScrollMaximum => Math.Max(0, _extent.Height - _viewport.Height);
@@ -535,12 +697,15 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 _scrollOffset = newOffset;
                 _layout?.Dispose();
                 _layout = null;
-                // Hide caret during scroll. For drags the !scrollDrag render
-                // guard suppresses drawing; InteractionEnded shows it on
-                // release. For wheel/arrow the timer naturally recovers.
+                // Hide caret during scroll. For drags the !scrollDrag gate
+                // in UpdateCaretLayers suppresses drawing; InteractionEnded
+                // shows it on release. For wheel/arrow the timer naturally
+                // recovers.
                 _caretVisible = false;
+                SetCaretLayersVisible(false);
                 InvalidateVisual();
-                ScrollChanged?.Invoke(this, EventArgs.Empty);
+                InvalidateArrange();
+                FireScrollChanged();
             }
         }
     }
@@ -570,6 +735,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _caretTimer.Start();
         _coalesceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
         _coalesceTimer.Tick += (_, _) => FlushCompound();
+
+        // Caret overlay child — added to VisualChildren so its Render runs
+        // after our own and the caret paints over text/selection.
+        _primaryCaret = new CaretLayer { Brush = CaretBrush, CaretWidth = CaretWidth };
+        VisualChildren.Add(_primaryCaret);
+
         BuildContextMenu();
     }
 
@@ -614,7 +785,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 _layout?.Dispose();
                 _layout = null;
                 InvalidateVisual();
-                ScrollChanged?.Invoke(this, EventArgs.Empty);
+                FireScrollChanged();
             }
         }
     }
@@ -676,6 +847,19 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             _rowHeight = 0;
             _charWidth = 0;
             InvalidateLayout();
+        } else if (e.Property == CaretBrushProperty || e.Property == CaretWidthProperty) {
+            // Push directly into the layer; UpdateCaretLayers also picks
+            // these up on its next pass, but doing it here means a theme
+            // switch repaints the caret immediately even if no other
+            // layout-affecting state changes.
+            if (_primaryCaret is not null) {
+                _primaryCaret.Brush = CaretBrush;
+                _primaryCaret.CaretWidth = CaretWidth;
+            }
+            for (var i = 0; i < _columnCaretPool.Count; i++) {
+                _columnCaretPool[i].Brush = CaretBrush;
+                _columnCaretPool[i].CaretWidth = CaretWidth;
+            }
         }
     }
 
@@ -692,6 +876,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _layout?.Dispose();
         _layout = null;
         _winTopLine = -1; // reset incremental scroll (content changed)
+        PerfStats.LayoutInvalidations++;
         InvalidateMeasure();
         InvalidateVisual();
     }
@@ -753,11 +938,13 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     /// </summary>
     private double GetTextWidth(double extentWidth) {
         if (!_wrapLines) return double.PositiveInfinity;
-        if (_wrapLinesAt >= 1) {
+        // Reserve space for the wrap symbol so it doesn't overlap the scrollbar.
+        var available = _showWrapSymbol ? extentWidth - WrapSymbolPadRight : extentWidth;
+        if (WrapColumnActive) {
             var colLimit = _wrapLinesAt * GetCharWidth();
-            return Math.Min(extentWidth, colLimit);
+            return Math.Min(available, colLimit);
         }
-        return extentWidth;
+        return available;
     }
 
     /// <summary>
@@ -779,7 +966,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var cw = GetCharWidth();
         if (cw <= 0) return 80;
         var fromViewport = Math.Max(1, (int)(extentWidth / cw));
-        if (_wrapLines && _wrapLinesAt >= 1) {
+        if (_wrapLines && WrapColumnActive) {
             return Math.Min(fromViewport, _wrapLinesAt);
         }
         return fromViewport;
@@ -822,6 +1009,18 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     }
 
     /// <summary>
+    /// Wraps <see cref="TextLayoutEngine.LayoutEmpty"/> with the editor's
+    /// pixel-snapped row height.  Every empty layout built from EditorControl
+    /// must use the same row height as the main layout path so scroll math,
+    /// extent height, and caret visibility checks all agree — otherwise the
+    /// raw engine row height drifts from <see cref="GetRowHeight"/>'s snapped
+    /// value and causes off-by-a-pixel-per-row errors that accumulate at
+    /// large line numbers (see journal entry 21).
+    /// </summary>
+    private LayoutResult BuildEmptyLayout(Typeface typeface, double maxWidth) =>
+        _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, maxWidth, GetRowHeight());
+
+    /// <summary>
     /// Builds or retrieves the current layout.
     /// Only the visible window of text is fetched and laid out (windowed layout).
     /// </summary>
@@ -830,8 +1029,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return _layout;
         }
         if (_layoutFailed) {
-            _layout = _layoutEngine.LayoutEmpty(
-                new Typeface(FontFamily), EffectiveFontSize, ForegroundBrush, 100);
+            _layout = BuildEmptyLayout(new Typeface(FontFamily), 100);
             return _layout;
         }
         _perfSw.Restart();
@@ -851,7 +1049,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             } else if (doc != null && lineCount > 0) {
                 LayoutWindowed(doc, lineCount, typeface, textW, extentW);
             } else {
-                _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+                _layout = BuildEmptyLayout(typeface, textW);
                 _extent = new Size(extentW, 0);
                 RenderOffsetY = 0;
             }
@@ -860,14 +1058,14 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             // mode and retry.  Don't set _layoutFailed so the next layout
             // pass uses char-wrap successfully.
             _charWrapMode = true;
-            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+            _layout = BuildEmptyLayout(typeface, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
             InvalidateMeasure();
             LineTooLongDetected?.Invoke(ex);
         } catch {
             _layoutFailed = true;
-            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+            _layout = BuildEmptyLayout(typeface, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
             throw;
@@ -892,8 +1090,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _viewport = availableSize;
 
         if (_layoutFailed) {
-            _layout = _layoutEngine.LayoutEmpty(
-                new Typeface(FontFamily), EffectiveFontSize, ForegroundBrush, 100);
+            _layout = BuildEmptyLayout(new Typeface(FontFamily), 100);
             return availableSize;
         }
 
@@ -916,7 +1113,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             } else if (doc != null && lineCount > 0) {
                 LayoutWindowed(doc, lineCount, typeface, textW, extentW);
             } else {
-                _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+                _layout = BuildEmptyLayout(typeface, textW);
                 _extent = new Size(extentW, 0);
                 RenderOffsetY = 0;
             }
@@ -925,14 +1122,14 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             // mode and retry.  Don't set _layoutFailed so the next layout
             // pass uses char-wrap successfully.
             _charWrapMode = true;
-            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+            _layout = BuildEmptyLayout(typeface, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
             InvalidateMeasure();
             LineTooLongDetected?.Invoke(ex);
         } catch {
             _layoutFailed = true;
-            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, textW);
+            _layout = BuildEmptyLayout(typeface, textW);
             _extent = new Size(extentW, 0);
             RenderOffsetY = 0;
             throw;
@@ -945,11 +1142,162 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // but LayoutWindowed's oldHMax comparison misses this because _viewport is
         // already updated before oldHMax is captured.
         if (Math.Abs(availableSize.Width - oldViewportW) > 0.5)
-            HScrollChanged?.Invoke();
+            FireHScrollChanged();
 
         RaiseScrollInvalidated();
-        ScrollChanged?.Invoke(this, EventArgs.Empty);
+        FireScrollChanged();
         return availableSize;
+    }
+
+    protected override Size ArrangeOverride(Size finalSize) {
+        var size = base.ArrangeOverride(finalSize);
+        UpdateCaretLayers();
+        return size;
+    }
+
+    /// <summary>
+    /// Recomputes the position of the primary caret layer (and any extra
+    /// column-selection caret layers) and arranges them inside this control.
+    /// Called from <see cref="ArrangeOverride"/> on every layout pass and
+    /// also directly from sites that move the caret without otherwise
+    /// triggering layout (scroll, focus changes, edit-coalesce flush, etc.).
+    /// Off-viewport carets are arranged to a zero-size rect so they paint
+    /// nothing without needing to remove them from VisualChildren.
+    /// </summary>
+    private void UpdateCaretLayers() {
+        if (_primaryCaret is null) return;
+        var doc = Document;
+        var layout = _layout;
+        var emptyRect = new Rect(0, 0, 0, 0);
+
+        // Hide everything if no doc, no layout, scroll-drag, mid-paste,
+        // loading, or focus lost.  These match the gates that the old
+        // Render() path used to draw the caret.
+        var scrollDrag = ScrollBar?.IsDragging ?? false;
+        var hideAll = doc is null
+            || layout is null
+            || _middleDrag
+            || scrollDrag
+            || IsLoading
+            || !IsFocused
+            || BackgroundPasteInProgress;
+
+        if (hideAll) {
+            _primaryCaret.Arrange(emptyRect);
+            for (var i = 0; i < _columnCaretPool.Count; i++) {
+                _columnCaretPool[i].Arrange(emptyRect);
+            }
+            return;
+        }
+
+        _primaryCaret.OverwriteMode = _overwriteMode;
+        _primaryCaret.Brush = CaretBrush;
+        _primaryCaret.CaretWidth = CaretWidth;
+
+        if (doc!.ColumnSel is { } colSel) {
+            // Column-selection multi-cursor.  The first cursor goes to
+            // _primaryCaret; the rest come from the pool, growing as
+            // needed.  Pool entries beyond the cursor count are arranged
+            // to zero so they paint nothing.
+            var carets = colSel.MaterializeCarets(doc.Table, _indentWidth);
+            if (carets.Count == 0) {
+                _primaryCaret.Arrange(emptyRect);
+                for (var i = 0; i < _columnCaretPool.Count; i++) {
+                    _columnCaretPool[i].Arrange(emptyRect);
+                }
+                return;
+            }
+
+            ArrangeCaretAt(_primaryCaret, layout!, carets[0]);
+
+            for (var i = 1; i < carets.Count; i++) {
+                var poolIdx = i - 1;
+                if (poolIdx >= _columnCaretPool.Count) {
+                    var extra = new CaretLayer {
+                        Brush = CaretBrush,
+                        CaretWidth = CaretWidth,
+                        OverwriteMode = _overwriteMode,
+                        CaretVisible = _caretVisible,
+                    };
+                    _columnCaretPool.Add(extra);
+                    VisualChildren.Add(extra);
+                }
+                var layer = _columnCaretPool[poolIdx];
+                layer.OverwriteMode = _overwriteMode;
+                layer.Brush = CaretBrush;
+                layer.CaretWidth = CaretWidth;
+                layer.CaretVisible = _caretVisible;
+                ArrangeCaretAt(layer, layout!, carets[i]);
+            }
+
+            // Hide unused pool slots beyond the current cursor count.
+            for (var i = carets.Count - 1; i < _columnCaretPool.Count; i++) {
+                _columnCaretPool[i].Arrange(emptyRect);
+            }
+            return;
+        }
+
+        // Single-cursor common case.
+        ArrangeCaretAt(_primaryCaret, layout!, doc.Selection.Caret);
+        for (var i = 0; i < _columnCaretPool.Count; i++) {
+            _columnCaretPool[i].Arrange(emptyRect);
+        }
+    }
+
+    /// <summary>
+    /// Computes the pixel rect of the caret at <paramref name="caretOfs"/>
+    /// in document coordinates and arranges <paramref name="layer"/> there.
+    /// Off-viewport positions get a zero-size rect.
+    /// </summary>
+    private void ArrangeCaretAt(CaretLayer layer, LayoutResult layout, long caretOfs) {
+        var localCaret = (int)(caretOfs - layout.ViewportBase);
+        var totalChars = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
+        if (localCaret < 0 || localCaret > totalChars) {
+            layer.Arrange(new Rect(0, 0, 0, 0));
+            return;
+        }
+        var rect = _layoutEngine.GetCaretBounds(localCaret, layout);
+        var y = rect.Y + RenderOffsetY;
+        if (y + rect.Height < 0 || y > Bounds.Height) {
+            layer.Arrange(new Rect(0, 0, 0, 0));
+            return;
+        }
+
+        double caretX;
+        double widthForLayer;
+        if (_overwriteMode) {
+            // Block-style: layer width matches the underlying glyph cell.
+            // Step by one code point so a surrogate pair draws as one block.
+            var blockW = rect.Height * 0.55; // fallback ~em-width
+            if (localCaret < totalChars) {
+                var docOfs = layout.ViewportBase + localCaret;
+                var table = Document?.Table;
+                var stepW = table != null
+                    ? (int)(CodepointBoundary.StepRight(table, docOfs) - docOfs)
+                    : 1;
+                if (stepW < 1) stepW = 1;
+                var nextRect = _layoutEngine.GetCaretBounds(localCaret + stepW, layout);
+                var w = nextRect.X - rect.X;
+                if (w > 0) blockW = w;
+            }
+            caretX = rect.X + TextOriginX;
+            widthForLayer = blockW;
+        } else {
+            // Insertion-point: layer is exactly CaretWidth pixels wide,
+            // device-pixel snapped so the line stays crisp.
+            var scale = VisualRoot?.RenderScaling ?? 1.0;
+            caretX = Math.Round((rect.X + TextOriginX) * scale) / scale;
+            widthForLayer = CaretWidth;
+        }
+
+        // Hide if the caret is horizontally inside the gutter (e.g. heavy
+        // horizontal scroll left would push it under the gutter).
+        if (caretX + widthForLayer <= _gutterWidth) {
+            layer.Arrange(new Rect(0, 0, 0, 0));
+            return;
+        }
+
+        layer.Arrange(new Rect(caretX, y, widthForLayer, rect.Height));
     }
 
     /// <summary>
@@ -1041,7 +1389,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // required page isn't in memory yet. Layout empty text — the next
         // ProgressChanged event will trigger re-layout once data is available.
         if (startOfs < 0 || endOfs < 0) {
-            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, maxWidth);
+            _layout = BuildEmptyLayout(typeface, maxWidth);
             _extent = new Size(extentWidth, totalVisualRows * rh);
             RenderOffsetY = 0;
             return;
@@ -1055,17 +1403,23 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         // Skip this layout pass — the next one will see the consistent state.
         var docLen = doc.Table.Length;
         if (startOfs + len > docLen) {
-            _layout = _layoutEngine.LayoutEmpty(typeface, EffectiveFontSize, ForegroundBrush, maxWidth);
+            _layout = BuildEmptyLayout(typeface, maxWidth);
             _extent = new Size(extentWidth, totalVisualRows * rh);
             RenderOffsetY = 0;
             return;
         }
 
         // Layout one line at a time directly from the PieceTable so we
-        // never materialize multiple lines into a single string.
+        // never materialize multiple lines into a single string.  Hanging
+        // indent engages only on the monospace fast path — proportional
+        // typefaces ignore the column count.
+        var hangingIndentChars = _hangingIndent && _wrapLines && !_charWrapMode
+            ? Math.Max(0, _indentWidth / 2)
+            : 0;
         _layout = _layoutEngine.LayoutLines(
             doc.Table, topLine, bottomLine, typeface, EffectiveFontSize, ForegroundBrush,
-            maxWidth, startOfs, lineCount, doc.Table.Length);
+            maxWidth, startOfs, lineCount, doc.Table.Length, hangingIndentChars,
+            _useFastTextLayout, rh);
         _layout.TopLine = topLine;
 
         // When the layout covers the entire document, use exact height
@@ -1085,7 +1439,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             _scrollOffset = new Vector(newHMax, _scrollOffset.Y);
         if (_scrollOffset.Y > ScrollMaximum)
             _scrollOffset = new Vector(_scrollOffset.X, ScrollMaximum);
-        if (Math.Abs(newHMax - oldHMax) > 0.5) HScrollChanged?.Invoke();
+        if (Math.Abs(newHMax - oldHMax) > 0.5) FireHScrollChanged();
 
         // Compute render offset.  For small topLine changes (arrow keys, wheel)
         // use an incremental offset based on the actual cached line height so
@@ -1267,7 +1621,16 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
     public override void Render(DrawingContext context) {
         _perfSw.Restart();
+        PerfStats.RenderCalls++;
+        _inRenderPass = true;
+        try {
+            RenderCore(context);
+        } finally {
+            _inRenderPass = false;
+        }
+    }
 
+    private void RenderCore(DrawingContext context) {
         var layout = EnsureLayout();
         var doc = BackgroundPasteInProgress ? null : Document;
 
@@ -1283,10 +1646,16 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             : default;
 
         // Column guide line
-        if (_wrapLines && _wrapLinesAt >= 1) {
-            var guideX = 2 + TextOriginX + _wrapLinesAt * GetCharWidth();
-            if (guideX < Bounds.Width) {
-                context.DrawLine(_theme.GuideLinePen, new Point(guideX, 0), new Point(guideX, Bounds.Height));
+        if (_wrapLines && WrapColumnActive) {
+            var colLimit = _wrapLinesAt * GetCharWidth();
+            var available = Math.Max(100, Bounds.Width - _gutterWidth)
+                - (_showWrapSymbol ? WrapSymbolPadRight : 0);
+            // Only draw the guide when the column limit is actually constraining.
+            if (colLimit < available) {
+                var guideX = 2 + TextOriginX + colLimit;
+                if (guideX < Bounds.Width) {
+                    context.DrawLine(_theme.GuideLinePen, new Point(guideX, 0), new Point(guideX, Bounds.Height));
+                }
             }
         }
 
@@ -1309,22 +1678,24 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (y > Bounds.Height) {
                 break; // below viewport
             }
-            line.Layout.Draw(context, new Point(TextOriginX, y));
+            line.Render(context, new Point(TextOriginX, y), ForegroundBrush);
             if (_showWhitespace) {
                 DrawWhitespace(context, layout, line, y, rh);
             }
         }
 
-        // Draw caret (hidden during any scroll-drag operation)
-        var scrollDrag = ScrollBar?.IsDragging ?? false;
-        if (doc != null && _caretVisible && IsFocused && !_middleDrag && !scrollDrag
-            && !IsLoading) {
-            if (doc.ColumnSel is { } colSelCarets) {
-                DrawMultiCarets(context, layout, colSelCarets);
-            } else {
-                DrawCaret(context, layout, doc.Selection.Caret);
-            }
+        // Draw wrap symbols for lines that word-wrap
+        if (_showWrapSymbol && _wrapLines && !_charWrapMode) {
+            DrawWrapSymbols(context, layout, rh);
         }
+
+        // Caret is rendered by the CaretLayer child controls (positioned by
+        // ArrangeOverride / UpdateCaretLayers) so caret blink invalidates
+        // only the layer, not this control.  We can't call Arrange from
+        // inside Render (Avalonia forbids it: "Visual was invalidated
+        // during the render pass"), so any call site that mutates the
+        // caret position must call InvalidateArrange explicitly — see
+        // the scroll setter, OnPointerMoved, ResetCaretBlink, etc.
 
         _perfSw.Stop();
         PerfStats.Render.Record(_perfSw.Elapsed.TotalMilliseconds);
@@ -1343,8 +1714,26 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         if (!_showLineNumbers || table == null || layout.Lines.Count == 0) return;
 
-        var typeface = new Typeface(FontFamily);
+        var fontSize = EffectiveFontSize;
         var numW = _gutterWidth - GutterPadRight;
+        var brush = _theme.GutterForeground;
+        var fontFam = FontFamily.Name;
+
+        // Invalidate the cache if anything that affects the rendered layout
+        // of a digit string has changed.
+        if (_gutterCacheFontSize != fontSize
+            || _gutterCacheMaxWidth != numW
+            || !ReferenceEquals(_gutterCacheBrush, brush)
+            || _gutterCacheFontFamily != fontFam) {
+            foreach (var cached in _gutterNumCache.Values) cached.Dispose();
+            _gutterNumCache.Clear();
+            _gutterCacheFontSize = fontSize;
+            _gutterCacheMaxWidth = numW;
+            _gutterCacheBrush = brush;
+            _gutterCacheFontFamily = fontFam;
+        }
+
+        var typeface = new Typeface(FontFamily);
         var firstLineIdx = layout.TopLine;
 
         for (var i = 0; i < layout.Lines.Count; i++) {
@@ -1355,11 +1744,67 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
             var lineNum = firstLineIdx + i + 1;
             var numText = lineNum.ToString();
-            using var tl = new TextLayout(
-                numText, typeface, EffectiveFontSize, _theme.GutterForeground,
-                textAlignment: TextAlignment.Right,
-                maxWidth: numW);
+            if (!_gutterNumCache.TryGetValue(numText, out var tl)) {
+                tl = new TextLayout(
+                    numText, typeface, fontSize, brush,
+                    textAlignment: TextAlignment.Right,
+                    maxWidth: numW);
+                _gutterNumCache[numText] = tl;
+                // Soft cap so the cache doesn't grow unbounded if the user
+                // jumps around a huge file.  Drop the oldest half when we
+                // exceed the cap — crude but bounded.
+                if (_gutterNumCache.Count > 512) {
+                    var toRemove = _gutterNumCache.Keys.Take(256).ToList();
+                    foreach (var k in toRemove) {
+                        _gutterNumCache[k].Dispose();
+                        _gutterNumCache.Remove(k);
+                    }
+                }
+            }
             tl.Draw(context, new Point(0, y));
+        }
+    }
+
+    private void DrawWrapSymbols(DrawingContext ctx, LayoutResult layout, double rh) {
+        // Place the icon at the actual wrap edge — the same point that
+        // GetTextWidth computes.  This tracks smoothly through the
+        // transition between column-limited and viewport-limited wrapping.
+        var extentW = Math.Max(100, _viewport.Width - _gutterWidth);
+        var textW = GetTextWidth(extentW);
+        if (!double.IsFinite(textW)) return; // wrapping off
+        var symbolX = TextOriginX + textW;
+
+        // Draw a wrap indicator using the Fluent icon font.  Cache the
+        // TextLayout across renders — it depends only on font size and
+        // brush, both stable between caret blinks.
+        var brush = _theme.WrapSymbolPen.Brush;
+        var fontSize = EffectiveFontSize * 0.8;
+        if (_wrapSymbolLayout is null
+            || _wrapSymbolLayoutFontSize != fontSize
+            || !ReferenceEquals(_wrapSymbolLayoutBrush, brush)) {
+            _wrapSymbolLayout?.Dispose();
+            _wrapSymbolLayout = new TextLayout(
+                IconGlyphs.WrapEnd, IconGlyphs.Face, fontSize, brush);
+            _wrapSymbolLayoutFontSize = fontSize;
+            _wrapSymbolLayoutBrush = brush;
+        }
+        var glyphLayout = _wrapSymbolLayout;
+        var glyphH = glyphLayout.Height;
+        var glyphW = glyphLayout.WidthIncludingTrailingWhitespace;
+
+        foreach (var line in layout.Lines) {
+            if (line.HeightInRows <= 1) continue;
+            var lineY = line.Row * rh + RenderOffsetY;
+            if (lineY + line.HeightInRows * rh < 0) continue;
+            if (lineY > Bounds.Height) break;
+
+            for (var r = 0; r < line.HeightInRows - 1; r++) {
+                // Center the icon in the reserved padding gap between
+                // the wrap edge and the scrollbar.
+                var x = 1 + symbolX + (WrapSymbolPadRight - glyphW) * 0.5;
+                var y = lineY + r * rh + (rh - glyphH) * 0.5;
+                glyphLayout.Draw(ctx, new Point(x, y));
+            }
         }
     }
 
@@ -1387,12 +1832,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             if (ch != ' ' && ch != '\t' && ch != '\u00A0'
                 && rawCh != '\r' && rawCh != '\n') continue;
 
-            var hit = line.Layout.HitTestTextPosition(i);
+            var hit = line.HitTestTextPosition(i);
             var x = TextOriginX + hit.X;
 
             if (ch == '\t') {
                 // Draw arrow spanning the tab's width
-                var hitNext = line.Layout.HitTestTextPosition(i + 1);
+                var hitNext = line.HitTestTextPosition(i + 1);
                 var x1 = TextOriginX + hit.X;
                 var x2 = TextOriginX + hitNext.X;
                 if (x2 <= x1) continue;
@@ -1489,7 +1934,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 continue;
             }
 
-            foreach (var rect in line.Layout.HitTestTextRange(rangeStart, rangeLen)) {
+            foreach (var rect in line.HitTestTextRange(rangeStart, rangeLen)) {
                 rects.Add(new Rect(rect.X + TextOriginX, lineY + rect.Y, rect.Width, rect.Height));
             }
         }
@@ -1639,38 +2084,9 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         ctx.DrawGeometry(brush, null, g);
     }
 
-    private void DrawCaret(DrawingContext context, LayoutResult layout, long caretOfs) {
-        var localCaret = (int)(caretOfs - layout.ViewportBase);
-        var totalChars = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
-        if (localCaret < 0 || localCaret > totalChars) {
-            return; // caret is outside the visible window
-        }
-        var rect = _layoutEngine.GetCaretBounds(localCaret, layout);
-        var y = rect.Y + RenderOffsetY;
-        if (y + rect.Height < 0 || y > Bounds.Height) {
-            return;
-        }
-
-        if (_overwriteMode) {
-            // Block caret: character-width, translucent.
-            var caretWidth = rect.Height * 0.55; // fallback: ~em-width
-            if (localCaret < totalChars) {
-                var nextRect = _layoutEngine.GetCaretBounds(localCaret + 1, layout);
-                var w = nextRect.X - rect.X;
-                if (w > 0) caretWidth = w;
-            }
-            var caretColor = CaretBrush is ISolidColorBrush scb
-                ? Color.FromArgb(100, scb.Color.R, scb.Color.G, scb.Color.B)
-                : Color.FromArgb(100, 0, 0, 0);
-            context.FillRectangle(new SolidColorBrush(caretColor),
-                new Rect(rect.X + TextOriginX, y, caretWidth, rect.Height));
-        } else {
-            var caretX = rect.X + TextOriginX;
-            var scale = VisualRoot?.RenderScaling ?? 1.0;
-            caretX = Math.Round(caretX * scale) / scale;
-            context.FillRectangle(CaretBrush, new Rect(caretX, y, CaretWidth, rect.Height));
-        }
-    }
+    // Caret pixel layout has moved to ArrangeCaretAt / UpdateCaretLayers,
+    // which positions CaretLayer instances inside ArrangeOverride so the
+    // editor's per-row scene graph isn't rebuilt for each caret blink.
 
     // -------------------------------------------------------------------------
     // Column selection rendering
@@ -1717,7 +2133,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
                 if (rangeLen <= 0) {
                     continue;
                 }
-                foreach (var rect in line.Layout.HitTestTextRange(rangeStart, rangeLen)) {
+                foreach (var rect in line.HitTestTextRange(rangeStart, rangeLen)) {
                     rects.Add(new Rect(rect.X + TextOriginX, lineY + rect.Y, rect.Width, rect.Height));
                 }
             }
@@ -1734,16 +2150,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         }
     }
 
-    private void DrawMultiCarets(DrawingContext context, LayoutResult layout, ColumnSelection colSel) {
-        var doc = Document;
-        if (doc == null) {
-            return;
-        }
-        var carets = colSel.MaterializeCarets(doc.Table, _indentWidth);
-        foreach (var caret in carets) {
-            DrawCaret(context, layout, caret);
-        }
-    }
+    // Multi-cursor (column-selection) carets are arranged via the
+    // _columnCaretPool list inside UpdateCaretLayers — see ArrangeOverride.
 
     // -------------------------------------------------------------------------
     // Caret blink
@@ -1754,7 +2162,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             return;
         }
         _caretVisible = !_caretVisible;
-        InvalidateVisual();
+        SetCaretLayersVisible(_caretVisible);
     }
 
     public void ResetCaretBlink() {
@@ -1764,7 +2172,22 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _caretVisible = true;
         _caretTimer.Stop();
         _caretTimer.Start();
-        InvalidateVisual();
+        SetCaretLayersVisible(true);
+        // Caret may also have moved (typing, click, key navigation) — make
+        // sure ArrangeOverride re-runs so the layer follows it.
+        InvalidateArrange();
+    }
+
+    /// <summary>
+    /// Pushes the visibility flag down to the primary caret layer and any
+    /// active column-selection caret layers.  Cheap because each layer's
+    /// setter compares before invalidating.
+    /// </summary>
+    private void SetCaretLayersVisible(bool visible) {
+        if (_primaryCaret is not null) _primaryCaret.CaretVisible = visible;
+        for (var i = 0; i < _columnCaretPool.Count; i++) {
+            _columnCaretPool[i].CaretVisible = visible;
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -2295,17 +2718,25 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
 
         Coalesce("char");
 
-        // In overwrite mode, select the next character(s) so Insert replaces them.
+        // In overwrite mode, select the next code point(s) so Insert replaces them.
         // Don't overwrite past line endings (standard overwrite behavior).
+        // Walk both the typed text and the buffer by whole code points so a
+        // surrogate pair under the caret is consumed as one unit.
         if (_overwriteMode && doc.Selection.IsEmpty && e.Text != null) {
             var caret = doc.Selection.Caret;
             var table = doc.Table;
             var len = table.Length;
             var charsToOverwrite = 0;
-            for (var i = 0; i < e.Text.Length && caret + charsToOverwrite < len; i++) {
+            var typedIdx = 0;
+            while (typedIdx < e.Text.Length && caret + charsToOverwrite < len) {
+                var bufW = CodepointBoundary.WidthAt(table, caret + charsToOverwrite);
                 var ch = table.GetText(caret + charsToOverwrite, 1);
                 if (ch[0] is '\r' or '\n') break;
-                charsToOverwrite++;
+                charsToOverwrite += bufW;
+                typedIdx += char.IsHighSurrogate(e.Text[typedIdx])
+                    && typedIdx + 1 < e.Text.Length
+                    && char.IsLowSurrogate(e.Text[typedIdx + 1])
+                    ? 2 : 1;
             }
             if (charsToOverwrite > 0) {
                 doc.Selection = new Selection(caret, caret + charsToOverwrite);
@@ -2497,7 +2928,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         Reg(Cmd.EditBackspace, doc => {
             Coalesce("backspace");
             _editSw.Restart();
-            doc.DeleteBackward();
+            if (doc.Selection.IsEmpty && TrySmartDeindent(doc)) {
+                // Smart deindent handled the deletion.
+            } else {
+                doc.DeleteBackward();
+            }
             ScrollCaretIntoView();
             _editSw.Stop();
             PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
@@ -2536,7 +2971,24 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         Reg(Cmd.EditNewline, doc => {
             FlushCompound();
             _editSw.Restart();
-            doc.Insert(doc.LineEndingInfo.NewlineString);
+            var table = doc.Table;
+            var lineIdx = table.LineFromOfs(doc.Selection.Caret);
+            var lineText = table.GetLine(lineIdx);
+            var indent = GetLeadingWhitespace(lineText);
+            var nl = doc.LineEndingInfo.NewlineString;
+            var lineStart = table.LineStartOfs(lineIdx);
+            var caretCol = (int)(doc.Selection.Caret - lineStart);
+
+            // Strip trailing whitespace from the current line when pressing Enter.
+            // If the caret is at or past the last non-whitespace character,
+            // delete from last non-ws to the caret, then insert the newline.
+            var trimmedLen = lineText.TrimEnd().Length;
+            if (caretCol >= trimmedLen && caretCol > trimmedLen) {
+                doc.Selection = new Selection(lineStart + trimmedLen, lineStart + caretCol);
+                doc.Insert(nl + indent);
+            } else {
+                doc.Insert(nl + indent);
+            }
             ScrollCaretIntoView();
             _editSw.Stop();
             PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
@@ -2779,7 +3231,11 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         long newCaret;
 
         if (!byWord) {
-            newCaret = Math.Clamp(caret + delta, 0L, len);
+            // Step by one code point so surrogate pairs move together.
+            newCaret = delta < 0
+                ? CodepointBoundary.StepLeft(table, caret)
+                : CodepointBoundary.StepRight(table, caret);
+            newCaret = Math.Clamp(newCaret, 0L, len);
         } else {
             newCaret = delta < 0
                 ? FindWordBoundaryLeft(doc, caret)
@@ -2914,9 +3370,15 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         var lineStart = table.LineStartOfs(lineIdx);
         if (lineStart < 0) return;
 
-        var newCaret = toStart
-            ? lineStart
-            : lineStart + table.LineContentLength(lineIdx);
+        long newCaret;
+        if (toStart) {
+            // Smart Home: toggle between first non-whitespace and column 0.
+            var wsLen = LeadingWhitespaceLength(table.GetLine(lineIdx));
+            var firstNonWs = lineStart + wsLen;
+            newCaret = caret == firstNonWs ? lineStart : firstNonWs;
+        } else {
+            newCaret = lineStart + table.LineContentLength(lineIdx);
+        }
         doc.Selection = extend
             ? doc.Selection.ExtendTo(newCaret)
             : Selection.Collapsed(newCaret);
@@ -2984,15 +3446,16 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _editSw.Restart();
         var nl = doc.LineEndingInfo.NewlineString;
         var lineIdx = doc.Table.LineFromOfs(doc.Selection.Caret);
+        var indent = GetLeadingWhitespace(doc.Table.GetLine(lineIdx));
         if (lineIdx + 1 < doc.Table.LineCount) {
             var nextLineStart = doc.Table.LineStartOfs(lineIdx + 1);
             doc.Selection = Selection.Collapsed(nextLineStart);
-            doc.Insert(nl);
-            doc.Selection = Selection.Collapsed(nextLineStart);
+            doc.Insert(indent + nl);
+            doc.Selection = Selection.Collapsed(nextLineStart + indent.Length);
         } else {
             // Last line — append newline at end
             doc.Selection = Selection.Collapsed(doc.Table.Length);
-            doc.Insert(nl);
+            doc.Insert(nl + indent);
         }
         ScrollCaretIntoView();
         _editSw.Stop();
@@ -3007,10 +3470,12 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         FlushCompound();
         _editSw.Restart();
         var nl = doc.LineEndingInfo.NewlineString;
-        var lineStart = doc.Table.LineStartOfs(doc.Table.LineFromOfs(doc.Selection.Caret));
+        var lineIdx = doc.Table.LineFromOfs(doc.Selection.Caret);
+        var indent = GetLeadingWhitespace(doc.Table.GetLine(lineIdx));
+        var lineStart = doc.Table.LineStartOfs(lineIdx);
         doc.Selection = Selection.Collapsed(lineStart);
-        doc.Insert(nl);
-        doc.Selection = Selection.Collapsed(lineStart);
+        doc.Insert(indent + nl);
+        doc.Selection = Selection.Collapsed(lineStart + indent.Length);
         ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
@@ -3093,12 +3558,49 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
     }
 
     /// <summary>
+    /// When the caret is inside leading whitespace on a spaces-indent document,
+    /// deletes back to the previous indent stop. Returns true if handled.
+    /// </summary>
+    private bool TrySmartDeindent(Core.Documents.Document doc) {
+        if (doc.IndentInfo.Dominant != IndentStyle.Spaces) return false;
+
+        var table = doc.Table;
+        var caret = doc.Selection.Caret;
+        var lineIdx = table.LineFromOfs(caret);
+        var lineStart = table.LineStartOfs(lineIdx);
+        var col = (int)(caret - lineStart); // character offset within line
+        if (col == 0) return false; // at start of line — normal backspace deletes newline
+
+        var lineText = table.GetLine(lineIdx);
+        var wsLen = LeadingWhitespaceLength(lineText);
+        if (col > wsLen) return false; // caret is past leading whitespace
+
+        // All characters before the caret in this line must be spaces
+        // (mixed tabs would be ambiguous — fall through to normal backspace).
+        for (var i = 0; i < col; i++) {
+            if (lineText[i] != ' ') return false;
+        }
+
+        // Snap back to the previous indent stop.
+        var prevStop = ((col - 1) / _indentWidth) * _indentWidth;
+        var deleteCount = col - prevStop;
+        doc.Selection = new Selection(lineStart + prevStop, lineStart + col);
+        doc.DeleteSelection();
+        return true;
+    }
+
+    /// <summary>
     /// Returns the number of leading whitespace characters in the line text.
     /// </summary>
     private static int LeadingWhitespaceLength(string lineText) {
         var i = 0;
         while (i < lineText.Length && (lineText[i] == ' ' || lineText[i] == '\t')) i++;
         return i;
+    }
+
+    private static string GetLeadingWhitespace(string lineText) {
+        var len = LeadingWhitespaceLength(lineText);
+        return len > 0 ? lineText[..len] : string.Empty;
     }
 
     /// <summary>
@@ -3405,7 +3907,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             var hExtent = maxLine > 0 ? maxLine * cw + _gutterWidth + TextAreaPadRight : _extent.Width;
             var oldHMax = HScrollMaximum;
             _extent = new Size(hExtent, lineCount * rh);
-            if (Math.Abs(HScrollMaximum - oldHMax) > 0.5) HScrollChanged?.Invoke();
+            if (Math.Abs(HScrollMaximum - oldHMax) > 0.5) FireHScrollChanged();
 
             var caretY = caretLine * rh;
             if (_scrollOffset.Y > ScrollMaximum) {
@@ -3699,6 +4201,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
             doc.Selection = doc.Selection.ExtendTo(ofs);
         }
         InvalidateVisual();
+        InvalidateArrange();
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e) {
@@ -3728,7 +4231,8 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _caretVisible = false;
         _caretTimer.Stop();
         FlushCompound();
-        InvalidateVisual();
+        SetCaretLayersVisible(false);
+        InvalidateArrange();
     }
 
     // -------------------------------------------------------------------------
@@ -3879,7 +4383,7 @@ public sealed class EditorControl : Control, ILogicalScrollable, IScrollSource {
         _layout = null;
         InvalidateMeasure();
         InvalidateVisual();
-        ScrollChanged?.Invoke(this, EventArgs.Empty);
+        FireScrollChanged();
     }
 
     // -------------------------------------------------------------------------

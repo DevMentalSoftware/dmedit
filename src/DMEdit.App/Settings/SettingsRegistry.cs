@@ -20,9 +20,28 @@ public static class SettingsRegistry {
 
     public static readonly IReadOnlyList<SettingDescriptor> All = [
         // -- Display --
-        new("WrapLinesAt", "Wrap Lines At",
-            "When wrapping is enabled we can force wrapping at a particular width when the window is wider than that width.",
-            "Display", SettingKind.Int, 100, Min: 0, Max: 10000),
+        new("UseWrapColumn", "Use Wrap Column",
+            "When enabled, lines wrap at the Wrap Column limit instead of the viewport edge.",
+            "Display", SettingKind.Bool, true),
+
+        new("WrapLinesAt", "Wrap Column",
+            "Column at which lines wrap when Use Wrap Column is enabled.",
+            "Display", SettingKind.Int, 100, Min: 1, Max: 10000, EnabledWhenKey: "UseWrapColumn"),
+
+        new("ShowWrapSymbol", "Show Wrap Symbol",
+            "Show a wrap indicator glyph at the wrap column for lines that word-wrap to the next row.",
+            "Display", SettingKind.Bool, true),
+
+        new("HangingIndent", "Hanging Indent",
+            "Indent wrapped continuation rows by half of one indent level so wrapped text " +
+            "is visually offset from the first row.  Currently applies only to monospace fonts.",
+            "Display", SettingKind.Bool, true, EnabledWhenKey: "UseFastTextLayout"),
+
+        new("UseFastTextLayout", "Fast Text Layout",
+            "Render monospace lines through the GlyphRun fast path.  Much faster and enables " +
+            "hanging indent, but disables font ligatures (e.g. => rendered as a single glyph).  " +
+            "Turn off if you prefer ligatures over speed and hanging indent.",
+            "Display", SettingKind.Bool, true),
 
         new("CharWrapFileSizeKB", "Char Wrap File Size (KB)",
             "File size above which character-wrapping mode activates automatically. " +

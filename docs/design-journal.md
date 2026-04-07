@@ -14,7 +14,7 @@ small one — it is the primary way a fresh session recovers context.
 |------|-------|-------|
 | [01-foundations](design-journal/01-foundations.md) | 2026-02-26 | Core editor, IBuffer abstraction, windowed layout, dual-zone scrollbar design |
 | [02-document-model](design-journal/02-document-model.md) | 2026-02-26 | Variable heights, WYSIWYG block tree, persistence architecture |
-| [03-performance](design-journal/03-performance.md) | 2026-02-28 | Perf stats, streaming I/O, paged buffer, ZIP support |
+| [03-performance](design-journal/03-performance.md) | 2026-02-28, 2026-04-06 | Perf stats, streaming I/O, paged buffer, ZIP support, cold startup optimization |
 | [04-ux](design-journal/04-ux.md) | 2026-02-28 | Undo selection, caret/scroll UX, selection rounded corners |
 | [05-features](design-journal/05-features.md) | 2026-03-02 – 2026-03-04 | Feature backlog, editing commands, status bar, line numbers, tab bar |
 | [06-settings](design-journal/06-settings.md) | 2026-03-05 | Edit coalescing undo, settings document tab |
@@ -28,378 +28,303 @@ small one — it is the primary way a fresh session recovers context.
 | [14-forced-wrap](design-journal/14-forced-wrap.md) | 2026-04-02 | Attempted forced wrapping for long lines — moved to AlternateLineBranch |
 | [15-char-wrap-mode](design-journal/15-char-wrap-mode.md) | 2026-04-03 | Character-wrapping mode: O(1) scroll math, no pseudo-lines needed |
 | [16-print-progress](design-journal/16-print-progress.md) | 2026-04-03 | Print progress dialog, monospace pagination, cancellation, ETA display |
+| [17-editing-polish](design-journal/17-editing-polish.md) | 2026-04-06 | Auto-indent on Enter, smart deindent Backspace, smart Home, trailing whitespace cleanup |
+| [18-wrap-indicators](design-journal/18-wrap-indicators.md) | 2026-04-06 | Wrap symbol glyph at wrap column; hanging indent analysis (deferred) |
+| [19-glyphrun-print](design-journal/19-glyphrun-print.md) | 2026-04-06 | GlyphRun fast path for WPF printing (~55–70% faster), word-break wrap restored, print error plumbing overhaul, hanging indent unblocked |
+| [20-hanging-indent](design-journal/20-hanging-indent.md) | 2026-04-06 | Hanging indent on wrapped rows, Avalonia monospace GlyphRun fast path, first step toward removing TextLayout from the editor |
+| [21-ascii-fast-path](design-journal/21-ascii-fast-path.md) | 2026-04-07 | ChunkedUtf8Buffer per-chunk IsAllAscii flag — column-mode insert ~28× faster, all CharAt-touching code paths benefit |
 
 ---
 
 ## Current State
 
-**Test baseline: 572** (451 Core + 31 Rendering + 90 App, 1 skipped)
+**Test baseline: 631** (510 Core + 31 Rendering + 90 App, 1 skipped)
 
 ### In progress
+
+- **Surrogate-pair safety** — Backspace/Delete used to split a UTF-16
+  surrogate pair and leave a stranded half in the buffer, which then
+  corrupted any path that round-trips through UTF-8/JSON (e.g. clipboard
+  out to other apps).  `Document.DeleteBackward`/`DeleteForward` now
+  expand to swallow both halves of a pair (same pattern as `\r\n`),
+  `PushInsert` runs `SanitizeSurrogates` so any lone half coming from a
+  paste/IME becomes U+FFFD, and `ChunkedUtf8Buffer.DecodeUpToNChars` has
+  forward-progress safety nets that emit U+FFFD if it ever sees a
+  malformed sequence on the read side.  Tests added under `DocumentTests`.
 
 - **EditorControl caret X offset** — caret renders consistently further right
   than DMInputBox when using the same font/size.  Both use
-  `HitTestTextPosition().X` identically.  Root cause unknown; needs investigation.
+  `HitTestTextPosition().X` identically.  Root cause unknown.  The new
+  mono GlyphRun path (entry 20) may already address this for the editor;
+  DMInputBox would need its own migration.
   See [13-custom-textbox](design-journal/13-custom-textbox.md).
 
-- **Paged add-buffer eviction** (future/roadmap) — no code written yet.
-  Design idea: older immutable chunks could be paged to disk like
-  PagedFileBuffer.  See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
+- **DMInputBox custom TextBox** — lightweight single-line text control
+  replacing Avalonia's TextBox in DMTextBox/DMEditableCombo.  Custom
+  `Render` for text/selection/caret.  Fixes Avalonia #12809.
+  See [13-custom-textbox](design-journal/13-custom-textbox.md).
+
+- **Search Within Selection** — when OpenFindBar runs with a multi-line
+  selection, scope dropdown should auto-pick "Current Selection" and all
+  Find/Replace bound to that range.  No materialization, just integer
+  range limiting; preserve range across ReplaceAll edits.
+
+- **Paged add-buffer eviction** (roadmap) — older immutable chunks could
+  page to disk like PagedFileBuffer.  No code yet.
+  See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
 
-- **Print progress dialog + performance** (2026-04-03) — Modal ProgressDialog
-  during printing with two-phase progress: "Measuring line X of Y" then
-  "Page X of Y — N pages/sec, ~Xm Xs remaining".  ComputePageBreaks rewritten
-  to use LineIndexTree arithmetic instead of GetLine + FormattedText per line
-  (29K pages: frozen → 331ms).  GetPage row splitting uses monospace char-width
-  arithmetic instead of WrapLine/FindBreakPosition binary search.  Removed
-  WrapLine, FindBreakPosition, CountWrappedLines.  Cancel closes dialog
-  immediately; print thread finishes in background with blank pages.  Guard
-  against concurrent print jobs via _printTask field.  ISystemPrintService.Print
-  returns bool (no exceptions for errors/cancel).  ProgressDialog: monospace
-  font for stable number layout, 200ms update throttle, optional cancel button
-  via showCancelButton parameter.  Future: GlyphRun rendering to bypass
-  FormattedText entirely.
+- **ChunkedUtf8Buffer ASCII fast path** (2026-04-07) — Per-chunk
+  `IsAllAscii` flag short-circuits `FindByteOffsetInChunk`.  Column-mode
+  rapid insert ~28× faster (360ms→13ms per insert on 30 cursors × 200-char
+  lines); render and layout collapsed by ~100× as a side benefit.
+  See [21-ascii-fast-path](design-journal/21-ascii-fast-path.md).
+
+- **Hanging indent + Avalonia mono GlyphRun fast path** (2026-04-06) —
+  Wrapped continuation rows indent by half an indent level (`HangingIndent`
+  setting, default on).  Editor side: new `MonoLayoutContext` /
+  `MonoLineLayout` GlyphRun fast path for monospace, no-control-char lines;
+  `LayoutLine` becomes a sum type with path-agnostic Render/HitTest
+  dispatch.  Tab-bearing lines fall back to `TextLayout` for now.
+  See [20-hanging-indent](design-journal/20-hanging-indent.md).
+
+- **GlyphRun print path + word-break + error plumbing** (2026-04-06) —
+  Replaced per-row `FormattedText` printing with direct `DrawGlyphRun`,
+  ~55–70% faster (~101 pages/sec on 29K-page doc).  Shared `NextRow`
+  helper keeps pagination and rendering in sync.  `ISystemPrintService.Print`
+  returns `PrintResult` (success/cancel/error), `RuntimeWrappedException`
+  unwrap surfaces WPF managed-C++ throws, friendly error messages with raw
+  detail in DevMode expander only.  `AppSettings.DevModeAllowed` centralizes
+  the DevMode gate.
+  See [19-glyphrun-print](design-journal/19-glyphrun-print.md).
+
+- **Wrap indicators + UseWrapColumn** (2026-04-06) — `UseWrapColumn` boolean
+  setting replaces the `WrapLinesAt=0` pattern.  `ShowWrapSymbol` draws a
+  geometric arrow at the wrap column for each wrapped row.  Hanging indent
+  analyzed and deferred to entry 20.
+  See [18-wrap-indicators](design-journal/18-wrap-indicators.md).
+
+- **Cold startup optimization** (2026-04-06) — `PublishReadyToRun=true` on
+  all platform release builds gave a noticeable improvement.  Ruled out:
+  SingleFile, InterFont removal, Defender exclusion, settings deferral,
+  trimming.  ~1s of taskbar→exe overhead is Windows shell activation.
+  See [03-performance](design-journal/03-performance.md).
+
+- **Editing polish** (2026-04-06) — Auto-indent on Enter, smart Backspace
+  deindent, smart Home toggle, trailing-whitespace cleanup on Enter.
+  See [17-editing-polish](design-journal/17-editing-polish.md).
+
+- **Print progress dialog + performance** (2026-04-03) — Modal
+  `ProgressDialog` with measure/print phases, ETA, cancel.
+  `ComputePageBreaks` rewritten to use `LineIndexTree` arithmetic
+  (29K pages: frozen → 331ms).  Removed `WrapLine`/`FindBreakPosition`/
+  `CountWrappedLines`.  Concurrent-print guard via `_printTask`.
   See [16-print-progress](design-journal/16-print-progress.md).
 
-- **CharWrap trigger fix** (2026-04-03) — CharWrap mode now requires both file
-  size >= CharWrapFileSizeKB AND longest real line >= MaxGetTextLength (1M chars).
-  Previously triggered on file size alone, which forced CharWrap on normal large
-  files with short lines.  Removed three early-load sites that pre-set CharWrap
-  based on file size before line scanning; CharWrap now only set post-load via
-  ShouldCharWrap or at runtime via LineTooLongDetected safety net.
+- **CharWrap trigger fix** (2026-04-03) — CharWrap mode requires both
+  file size ≥ `CharWrapFileSizeKB` AND longest line ≥ `MaxGetTextLength`.
+  Removed early-load sites that pre-set CharWrap on size alone.
 
-- **Settings page fixed width** (2026-04-03) — SettingsContent StackPanel now has
-  MaxWidth=720 and HorizontalAlignment=Left so description text wraps and boolean
-  click targets don't extend to window edge.  Font preview border stretches to
-  fill the fixed width instead of hardcoded 600px.
+- **Settings page fixed width** (2026-04-03) — `SettingsContent`
+  `MaxWidth=720`, left-aligned, so descriptions wrap and click targets
+  don't extend to window edge.
 
-- **DMInputBox unit tests** (2026-04-03) — 26 tests covering text property
-  basics, caret/selection clamping, SelectAll, SelectedText, IsReadOnly,
-  property defaults, and boundary edge cases.  Added Avalonia.Headless.XUnit
-  to App.Tests project with TestApp for headless test support.
+- **DMInputBox unit tests** (2026-04-03) — 26 tests covering text
+  property basics, caret/selection clamping, SelectAll/SelectedText,
+  IsReadOnly, defaults, edge cases.  Avalonia.Headless.XUnit + TestApp
+  added to App.Tests.
 
-- **Character-wrapping mode + pseudo-line removal** (2026-04-03) — Major
-  refactoring: added character-wrapping mode for large files (O(1) scroll math,
-  row N = char N * charsPerRow), then removed the entire pseudo-line system
-  (SplitLongLine, dual-offset DocOffset/BufOffset, _val2/_sum2 in LineIndexTree,
-  LineTerminatorType.Pseudo).  LineIndexTree simplified to single-value treap
-  (~340 lines).  Char-wrap triggers on file size > CharWrapFileSizeKB setting
-  (default 50KB) AND longest line >= MaxGetTextLength (1M chars, safety net via
-  LineTooLongException).  Features in char-wrap mode: gutter shows row numbers,
-  status bar shows Row/Col, tabs/CR/LF render as spaces (with whitespace glyphs
-  when ShowWhitespace on), indent/column-sel/line-ending-conversion disabled,
-  print/PDF disabled.  Scroll preserves caret screen position on resize.
-  Per-tab CharWrapMode on TabState.  AlternateLineBranch preserved with earlier
-  forced-wrapping attempt.
+- **Character-wrapping mode + pseudo-line removal** (2026-04-03) —
+  Char-wrap mode for huge files (O(1) scroll: row N = char N × charsPerRow).
+  Removed the entire pseudo-line system (`SplitLongLine`, dual offsets,
+  `_val2`/`_sum2` in LineIndexTree, `LineTerminatorType.Pseudo`).
+  `LineIndexTree` simplified to single-value treap (~340 lines).
   See [15-char-wrap-mode](design-journal/15-char-wrap-mode.md).
 
-- **Tab Toolbar + context menu fixes** (2026-04-01) — Replaced the tab bar "+"
-  button with a configurable toolbar ("TabToolbar") docked right of the last tab.
-  Three toolbar zones: TabToolbar (tab bar), Center (menu row), Right (fixed
-  Settings gear).  Tab toolbar commands: New (default on), Open, Recent (dropdown),
-  Save All, Close All, Status Bar (toggle).  All configurable via Settings > Commands
-  "T" button; New is no longer ToolbarFixed so users can hide it.  `FileRecent`
-  added as a dropdown-only command (`IsToolbarDropdown` on Command,
-  `IsDropdown` on ToolbarItem); clicking shows recent files popup reusing
-  `RecentFilesStore`.  Recent items in File menu gated by `File.Recent` M setting
-  via new `IsCommandMenuVisible()` helper.  Bug fixes: `ApplyAdvancedMenuVisibility`
-  now resets `IsVisible = true` for non-advanced commands without overrides (was
-  stuck hidden after toggle-off then toggle-on); all dynamically-created context
-  menus set `FontSize = 12` to match menu bar; tab bar context menus clear
-  `ContextMenu = null` on close to prevent stale menus auto-opening on right-click;
-  `OnPointerPressed` dismisses open context menus except for overflow/toolbar zones
-  that manage their own toggle; toolbar overflow chevron reduced from 18px to 12px.
+- **Tab Toolbar + context menu fixes** (2026-04-01) — Replaced tab bar
+  "+" button with configurable `TabToolbar`.  Three toolbar zones
+  (TabToolbar/Center/Right).  `FileRecent` dropdown command
+  (`IsToolbarDropdown`/`IsDropdown`).  Fixed advanced-menu visibility
+  reset; context menu font; stale context menu auto-open.
 
-- **DMInputBox + caret/scroll polish** (2026-04-01) — Lightweight custom
-  single-line text input control (`DMInputBox : Control`) replacing Avalonia's
-  `TextBox` in all DMEdit chrome (DMTextBox, DMEditableCombo, GoToLineWindow).
-  Renders text, caret, and selection directly via `TextLayout` — same approach
-  as `EditorControl` — to work around Avalonia's caret-positioning bug (#12809).
-  Post-implementation fixes: border/hover/focus rendering via Avalonia styles
-  and `RoundedRect` drawing; `SetCurrentValue()` to preserve TemplateBinding;
-  watermark visible when focused; index clamping for crash safety.  Caret
-  rendering improved in both EditorControl and DMInputBox: width reduced to
-  1.0 DIP default with new `CaretWidth` setting (1.0–2.5, 0.5 increments);
-  device-pixel snapping via `Math.Round(x * scale) / scale`.  Row height
-  snapped to device pixel multiple (`Math.Ceiling`) to eliminate inter-line
-  jitter during slow scrolling.  FluentTextBoxButton CornerRadius template
-  fix; find bar expand button refocus; settings row layout stability
-  (Opacity instead of IsVisible for reset buttons); SettingDescriptor
-  Increment parameter.  See
-  [13-custom-textbox](design-journal/13-custom-textbox.md).
-
-- **UTF-8 Chunked Add Buffer** (2026-03-29) — Replaced `StringBuilder _addBuf` +
-  `string _addBufCache` with `ChunkedUtf8Buffer`: variable-size `byte[]` chunks
-  storing UTF-8 encoded text. Pieces keep char offsets; buffer translates
-  char↔byte internally. Eliminated `InsertEdit` — all inserts now go through
-  `SpanInsertEdit` via `PushInsert` helper. Session persistence uses binary
-  companion file (`{id}.addBuf`) alongside `.edits.json`; edit JSON references
-  buffer char offsets instead of duplicating text strings. Delete edit
-  serialization no longer materializes text (pieces reference persisted buffer).
-  Linux clipboard paste feeds raw UTF-8 bytes directly via `AppendUtf8`. 25 new
-  `ChunkedUtf8Buffer` unit tests. See
-  [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
-
-- **Error Handling & UX Hardening** (2026-03-27) — Major overhaul of global exception
-  handling and several editor UX fixes:
-  - **Fatal error dialog**: `HandleFatalException` rewritten to avoid deadlocks.
-    `ShowDialog` cannot receive input when called from a `Post` callback (Win32 modal
-    loop issue), so background-thread exceptions use `Show()` + manual modality
-    (`mainWindow.IsEnabled = false`, `Topmost = true`, centered via `Opened` handler).
-    UI-thread exceptions use normal `ShowDialog`. Re-entrancy guard (`_handlingFatal`)
-    prevents duplicate dialogs. Exit button calls `Process.Kill()` for guaranteed
-    termination. Debugger-attached shows Continue button. `SaveSession()` removed from
-    crash path (risky + slow).
-  - **ErrorDialog improvements**: DockPanel layout (buttons anchored bottom-right),
-    reduced margins, Expander header styled with dark-red background via
-    ToggleButton template styles (normal + pointerover + pressed states).
-    `ErrorDialogButton.Exit` and `.Continue` added.
-  - **DevMode test commands**: `Dev.ThrowOnUIThread` and `Dev.ThrowOnBackground`
-    commands — Help menu items (visible only in DevMode) that throw
-    `InvalidOperationException` on the respective thread for testing crash handling.
-    Background uses `new Thread` (not `Task.Run`) for immediate exception delivery.
-    Added to all 6 key binding profiles as intentionally unbound.
-  - **Undo/Redo scroll preservation**: `Document.Undo()`/`Redo()` now return the
-    `IDocumentEdit` that was applied. `PerformUndo`/`PerformRedo` skip
-    `ScrollCaretIntoView` for bulk replace edits, preserving scroll position.
-  - **ProgressDialog cancel fix**: `OnClosed` override cancels the CTS regardless
-    of how the dialog closes (button, taskbar, programmatic). Double-close guard
-    in the `finally` block.
-  - **Settings page command guard**: `DispatchCommand` now whitelists only File,
-    Window, Menu, and Nav.FocusEditor commands on the settings page (was only
-    blocking `RequiresEditor` commands). Blocks Command Palette, Find, View, Dev, etc.
-  - **Command ordering**: Command Palette and Settings commands list preserve
-    original definition order (no alphabetical sorting). Categories merged by
-    first-seen order using dictionary. Dev commands hidden when DevMode is off.
-  - **ScrollCaretIntoView verification pass**: After the initial estimate-based
-    scroll, performs an `EnsureLayout()` + `GetCaretBounds()` check. If the caret
-    is outside the viewport, adjusts scroll and re-layouts. Helps with wrapped lines
-    where the scroll estimate drifts.
-
-- **Bulk PieceTable Operations** (2026-03-27) — `PieceTable.BulkReplace` with two
-  tiers: `UniformBulkReplaceEdit` (same-length, same-replacement — stores only
-  `long[]` positions + single matchLen + single replacement) and
-  `VaryingBulkReplaceEdit` (varying lengths/replacements — for regex, indentation).
-  O(pieces + matches) single-pass algorithm with one `BuildLineTree()` call.
-  Undo is O(1) via piece-list + line-tree snapshot restore + add-buffer trim.
-  `EditorControl.ReplaceAllAsync` runs match collection on a background thread
-  with `ProgressDialog` (cancel button, progress bar), then applies the bulk
-  replace on the UI thread. Status bar shows replacement count + timing;
-  stats bar shows `ReplAll: Xms` in the IO row.
-  `Document.ConvertIndentation` rewritten to collect indent regions via
-  `ForEachPiece` and feed them into `BulkReplaceVarying` — eliminated the
-  `StringBuilder` sized to `_table.Length * 2`. Session serialization added for
-  both bulk edit types. 29 new tests (PieceTable-level + Document undo/redo).
-  See [11-search-and-memory-safety](design-journal/11-search-and-memory-safety.md).
-
-- **Search, Memory Safety & Horizontal Scrolling** (2026-03-27) — horizontal
-  scrollbar when wrapping disabled, find bar toggle buttons (Wildcard/Regex),
-  async match counting, `GetText` 5KB guard on PieceTable, line-at-a-time layout
-  (eliminated `Layout(string)`), chunked search with `ArrayPool` (no string
-  allocation), `SuppressChangedEvents`, search term limited to single-line ≤1024
-  chars.
-  See [11-search-and-memory-safety](design-journal/11-search-and-memory-safety.md).
-
-- **Session Persistence & Memory Safety** (2026-03-24) — major reliability pass fixing
-  edit serialization (MaterializeText, explicit delete length, recapture in Apply),
-  line tree reliability (InstallLineTree during load, CaptureLineInfo boundary fix,
-  atomic InsertPiecesAndRestoreLines), memory safety (VisitPieces/ReadPieces 1 MB chunk
-  cap, GetText internal), buffer simplification (removed ProceduralBuffer/StringBuffer/
-  StreamingFileBuffer/DevSamples from production).
-  See [10-session-and-reliability](design-journal/10-session-and-reliability.md).
-
-- **Global Error Handling** (2026-03-23) — replaced SaveErrorDialog and SaveFailedDialog
-  with a single general-purpose `ErrorDialog` (resizable, themed, configurable buttons).
-  Dev mode adds a collapsed expander showing the full stack trace. Global exception handlers
-  installed in Program.cs: `AppDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException`,
-  and `Dispatcher.UIThread.UnhandledException` — all write a crash report to disk and show
-  the ErrorDialog. `CrashReport` generalized to accept any operation name (not just "Save")
-  with a synchronous overload for global handlers. `SaveAsPdfAsync` wrapped in try/catch
-  with ErrorDialog (was previously unprotected — caused silent crash on Linux).
-
-- **Theme Refinements** (2026-03-20) — consistent light/dark theming across all controls.
-  Design rules: foreground always black/white (state via background only), border = background
-  (invisible border for corner rounding only), hover = background tint, focus = background
-  shift. New ButtonTheme and GridSplitterTheme. Updated ComboBox, TextBox, NumericUpDown
-  themes with proper ThemeDictionaries. NUD inner TextBox always transparent. Dark
-  placeholder foreground `#909090`.
-
-- **Tail File & Auto-Reload Improvements** (2026-03-21) — TailFile boolean setting
-  (Editor category) with status bar icon button (Fluent \uF126). When enabled and
-  caret is on last line + scrolled to bottom, auto-reload scrolls to show new content.
-  Clicking the status bar button moves the caret to engage/disengage tail (Nav.MoveDocEnd
-  / Nav.MoveUp). Icon dims when tail is inactive. Auto-reload rearchitected: background
-  load awaits full completion before atomic UI-thread swap — eliminates flicker entirely.
-  `EditorControl.ReplaceDocument(doc, scrollState)` swaps the document without resetting
-  scroll to (0,0) by gating `_scrollOffset = default` behind `_keepScrollOnSwap` flag
-  and skipping eager layout disposal. Full editor state (Selection with Anchor+Active,
-  ColumnSel, scroll position) captured at swap time, not before the await. Dirty check
-  aborts reload if user edited during load. Reload throttle: `ReloadInProgress` guard +
-  `TailReloadCooldownMs` hidden setting (default 500ms). `DualZoneScrollBar` refactored
-  to read from `IScrollSource` interface (implemented by EditorControl) — eliminated 5
-  duplicate state fields, single source of truth. `SyncScrollBarFromEditor` removed.
-  Load perf stat now captured for reloads. Re-watch on failed reload so watcher recovers.
-
-- **Editor Font Setting** (2026-03-20) — font picker in Display settings: DMEditableCombo
-  with dropdown (no filtering, full list always shown), ToggleButton "F" for fixed-width
-  filter, NumericUpDown for size (points), and editable preview paragraph with editor
-  colors. Font name validation (red foreground for uninstalled fonts, case normalization
-  on lost focus). Default font auto-detected from preference list (Cascadia Code →
-  Consolas → DejaVu Sans Mono → Liberation Mono → Courier New). Star glyph marks the
-  default in the dropdown (display-only via ItemTemplate). Custom preview text persisted.
-  DMEditableCombo enhanced: ShowClearButton, HighlightItem, scroll containment, popup
-  close-before-text ordering fix. Settings controls hardened: left-click-only guards on
-  checkboxes/combo boxes/command rows, context menu disabled on shortcut key capture
-  boxes. GoTo Line and Command Palette dialogs: transparent corners, close buttons.
-  Editor focus restored when switching from settings tab.
-
-- **Save crash handling** (2026-03-17) — crash report infrastructure writes diagnostic
-  files to the session directory when an unexpected save failure occurs. Error dialog
-  offers Save As (to try a different location) or Close Tab. BackupOnSave
-  setting added: BackupOnSave keeps a .bak copy. 
-
-- **Column/Block Selection** (2026-03-16) — Alt+drag or Alt+Shift+Up/Down creates a
-  rectangular selection spanning multiple lines. Typing, backspace, delete, tab, copy,
-  cut, paste all operate at every cursor simultaneously. Column selection is defined in
-  logical-line/column space with tab-aware column math. Undo reverts all per-line edits
-  as one step. Escape or any non-column navigation command exits column mode. This feature
-  is currently disabled when line wrapping is enabled.
-
-- **Interactive Status Bar** (2026-03-14) — four clickable segments (Ln/Ch, Encoding,
-  Line Ending, Indent) with hover highlights and flyout menus. Indent detection added
-  to buffer scan loops. GoTo Line dialog. Encoding menu scaffold (UI only). File locking
-  fix: removed persistent `_fs` from PagedFileBuffer. See
-  [08-status-bar](design-journal/08-status-bar.md).
-- **Command Palette** (2026-03-07) — F1, modal dialog with text filter, arrow-key nav,
-  Enter to execute. Row colors from editor theme. Hidden from: Newline, Tab, Backspace,
-  Delete. See [07-commands](design-journal/07-commands.md).
-- **21 New Editor Commands** (2026-03-07) — Find stubs, Delete Word Left/Right, Insert
-  Line Above/Below, Duplicate Line, Indent, Scroll Line Up/Down, Zoom In/Out/Reset,
-  Revert File. Search menu added.
-- **Predefined Key Mapping Profiles** (2026-03-06) — 6 profiles: Default, VS Code,
-  Visual Studio, JetBrains, Eclipse, Emacs. Switching clears user overrides.
-- **Command Registry + Key Binding System** (2026-03-06) — centralized dispatch,
-  user-customizable bindings, Keyboard settings section, 55 App tests.
-
-- **Pseudo-Newlines & Streaming Load Safety** (2026-03-28) — Major feature +
-  performance/reliability overhaul for large files (single-line and multi-line).
-
-  **Pseudo-newlines:** `MaxPseudoLine = 500` in PieceTable. Lines exceeding
-  this are split into pseudo-lines in the line tree — document text is never
-  modified. Pseudo-splitting at three levels: `PagedFileBuffer.ScanNewlines`
-  (during background scan — primary), `BuildLineTree` (post-processing for
-  `PieceTable(string)` constructor), and `SplitLongLine` helper (after edits).
-  `GetLine()` fixed to check actual character via `CharAt` instead of assuming
-  a newline at every boundary. `MaxGetTextLength` derived from
-  `MaxPseudoLine + 2`. `MaxLayoutBytes` derived from `visibleRows * MaxPseudoLine`.
-  `MAX_LONGEST_LINE` in PagedFileBuffer replaced with reference to
-  `MaxPseudoLine`. `_longestLine` initialized to `MaxPseudoLine` so buffer
-  short-circuits are safe from the start. 19 new tests using the constant.
-
-  **Streaming load safety:** Removed O(N) buffer short-circuits from
-  `LineCount`/`LineStartOfs`/`LineFromOfs` — all lookups now go through the
-  `LineIndexTree` (O(log N) via treap prefix sums). `LayoutLines` receives
-  frozen `lineCount` and `docLength` snapshots from `LayoutWindowed` to prevent
-  race conditions with the background scan advancing `_totalChars`.
-  `LayoutResult.TopLine` added so `DrawGutter` uses it directly instead of
-  calling `LineFromOfs` (eliminated the O(N log N) `BinarySearchBufferLines`
-  → `GetLineStart` hot path on every render frame). `LayoutLines` skips lines
-  with inconsistent offsets (negative, backwards) during streaming.
-
-  **Scroll/interaction lock during load:** `Document.IsLoading` property
-  (derived from `Buffer.LengthIsKnown`). `EditorControl.IsLoading` delegates
-  to `Document.IsLoading`. During streaming: scroll locked (both `ScrollValue`
-  and `IScrollable.Offset` setters reject changes), caret hidden, mouse
-  interaction blocked, `RestoreScrollState` deferred to `LoadComplete`.
-  First page shows at `topLine = 0` immediately. Once `InstallLineTree` runs,
-  scroll restores to saved position with O(log N) lookups.
-
-  **Crash resilience:** `_layoutFailed` flag in EditorControl prevents
-  cascading crashes from repeated layout failures. `HandleFatalException`
-  re-entrancy guard no longer writes duplicate crash reports.
-  `Debugger.Break()` before `GetText` guard throw for easier debugging.
-  `FileEncoding.Unknown` added for documents before encoding detection.
-  Tab spinner kept alive via `UpdateTabBar()` in `ProgressChanged` handler.
-
-- **Per-line scroll estimation** (2026-03-27) — Replaced global `avgLineHeight`
-  (uniform average) with per-line Y estimation using `LineIndexTree` prefix sums.
-  Two new O(log N) helpers: `EstimateLineY(lineIndex, table, charsPerRow, rh)` maps
-  a logical line to pixel Y via `max(N, ceil(charsBefore / charsPerRow)) * rh`;
-  `EstimateTopLine(scrollY, table, lineCount, charsPerRow, rh)` is the inverse.
-  `GetCharsPerRow(textWidth)` deduplicates the chars-per-row calculation.
-  Updated `LayoutWindowed` (scroll→topLine and RenderOffsetY for large jumps),
-  `ScrollCaretIntoView` (caret Y estimation), and `ScrollToTopLine`.
-  Incremental small-scroll path unchanged (already uses actual cached line heights).
-  When wrapping is off, `charsPerRow = 0` and both helpers degenerate to exact
-  `lineIndex * rh` / `scrollY / rh`.
-
-### In progress
-
-- **DMInputBox custom TextBox** — lightweight single-line text control that
-  replaces Avalonia's TextBox inside DMTextBox and DMEditableCombo.  Uses
-  Avalonia `TextLayout` for measurement/hit-testing with custom `Render`
-  override for text, selection, and caret drawing.  Fixes Avalonia #12809
-  (caret overlaps last glyph).  Drops into existing AXAML templates —
-  wrapper controls keep their overlay-button patterns.  Multi-line usages
-  (ErrorDialog, SettingRowFactory, ComboBox, NUD) stay on stock TextBox.
+- **DMInputBox + caret/scroll polish** (2026-04-01) — Custom
+  `DMInputBox : Control` replaces `TextBox` in all DMEdit chrome to work
+  around Avalonia caret bug.  `CaretWidth` setting (1.0–2.5).  Caret
+  device-pixel snapping.  Row height snapped to pixel multiple to
+  eliminate inter-line jitter.
   See [13-custom-textbox](design-journal/13-custom-textbox.md).
 
-- **Search Within Selection** — When OpenFindBar is invoked with a multi-line
-  selection, the scope dropdown should auto-select "Current Selection" and all
-  Find/Replace/GetMatchInfo operations should be bounded to the selection's
-  start/end offsets. No text materialization — just integer range limiting.
-  The selection range must be preserved across ReplaceAll edits (adjust offsets
-  as replacements shift content). Single-line selections continue to populate
-  the search term as today.
+- **UTF-8 Chunked Add Buffer** (2026-03-29) — Replaced `StringBuilder _addBuf`
+  with `ChunkedUtf8Buffer`.  Eliminated `InsertEdit`; all inserts go through
+  `SpanInsertEdit`/`PushInsert`.  Session persistence uses binary
+  `{id}.addBuf` companion file; edit JSON references buffer char offsets.
+  Linux paste feeds raw UTF-8 via `AppendUtf8`.
+  See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
+- **Error Handling & UX Hardening** (2026-03-27) — Major overhaul: fatal
+  error dialog deadlock fix (background-thread exceptions use `Show()` +
+  manual modality), `ErrorDialog` DockPanel layout, DevMode test commands
+  (`Dev.ThrowOnUIThread`/`Dev.ThrowOnBackground`), undo/redo scroll
+  preservation, ProgressDialog cancel-on-close, settings-page command
+  whitelist, command ordering by definition order, ScrollCaretIntoView
+  verification pass for wrapped lines.
+
+- **Bulk PieceTable operations** (2026-03-27) — `PieceTable.BulkReplace`
+  with two tiers (`UniformBulkReplaceEdit` / `VaryingBulkReplaceEdit`),
+  O(pieces+matches) single pass, O(1) undo via snapshot restore.
+  `EditorControl.ReplaceAllAsync` runs match collection in background.
+  `ConvertIndentation` rewritten to use `BulkReplaceVarying`.
+  See [11-search-and-memory-safety](design-journal/11-search-and-memory-safety.md).
+
+- **Search, memory safety & horizontal scrolling** (2026-03-27) —
+  Horizontal scrollbar when wrapping is off, find bar Wildcard/Regex
+  toggles, async match counting, `GetText` 5KB guard, line-at-a-time
+  layout, chunked search via `ArrayPool` (no string alloc), search term
+  capped to single-line ≤1024 chars.
+  See [11-search-and-memory-safety](design-journal/11-search-and-memory-safety.md).
+
+- **Per-line scroll estimation** (2026-03-27) — Replaced global
+  `avgLineHeight` with per-line Y estimation via `LineIndexTree`
+  prefix sums.  `EstimateLineY` / `EstimateTopLine` helpers; `GetCharsPerRow`
+  deduplicates the chars-per-row math.
+
+- **Pseudo-newlines & streaming load safety** (2026-03-28) —
+  `MaxPseudoLine = 500`; lines exceeding this get split in the line tree
+  only (text never modified).  Removed O(N) buffer short-circuits from
+  `LineCount`/`LineStartOfs`/`LineFromOfs`.  Scroll/interaction lock
+  during streaming load.  `_layoutFailed` flag prevents cascading layout
+  crashes.  19 new tests.
+
+- **Session Persistence & Memory Safety** (2026-03-24) — Edit serialization
+  fixes, line tree reliability, `VisitPieces` 1MB chunk cap, removed
+  ProceduralBuffer/StringBuffer/StreamingFileBuffer/DevSamples from production.
+  See [10-session-and-reliability](design-journal/10-session-and-reliability.md).
+
+- **Global Error Handling** (2026-03-23) — Single general-purpose
+  `ErrorDialog` (resizable, themed, configurable buttons).  Global
+  exception handlers in `Program.cs` write crash reports to disk and
+  show the dialog.
+
+- **Tail File & Auto-Reload** (2026-03-21) — `TailFile` setting + status
+  bar button.  Background load awaits completion before atomic UI-thread
+  swap (no flicker).  `EditorControl.ReplaceDocument(doc, scrollState)`
+  preserves scroll on swap.  `DualZoneScrollBar` reads from
+  `IScrollSource` (single source of truth).
+
+- **Theme refinements + Editor Font setting** (2026-03-20) — Consistent
+  light/dark theming, font picker in Display settings (DMEditableCombo +
+  fixed-width filter + size NUD + preview).  Auto-detected default
+  monospace font.
+
+- **Save crash handling** (2026-03-17) — Crash report infrastructure on
+  unexpected save failure; Save As / Close Tab options; `BackupOnSave`
+  setting.
+
+- **Column/Block Selection** (2026-03-16) — Alt+drag rectangular selection
+  with multi-cursor edits.  Tab-aware column math; one-step undo.
+  Disabled when wrapping is on.
+
+- **Interactive status bar** (2026-03-14) — Four clickable segments
+  (Ln/Ch, Encoding, Line Ending, Indent), GoTo Line dialog, indent
+  detection.  File locking fix removed persistent `_fs`.
+  See [08-status-bar](design-journal/08-status-bar.md).
+
+- **Command Palette + 21 commands + key profiles** (2026-03-06–07) —
+  F1 modal, text filter, arrow nav.  21 new commands (Find stubs,
+  Delete Word L/R, Insert Line Above/Below, Duplicate, Indent, Scroll
+  Line U/D, Zoom, Revert).  6 key profiles (Default, VS Code, Visual
+  Studio, JetBrains, Eclipse, Emacs).  Centralized command dispatch,
+  user-customizable bindings.
+  See [07-commands](design-journal/07-commands.md).
 
 ### Key deferred items
 
-- Block model / WYSIWYG editor is fully designed and partially implemented but not wired
-  into the running editor (see [02-document-model](design-journal/02-document-model.md))
-  The Block document will be optional for Markdown files to allow view/edit of Markdown
-  with wysiwyg editing.
-- Windows 11 Mica transparency researched but not implemented (see
-  [05-features](design-journal/05-features.md))
-- toolbar, Undo/Redo toolbar buttons not yet implemented
-- **Storage-backed large edits** — currently, inserted text lives in an in-memory
-  `StringBuilder` (the Add buffer).  For extreme workflows (e.g. pasting 100 × 1 GB XML
-  snippets into a single file and then saving a 100 GB result), the Add buffer should
-  spill to storage (a temp file or embedded database) above a configurable threshold.
-  The PieceTable already treats the Add buffer as opaque via `BufFor()` / `VisitPieces`,
-  so the abstraction boundary is in place — the main work is implementing a storage-backed
-  `IBuffer` for the Add side and wiring it into `_addBuf` / `_addBufCache`.
-- **LineIndexTree (implicit treap)** — replaced FenwickTree with an implicit treap
-  (`LineIndexTree`) supporting O(log L) insert/remove of lines.  All edits (including
-  Enter/Delete across lines) are O(log L) with no rebuild.  Line lengths built during
-  `PagedFileBuffer.ScanWorker` (no post-load rescan).  Undo uses piece-based zero-copy
-  re-insertion (`InsertPieces` + `RestoreLines`).  The previously-known 30 GB memory
-  explosion on redo of massive deletes was fixed in the 2026-03-24 reliability pass —
-  root cause was VisitPieces allocating piece-sized char arrays and line tree / piece
-  table inconsistency during restore.
-- **Delayed clipboard rendering** — currently `GetSelectedText()` materializes the
-  full selection as a `string` for the clipboard.  Windows supports delayed rendering
-  via `IDataObject` / `OleSetClipboard`: the text is only materialized when the target
-  app actually pastes.  This would make copying 250 MB of selected text instant.
-  Caveats: 30-second render timeout, Avalonia's `IClipboard` doesn't expose delayed
-  rendering (needs platform-specific interop).  References:
-  - [Delayed Clipboard Rendering Explainer (MSEdge)](https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/DelayedClipboard/DelayedClipboardRenderingExplainer.md)
-  - [WM_RENDERFORMAT message — Win32 API](https://learn.microsoft.com/en-us/windows/win32/dataxchg/wm-renderformat)
-  - [30-second timeout for delay-rendered clipboard — The Old New Thing](https://devblogs.microsoft.com/oldnewthing/20220609-00/?p=106731)
-- **Windows installer (Velopack + GitHub Releases)** — use Velopack to produce a
-  self-contained installer with auto-update support. Deploy via GitHub Releases (free,
-  no infrastructure). Steps: add `Velopack` NuGet package, wire `UpdateManager` for
-  auto-update on startup, `dotnet publish` self-contained, `vpk pack` to build
-  installer + delta packages, `vpk upload github` to push release assets. Requires
-  GitHub repo to be set up first.
-- **Guard against accidental whole-document string materialization** — operations
-  that would materialize the entire document as a `string` (or any contiguous buffer)
-  should either be prevented with an error message explaining why, or redesigned to
-  stream via `ForEachPiece`.  `ConvertIndentation` has been rewritten to use
-  `BulkReplaceVarying` (no more full-document StringBuilder).  `ConvertLineEndings`
-  is handled at save time in `FileSaver` (already streams correctly).  Remaining
-  concern: `ReplaceAll` progress dialog with cancel for the match-collection phase
-  on huge documents (bulk replace itself is fast, but the chunked search scan for
-  collecting matches could still take a while on very large files).
+- **Preserve caret/selection viewport position on wrap toggle** — caret
+  and selection anchor should keep their visual row-from-top when
+  WordWrap is toggled.  Touch points: WordWrap toggle, `InvalidateLayout`,
+  `ScrollCaretIntoView`.
+
+- **Render churn during caret blink with selection present** — memory
+  pulses with every blink when text is selected.  `InvalidateVisual`
+  is probably scoped too wide; may be amplified by per-draw allocations
+  on the new mono path.
+
+- **Home/End on wrapped continuation rows** — should move to row start
+  first, then logical-line start on second press.  Trivial on the mono
+  path (RowSpan lookup); harder on `TextLayout` slow path.
+
+- **"Editor Font" reset button in Settings** — single reset that
+  restores both family and size.  Lives in `SettingRowFactory`.
+
+- **Memory growth while scrolling a large document** — `MonoLineLayout.Draw`
+  allocates a fresh `ushort[]` glyph buffer + `GlyphRun` per row per draw;
+  the `TextLayout` path cached its glyph runs.  Cache the arrays (and
+  possibly `GlyphRun` instances).  `GlyphRun` is `IDisposable` — currently
+  only `Layout?.Dispose()` runs, `Mono` is left to GC.
+
+- **CharWrap not triggering on 1MB single-line file** — opposite of the
+  2026-04-03 fix.  Suspect the long-line branch in the loader or the
+  `LineTooLongDetected` net isn't running before layout.
+
+- **Small event-handler closure leaks (DMEdit-owned)** — VS Memory Insights
+  flagged ~3KB of compiler closures rooted past their useful life.  Hygiene,
+  not a real leak — each one points at an event subscription that didn't
+  unsubscribe.  Worst offender `MainWindow+<>c__DisplayClass157_1` (472B);
+  also two `DispatcherTimer+<>c__DisplayClass18_0` (caret blink + one other).
+
+- **Tab handling on the monospace fast path** — currently any tab line
+  falls back to `TextLayout`.  Implement column-aware advance in
+  `MonoLineLayout.NextRow`/`Draw` (`(col / indentWidth + 1) * indentWidth`).
+  Bootstraps the column-width accumulator that elastic tabstops will need.
+
+- **Per-frame `FormattedText` churn in ToolbarControl/TabBarControl** —
+  ~1,312 `TextLineImpl`s allocated by `ToolbarControl.Render` over a 50s
+  recording, ~60 by `TabBarControl.Render`.  Same fix as the `DrawGutter`
+  cache: per-control `Dictionary<string, FormattedText>` keyed by
+  label/glyph + visual state, theme/font invalidation, soft cap.
+
+- **Caret blink could redraw only the caret rect** — `OnCaretTick` calls
+  `InvalidateVisual()` which forces full Render.  Move caret to a sibling
+  Control with its own narrow Render, blink invalidates only that control.
+
+- **Avalonia upstream issues (file if motivated)** — `NameRecord` string
+  interning duplicates ~150KB of font copyright/description strings;
+  AXAML resource URIs duplicated in two forms each repeated 100–235×.
+  One-time startup costs, not blocking.
+
+- **Block model / WYSIWYG editor** — fully designed and partially
+  implemented but not wired in.  Will be optional for Markdown.
+  See [02-document-model](design-journal/02-document-model.md).
+
+- **Windows 11 Mica transparency** — researched, not implemented.
+  See [05-features](design-journal/05-features.md).
+
+- **Toolbar Undo/Redo buttons** — not yet implemented.
+
+- **Storage-backed large edits** — Add buffer should spill to disk above
+  a configurable threshold.  PieceTable already treats Add as opaque via
+  `BufFor()` / `VisitPieces`, so the boundary is in place.
+
+- **Delayed clipboard rendering** — `GetSelectedText()` materializes the
+  full selection.  Windows `IDataObject` / `OleSetClipboard` supports
+  delayed render; Avalonia's `IClipboard` doesn't expose it (needs
+  platform-specific interop).  30s render timeout caveat.
+
+- **ErrorDialog → "Report a Bug" button** — wire `GitHubIssueHelper.OpenFeedbackIssue`
+  via the `buttons:` array when an error is genuinely reportable.  Skip
+  for environmental errors (printer busy, file permission).
+
+- **Windows installer (Velopack + GitHub Releases)** — self-contained
+  installer with auto-update support.  `vpk pack` + `vpk upload github`.
+  Requires GitHub repo set up first.
+
+- **Guard against accidental whole-document string materialization** —
+  `ConvertIndentation` already streams via `BulkReplaceVarying`;
+  `ConvertLineEndings` already streams in `FileSaver`.  Remaining concern:
+  `ReplaceAll` match-collection phase on huge documents.
+
+- **LineIndexTree** — implicit treap supporting O(log L) insert/remove of
+  lines.  Line lengths built during `PagedFileBuffer.ScanWorker`.  Undo
+  uses zero-copy piece-based re-insertion.  30GB redo memory explosion
+  fixed in the 2026-03-24 reliability pass.

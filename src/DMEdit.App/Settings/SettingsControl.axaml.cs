@@ -139,10 +139,10 @@ public partial class SettingsControl : UserControl {
                 SettingsContent.Children.Add(fontRow);
             }
 
-            // Setting rows for this category
-            var showHidden = string.Equals(
-                Environment.GetEnvironmentVariable("DMEDIT_DEVMODE"),
-                "true", StringComparison.OrdinalIgnoreCase);
+            // Setting rows for this category.  Hidden settings surface only
+            // when DevMode is allowed in this process (Debug build, or the
+            // DMEDIT_DEVMODE env var is set in Release).
+            var showHidden = AppSettings.DevModeAllowed;
             var descriptors = SettingsRegistry.All.Where(d => d.Category == cat && (!d.Hidden || showHidden));
             foreach (var desc in descriptors) {
                 var row = SettingRowFactory.CreateRow(desc, _settings, key => {

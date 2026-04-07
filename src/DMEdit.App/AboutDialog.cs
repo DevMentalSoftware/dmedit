@@ -22,6 +22,7 @@ public class AboutDialog : Window {
         Width = 380;
         SizeToContent = SizeToContent.Height;
         CanResize = false;
+        CanMinimize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = false;
 

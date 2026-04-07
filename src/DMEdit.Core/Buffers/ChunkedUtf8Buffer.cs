@@ -25,6 +25,12 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
         public byte[] Data;
         public int BytesUsed;
         public int CharCount;
+        // True when every byte in [0, BytesUsed) is < 0x80, which means
+        // 1 byte == 1 char and char-offset → byte-offset translation is
+        // O(1) instead of O(charIndex).  Set during the Append* paths and
+        // cleared as soon as a non-ASCII byte appears in the chunk.  Most
+        // source code is ASCII, so this is the dominant case.
+        public bool IsAllAscii;
     }
 
     private readonly List<Chunk> _chunks = new();
@@ -88,6 +94,12 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
             encoder.Convert(remaining, dest, flush: true,
                 out var charsUsed, out var bytesUsed, out _);
 
+            // 1 byte == 1 char ⇒ this slice was all-ASCII.  Any mismatch
+            // means at least one multi-byte sequence, which permanently
+            // taints the chunk for the IsAllAscii fast path.
+            if (bytesUsed != charsUsed) {
+                chunk.IsAllAscii = false;
+            }
             chunk.BytesUsed += bytesUsed;
             chunk.CharCount += charsUsed;
             _totalChars += charsUsed;
@@ -137,6 +149,11 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
             var slice = remaining[..take];
             var charCount = Encoding.UTF8.GetCharCount(slice);
             slice.CopyTo(chunk.Data.AsSpan(chunk.BytesUsed));
+            // 1 byte == 1 char ⇒ all-ASCII slice.  Mismatch ⇒ chunk now
+            // contains a multi-byte sequence and the fast path is off.
+            if (take != charCount) {
+                chunk.IsAllAscii = false;
+            }
             chunk.BytesUsed += take;
             chunk.CharCount += charCount;
             _totalChars += charCount;
@@ -189,6 +206,26 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
             // Decode as many chars as we need from this chunk.
             var decoded = DecodeUpToNChars(src, dest.Slice(destPos), charsRemaining,
                 out var bytesConsumed);
+
+            // Forward-progress safety net.  DecodeUpToNChars guarantees
+            // progress on a non-empty src, but if a future bug regresses
+            // that guarantee, advance to the next chunk rather than
+            // spinning.  Without this, an orphan surrogate or a request
+            // for an odd char count straddling a 4-byte sequence used to
+            // hang the editor (caller in a tight render loop, no exit).
+            if (decoded == 0 && bytesConsumed == 0) {
+                if (bytesAvail > 0) {
+                    // Skip the malformed sequence at the chunk head.
+                    if (charsRemaining > 0 && destPos < dest.Length) {
+                        dest[destPos++] = '\uFFFD';
+                        charsRemaining--;
+                    }
+                }
+                ci++;
+                byteOfs = 0;
+                continue;
+            }
+
             destPos += decoded;
             charsRemaining -= decoded;
             byteOfs += bytesConsumed;
@@ -221,6 +258,18 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
                 var want = (int)Math.Min(charsRemaining, decodeBuf.Length);
                 var decoded = DecodeUpToNChars(src, decodeBuf, want,
                     out var bytesConsumed);
+
+                // Forward-progress safety net (see CopyTo for full rationale).
+                if (decoded == 0 && bytesConsumed == 0) {
+                    if (bytesAvail > 0 && charsRemaining > 0) {
+                        decodeBuf[0] = '\uFFFD';
+                        visitor(decodeBuf.AsSpan(0, 1));
+                        charsRemaining--;
+                    }
+                    ci++;
+                    byteOfs = 0;
+                    continue;
+                }
 
                 if (decoded > 0) {
                     visitor(decodeBuf.AsSpan(0, decoded));
@@ -271,9 +320,24 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
             var charsRemaining = charLen;
             while (charsRemaining > 0 && ci < _chunks.Count) {
                 ref var chunk = ref ChunkRef(ci);
-                var src = chunk.Data.AsSpan(byteOfs, chunk.BytesUsed - byteOfs);
+                var bytesAvail = chunk.BytesUsed - byteOfs;
+                var src = chunk.Data.AsSpan(byteOfs, bytesAvail);
                 var want = Math.Min(charsRemaining, decodeBuf.Length);
                 var decoded = DecodeUpToNChars(src, decodeBuf, want, out var bytesConsumed);
+
+                // Forward-progress safety net (see CopyTo for full rationale).
+                if (decoded == 0 && bytesConsumed == 0) {
+                    if (bytesAvail > 0) {
+                        // U+FFFD doesn't match c1 or c2 (which we required to
+                        // be ASCII at the top), so just advance and keep going.
+                        pos++;
+                        charsRemaining--;
+                    }
+                    ci++;
+                    byteOfs = 0;
+                    continue;
+                }
+
                 var span = decodeBuf.AsSpan(0, decoded);
                 var idx = span.IndexOfAny(c1, c2);
                 if (idx >= 0) return pos + idx;
@@ -366,6 +430,7 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
             Data = new byte[size],
             BytesUsed = 0,
             CharCount = 0,
+            IsAllAscii = true,  // empty chunk is trivially all-ASCII
         });
     }
 
@@ -448,6 +513,15 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
     private static int FindByteOffsetInChunk(ref Chunk chunk, int charIndex) {
         if (charIndex == 0) return 0;
         if (charIndex == chunk.CharCount) return chunk.BytesUsed;
+
+        // ASCII fast path: byte index == char index, no scan needed.
+        // Tracked per-chunk in IsAllAscii (set on construction, cleared
+        // any time a multi-byte sequence is appended).  Most code is
+        // ASCII so this skips the entire UTF-8 decode loop in the
+        // overwhelming common case.
+        if (chunk.IsAllAscii) {
+            return charIndex;
+        }
 
         var span = chunk.Data.AsSpan(0, chunk.BytesUsed);
         var bytePos = 0;
@@ -559,6 +633,31 @@ public sealed class ChunkedUtf8Buffer : IBuffer {
         }
 
         bytesConsumed = byteLimit;
+
+        // Forward-progress guarantee.  If we couldn't consume anything from
+        // the head of src — typically because the caller asked for an odd
+        // number of chars and the next sequence is a 4-byte / surrogate-pair
+        // (charsProduced == 2 > maxChars == 1), or because the caller's
+        // request lands inside a previously-split surrogate pair — we MUST
+        // advance past at least one byte and emit at least one char,
+        // otherwise the outer copy loop in CopyTo / Visit / IndexOfAny
+        // sees no progress and spins forever.  Emit a replacement char
+        // (U+FFFD) and skip whatever malformed or unsplittable bytes are
+        // at the head.
+        if (byteLimit == 0 && src.Length > 0 && maxChars > 0 && dest.Length > 0) {
+            var b = src[0];
+            int skipBytes;
+            if (b < 0x80) skipBytes = 1;
+            else if ((b & 0xE0) == 0xC0) skipBytes = 2;
+            else if ((b & 0xF0) == 0xE0) skipBytes = 3;
+            else skipBytes = 4;
+            // Cap at what's actually available.
+            if (skipBytes > src.Length) skipBytes = src.Length;
+            dest[0] = '\uFFFD';
+            bytesConsumed = skipBytes;
+            return 1;
+        }
+
         if (byteLimit == 0) return 0;
 
         return Encoding.UTF8.GetChars(src[..byteLimit], dest);

@@ -9,7 +9,8 @@ namespace DMEdit.Rendering.Layout;
 /// Stateless service that converts a document string into a <see cref="LayoutResult"/>
 /// containing <see cref="LayoutLine"/> objects suitable for rendering and hit-testing.
 /// One LayoutLine is produced per logical line (newline-delimited paragraph).
-/// Word-wrap within each line is handled by Avalonia's <c>TextLayout</c>.
+/// Word-wrap within each line is handled by either the monospace GlyphRun
+/// fast path (<see cref="MonoLineLayout"/>) or by Avalonia's <c>TextLayout</c>.
 /// </summary>
 /// <remarks>
 /// <see cref="LayoutLine.Row"/> and <see cref="LayoutLine.HeightInRows"/> are in
@@ -23,10 +24,15 @@ public sealed class TextLayoutEngine {
 
     /// <summary>
     /// Creates a layout for an empty document (single empty line).
+    /// <paramref name="rowHeightOverride"/>, if &gt; 0, replaces the computed
+    /// per-row pixel height so callers can force pixel-snapping alignment
+    /// with their own scroll math.
     /// </summary>
     public LayoutResult LayoutEmpty(
-        Typeface typeface, double fontSize, IBrush foreground, double maxWidth) =>
-        LayoutLines(new PieceTable(), 0, 1, typeface, fontSize, foreground, maxWidth, 0);
+        Typeface typeface, double fontSize, IBrush foreground, double maxWidth,
+        double rowHeightOverride = 0) =>
+        LayoutLines(new PieceTable(), 0, 1, typeface, fontSize, foreground, maxWidth, 0,
+            rowHeightOverride: rowHeightOverride);
 
     /// <summary>
     /// Lays out visible lines directly from the <see cref="PieceTable"/>,
@@ -43,16 +49,44 @@ public sealed class TextLayoutEngine {
         double maxWidth,
         long viewportBase,
         long lineCount = -1,
-        long docLength = -1) {
+        long docLength = -1,
+        int hangingIndentChars = 0,
+        bool useFastTextLayout = true,
+        double rowHeightOverride = 0) {
 
         using var spaceLayout = MakeTextLayout(" ", typeface, fontSize, foreground, double.PositiveInfinity);
-        var rowHeight = spaceLayout.Height;
+        // The caller may pass a pre-snapped row height that matches its own
+        // scroll-math (e.g. EditorControl snaps to device pixel multiples to
+        // eliminate inter-line jitter).  When both sides use the same value,
+        // line Y positions stay in agreement with the scroll extent and the
+        // caret visibility check, which matters at large line numbers where
+        // a sub-pixel drift per row accumulates past a full line.
+        var rowHeight = rowHeightOverride > 0 ? rowHeightOverride : spaceLayout.Height;
+
+        // Resolve a monospace fast-path context once for the whole window.
+        // If the typeface doesn't resolve to a single concrete face (e.g. a
+        // comma-separated fallback family), or the face isn't monospace, we
+        // skip building any MonoLineLayout and everything falls back to
+        // TextLayout — the existing proportional-safe path.  The caller can
+        // also force the TextLayout path (for font ligatures at the cost of
+        // speed and hanging indent) by passing useFastTextLayout: false.
+        var monoCtx = useFastTextLayout
+            ? TryBuildMonoContext(typeface, fontSize, rowHeight, hangingIndentChars, foreground)
+            : null;
 
         var lines = new List<LayoutLine>();
         var row = 0;
         if (lineCount < 0) lineCount = table.LineCount;
         if (docLength < 0) docLength = table.Length;
         var charOfs = 0L; // character offset accumulator
+
+        // Effective char count for wrap (only meaningful on the mono path).
+        // When maxWidth is infinite the line never wraps; pass a very large
+        // count so MonoLineLayout treats it as single-row.
+        var maxCharsPerRow = int.MaxValue;
+        if (monoCtx is not null && double.IsFinite(maxWidth) && maxWidth > 0) {
+            maxCharsPerRow = Math.Max(1, (int)(maxWidth / monoCtx.CharWidth));
+        }
 
         for (var lineIdx = topLine; lineIdx < bottomLine && lineIdx < lineCount; lineIdx++) {
             var lineStart = table.LineStartOfs(lineIdx);
@@ -71,11 +105,28 @@ public sealed class TextLayoutEngine {
             }
             var lineText = contentLen > 0 ? table.GetText(lineStart, contentLen) : "";
 
+            // Try the fast path first.  Returns null for lines with tabs,
+            // control characters, or codepoints the font has no glyph for —
+            // those lines fall back to TextLayout.
+            LayoutLine layoutLine;
+            if (monoCtx is not null) {
+                var mono = MonoLineLayout.TryBuild(monoCtx, lineText, maxCharsPerRow);
+                if (mono is not null) {
+                    var heightInRows = Math.Max(1, mono.RowCount);
+                    layoutLine = new LayoutLine((int)charOfs, contentLen, row, heightInRows, mono);
+                    lines.Add(layoutLine);
+                    row += heightInRows;
+                    charOfs += fullLen;
+                    continue;
+                }
+            }
+
+            // Slow path: Avalonia TextLayout handles wrap and hit-test.
             var layout = MakeTextLayout(lineText, typeface, fontSize, foreground, maxWidth);
             var h = layout.Height > 0 ? layout.Height : rowHeight;
-            var heightInRows = Math.Max(1, (int)Math.Round(h / rowHeight));
-            lines.Add(new LayoutLine((int)charOfs, contentLen, row, heightInRows, layout));
-            row += heightInRows;
+            var slowHeightInRows = Math.Max(1, (int)Math.Round(h / rowHeight));
+            lines.Add(new LayoutLine((int)charOfs, contentLen, row, slowHeightInRows, layout));
+            row += slowHeightInRows;
             charOfs += fullLen;
         }
 
@@ -100,9 +151,7 @@ public sealed class TextLayoutEngine {
         var rh = result.RowHeight;
         var line = FindLineAt(pt.Y, lines, rh);
         var localPt = new Point(Math.Max(0, pt.X), pt.Y - line.Row * rh);
-        var hit = line.Layout.HitTestPoint(localPt);
-
-        var posInLine = Math.Clamp(hit.TextPosition, 0, line.CharLen);
+        var posInLine = Math.Clamp(line.HitTestPoint(localPt), 0, line.CharLen);
         return line.CharStart + posInLine;
     }
 
@@ -122,10 +171,13 @@ public sealed class TextLayoutEngine {
         var posInLine = Math.Clamp(charOfs - line.CharStart, 0, line.CharLen);
 
         Rect relRect;
-        if (posInLine == 0) {
+        if (posInLine == 0 && !line.IsMono) {
+            // TextLayout's HitTestTextPosition(0) can return a degenerate
+            // rect with zero height on some Avalonia builds.  Mono path
+            // returns a clean rect at column 0 so we skip this shim there.
             relRect = new Rect(0, 0, 0, rh);
         } else {
-            relRect = line.Layout.HitTestTextPosition(posInLine);
+            relRect = line.HitTestTextPosition(posInLine);
         }
 
         return new Rect(
@@ -138,6 +190,15 @@ public sealed class TextLayoutEngine {
     // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------
+
+    private static MonoLayoutContext? TryBuildMonoContext(
+        Typeface typeface, double fontSize, double rowHeight,
+        int hangingIndentChars, IBrush foreground) {
+        var gtf = typeface.GlyphTypeface;
+        if (gtf is null) return null;
+        if (!MonoLayoutContext.IsMonospace(gtf)) return null;
+        return new MonoLayoutContext(gtf, fontSize, rowHeight, hangingIndentChars, foreground);
+    }
 
     private static TextLayout MakeTextLayout(
         string text,

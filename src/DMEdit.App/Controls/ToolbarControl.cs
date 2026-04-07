@@ -79,6 +79,13 @@ public sealed class ToolbarControl : Control {
     private int _visibleCount;     // how many buttons fit (left-to-right)
     private bool _showOverflow;    // true when some buttons are hidden
     private double _contentOffsetX; // horizontal offset to center buttons
+
+    // Snapshot of last-painted (IsEnabled, IsChecked) per item, packed as
+    // two bits per slot.  Used by Refresh() to skip InvalidateVisual when
+    // nothing the toolbar actually paints has changed — important because
+    // Refresh() is called from EditorControl.StatusUpdated, which fires
+    // every render frame (i.e. every caret blink).
+    private byte[] _lastButtonState = Array.Empty<byte>();
     private int _hoverIndex = -1;  // -1 = none, Count = overflow button
 
     /// <summary>Fires when the overflow chevron is clicked.</summary>
@@ -120,9 +127,45 @@ public sealed class ToolbarControl : Control {
     }
 
     /// <summary>
-    /// Call after toggling a setting to repaint checked state.
+    /// Call after a state change that may affect button enabled / checked
+    /// state.  This is invoked from <c>EditorControl.StatusUpdated</c>
+    /// (every render frame), so it must be cheap and skip the invalidate
+    /// when nothing has actually changed.  We snapshot the (enabled, checked)
+    /// state of each item and only call <see cref="InvalidateVisual"/> when
+    /// the snapshot differs from the previous frame.
     /// </summary>
-    public void Refresh() => InvalidateVisual();
+    public void Refresh() {
+        if (_items.Count == 0) {
+            if (_lastButtonState.Length != 0) {
+                _lastButtonState = Array.Empty<byte>();
+                InvalidateVisual();
+            }
+            return;
+        }
+        if (_lastButtonState.Length != _items.Count) {
+            _lastButtonState = new byte[_items.Count];
+            for (var i = 0; i < _items.Count; i++) {
+                _lastButtonState[i] = SnapshotItem(_items[i]);
+            }
+            InvalidateVisual();
+            return;
+        }
+        var changed = false;
+        for (var i = 0; i < _items.Count; i++) {
+            var snap = SnapshotItem(_items[i]);
+            if (snap != _lastButtonState[i]) {
+                _lastButtonState[i] = snap;
+                changed = true;
+            }
+        }
+        if (changed) InvalidateVisual();
+    }
+
+    private static byte SnapshotItem(ToolbarItem item) {
+        var enabled = (Cmd.TryGet(item.CommandId)?.IsEnabled ?? true) ? 1 : 0;
+        var checkedBit = item.IsToggle && item.IsChecked?.Invoke() == true ? 2 : 0;
+        return (byte)(enabled | checkedBit);
+    }
 
     // -------------------------------------------------------------------------
     // Layout

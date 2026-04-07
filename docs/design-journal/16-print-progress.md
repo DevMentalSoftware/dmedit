@@ -85,6 +85,52 @@ Replace `MakeFormattedText` in `GetPage` with `GlyphRun` for monospace
 rendering — would skip WPF's text layout engine entirely and could
 dramatically improve pages/sec.
 
+## Known issue: intermittent shutdown hang during active spool
+
+**Observed 2026-04-06.** On rare occasions, closing DMEdit while a print
+job is still being transferred from the Windows print spooler to the
+printer driver prevents the process from exiting. The window closes but
+`dmedit.exe` lingers until the spool job is cancelled from the OS Print
+Queue, at which point the process exits immediately.
+
+**Likely cause.** `XpsDocumentWriter.Write` runs the XPS serialization
+pipeline through COM RCWs, and creating WPF visuals (`DrawingVisual`,
+`FormattedText`) in `GetPage` implicitly stands up a WPF `Dispatcher` on
+the STA print thread. When shutdown begins, the finalizer thread needs
+to release those RCWs; if the spooler service is still holding a
+reference to the spool file mid-transfer, the release chain stalls
+until the spooler lets go. The print thread is flagged `IsBackground =
+true` (see `WpfPrintService.Print`), but the blockage is on the
+finalizer thread, which is not affected by that flag.
+
+Cancelling the job in the OS Print Queue releases the spool file →
+unblocks the COM release → unblocks finalization → process exits. That
+matches the observed unblock trigger exactly.
+
+**Why it's intermittent.** Whether it happens depends on the exact
+moment of shutdown relative to spool-to-driver transfer. If the spooler
+has already drained the file, RCW release is instant. If it's
+mid-transfer, shutdown waits.
+
+**Why we haven't fixed it.** The heavy-handed fix is to call
+`Environment.Exit(0)` from `MainWindow.OnClosing` when `_printTask` is
+still running, which skips finalizers and guarantees exit. That's
+unpleasant because it also skips any other cleanup that should run.
+A cleaner fix would cancel the job at the `PrintQueue` level, but WPF
+provides no safe way to cancel *just* our job without racing other
+programs' jobs. Given how rare the hang is, we're leaving it for now.
+
+**What to look for if it becomes reproducible.**
+- Is the STA print thread (`WpfPrintService.PrintOnWpfThread`) still
+  alive? If so, where is it stuck — inside `writer.Write`, or returning
+  cleanly and then blocking on RCW release?
+- Is the finalizer thread blocked on a COM release? A dump during the
+  hang (`dotnet-dump collect`) and `!finalizequeue` / `!syncblk` in
+  WinDbg would confirm.
+- Does the hang correlate with a specific printer driver? (PDF
+  printers, network printers, and slow USB printers have different
+  spool-drain characteristics.)
+
 ## Files modified
 
 - `src/DMEdit.Core/Printing/ISystemPrintService.cs` — `Print` returns bool,
