@@ -35,33 +35,28 @@ remediation work.
    crash fix. The per-update bottom-up recompute is
    silent on failure. See `core-collections-LineIndexTree.md`.
 
-5. **`IntFenwickTree.ExtractValues` has no tests.** 3-pass
-   in-place undo/read/redo. If the reverse loop is wrong,
-   the restore step masks the bug. See
-   `core-collections-IntFenwickTree.md`.
-
-6. **`PieceTable.BulkReplace` accepts unsorted or
+5. **`PieceTable.BulkReplace` accepts unsorted or
    overlapping matches without validation** and will
    corrupt the piece list. Add a precondition. See
    `core-document-PieceTable.md`.
 
-7. **`Document.InsertAtCursors` with text containing a
+6. **`Document.InsertAtCursors` with text containing a
    newline** inserts the newline at each cursor, producing
    undefined multi-line behavior. Either forbid or
    document. See `core-document-Document.md`.
 
-8. **`Document.PasteAtCursors` with
+7. **`Document.PasteAtCursors` with
    `lines.Length != colSel.LineCount`** silently no-ops.
    Should throw. See `core-document-Document.md`.
 
-9. **`Document.SelectWord` window-clamp silently truncates
+8. **`Document.SelectWord` window-clamp silently truncates
    long words.** 1 024-char window means any word starting
    more than 1 024 chars into a single-line file has its
    selection cut short. See `core-document-Document.md`.
 
-10. **`FileSaver`: encoding round-trip failure** leaves a
-    raw `EncoderFallbackException` for the user. Wrap
-    with context. See `core-io-FileSaver.md`.
+9. **`FileSaver`: encoding round-trip failure** leaves a
+   raw `EncoderFallbackException` for the user. Wrap
+   with context. See `core-io-FileSaver.md`.
 
 ## Priority 2 — high-impact test gaps
 
@@ -70,7 +65,6 @@ remediation work.
   removal, randomized property).
 - **`LineIndexTree.InsertRange`** with ≥ 256 elements (the
   `BuildBalanced` stackalloc vs heap threshold).
-- **`IntFenwickTree.ExtractValues`** round-trip tests.
 - **`PagedFileBuffer`**:
   - LRU promote / evict ordering.
   - Dispose mid-scan.
@@ -147,8 +141,6 @@ comment-documented mirrors. Move to a single
 
 ### Dedup
 
-- **`FenwickTree` and `IntFenwickTree`** — 95% the same.
-  Generic `FenwickTree<T> where T : INumber<T>`.
 - **`TextLayoutEngine.MakeTextLayout` and
   `BlockLayoutEngine.CreateTextLayout`** — near-identical.
 - **`LineEndingInfo.Detect(string)` and `Detect(IBuffer)`** —
@@ -260,7 +252,7 @@ invariants" block at the top of the class would help.
 
 ## What was consistently well-tested
 
-- `FenwickTree`, `IntFenwickTree` (save for `ExtractValues`).
+- `FenwickTree`.
 - `LineIndexTree` structural ops (save for `MaxValue`).
 - `ChunkedUtf8Buffer` including the surrogate-pair
   hang regression suite.

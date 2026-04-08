@@ -115,6 +115,33 @@ public sealed class BlockStyle {
     // -----------------------------------------------------------------
 
     /// <summary>
+    /// Returns a shallow copy of this style.  Used by
+    /// <see cref="StyleSheet.UpdateFontMetrics"/> when the caller updates
+    /// metrics for a previously-unregistered block type — the stylesheet
+    /// clones the shared default and registers the copy, so subsequent
+    /// mutations don't bleed into other unregistered types.  All properties
+    /// are value types or strings (immutable), so a field-by-field copy is
+    /// equivalent to a deep copy.
+    /// </summary>
+    public BlockStyle Clone() => new() {
+        FontFamily = FontFamily,
+        FontSize = FontSize,
+        FontWeight = FontWeight,
+        IsMonospace = IsMonospace,
+        LineHeight = LineHeight,
+        MarginTop = MarginTop,
+        MarginBottom = MarginBottom,
+        PaddingTop = PaddingTop,
+        PaddingBottom = PaddingBottom,
+        PaddingLeft = PaddingLeft,
+        PaddingRight = PaddingRight,
+        ForegroundColor = ForegroundColor,
+        BackgroundColor = BackgroundColor,
+        MaxVisibleLines = MaxVisibleLines,
+        AvgCharWidth = AvgCharWidth,
+    };
+
+    /// <summary>
     /// Estimates the pixel height of a block with the given character count,
     /// given the wrap width. Uses <see cref="AvgCharWidth"/> for proportional
     /// fonts (approximate) and exact math for monospace.

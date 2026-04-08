@@ -989,8 +989,13 @@ public sealed class PieceTable {
     /// replacement string. Match positions must be sorted ascending and
     /// non-overlapping.  O(pieces + matches) with one line tree rebuild.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="matchPositions"/> is not sorted ascending,
+    /// or when consecutive matches overlap given <paramref name="matchLen"/>.
+    /// </exception>
     public void BulkReplace(long[] matchPositions, int matchLen, string replacement) {
         if (matchPositions.Length == 0) return;
+        ValidateUniformMatches(matchPositions, matchLen);
 
         // Append replacement once to the add buffer.
         var addOfs = _addBuf.CharLength;
@@ -1013,8 +1018,20 @@ public sealed class PieceTable {
     /// replacements. Matches must be sorted ascending by Pos and non-overlapping.
     /// O(pieces + matches) with one line tree rebuild.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="matches"/> is not sorted ascending by
+    /// <c>Pos</c>, or when consecutive matches overlap.  Also thrown when
+    /// <paramref name="matches"/> and <paramref name="replacements"/> have
+    /// mismatched lengths.
+    /// </exception>
     public void BulkReplace((long Pos, int Len)[] matches, string[] replacements) {
         if (matches.Length == 0) return;
+        if (matches.Length != replacements.Length) {
+            throw new ArgumentException(
+                $"matches.Length ({matches.Length}) must equal replacements.Length " +
+                $"({replacements.Length}).", nameof(replacements));
+        }
+        ValidateVaryingMatches(matches);
 
         // Append each replacement to the add buffer, recording spans.
         var addSpans = new (long Ofs, int Len)[replacements.Length];
@@ -1032,6 +1049,46 @@ public sealed class PieceTable {
             i => addSpans[i].Len > 0
                 ? new Piece(_addBufIdx, addSpans[i].Ofs, addSpans[i].Len)
                 : default);
+    }
+
+    /// <summary>
+    /// Validates that <paramref name="matchPositions"/> is sorted ascending
+    /// and that no two consecutive matches (each of length
+    /// <paramref name="matchLen"/>) overlap.  O(n) with no allocations —
+    /// negligible cost compared to the bulk-replace work itself, so the
+    /// check is unconditionally on (not gated on DEBUG) to surface any
+    /// future-caller bug as an immediate exception rather than silent
+    /// document corruption.  Adjacent matches (end of one == start of next)
+    /// are legal.
+    /// </summary>
+    private static void ValidateUniformMatches(long[] matchPositions, int matchLen) {
+        for (var i = 1; i < matchPositions.Length; i++) {
+            var prevEnd = matchPositions[i - 1] + matchLen;
+            if (matchPositions[i] < prevEnd) {
+                throw new ArgumentException(
+                    $"BulkReplace matches must be sorted ascending and " +
+                    $"non-overlapping; match {i} at {matchPositions[i]} " +
+                    $"overlaps or precedes match {i - 1} (ends at {prevEnd}).",
+                    nameof(matchPositions));
+            }
+        }
+    }
+
+    /// <summary>
+    /// See <see cref="ValidateUniformMatches"/> — same contract for the
+    /// varying-length overload.  Each match's end is its <c>Pos + Len</c>.
+    /// </summary>
+    private static void ValidateVaryingMatches((long Pos, int Len)[] matches) {
+        for (var i = 1; i < matches.Length; i++) {
+            var prevEnd = matches[i - 1].Pos + matches[i - 1].Len;
+            if (matches[i].Pos < prevEnd) {
+                throw new ArgumentException(
+                    $"BulkReplace matches must be sorted ascending and " +
+                    $"non-overlapping; match {i} at {matches[i].Pos} " +
+                    $"overlaps or precedes match {i - 1} (ends at {prevEnd}).",
+                    nameof(matches));
+            }
+        }
     }
 
     /// <summary>

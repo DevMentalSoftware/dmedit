@@ -24,11 +24,6 @@ Tests: `tests/DMEdit.Core.Tests/FenwickTreeTests.cs`
 
 ## Architectural concerns
 
-- **Near-duplicate of `IntFenwickTree`.** 152 lines here vs 170 there,
-  differing only in storage type (`double` vs `int`/`long`) and the
-  `ExtractValues` helper. A generic `FenwickTree<T> where T : INumber<T>`
-  would dedupe cleanly under .NET 7+. Would need a microbenchmark to
-  confirm `INumber<T>` generic math doesn't regress the hot path.
 - **`_n` is almost redundant** with `_tree.Length - 1`. It only matters
   when `Rebuild` shrinks below capacity (the array is kept, `_n` tracks
   the live prefix). Worth a comment there.
@@ -37,7 +32,7 @@ Tests: `tests/DMEdit.Core.Tests/FenwickTreeTests.cs`
 
 - **`HighestOneBit`** can be `1 << BitOperations.Log2((uint)n)` or
   `(int)BitOperations.RoundUpToPowerOf2((uint)n + 1) >> 1`. Same answer,
-  one line, no loop. Both Fenwicks have an identical copy.
+  one line, no loop.
 - The walk in `FindByPrefixSum` has a trailing `return pos < _n ? pos : -1;`
   — the guard at the top already handles `target <= 0` and `_n == 0`, so
   the only way `pos == _n` is when the target exceeds the total. Works,

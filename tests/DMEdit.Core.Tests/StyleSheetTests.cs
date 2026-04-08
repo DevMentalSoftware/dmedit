@@ -245,6 +245,93 @@ public class StyleSheetTests {
     }
 
     // -----------------------------------------------------------------
+    // UpdateFontMetrics — shared-default isolation
+    //
+    // Regression: GetBlockStyle returns the singleton _defaultBlockStyle
+    // for any unregistered type.  UpdateFontMetrics used to mutate that
+    // singleton, which meant calling it for one unregistered type silently
+    // changed the perceived metrics of every other unregistered type.
+    // The fix clones the default into the dictionary the first time an
+    // unregistered type's metrics are updated.
+    // -----------------------------------------------------------------
+
+    [Fact]
+    public void UpdateFontMetrics_UnregisteredType_DoesNotMutateSharedDefault() {
+        // Use a fresh stylesheet (NOT CreateDefault) so all types are
+        // unregistered and resolve to the shared default.
+        var sheet = new StyleSheet();
+        var defaultBefore = sheet.GetBlockStyle(BlockType.Paragraph);
+        Assert.Equal(0.0, defaultBefore.AvgCharWidth);
+
+        sheet.UpdateFontMetrics(BlockType.Heading1, 12.0);
+
+        // The shared default (still returned for unregistered types like
+        // Paragraph in this test) must be unchanged.
+        var defaultAfter = sheet.GetBlockStyle(BlockType.Paragraph);
+        Assert.Equal(0.0, defaultAfter.AvgCharWidth);
+    }
+
+    [Fact]
+    public void UpdateFontMetrics_TwoUnregisteredTypes_DoNotInterfere() {
+        var sheet = new StyleSheet();
+        sheet.UpdateFontMetrics(BlockType.Heading1, 7.5);
+        sheet.UpdateFontMetrics(BlockType.Heading2, 9.0);
+
+        // Each type must keep its own metric.  Pre-fix, both would have
+        // ended up with whichever value was written last (9.0).
+        Assert.Equal(7.5, sheet.GetBlockStyle(BlockType.Heading1).AvgCharWidth);
+        Assert.Equal(9.0, sheet.GetBlockStyle(BlockType.Heading2).AvgCharWidth);
+    }
+
+    [Fact]
+    public void UpdateFontMetrics_UnregisteredType_AutoRegistersACopy() {
+        var sheet = new StyleSheet();
+        // Before the call, the type resolves to the (uninstanced) default.
+        Assert.False(sheet.BlockStyles.ContainsKey(BlockType.CodeBlock));
+
+        sheet.UpdateFontMetrics(BlockType.CodeBlock, 6.5);
+
+        // After the call, an entry has been registered for the type.
+        Assert.True(sheet.BlockStyles.ContainsKey(BlockType.CodeBlock));
+        Assert.Equal(6.5, sheet.GetBlockStyle(BlockType.CodeBlock).AvgCharWidth);
+    }
+
+    [Fact]
+    public void UpdateFontMetrics_UnregisteredType_ClonesDefaultProperties() {
+        // Set up a custom default by mutating its properties BEFORE any
+        // UpdateFontMetrics call (which would auto-register).  We can't
+        // mutate the default directly, so the easiest way to verify the
+        // clone preserves base properties is to check the auto-registered
+        // style has the same defaults as a fresh BlockStyle.
+        var sheet = new StyleSheet();
+        sheet.UpdateFontMetrics(BlockType.Heading1, 8.0);
+        var registered = sheet.GetBlockStyle(BlockType.Heading1);
+
+        // Default BlockStyle values (per BlockStyle ctor) — sanity check
+        // that the clone copied them rather than producing zero/null fields.
+        Assert.Equal("Segoe UI", registered.FontFamily);
+        Assert.Equal(14.0, registered.FontSize);
+        Assert.Equal(400, registered.FontWeight);
+        Assert.Equal(8.0, registered.AvgCharWidth); // the value we just set
+    }
+
+    [Fact]
+    public void UpdateFontMetrics_RegisteredType_StillMutatesInPlace() {
+        // Pre-fix behavior for already-registered types is preserved:
+        // we mutate the existing entry, we don't replace it.  This matters
+        // because callers may hold a reference to the style instance from
+        // an earlier GetBlockStyle call.
+        var sheet = StyleSheet.CreateDefault();
+        var styleRef = sheet.GetBlockStyle(BlockType.Paragraph);
+
+        sheet.UpdateFontMetrics(BlockType.Paragraph, 11.0);
+
+        // Same instance, mutated value.
+        Assert.Same(styleRef, sheet.GetBlockStyle(BlockType.Paragraph));
+        Assert.Equal(11.0, styleRef.AvgCharWidth);
+    }
+
+    // -----------------------------------------------------------------
     // Integration: BlockDocument + StyleSheet height estimation
     // -----------------------------------------------------------------
 

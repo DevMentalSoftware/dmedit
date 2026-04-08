@@ -281,4 +281,106 @@ public class BulkReplaceTests {
         t.BulkReplace([(0, 6)], ["REPLACED"]);
         Assert.Equal("REPLACED", t.GetText());
     }
+
+    // =====================================================================
+    // PieceTable — BulkReplace precondition validation
+    //
+    // Both overloads document "matches must be sorted ascending and
+    // non-overlapping" but historically did not enforce it.  All current
+    // callers (Find/Replace All, ConvertIndentation) produce sorted
+    // non-overlapping matches by construction, so the precondition was
+    // safe in practice — but a future caller (e.g. multi-cursor "replace
+    // at every cursor") could silently corrupt the document.  These tests
+    // pin the validation contract so the bug class can't reappear.
+    // =====================================================================
+
+    [Fact]
+    public void Uniform_UnsortedPositions_Throws() {
+        var t = new PieceTable("abcdefghij");
+        var ex = Assert.Throws<ArgumentException>(
+            () => t.BulkReplace([5, 1, 8], 1, "X"));
+        // Document must be untouched after the rejected call.
+        Assert.Equal("abcdefghij", t.GetText());
+        Assert.Contains("sorted", ex.Message);
+    }
+
+    [Fact]
+    public void Uniform_OverlappingPositions_Throws() {
+        var t = new PieceTable("abcdefghij");
+        // matchLen=3 means the match at 0 covers [0..3); the next match at
+        // 2 would start inside the first match.
+        var ex = Assert.Throws<ArgumentException>(
+            () => t.BulkReplace([0, 2], 3, "X"));
+        Assert.Equal("abcdefghij", t.GetText());
+        Assert.Contains("overlap", ex.Message);
+    }
+
+    [Fact]
+    public void Uniform_AdjacentPositions_AreLegal() {
+        // Adjacent matches: end of one == start of next.  Not overlapping.
+        var t = new PieceTable("aabbccdd");
+        t.BulkReplace([0, 2, 4, 6], 2, "X");
+        Assert.Equal("XXXX", t.GetText());
+    }
+
+    [Fact]
+    public void Uniform_SinglePosition_NoValidationNeeded() {
+        var t = new PieceTable("abcdef");
+        t.BulkReplace([2], 2, "ZZ");
+        Assert.Equal("abZZef", t.GetText());
+    }
+
+    [Fact]
+    public void Varying_UnsortedPositions_Throws() {
+        var t = new PieceTable("abcdefghij");
+        var ex = Assert.Throws<ArgumentException>(
+            () => t.BulkReplace([(5, 1), (1, 1), (8, 1)],
+                                ["X", "Y", "Z"]));
+        Assert.Equal("abcdefghij", t.GetText());
+        Assert.Contains("sorted", ex.Message);
+    }
+
+    [Fact]
+    public void Varying_OverlappingPositions_Throws() {
+        var t = new PieceTable("abcdefghij");
+        // First match [0..4), second match starts at 3 — overlap.
+        var ex = Assert.Throws<ArgumentException>(
+            () => t.BulkReplace([(0, 4), (3, 2)], ["X", "Y"]));
+        Assert.Equal("abcdefghij", t.GetText());
+        Assert.Contains("overlap", ex.Message);
+    }
+
+    [Fact]
+    public void Varying_AdjacentPositions_AreLegal() {
+        var t = new PieceTable("aabbccdd");
+        t.BulkReplace([(0, 2), (2, 2), (4, 2), (6, 2)],
+                      ["W", "X", "Y", "Z"]);
+        Assert.Equal("WXYZ", t.GetText());
+    }
+
+    [Fact]
+    public void Varying_MismatchedArrayLengths_Throws() {
+        // Defensive precondition: matches and replacements must have equal
+        // length.  Without this check the caller would get an obscure
+        // IndexOutOfRangeException deep inside BulkReplaceCore.
+        var t = new PieceTable("abcdefghij");
+        Assert.Throws<ArgumentException>(
+            () => t.BulkReplace([(0, 1), (2, 1), (4, 1)], ["X", "Y"]));
+        Assert.Equal("abcdefghij", t.GetText());
+    }
+
+    [Fact]
+    public void Uniform_EmptyPositions_NoOp() {
+        // Empty match list short-circuits before validation runs.
+        var t = new PieceTable("abcdef");
+        t.BulkReplace([], 1, "X");
+        Assert.Equal("abcdef", t.GetText());
+    }
+
+    [Fact]
+    public void Varying_EmptyMatches_NoOp() {
+        var t = new PieceTable("abcdef");
+        t.BulkReplace([], []);
+        Assert.Equal("abcdef", t.GetText());
+    }
 }

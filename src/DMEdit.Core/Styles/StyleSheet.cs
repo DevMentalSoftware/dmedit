@@ -83,9 +83,19 @@ public sealed class StyleSheet {
     /// Called by the rendering layer to update the average character width
     /// for a block type's style. This makes subsequent height estimates more
     /// accurate.
+    ///
+    /// If <paramref name="type"/> is not yet registered, the shared default
+    /// style is cloned and the copy is registered for this type — the
+    /// shared default itself is never mutated.  Without that, calling
+    /// <c>UpdateFontMetrics</c> for two different unregistered types would
+    /// silently overwrite each other's metric on the singleton, and every
+    /// other unregistered type would inherit the last value written.
     /// </summary>
     public void UpdateFontMetrics(BlockType type, double avgCharWidth) {
-        var style = GetBlockStyle(type);
+        if (!_blockStyles.TryGetValue(type, out var style)) {
+            style = _defaultBlockStyle.Clone();
+            _blockStyles[type] = style;
+        }
         style.AvgCharWidth = avgCharWidth;
     }
 

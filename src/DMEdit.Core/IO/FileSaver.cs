@@ -113,7 +113,7 @@ public static class FileSaver {
             buf.CopyTo(pos, charBuf.AsSpan(0, take), take);
             var flush = pos + take >= len;
             var nlLen = NormalizeLineEndings(charBuf, take, nlBuf, nl, ref prevCr);
-            var byteCount = encoder.GetBytes(nlBuf.AsSpan(0, nlLen), byteBuf, flush);
+            var byteCount = EncodeChunk(encoder, nlBuf, nlLen, byteBuf, flush, path, enc, pos);
             hasher.AppendData(byteBuf, 0, byteCount);
             fs.Write(byteBuf, 0, byteCount);
             pos += take;
@@ -149,13 +149,52 @@ public static class FileSaver {
             });
             var flush = pos + take >= len;
             var nlLen = NormalizeLineEndings(charBuf, filled, nlBuf, nl, ref prevCr);
-            var byteCount = encoder.GetBytes(nlBuf.AsSpan(0, nlLen), byteBuf, flush);
+            var byteCount = EncodeChunk(encoder, nlBuf, nlLen, byteBuf, flush, path, enc, pos);
             hasher.AppendData(byteBuf, 0, byteCount);
             fs.Write(byteBuf, 0, byteCount);
             pos += take;
         }
 
         return Convert.ToHexStringLower(hasher.GetHashAndReset());
+    }
+
+    /// <summary>
+    /// Encodes a normalized char chunk into bytes, wrapping any
+    /// <see cref="EncoderFallbackException"/> with file path, encoding name,
+    /// approximate document position, and the offending character.  Without
+    /// this wrap the user sees a raw fallback exception that just says
+    /// "Unable to translate Unicode character U+XXXX" — no indication which
+    /// file, which encoding, or roughly where in the document the failure
+    /// occurred.  Inner exception is preserved for debugging.
+    ///
+    /// <para>Note: with the encodings the editor currently exposes
+    /// (<see cref="EncodingInfo.GetDotNetEncoding"/>), the fallback never
+    /// fires — UTF-8/16 encode every Unicode codepoint, and ASCII /
+    /// Windows-1252 use replacement fallback by default.  This wrap is
+    /// defense for any future strict-fallback encoding (e.g. an opt-in
+    /// "fail on data loss" mode) and is testable via direct invocation
+    /// with a custom Encoding configured for exception fallback.</para>
+    /// </summary>
+    internal static int EncodeChunk(
+            Encoder encoder, char[] nlBuf, int nlLen, byte[] byteBuf, bool flush,
+            string path, Encoding enc, long chunkStart) {
+        try {
+            return encoder.GetBytes(nlBuf.AsSpan(0, nlLen), byteBuf, flush);
+        } catch (EncoderFallbackException ex) {
+            var ch = ex.CharUnknown != '\0'
+                ? $"U+{(int)ex.CharUnknown:X4}"
+                : ex.CharUnknownHigh != '\0'
+                    ? $"U+{char.ConvertToUtf32(ex.CharUnknownHigh, ex.CharUnknownLow):X6}"
+                    : "(unknown)";
+            // Index is the offset within nlBuf where the failure occurred.
+            // Add chunkStart for an approximate document position — exact only
+            // when no line-ending normalization shifted the offsets.
+            var approxPos = chunkStart + Math.Max(0, ex.Index);
+            throw new IOException(
+                $"Cannot save '{path}' as encoding '{enc.WebName}': " +
+                $"character {ch} near offset {approxPos} cannot be represented. " +
+                $"Try a Unicode encoding (UTF-8, UTF-16) instead.", ex);
+        }
     }
 
     /// <summary>

@@ -12,7 +12,6 @@ and what the categories mean.
 
 ### Collections
 - [core-collections-FenwickTree.md](core-collections-FenwickTree.md)
-- [core-collections-IntFenwickTree.md](core-collections-IntFenwickTree.md)
 - [core-collections-LineIndexTree.md](core-collections-LineIndexTree.md)
 
 ### Buffers

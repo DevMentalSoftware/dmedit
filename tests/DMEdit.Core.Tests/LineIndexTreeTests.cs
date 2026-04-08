@@ -4,7 +4,7 @@ namespace DMEdit.Core.Tests;
 
 public class LineIndexTreeTests {
     // ---------------------------------------------------------------
-    //  Group A — API compatibility with IntFenwickTree
+    //  Group A — basic prefix-sum / value access API
     // ---------------------------------------------------------------
 
     [Fact]
