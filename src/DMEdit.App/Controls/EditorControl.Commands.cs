@@ -103,7 +103,11 @@ public sealed partial class EditorControl {
             return;
         }
         FlushCompound();
-        doc.ExpandSelection(ExpandSelectionMode);
+        // Passive setting: read directly so UI toggle takes effect immediately
+        // without going through the SettingChanged switch.  Default matches
+        // AppSettings.ExpandSelectionMode's default if Settings isn't injected.
+        var mode = Settings?.ExpandSelectionMode ?? ExpandSelectionMode.SubwordFirst;
+        doc.ExpandSelection(mode);
         InvalidateVisual();
         ResetCaretBlink();
     }

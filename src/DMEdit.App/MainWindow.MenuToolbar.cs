@@ -623,11 +623,11 @@ public partial class MainWindow {
         // Undo coalesce idle timer (settings-only, no menu item)
         Editor.CoalesceTimerMs = _settings.CoalesceTimerMs;
         Editor._clipboardRing.MaxSize = Math.Max(1, _settings.ClipboardRingSize);
-        Editor.ExpandSelectionMode = _settings.ExpandSelectionMode;
         Editor.IndentWidth = _settings.IndentWidth;
         Editor.CaretWidth = _settings.CaretWidth;
         Application.Current!.Resources["DMEditCaretWidth"] = _settings.CaretWidth;
-        Editor.MaxRegexMatchLength = _settings.MaxRegexMatchLength;
+        // ExpandSelectionMode and MaxRegexMatchLength are now read directly
+        // from Editor.Settings at the call site — no startup push needed.
 
         UpdateStatusBarVisibility();
     }

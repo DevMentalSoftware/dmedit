@@ -301,15 +301,6 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     /// <summary>Characters per visual row in character-wrapping mode.</summary>
     public int CharsPerRow => _charWrapCharsPerRow;
 
-    /// <summary>Controls the hierarchy of levels used by Expand Selection.</summary>
-    public ExpandSelectionMode ExpandSelectionMode { get; set; } = ExpandSelectionMode.SubwordFirst;
-
-    /// <summary>
-    /// Maximum assumed regex match length for chunked search overlap.
-    /// Set from <see cref="Services.AppSettings.MaxRegexMatchLength"/>.
-    /// </summary>
-    public int MaxRegexMatchLength { get; set; } = 1024;
-
     /// <summary>
     /// Reference to the app's settings, injected once during MainWindow init.
     /// Use this to read "passive" settings — values that are consulted at the

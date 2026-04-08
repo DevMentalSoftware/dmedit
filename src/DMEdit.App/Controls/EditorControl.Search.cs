@@ -193,7 +193,7 @@ public sealed partial class EditorControl {
         var opts = new SearchOptions(_lastSearchTerm, matchCase, wholeWord, mode);
         var isRegex = opts.CompiledRegex != null;
         var docLen = table.Length;
-        var maxOverlap = MaxRegexMatchLength;
+        var maxOverlap = Settings?.MaxRegexMatchLength ?? 1024;
 
         // Phase 1: collect all match positions on a background thread.
         // Progress updates throttled to ~100ms to avoid UI marshalling overhead.
@@ -316,7 +316,7 @@ public sealed partial class EditorControl {
         var table = doc.Table;
         var opts = new SearchOptions(_lastSearchTerm, matchCase, wholeWord, mode);
         var selStart = doc.Selection.Start;
-        var maxOverlap = MaxRegexMatchLength;
+        var maxOverlap = Settings?.MaxRegexMatchLength ?? 1024;
         return Task.Run(() => CountMatches(table, opts, selStart, maxOverlap, ct), ct);
     }
 

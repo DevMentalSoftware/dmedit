@@ -83,9 +83,11 @@ public partial class MainWindow {
                 case "CoalesceTimerMs":
                     Editor.CoalesceTimerMs = _settings.CoalesceTimerMs;
                     break;
-                case "ExpandSelectionMode":
-                    Editor.ExpandSelectionMode = _settings.ExpandSelectionMode;
-                    break;
+                // No case for ExpandSelectionMode, MaxRegexMatchLength, or
+                // DistributeColumnPaste — these are passive settings, read
+                // directly from Editor.Settings at the call site.  See the
+                // EditorControl.Settings doc comment for the active vs passive
+                // distinction.
                 case "OuterThumbScrollRateMultiplier":
                     ScrollBar.OuterScrollRateMultiplier = _settings.OuterThumbScrollRateMultiplier;
                     break;
