@@ -588,6 +588,28 @@ public sealed class PieceTable {
         }
     }
 
+    /// <summary>
+    /// Re-syncs the initial piece against the current <see cref="Buffer"/> length.
+    /// Required after a streaming/paged buffer finishes loading: if the editor
+    /// queried the document while the scan was still in progress,
+    /// <see cref="EnsureInitialPiece"/> may have captured a partial length and
+    /// committed the piece to it.  Without this reconciliation the editor would
+    /// permanently see only the bytes that had been decoded at the moment of
+    /// the first query (e.g. a 3-byte BOM-detect prefetch).  Safe to call when
+    /// the document has not been edited (single piece pointing at buffer 0); a
+    /// no-op once any user edit has split or replaced that piece.
+    /// </summary>
+    public void ReconcileInitialPiece() {
+        EnsureInitialPiece();
+        var bufLen = Buffer.Length;
+        if (_pieces.Count == 0) {
+            if (bufLen > 0) _pieces.Add(new Piece(0, 0, bufLen));
+        } else if (_pieces.Count == 1 && _pieces[0].BufIdx == 0
+                   && _pieces[0].Len != bufLen) {
+            _pieces[0] = new Piece(0, 0, bufLen);
+        }
+    }
+
     /// <summary>Maximum char[] allocation per visitor callback (1 MB of chars = 2 MB).</summary>
     private const int MaxVisitChunk = 1024 * 1024;
 
@@ -621,19 +643,10 @@ public sealed class PieceTable {
     /// unblocking input.
     /// </summary>
     public void InstallLineTree(ReadOnlySpan<int> lineLengths) {
-        EnsureInitialPiece();
-
         // During streaming/paged loads, EnsureInitialPiece may have been
         // called while the buffer scan was still in progress, capturing a
-        // partial _totalChars.  Now that the scan is complete, reconcile
-        // the initial piece to match the final buffer length.
-        var bufLen = Buffer.Length;
-        if (_pieces.Count == 0) {
-            if (bufLen > 0) _pieces.Add(new Piece(0, 0, bufLen));
-        } else if (_pieces.Count == 1 && _pieces[0].BufIdx == 0
-                   && _pieces[0].Len != bufLen) {
-            _pieces[0] = new Piece(0, 0, bufLen);
-        }
+        // partial length.  Reconcile against the final buffer length first.
+        ReconcileInitialPiece();
 
         _lineTree = LineIndexTree.FromValues(lineLengths);
         var max = 0;

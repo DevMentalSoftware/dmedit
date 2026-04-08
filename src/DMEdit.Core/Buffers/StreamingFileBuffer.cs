@@ -31,6 +31,12 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
     private int _lineCount;    // number of valid entries in _lineStarts; accessed via Interlocked
     private bool _prevWasCr;         // \r at end of previous chunk (background thread only)
 
+    // Longest-line tracking (including terminator chars) — updated each time a
+    // line terminates, so callers polling during load see a monotonically
+    // non-decreasing value. Finalized after the scan loop to cover a trailing
+    // unterminated line.
+    private int _longestLine;
+
     // Line ending counters (accumulated during scan)
     private int _lfCount;
     private int _crlfCount;
@@ -129,7 +135,10 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
 
     public long LineCount => Volatile.Read(ref _lineCount);
 
-    public int LongestLine => 10_000;
+    public int LongestLine => Volatile.Read(ref _longestLine);
+
+    /// <inheritdoc />
+    public long ByteLength => _estimatedLen;
 
     public long GetLineStart(long lineIdx) {
         var count = Volatile.Read(ref _lineCount);
@@ -251,6 +260,16 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
                 _crCount++;
                 AppendLineStart(_loadedLen);
             }
+
+            // Finalize the last (possibly unterminated) line — its length runs
+            // from its start offset to the loaded length.  Without this step a
+            // file ending without a newline would not be measured against
+            // _longestLine, and a single-line giant file would still report 0.
+            long lastStart;
+            lock (_lock) {
+                lastStart = _lineStarts[_lineCount - 1];
+            }
+            UpdateLongestLine(_loadedLen - lastStart);
 
             _sha1 = Convert.ToHexStringLower(hasher.GetHashAndReset());
             _done = true;
@@ -420,6 +439,7 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
     }
 
     private void AppendLineStart(long offset) {
+        long prevStart;
         lock (_lock) {
             if (_lineCount >= _lineStarts.Length) {
                 var newSize = _lineStarts.Length * 2;
@@ -427,9 +447,26 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
                 Array.Copy(_lineStarts, newArr, _lineCount);
                 _lineStarts = newArr;
             }
+            prevStart = _lineStarts[_lineCount - 1];
             _lineStarts[_lineCount] = offset;
         }
+        // The line that ended runs from prevStart (inclusive) to offset (exclusive)
+        // — length includes the terminator, matching LineScanner.LongestLine.
+        UpdateLongestLine(offset - prevStart);
         // Update count AFTER the data is written (atomic increment with memory barrier).
         Interlocked.Increment(ref _lineCount);
+    }
+
+    /// <summary>
+    /// Clamps <paramref name="lineLen"/> to <see cref="int.MaxValue"/> and
+    /// updates <see cref="_longestLine"/> if the new value is larger.
+    /// Called from both the per-line path (<see cref="AppendLineStart"/>) and
+    /// the end-of-scan finalization (for a trailing unterminated line).
+    /// </summary>
+    private void UpdateLongestLine(long lineLen) {
+        var asInt = lineLen > int.MaxValue ? int.MaxValue : (int)lineLen;
+        if (asInt > _longestLine) {
+            Volatile.Write(ref _longestLine, asInt);
+        }
     }
 }

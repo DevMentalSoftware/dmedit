@@ -10,6 +10,16 @@ public interface IBuffer : IDisposable {
     long Length { get; }
 
     /// <summary>
+    /// Size in bytes of the original source. For file-backed buffers this is
+    /// the on-disk file length; for stream-backed buffers it is the (possibly
+    /// estimated) uncompressed byte length. Defaults to <see cref="Length"/>,
+    /// which is close enough for ASCII/UTF-8 but not accurate for multi-byte
+    /// encodings. Used by callers that want a user-visible size (e.g. the
+    /// CharWrap trigger).
+    /// </summary>
+    long ByteLength => Length;
+
+    /// <summary>
     /// Returns the character at <paramref name="offset"/>.
     /// </summary>
     char this[long offset] { get; }

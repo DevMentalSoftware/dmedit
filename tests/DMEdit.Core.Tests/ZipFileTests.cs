@@ -99,9 +99,13 @@ public class ZipFileTests : IDisposable {
         var result = await LoadAndWaitAsync(path);
 
         Assert.True(result.WasZipped);
+        // DisplayName is the OUTER zip file name only — inner entry name lives
+        // on InnerEntryName so the UI can show it in a tooltip without
+        // widening the tab.
+        Assert.Equal(Path.GetFileName(path), result.DisplayName);
         Assert.Equal("readme.md", result.InnerEntryName);
-        Assert.Contains("\u2192", result.DisplayName); // → arrow
-        Assert.Contains("readme.md", result.DisplayName);
+        Assert.DoesNotContain("\u2192", result.DisplayName);
+        Assert.DoesNotContain("readme.md", result.DisplayName);
         Assert.Equal(content, result.Document.Table.GetText());
     }
 
@@ -196,15 +200,18 @@ public class ZipFileTests : IDisposable {
     // -----------------------------------------------------------------
 
     [Fact]
-    public async Task LoadAsync_ZipDisplayName_ContainsArrowAndEntryName() {
+    public async Task LoadAsync_ZipDisplayName_IsOuterFileNameOnly() {
         var path = TempPath();
         CreateSingleEntryZip(path, "model.xml", "<root/>");
 
         var result = await LoadAndWaitAsync(path);
 
-        var fileName = Path.GetFileName(path);
-        Assert.StartsWith(fileName, result.DisplayName);
-        Assert.Contains("model.xml", result.DisplayName);
+        // Tabs show only the outer zip file name to keep them narrow.  The
+        // inner entry name is exposed via InnerEntryName for the tooltip.
+        Assert.Equal(Path.GetFileName(path), result.DisplayName);
+        Assert.DoesNotContain("model.xml", result.DisplayName);
+        Assert.DoesNotContain("\u2192", result.DisplayName);
+        Assert.Equal("model.xml", result.InnerEntryName);
     }
 
     [Fact]

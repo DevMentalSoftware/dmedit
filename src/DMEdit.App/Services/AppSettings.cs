@@ -47,10 +47,8 @@ public sealed class AppSettings {
     /// <summary>
     /// Multiplier applied to the outer-thumb fixed scroll rate.
     /// 1.0 = baseline (~100-line-doc feel). Higher = faster scanning.
-    /// Default 2.0 — empirically feels good for quickly moving through
-    /// large documents while still being controllable.
     /// </summary>
-    public double OuterThumbScrollRateMultiplier { get; set; } = 2.0;
+    public double OuterThumbScrollRateMultiplier { get; set; } = 3.0;
 
     // -----------------------------------------------------------------
     // Recent files
@@ -117,7 +115,7 @@ public sealed class AppSettings {
 
     /// <summary>
     /// Show a wrap indicator glyph at the wrap column for lines that wrap.
-    /// Only visible when <see cref="WrapLines"/> is true. Default: true.
+    /// Only visible when <see cref="WrapLines"/> is true. 
     /// </summary>
     public bool ShowWrapSymbol { get; set; } = true;
 
@@ -125,7 +123,7 @@ public sealed class AppSettings {
     /// Indent wrapped continuation rows by half of one indent level so wrapped
     /// text is visually offset from the first row of each logical line.
     /// Only takes effect when wrapping is on, the editor font is monospace,
-    /// and the GlyphRun fast path is engaged.  Default: true.
+    /// and the GlyphRun fast path is engaged.  
     /// </summary>
     public bool HangingIndent { get; set; } = true;
 
@@ -134,7 +132,7 @@ public sealed class AppSettings {
     /// path when possible.  Turning this off forces every line through
     /// Avalonia's <c>TextLayout</c>, which is slower and disables hanging
     /// indent but enables ligatures (e.g. <c>=&gt;</c> rendered as a single
-    /// shaped glyph) and full Unicode shaping.  Default: true.
+    /// shaped glyph) and full Unicode shaping.  
     /// </summary>
     public bool UseFastTextLayout { get; set; } = true;
 
@@ -153,45 +151,57 @@ public sealed class AppSettings {
     /// <summary>
     /// When true, lines wrap at the <see cref="WrapLinesAt"/> column limit
     /// (or the viewport edge, whichever is narrower).  When false, lines
-    /// wrap at the viewport edge only.  Default: true.
+    /// wrap at the viewport edge only.
     /// </summary>
     public bool UseWrapColumn { get; set; } = true;
 
     /// <summary>
     /// Maximum number of columns before a line wraps. Only has effect when
     /// both <see cref="WrapLines"/> and <see cref="UseWrapColumn"/> are true.
-    /// Default: 100.
     /// </summary>
     public int WrapLinesAt { get; set; } = 100;
 
     /// <summary>
     /// Number of spaces per indent level. Also controls the visual width of
-    /// tab characters. Default: 4.
+    /// tab characters. 
     /// </summary>
     public int IndentWidth { get; set; } = 4;
 
     /// <summary>
-    /// File size threshold (in KB) above which character-wrapping mode activates
-    /// automatically.  Default: 50 KB.
+    /// File size threshold (in KB) — together with <see cref="CharWrapLineLength"/>,
+    /// gates the automatic switch to character-wrapping mode.  Both conditions
+    /// must be met (file ≥ this size AND any line ≥ <see cref="CharWrapLineLength"/>)
+    /// before CharWrap activates.  The size gate avoids penalizing small files
+    /// that happen to contain a single long line, because those are still cheap to
+    /// measure. 
     /// </summary>
     public int CharWrapFileSizeKB { get; set; } = 50;
 
     /// <summary>
+    /// Line length threshold (in characters) — together with <see cref="CharWrapFileSizeKB"/>,
+    /// gates the automatic switch to character-wrapping mode.  When any line in
+    /// a sufficiently large file reaches this length, the editor switches to
+    /// the fixed-width grid renderer because long lines can't be measured
+    /// quickly and aren't practical to edit.  Lower values trigger CharWrap
+    /// mode more aggressively.  
+    /// </summary>
+    public int CharWrapLineLength { get; set; } = 2000;
+
+    /// <summary>
     /// Default indentation style for new/untitled documents. Files opened from
-    /// disk use the detected style instead. Default: Spaces.
+    /// disk use the detected style instead. 
     /// </summary>
     public IndentStyle DefaultIndentStyle { get; set; } = IndentStyle.Spaces;
 
     /// <summary>
     /// When true, files modified on disk are automatically reloaded if the
     /// tab has no unsaved edits. Dirty tabs still show the conflict icon.
-    /// Default: false.
     /// </summary>
     public bool AutoReloadExternalChanges { get; set; }
 
     /// <summary>
     /// When true, the previous version of a file is kept as a .bak file
-    /// when saving. Default: false.
+    /// when saving. 
     /// </summary>
     public bool BackupOnSave { get; set; }
 
@@ -199,7 +209,7 @@ public sealed class AppSettings {
     /// When true and a file is reloaded from disk while the editor is
     /// scrolled to the bottom, the scroll position is moved to the new
     /// end of the document so new content is visible. Only applies when
-    /// the tab has no unsaved edits. Default: false.
+    /// the tab has no unsaved edits. 
     /// </summary>
     public bool TailFile { get; set; }
 
@@ -207,7 +217,7 @@ public sealed class AppSettings {
     /// Minimum time in milliseconds between auto-reload completions.
     /// Prevents runaway reloads when an external process writes to a
     /// file faster than we can read it. Hidden setting (not in the
-    /// Settings UI). Default: 500.
+    /// Settings UI). 
     /// </summary>
     public int TailReloadCooldownMs { get; set; } = 500;
 
@@ -217,7 +227,7 @@ public sealed class AppSettings {
 
     /// <summary>
     /// Width of the text caret in device-independent pixels.
-    /// Allowed range: 1.0 – 2.5 in 0.5 increments. Default: 1.0.
+    /// Allowed range: 1.0 – 2.5 in 0.5 increments. 
     /// </summary>
     public double CaretWidth { get; set; } = 1.0;
 
@@ -228,7 +238,7 @@ public sealed class AppSettings {
     public string? EditorFontFamily { get; set; }
 
     /// <summary>
-    /// Editor font size in typographic points. Default: 11.
+    /// Editor font size in typographic points. 
     /// </summary>
     public int EditorFontSize { get; set; } = 11;
 
@@ -248,7 +258,7 @@ public sealed class AppSettings {
     // -----------------------------------------------------------------
 
     /// <summary>
-    /// Controls the color theme. System (default) follows the OS setting.
+    /// Controls the color theme. 
     /// </summary>
     public ThemeMode ThemeMode { get; set; } = ThemeMode.System;
 
@@ -278,7 +288,7 @@ public sealed class AppSettings {
     /// <summary>
     /// Idle time (in milliseconds) before consecutive edits are committed as
     /// a single undo entry. Continuous typing resets the timer on every
-    /// keystroke, so only actual pauses trigger a flush. Default: 1000.
+    /// keystroke, so only actual pauses trigger a flush. 
     /// </summary>
     public int CoalesceTimerMs { get; set; } = 1000;
 
@@ -306,7 +316,7 @@ public sealed class AppSettings {
     /// <summary>
     /// Maximum assumed regex match length for chunked search overlap.
     /// Increase if Replace All misses very long regex matches near chunk
-    /// boundaries. Default 1024 characters.
+    /// boundaries. 
     /// </summary>
     public int MaxRegexMatchLength { get; set; } = 1024;
 
@@ -400,7 +410,6 @@ public sealed class AppSettings {
 
     /// <summary>
     /// Timeout in milliseconds before a pending chord prefix is cancelled.
-    /// Default: 3000 (3 seconds).
     /// </summary>
     public int ChordTimeoutMs { get; set; } = 3000;
 
@@ -421,7 +430,7 @@ public sealed class AppSettings {
 
     /// <summary>
     /// Maximum number of entries kept in the clipboard ring. Hidden setting
-    /// (not shown in the Settings UI). Default: 10.
+    /// (not shown in the Settings UI). 
     /// </summary>
     public int ClipboardRingSize { get; set; } = 10;
 

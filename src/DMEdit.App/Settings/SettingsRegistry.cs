@@ -44,8 +44,10 @@ public static class SettingsRegistry {
             "Display", SettingKind.Bool, true),
 
         new("CharWrapFileSizeKB", "Char Wrap File Size (KB)",
-            "File size above which character-wrapping mode activates automatically. " +
-            "Lower values improve responsiveness on slower machines.",
+            "Files larger than this (in KB) that also contain a line longer than " +
+            "CharWrapLineLength (2000) switch automatically into character-wrapping " +
+            "mode.  The size gate avoids penalizing small files with a long line, because " +
+            "those are still cheap to measure.",
             "Advanced", SettingKind.Int, 50, Min: 10, Max: 10000, Increment: 10),
 
         new("CaretWidth", "Caret Width",

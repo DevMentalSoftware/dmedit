@@ -154,13 +154,19 @@ public partial class MainWindow {
 
     /// <summary>
     /// Checks whether a tab's document should use character-wrapping mode
-    /// based on longest line and file size.
+    /// based on file size and longest line.  CharWrap activates when BOTH:
+    /// (a) the file is at least <see cref="AppSettings.CharWrapFileSizeKB"/> KB,
+    /// AND (b) at least one line is at least <see cref="AppSettings.CharWrapLineLength"/>
+    /// characters long.  The size gate avoids penalizing small files with a
+    /// long line — those are still cheap to measure.  Works for any
+    /// <see cref="IBuffer"/> implementation: paged file buffers, streamed
+    /// (zip-entry) buffers, or any future loader.
     /// </summary>
     private bool ShouldCharWrap(TabState tab) {
-        if (tab.LoadResult?.Buffer is not PagedFileBuffer pb) return false;
-        var fileSizeKb = pb.ByteLength / 1024.0;
+        if (tab.LoadResult?.Buffer is not IBuffer buf) return false;
+        var fileSizeKb = buf.ByteLength / 1024.0;
         return fileSizeKb >= _settings.CharWrapFileSizeKB
-            && pb.LongestLine >= PieceTable.MaxGetTextLength;
+            && buf.LongestLine >= _settings.CharWrapLineLength;
     }
 
     private void ToggleWrapLines() {

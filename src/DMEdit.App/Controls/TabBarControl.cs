@@ -1099,7 +1099,9 @@ public sealed class TabBarControl : Control {
             } else if (zone is HitZone.Tab or HitZone.CloseButton
                 && tabIdx >= 0 && tabIdx < _tabs.Count
                 && _tabs[tabIdx].FilePath != null) {
-                UiHelpers.SetPathToolTip(this, _tabs[tabIdx].FilePath);
+                var hoverTab = _tabs[tabIdx];
+                UiHelpers.SetPathToolTip(this, hoverTab.FilePath,
+                    hoverTab.LoadResult?.InnerEntryName);
                 ToolTip.SetIsOpen(this, true);
             } else if (zone == HitZone.ToolbarButton
                 && toolbarIdx >= 0 && toolbarIdx < _toolbarItems.Count) {
