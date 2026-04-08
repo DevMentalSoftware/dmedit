@@ -259,7 +259,23 @@ public sealed class Document {
             return;
         }
 
+        // Multi-line text broadcasts the entire string at every caret (matches
+        // VS Code / Sublime / Rider).  After the broadcast, the column
+        // rectangle no longer corresponds to any rectangle in the post-insert
+        // document — each row was split by the inserted newlines — so we drop
+        // column mode and collapse the stream selection.  The line tree
+        // remains valid because each PushInsert routes through the same
+        // SpliceInsertLines path the editor uses for every other newline
+        // insert; bottom-to-top order keeps offsets stable.  TRIAGE Priority 5
+        // tracks the future free-multi-cursor model that would let us
+        // preserve carets across this transition.
+        var hasNewline = text.AsSpan().IndexOfAny('\n', '\r') >= 0;
+
         _history.BeginCompound();
+
+        // Captured at the topmost (last-processed) caret so we know where to
+        // collapse the stream selection after a multi-line broadcast.
+        var topCaretEnd = 0L;
 
         // Apply bottom-to-top so earlier offsets stay valid.
         for (var i = sels.Count - 1; i >= 0; i--) {
@@ -282,26 +298,27 @@ public sealed class Document {
                 _history.Push(new DeleteEdit(s.Start, s.Len, dPieces), _table, Selection);
             }
             PushInsert(s.Start, text);
+
+            if (i == 0) {
+                topCaretEnd = s.Start + text.Length;
+            }
         }
 
         _history.EndCompound();
 
-        // Update the column selection: all cursors advance by text.Length columns.
-        var newCol = colSel.LeftCol + ColumnSelection.OfsToCol(
-            _table,
-            _table.LineStartOfs(colSel.TopLine) +
-            ColumnSelection.ColToCharIdx(_table, _table.LineStartOfs(colSel.TopLine),
-                (int)(ColumnSelection.LineContentEnd(_table, colSel.TopLine) - _table.LineStartOfs(colSel.TopLine)),
-                colSel.LeftCol + text.Length, tabSize),
-            tabSize);
-        // Simpler: the new column is just LeftCol + length of inserted text (char count).
-        newCol = colSel.LeftCol + text.Length;
-        ColumnSel = new ColumnSelection(colSel.AnchorLine, newCol, colSel.ActiveLine, newCol);
-
-        // Also update stream selection to first cursor position.
-        var firstCaret = ColumnSel.Value.MaterializeCarets(_table, tabSize);
-        if (firstCaret.Count > 0) {
-            Selection = Selection.Collapsed(firstCaret[0]);
+        if (hasNewline) {
+            // Multi-line broadcast: rectangle is meaningless post-insert.
+            ColumnSel = null;
+            Selection = Selection.Collapsed(topCaretEnd);
+        } else {
+            // Single-line: preserve the column rectangle, advance every caret
+            // by text.Length characters (column = char count for non-tab text).
+            var newCol = colSel.LeftCol + text.Length;
+            ColumnSel = new ColumnSelection(colSel.AnchorLine, newCol, colSel.ActiveLine, newCol);
+            var firstCaret = ColumnSel.Value.MaterializeCarets(_table, tabSize);
+            if (firstCaret.Count > 0) {
+                Selection = Selection.Collapsed(firstCaret[0]);
+            }
         }
         RaiseChanged();
     }
@@ -463,17 +480,31 @@ public sealed class Document {
     }
 
     /// <summary>
-    /// Pastes one line from <paramref name="lines"/> at each cursor position
-    /// in the column selection. The array length must equal the column
-    /// selection's <see cref="ColumnSelection.LineCount"/>. Exits column mode.
+    /// Distributes one line from <paramref name="lines"/> across each cursor
+    /// position in the column selection.  When the array length matches the
+    /// rectangle's row count exactly, every caret receives its corresponding
+    /// line.  When there are more lines than carets, the trailing lines are
+    /// ignored.  When there are fewer lines than carets, the trailing carets
+    /// are left untouched.  Exits column mode after the paste.
     /// </summary>
     public void PasteAtCursors(string[] lines, int tabSize) {
-        if (ColumnSel is not { } colSel || lines.Length != colSel.LineCount) {
+        if (ColumnSel is not { } colSel || lines.Length == 0) {
             return;
         }
         var sels = colSel.Materialize(_table, tabSize);
+        if (sels.Count == 0) {
+            return;
+        }
+        // Process at most min(carets, lines) — the symmetric "drop excess"
+        // rule applies on both sides: extra lines beyond the caret count are
+        // dropped, extra carets beyond the line count are left alone.
+        var processCount = Math.Min(sels.Count, lines.Length);
+
         _history.BeginCompound();
-        for (var i = sels.Count - 1; i >= 0; i--) {
+        // Bottom-to-top within the processed range so earlier offsets stay
+        // valid.  Carets at indices [processCount, sels.Count) are skipped
+        // entirely — they keep their pre-paste content.
+        for (var i = processCount - 1; i >= 0; i--) {
             var s = sels[i];
             var line = colSel.TopLine + i;
             var pad = ColumnSelection.PaddingNeeded(_table, line, colSel.LeftCol, tabSize);
@@ -608,43 +639,68 @@ public sealed class Document {
 
         // Work in a bounded window around the selection so we don't
         // materialize an entire line (could be multi-GB for single-line files).
-        const int windowRadius = 1024;
-        var winStart = Math.Max(lineStart, selStart - windowRadius);
-        var winEnd = Math.Min(lineEnd, selEnd + windowRadius);
-        var winLen = (int)(winEnd - winStart);
-        if (winLen == 0) {
-            return;
-        }
-        var winText = _table.GetText(winStart, winLen);
-
-        var selStartInWin = (int)(selStart - winStart);
-        var selEndInWin = (int)(selEnd - winStart);
-
-        // If selection contains a non-word code point → no-op.  Walks by
-        // rune so that a surrogate pair is treated as one unit.
-        for (var i = selStartInWin; i < selEndInWin; ) {
-            if (!IsWordRune(winText, i)) {
+        // Start with a small window for the common case (selection in the
+        // middle of a normal line), and double the radius if word expansion
+        // hits a window edge that isn't also a line edge — that's the only
+        // case where the previous fixed-1024 clamp silently truncated a long
+        // identifier.  Doubling caps re-materialization at O(log finalSize).
+        var radius = 1024;
+        while (true) {
+            var winStart = Math.Max(lineStart, selStart - radius);
+            var winEnd = Math.Min(lineEnd, selEnd + radius);
+            var winLen = (int)(winEnd - winStart);
+            if (winLen == 0) {
                 return;
             }
-            i = CodepointBoundary.StepRight(winText, i);
-        }
+            var winText = _table.GetText(winStart, winLen);
 
-        // Expand backward from selection start to non-word or window start.
-        var left = selStartInWin;
-        while (left > 0) {
-            var prev = CodepointBoundary.StepLeft(winText, left);
-            if (!IsWordRune(winText, prev)) break;
-            left = prev;
-        }
+            var selStartInWin = (int)(selStart - winStart);
+            var selEndInWin = (int)(selEnd - winStart);
 
-        // Expand forward from selection end to non-word or window end.
-        var right = selEndInWin;
-        while (right < winLen) {
-            if (!IsWordRune(winText, right)) break;
-            right = CodepointBoundary.StepRight(winText, right);
-        }
+            // If selection contains a non-word code point → no-op.  Walks by
+            // rune so that a surrogate pair is treated as one unit.
+            for (var i = selStartInWin; i < selEndInWin; ) {
+                if (!IsWordRune(winText, i)) {
+                    return;
+                }
+                i = CodepointBoundary.StepRight(winText, i);
+            }
 
-        Selection = new Selection(winStart + left, winStart + right);
+            // Expand backward from selection start to non-word or window start.
+            var left = selStartInWin;
+            while (left > 0) {
+                var prev = CodepointBoundary.StepLeft(winText, left);
+                if (!IsWordRune(winText, prev)) break;
+                left = prev;
+            }
+
+            // Expand forward from selection end to non-word or window end.
+            var right = selEndInWin;
+            while (right < winLen) {
+                if (!IsWordRune(winText, right)) break;
+                right = CodepointBoundary.StepRight(winText, right);
+            }
+
+            // If we ran into a window edge that isn't also the line edge, the
+            // word may extend further — double the radius and re-scan.  When
+            // either edge IS the line edge, we've found the true boundary.
+            var leftHitInnerEdge = left == 0 && winStart > lineStart;
+            var rightHitInnerEdge = right == winLen && winEnd < lineEnd;
+            if (!leftHitInnerEdge && !rightHitInnerEdge) {
+                Selection = new Selection(winStart + left, winStart + right);
+                return;
+            }
+
+            // Double radius (with overflow guard).  In practice this loop
+            // terminates after a handful of iterations even for very long
+            // identifiers because the radius grows geometrically.
+            if (radius > int.MaxValue / 2) {
+                // Saturate; on the next iteration the line bounds will clamp.
+                radius = int.MaxValue;
+            } else {
+                radius *= 2;
+            }
+        }
     }
 
     /// <summary>

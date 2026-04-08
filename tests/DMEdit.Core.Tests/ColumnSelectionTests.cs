@@ -188,6 +188,189 @@ public class ColumnSelectionTests {
         Assert.Equal("abcdeXf\ngh   X\nmnopqXr", doc.Table.GetText());
     }
 
+    // -----------------------------------------------------------------
+    // InsertAtCursors — multi-line broadcast (matches VS Code/Sublime)
+    // -----------------------------------------------------------------
+    //
+    // Broadcasting newline-bearing text at every caret is the
+    // industry-standard behavior.  After the broadcast the column
+    // rectangle is no longer meaningful (each row was split by inserted
+    // newlines), so the editor exits column mode and collapses the
+    // stream selection to caret 0's post-insert position.
+
+    [Fact]
+    public void InsertAtCursors_MultiLineText_BroadcastsToEachCaret() {
+        var doc = MakeDoc("abc\ndef\nghi");
+        doc.ColumnSel = new ColumnSelection(0, 1, 2, 1); // 3 cursors at col 1
+        doc.InsertAtCursors("X\nY", Tab);
+
+        // Each caret receives "X\nY".  Bottom-to-top order means line 0
+        // becomes "aX\nYbc", line 1 becomes "dX\nYef", line 2 becomes
+        // "gX\nYhi" — for a total of 6 lines.
+        Assert.Equal("aX\nYbc\ndX\nYef\ngX\nYhi", doc.Table.GetText());
+    }
+
+    [Fact]
+    public void InsertAtCursors_MultiLineText_ClearsColumnSelection() {
+        var doc = MakeDoc("abc\ndef\nghi");
+        doc.ColumnSel = new ColumnSelection(0, 1, 2, 1);
+        doc.InsertAtCursors("X\nY", Tab);
+        // The column rectangle is meaningless after a multi-line broadcast.
+        Assert.Null(doc.ColumnSel);
+    }
+
+    [Fact]
+    public void InsertAtCursors_MultiLineText_CollapsesSelectionToTopCaretEnd() {
+        var doc = MakeDoc("abc\ndef\nghi");
+        doc.ColumnSel = new ColumnSelection(0, 1, 2, 1);
+        doc.InsertAtCursors("X\nY", Tab);
+        // After all bottom-to-top inserts, caret 0 (the top-most original
+        // cursor) is at position s.Start + text.Length.  s.Start was 1 (col 1
+        // of line 0), text.Length is 3 ("X\nY"), so the post-insert end is 4.
+        Assert.True(doc.Selection.IsEmpty);
+        Assert.Equal(4L, doc.Selection.Caret);
+    }
+
+    [Fact]
+    public void InsertAtCursors_MultiLineText_DocumentLengthMatchesBroadcast() {
+        var doc = MakeDoc("abc\ndef\nghi");
+        var originalLen = doc.Table.Length;
+        doc.ColumnSel = new ColumnSelection(0, 1, 2, 1);
+        doc.InsertAtCursors("X\nY", Tab);
+        // 3 carets × 3 chars inserted each = 9 chars added.
+        Assert.Equal(originalLen + 9, doc.Table.Length);
+    }
+
+    [Fact]
+    public void InsertAtCursors_MultiLineText_LineCountReflectsAddedNewlines() {
+        var doc = MakeDoc("abc\ndef\nghi"); // 3 lines (no trailing newline)
+        doc.ColumnSel = new ColumnSelection(0, 1, 2, 1);
+        doc.InsertAtCursors("X\nY", Tab);
+        // Each broadcast adds one new logical line, so 3 lines + 3 inserts → 6.
+        Assert.Equal(6L, doc.Table.LineCount);
+    }
+
+    [Fact]
+    public void InsertAtCursors_MultiLineText_LineTreeStaysConsistent() {
+        // Cache-corruption canary: after the multi-line broadcast, the line
+        // tree's sum-of-lengths must equal the document length.  This is the
+        // invariant that AssertLineTreeValid checks in DEBUG builds, but we
+        // re-assert it explicitly here so a Release build also catches drift.
+        var doc = MakeDoc("abc\ndef\nghi");
+        doc.ColumnSel = new ColumnSelection(0, 1, 2, 1);
+        doc.InsertAtCursors("X\nY", Tab);
+        var lineLengths = doc.Table.SnapshotLineLengths();
+        var totalFromTree = 0L;
+        foreach (var l in lineLengths) totalFromTree += l;
+        Assert.Equal(doc.Table.Length, totalFromTree);
+        // Round-trip through GetText must also match the document length —
+        // catches any divergence between the piece list and the line tree.
+        Assert.Equal(doc.Table.Length, doc.Table.GetText().Length);
+    }
+
+    [Fact]
+    public void InsertAtCursors_MultiLineText_UndoRevertsCleanly() {
+        var doc = MakeDoc("abc\ndef\nghi");
+        doc.ColumnSel = new ColumnSelection(0, 1, 2, 1);
+        doc.InsertAtCursors("X\nY", Tab);
+        Assert.Equal("aX\nYbc\ndX\nYef\ngX\nYhi", doc.Table.GetText());
+
+        doc.Undo();
+        Assert.Equal("abc\ndef\nghi", doc.Table.GetText());
+        Assert.Equal(3L, doc.Table.LineCount);
+    }
+
+    [Fact]
+    public void InsertAtCursors_CrLfText_HandlesAsSingleTerminator() {
+        var doc = MakeDoc("abc\ndef\nghi");
+        doc.ColumnSel = new ColumnSelection(0, 1, 2, 1);
+        doc.InsertAtCursors("X\r\nY", Tab);
+        // Each caret receives "X\r\nY" (4 chars).  CRLF counts as one line
+        // terminator, so 3 carets still produce 3 new lines.
+        Assert.Equal("aX\r\nYbc\ndX\r\nYef\ngX\r\nYhi", doc.Table.GetText());
+        Assert.Equal(6L, doc.Table.LineCount);
+    }
+
+    // =====================================================================
+    // PasteAtCursors
+    // =====================================================================
+
+    [Fact]
+    public void PasteAtCursors_OneLinePerCursor_PastesAllLines() {
+        var doc = MakeDoc("abc\ndef\nghi");
+        doc.ColumnSel = new ColumnSelection(0, 1, 2, 1); // 3 cursors
+        doc.PasteAtCursors(["X", "Y", "Z"], Tab);
+
+        Assert.Equal("aXbc\ndYef\ngZhi", doc.Table.GetText());
+        // Pasting exits column mode (per the contract documented on the method).
+        Assert.Null(doc.ColumnSel);
+    }
+
+    // PasteAtCursors is lenient: extra lines are dropped, extra carets are
+    // left untouched.  The decision about whether to call PasteAtCursors at
+    // all (vs broadcasting via InsertAtCursors) lives in the editor's
+    // clipboard dispatch — Document just processes whatever it gets.
+
+    [Fact]
+    public void PasteAtCursors_FewerLinesThanCarets_LeavesExtraCaretsUntouched() {
+        // 3 cursors, only 2 lines: first 2 carets get content, 3rd is left
+        // alone.  No throw, no silent no-op for the matched portion.
+        var doc = MakeDoc("abc\ndef\nghi");
+        doc.ColumnSel = new ColumnSelection(0, 1, 2, 1); // 3 cursors at col 1
+        doc.PasteAtCursors(["X", "Y"], Tab);
+
+        // Line 0: "aXbc", line 1: "dYef", line 2 untouched: "ghi".
+        Assert.Equal("aXbc\ndYef\nghi", doc.Table.GetText());
+    }
+
+    [Fact]
+    public void PasteAtCursors_MoreLinesThanCarets_DropsExtraLines() {
+        // 2 cursors, 3 lines: first 2 lines paste, 3rd line is dropped.
+        var doc = MakeDoc("abc\ndef");
+        doc.ColumnSel = new ColumnSelection(0, 1, 1, 1); // 2 cursors at col 1
+        doc.PasteAtCursors(["X", "Y", "Z"], Tab);
+
+        Assert.Equal("aXbc\ndYef", doc.Table.GetText());
+    }
+
+    [Fact]
+    public void PasteAtCursors_EmptyArray_NoOp() {
+        var doc = MakeDoc("abc\ndef");
+        doc.ColumnSel = new ColumnSelection(0, 1, 1, 1);
+        doc.PasteAtCursors([], Tab);
+        Assert.Equal("abc\ndef", doc.Table.GetText());
+    }
+
+    [Fact]
+    public void PasteAtCursors_NoColumnSelection_NoOp() {
+        // Without ColumnSel set, the call is a no-op (not throw) because
+        // lines.Length isn't meaningful in stream mode.
+        var doc = MakeDoc("abc");
+        doc.PasteAtCursors(["X", "Y", "Z"], Tab); // should not throw
+        Assert.Equal("abc", doc.Table.GetText());
+    }
+
+    [Fact]
+    public void PasteAtCursors_FewerLinesThanCarets_ExitsColumnMode() {
+        // Even when only some carets receive content, the paste exits column
+        // mode (the post-paste state isn't a clean rectangle anymore).
+        var doc = MakeDoc("abc\ndef\nghi");
+        doc.ColumnSel = new ColumnSelection(0, 1, 2, 1);
+        doc.PasteAtCursors(["X", "Y"], Tab);
+        Assert.Null(doc.ColumnSel);
+    }
+
+    [Fact]
+    public void PasteAtCursors_LineTreeStaysConsistent() {
+        var doc = MakeDoc("abc\ndef\nghi");
+        doc.ColumnSel = new ColumnSelection(0, 1, 2, 1);
+        doc.PasteAtCursors(["X", "Y"], Tab); // K < N case
+        var totalFromTree = 0L;
+        foreach (var l in doc.Table.SnapshotLineLengths()) totalFromTree += l;
+        Assert.Equal(doc.Table.Length, totalFromTree);
+        Assert.Equal(doc.Table.Length, doc.Table.GetText().Length);
+    }
+
     // =====================================================================
     // DeleteBackwardAtCursors
     // =====================================================================

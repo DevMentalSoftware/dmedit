@@ -310,6 +310,18 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     /// </summary>
     public int MaxRegexMatchLength { get; set; } = 1024;
 
+    /// <summary>
+    /// Reference to the app's settings, injected once during MainWindow init.
+    /// Use this to read "passive" settings — values that are consulted at the
+    /// moment of an action rather than triggering side effects on change.
+    /// Active settings (those that need to invalidate layout, refresh menus,
+    /// re-theme, etc. when changed) still get pushed in via individual
+    /// properties so the setter can run side-effect code.  See
+    /// MainWindow.Dialogs.cs SettingChanged switch for the active set.
+    /// Nullable so the editor can be constructed before MainWindow assigns it.
+    /// </summary>
+    public Services.AppSettings? Settings { get; set; }
+
     /// <summary>Number of spaces per indent level. Also controls tab display width.</summary>
     public int IndentWidth {
         get => _indentWidth;

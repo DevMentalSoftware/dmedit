@@ -135,8 +135,24 @@ public sealed partial class EditorControl {
             text = text.Replace("\r\n", "\n").Replace("\r", "\n");
             _clipboardRing.Push(text);
             if (doc.ColumnSel is { } colSel) {
+                // Tolerate the common "copied N lines and the clipboard kept
+                // their trailing newline" case: drop one trailing empty entry
+                // so a 3-line region copy matches a 3-cursor rectangle instead
+                // of looking like 4 lines.
                 var lines = text.Split('\n');
-                if (lines.Length == colSel.LineCount) {
+                if (lines.Length > 0 && lines[^1].Length == 0) {
+                    Array.Resize(ref lines, lines.Length - 1);
+                }
+                // Distribute (one line per caret) only makes sense for genuinely
+                // multi-line clipboards.  Single-line content always wants to
+                // be broadcast at every caret — that's the "prefix N lines with
+                // // " workflow.  Setting-OFF forces broadcast in every case.
+                // Passive setting — read directly from AppSettings each time
+                // so the user's UI toggle takes effect immediately without
+                // needing a cached-property push from MainWindow.  Default to
+                // true if Settings hasn't been injected yet (test scenarios).
+                var distribute = Settings?.DistributeColumnPaste ?? true;
+                if (distribute && lines.Length >= 2) {
                     doc.PasteAtCursors(lines, _indentWidth);
                 } else {
                     doc.InsertAtCursors(text, _indentWidth);

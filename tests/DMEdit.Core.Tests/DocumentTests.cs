@@ -154,6 +154,56 @@ public class DocumentTests {
         Assert.Equal(11L, doc.Selection.End);
     }
 
+    [Fact]
+    public void SelectWord_LongWordExceedingFirstWindow_ExpandsToFullWord() {
+        // 3000 'a' characters: a single identifier longer than the initial
+        // 1024-char SelectWord window radius.  The previous fixed-radius
+        // implementation silently truncated the selection at the window edge;
+        // the doubling implementation must reach both ends of the word.
+        var word = new string('a', 3000);
+        var doc = MakeDoc(word);
+        doc.Selection = Selection.Collapsed(1500); // middle of the word
+        doc.SelectWord();
+        Assert.Equal(0L, doc.Selection.Start);
+        Assert.Equal(3000L, doc.Selection.End);
+    }
+
+    [Fact]
+    public void SelectWord_LongWordCaretNearStart_ExpandsRightToEnd() {
+        // Selection start is well inside the first window from the left edge,
+        // but the right side has to keep expanding past the initial 1024 radius.
+        var word = new string('b', 5000);
+        var doc = MakeDoc(word);
+        doc.Selection = Selection.Collapsed(50); // close to the left edge
+        doc.SelectWord();
+        Assert.Equal(0L, doc.Selection.Start);
+        Assert.Equal(5000L, doc.Selection.End);
+    }
+
+    [Fact]
+    public void SelectWord_LongWordCaretNearEnd_ExpandsLeftToStart() {
+        // Mirror image of the previous test: caret near the right edge,
+        // left expansion has to grow past the initial 1024 radius.
+        var word = new string('c', 5000);
+        var doc = MakeDoc(word);
+        doc.Selection = Selection.Collapsed(4950); // close to the right edge
+        doc.SelectWord();
+        Assert.Equal(0L, doc.Selection.Start);
+        Assert.Equal(5000L, doc.Selection.End);
+    }
+
+    [Fact]
+    public void SelectWord_LongWordSurroundedByPunctuation_StopsAtPunctuation() {
+        // Word boundaries are real (not window edges), so the doubling
+        // doesn't accidentally consume neighboring non-word characters.
+        var word = new string('d', 4000);
+        var doc = MakeDoc("." + word + ".");
+        doc.Selection = Selection.Collapsed(2000); // middle of the word
+        doc.SelectWord();
+        Assert.Equal(1L, doc.Selection.Start);     // after the leading "."
+        Assert.Equal(4001L, doc.Selection.End);    // before the trailing "."
+    }
+
     // =====================================================================
     // TransformCase
     // =====================================================================

@@ -85,6 +85,11 @@ public partial class MainWindow : Window {
         InitializeComponent();
         RegisterWindowCommands();
         Editor.RegisterCommands();
+        // Inject settings so the editor can read "passive" values (e.g.
+        // DistributeColumnPaste) directly at the call site rather than going
+        // through a per-setting cached property + push from the SettingChanged
+        // switch.  Set BEFORE any user input handler can fire.
+        Editor.Settings = _settings;
         _keyBindings = new KeyBindingService(_settings);
         _chordTimer = new DispatcherTimer {
             Interval = TimeSpan.FromMilliseconds(_settings.ChordTimeoutMs),

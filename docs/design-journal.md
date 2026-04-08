@@ -294,6 +294,26 @@ small one — it is the primary way a fresh session recovers context.
     flash taskbar / focus existing window on `FileRequested` (and on an
     empty ping if we add one).  UX paper cut that compounds with the worse bug.
 
+- **Settings page width constraint regression (2026-04-08)** — long
+  setting descriptions in `SettingsControl.axaml`'s `SettingsContent`
+  StackPanel no longer wrap at the intended ~700px width; they extend
+  to the full available column width.  XAML still has `MaxWidth="700"`
+  and `HorizontalAlignment="Left"` (added in commit `237f2fe`,
+  2026-04-03), and the constraint used to work.  Surprising data point:
+  replacing `MaxWidth` with a rigid `Width="700"` *also* had no effect,
+  which rules out the standard "TextWrapping=Wrap measure-pass with
+  unconstrained available width" quirk and points at something further
+  up the layout chain (the `ContentScroll` ScrollViewer with
+  `HorizontalScrollBarVisibility="Disabled"`, the Grid column, or a
+  programmatic override).  Filtering to a single non-Commands category
+  does not help, so it's not the Commands section's fixed-width Border
+  forcing parent expansion.  Files: `SettingsControl.axaml`,
+  `SettingsControl.axaml.cs`, `SettingRowFactory.cs`.  Next-attempt
+  ideas: (a) wrap the StackPanel in a Border with the constraint;
+  (b) put the constraint on the ScrollViewer itself; (c) Avalonia
+  DevTools breakpoint on the StackPanel's `BoundsProperty` to see what's
+  actually setting its width.
+
 - **Preserve caret/selection viewport position on wrap toggle** — caret
   and selection anchor should keep their visual row-from-top when
   WordWrap is toggled.  Touch points: WordWrap toggle, `InvalidateLayout`,

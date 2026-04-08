@@ -183,9 +183,19 @@ public sealed class AppSettings {
     /// a sufficiently large file reaches this length, the editor switches to
     /// the fixed-width grid renderer because long lines can't be measured
     /// quickly and aren't practical to edit.  Lower values trigger CharWrap
-    /// mode more aggressively.  
+    /// mode more aggressively.
     /// </summary>
     public int CharWrapLineLength { get; set; } = 2000;
+
+    /// <summary>
+    /// When pasting into a column-mode multi-cursor selection: if true,
+    /// distribute the clipboard's lines across the cursors (line[i] → caret[i])
+    /// when the line count matches the cursor count.  When false, broadcast the
+    /// entire clipboard at every cursor (matches VS Code, Sublime, Rider).
+    /// Distribution drops excess clipboard lines and leaves excess carets
+    /// untouched; multi-line broadcasts always exit column mode afterward.
+    /// </summary>
+    public bool DistributeColumnPaste { get; set; } = true;
 
     /// <summary>
     /// Default indentation style for new/untitled documents. Files opened from

@@ -205,6 +205,23 @@ comment-documented mirrors. Move to a single
   helper; both TextLayoutEngine and (future) BlockLayoutEngine
   need it.
 
+- **Generalize `ColumnSelection` to a free multi-cursor model.**
+  Today `ColumnSelection` is `(AnchorLine, AnchorCol, ActiveLine,
+  ActiveCol)` — strictly a rectangle.  After a multi-line
+  broadcast paste (or any future "click + ctrl-click to add a
+  cursor" feature) the post-edit caret set is *not* a rectangle,
+  so the editor has to drop column mode entirely.  A
+  `MultiCursorSelection` holding `IReadOnlyList<Selection>` would
+  let the editor preserve carets across these transitions and
+  unblock free multi-cursor editing.  Touch points: every
+  `Document.*AtCursors` method, `EditorControl` caret rendering,
+  arrow-key movement (per-cursor), session persistence
+  (serialization of arbitrary cursor sets), and the column-mode
+  entry/exit logic.  Motivations stack: post-broadcast caret
+  state, post-distribute caret state, click-to-add-cursor,
+  matched-paste end state.  Estimated multi-day feature.  See the
+  2026-04-08 conversation about column-mode multi-line paste.
+
 ## Cross-cutting recurring themes
 
 ### Encoder/decoder duplication

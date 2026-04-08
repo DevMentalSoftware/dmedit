@@ -50,6 +50,13 @@ public static class SettingsRegistry {
             "those are still cheap to measure.",
             "Advanced", SettingKind.Int, 50, Min: 10, Max: 10000, Increment: 10),
 
+        new("DistributeColumnPaste", "Distribute Multi-Line Paste in Column Mode",
+            "When enabled, pasting a multi-line clipboard into a column-mode " +
+            "selection distributes one line per cursor when the line counts match " +
+            "(extra lines are dropped).  When disabled, the entire clipboard is " +
+            "broadcast at every cursor — matches VS Code, Sublime, Rider.",
+            "Advanced", SettingKind.Bool, true),
+
         new("CaretWidth", "Caret Width",
             "Width of the text caret in pixels. Range: 1.0 – 2.5.",
             "Display", SettingKind.Double, 1.0, Min: 1.0, Max: 2.5, Increment: 0.5),
