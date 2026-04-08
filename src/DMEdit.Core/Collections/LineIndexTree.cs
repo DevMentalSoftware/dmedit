@@ -47,7 +47,13 @@ public sealed class LineIndexTree {
 
     public long TotalSum() => _root == Nil ? 0 : _sum[_root];
 
-    /// <summary>Returns the maximum value across all elements.  O(1).</summary>
+    /// <summary>
+    /// Returns the maximum value across all elements.  O(1).
+    /// Assumes element values are non-negative (line lengths are ≥ 0 by
+    /// domain): the absent-child sentinel in <c>_max</c> bookkeeping is 0,
+    /// so a tree containing only negative values would incorrectly report
+    /// 0 instead of its true (negative) maximum.  Returns 0 for an empty tree.
+    /// </summary>
     public int MaxValue() => _root == Nil ? 0 : _max[_root];
 
     /// <summary>Returns sum of elements [0..i] inclusive (0-based).</summary>

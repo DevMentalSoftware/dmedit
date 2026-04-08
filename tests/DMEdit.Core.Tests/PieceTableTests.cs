@@ -542,6 +542,84 @@ public class PieceTableTests {
         Assert.Equal(new long[] { 0, 1, 2, 4, 5, 6 }, visited);
     }
 
+    // -------------------------------------------------------------------------
+    // MaxLineLength + HasLongLines
+    //
+    // After dropping the _maxLineLen cache, MaxLineLength delegates to
+    // _lineTree.MaxValue() and HasLongLines is the only "remembered" piece
+    // of state.  These tests pin both behaviors so the refactor doesn't
+    // silently regress.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MaxLineLength_EmptyDocument_IsZero() {
+        var t = new PieceTable("");
+        Assert.Equal(0, t.MaxLineLength);
+        Assert.False(t.HasLongLines);
+    }
+
+    [Fact]
+    public void MaxLineLength_TracksLongestAcrossMultipleLines() {
+        var t = new PieceTable("ab\ncccc\nd\n");
+        // Lines (with terminator): "ab\n"=3, "cccc\n"=5, "d\n"=2, ""=0
+        Assert.Equal(5, t.MaxLineLength);
+    }
+
+    [Fact]
+    public void MaxLineLength_GrowsAfterInsertOnSameLine() {
+        var t = new PieceTable("ab\ncd\n");
+        Assert.Equal(3, t.MaxLineLength);
+        t.Insert(2, "XXXXX"); // line 0 grows from "ab\n" (3) to "abXXXXX\n" (8)
+        Assert.Equal(8, t.MaxLineLength);
+    }
+
+    [Fact]
+    public void MaxLineLength_ShrinksAfterDeletingTheLongestLine() {
+        // The previous _maxLineLen cache only ever GREW; this case would
+        // have left the cache stale at 9.  After the refactor, MaxLineLength
+        // is read from the tree which always reflects current truth.
+        var t = new PieceTable("short\nlongerline\ntiny\n");
+        // Lines: "short\n"=6, "longerline\n"=11, "tiny\n"=5, ""=0
+        Assert.Equal(11, t.MaxLineLength);
+        // Delete most of "longerline" — leave "lo\n".
+        t.Delete(8, 8); // remove "ngerline" (8 chars from offset 8)
+        // Lines now: "short\n"=6, "lo\n"=3, "tiny\n"=5, ""=0
+        Assert.Equal(6, t.MaxLineLength);
+    }
+
+    [Fact]
+    public void HasLongLines_StaysFalseForShortDocument() {
+        var t = new PieceTable("short\nlines\nonly\n");
+        Assert.False(t.HasLongLines);
+    }
+
+    [Fact]
+    public void HasLongLines_BecomesTrueOnInitialContentWithLongLine() {
+        // 600 chars on line 0 — exceeds the 500-char LongLineThreshold.
+        var content = new string('x', 600) + "\n";
+        var t = new PieceTable(content);
+        Assert.True(t.HasLongLines);
+    }
+
+    [Fact]
+    public void HasLongLines_BecomesTrueAfterInsertGrowsLineBeyondThreshold() {
+        var t = new PieceTable("hi\n");
+        Assert.False(t.HasLongLines);
+        t.Insert(2, new string('y', 600));
+        Assert.True(t.HasLongLines);
+    }
+
+    [Fact]
+    public void HasLongLines_StickyAfterDeletingTheLongLine() {
+        // Stickiness is intentional per the field comment: once a doc has
+        // contained a long line, the editor commits to CharWrap-friendly
+        // measurements for the remainder of the session.
+        var t = new PieceTable(new string('z', 600) + "\n");
+        Assert.True(t.HasLongLines);
+        t.Delete(0, 600); // strip the long content
+        Assert.True(t.HasLongLines); // sticky
+    }
+
 // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------

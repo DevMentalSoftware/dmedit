@@ -24,8 +24,10 @@ public sealed class PieceTable {
     // Provides O(log L) prefix-sum queries for LineStartOfs/LineFromOfs and
     // O(log L) incremental updates for non-newline edits.  Individual values
     // are derived from the tree via ValueAt() — no parallel list is kept.
+    // The longest line is read directly from _lineTree.MaxValue() (O(1)) —
+    // see MaxLineLength below.  No parallel cache: maintaining one across
+    // five different mutation paths invited silent drift.
     private LineIndexTree? _lineTree;
-    private int _maxLineLen = -1;
 
     /// <summary>
     /// Threshold above which a line is considered "long".  Character-wrapping
@@ -244,17 +246,13 @@ public sealed class PieceTable {
         if (affectedLine >= 0 && !hasNewlines) {
             // No newlines, tree exists: O(log L) incremental update.
             _lineTree!.Update(affectedLine, text.Length);
-            var newLen = _lineTree.ValueAt(affectedLine);
-            if (newLen > _maxLineLen)
-                _maxLineLen = newLen;
-            CheckLongLine(newLen);
+            CheckLongLine(_lineTree.ValueAt(affectedLine));
         } else if (affectedLine >= 0 && hasNewlines) {
             // Newlines inserted: splice line lengths via chunked buffer read.
             SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs,
                 _addBuf, addStart, text.Length);
         } else {
             Debug.Assert(false, "Insert called without a line tree.");
-            _maxLineLen = -1;
         }
         AssertLineTreeValid();
     }
@@ -328,7 +326,6 @@ public sealed class PieceTable {
             // This should never happen once the tree is installed — edits
             // require a built tree for correct line-tree maintenance.
             Debug.Assert(false, "Delete called without a line tree.");
-            _maxLineLen = -1;
         }
         AssertLineTreeValid();
     }
@@ -649,12 +646,8 @@ public sealed class PieceTable {
         ReconcileInitialPiece();
 
         _lineTree = LineIndexTree.FromValues(lineLengths);
-        var max = 0;
-        foreach (var len in lineLengths) {
-            if (len > max) max = len;
-        }
-        _maxLineLen = max;
-        if (_maxLineLen > LongLineThreshold) HasLongLines = true;
+        // The tree maintains a subtree max at every node — root max is O(1).
+        CheckLongLine(_lineTree.MaxValue());
         AssertLineTreeValid();
     }
 
@@ -682,13 +675,7 @@ public sealed class PieceTable {
         scanner.Finish();
 
         _lineTree = scanner.BuildTree();
-
-        var maxLen = 0;
-        foreach (var l in scanner.LineLengths) {
-            if (l > maxLen) maxLen = l;
-        }
-        _maxLineLen = maxLen;
-        if (_maxLineLen > LongLineThreshold) HasLongLines = true;
+        CheckLongLine(_lineTree.MaxValue());
     }
 
 
@@ -740,11 +727,8 @@ public sealed class PieceTable {
         var span = CollectionsMarshal.AsSpan(newLines);
         _lineTree!.RemoveAt(line);
         _lineTree.InsertRange(line, span);
-        if (_maxLineLen >= 0) {
-            foreach (var l in newLines) {
-                if (l > _maxLineLen) _maxLineLen = l;
-                CheckLongLine(l);
-            }
+        foreach (var l in newLines) {
+            CheckLongLine(l);
         }
     }
 
@@ -763,10 +747,6 @@ public sealed class PieceTable {
 
         _lineTree.RemoveRange(startLine, endLine - startLine + 1);
         _lineTree.InsertAt(startLine, mergedLen);
-        // Merged line might be longer than the current max.
-        if (_maxLineLen >= 0 && mergedLen > _maxLineLen) {
-            _maxLineLen = mergedLen;
-        }
         CheckLongLine(mergedLen);
     }
 
@@ -809,7 +789,10 @@ public sealed class PieceTable {
         _lineTree.RemoveAt(startLine);
         // Re-insert the original lines.
         _lineTree.InsertRange(startLine, lineLengths);
-        _maxLineLen = -1; // conservative recompute
+        // Restore HasLongLines stickiness if any of the restored lines is long.
+        foreach (var l in lineLengths) {
+            CheckLongLine(l);
+        }
     }
 
     /// <summary>
@@ -822,9 +805,7 @@ public sealed class PieceTable {
         if (_lineTree == null) return; // Release safety net
         var line = (int)LineFromOfs(ofs);
         _lineTree.Update(line, (int)len);
-        var newLen = _lineTree.ValueAt(line);
-        if (newLen > _maxLineLen) _maxLineLen = newLen;
-        CheckLongLine(newLen);
+        CheckLongLine(_lineTree.ValueAt(line));
     }
 
     /// <summary>
@@ -966,15 +947,12 @@ public sealed class PieceTable {
         // Post-mutation: update line tree.
         if (affectedLine >= 0 && !hasNewlines) {
             _lineTree!.Update(affectedLine, len);
-            var newLen = _lineTree.ValueAt(affectedLine);
-            if (newLen > _maxLineLen) _maxLineLen = newLen;
-            CheckLongLine(newLen);
+            CheckLongLine(_lineTree.ValueAt(affectedLine));
         } else if (affectedLine >= 0 && hasNewlines) {
             SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs,
                 buf, bufStart, len);
         } else {
             Debug.Assert(false, "InsertFromBuffer called without a line tree.");
-            _maxLineLen = -1;
         }
         AssertLineTreeValid();
     }
@@ -1179,6 +1157,18 @@ public sealed class PieceTable {
         var treeTotal = _lineTree.TotalSum();
         Debug.Assert(treeTotal == docLen,
             $"Line tree total {treeTotal} != Length {docLen} (delta {treeTotal - docLen})");
+
+        // Cross-check the cached subtree-max against an O(L) ground-truth
+        // walk over the actual line lengths.  This is the safety net for
+        // _max bookkeeping in LineIndexTree's incremental Update path —
+        // any drift trips here in DEBUG before it can mislead callers.
+        var rootMax = _lineTree.MaxValue();
+        var groundTruthMax = 0;
+        foreach (var l in _lineTree.ExtractValues()) {
+            if (l > groundTruthMax) groundTruthMax = l;
+        }
+        Debug.Assert(rootMax == groundTruthMax,
+            $"Line tree MaxValue() {rootMax} != ground-truth max {groundTruthMax}");
     }
 
     /// <summary>

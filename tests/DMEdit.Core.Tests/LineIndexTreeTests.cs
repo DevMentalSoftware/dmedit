@@ -143,6 +143,147 @@ public class LineIndexTreeTests {
         Assert.Equal(100, tree.FindByPrefixSum(5051));
     }
 
+    // ---------------------------------------------------------------
+    //  Group A.MaxValue — direct coverage of the subtree-max path
+    //
+    //  Load-bearing because PieceTable.MaxLineLength === MaxValue() and
+    //  the CharWrap trigger reads it. Drift here is silent (no internal
+    //  invariant assertion checks _max), so these tests are the safety
+    //  net for the drop-_maxLineLen-cache refactor in PieceTable.
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void MaxValue_EmptyTree_ReturnsZero() {
+        var tree = LineIndexTree.FromValues([]);
+        Assert.Equal(0, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_SingleElement_ReturnsThatValue() {
+        var tree = LineIndexTree.FromValues([42]);
+        Assert.Equal(42, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_FromValues_ReturnsLargest() {
+        var tree = LineIndexTree.FromValues([10, 20, 30, 5, 25]);
+        Assert.Equal(30, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_FromValues_MaxAtFirstPosition() {
+        // Position-sensitive: ensures _max bubbles up regardless of where
+        // the max sits in the random treap structure.
+        var tree = LineIndexTree.FromValues([100, 1, 2, 3, 4]);
+        Assert.Equal(100, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_FromValues_MaxAtLastPosition() {
+        var tree = LineIndexTree.FromValues([1, 2, 3, 4, 100]);
+        Assert.Equal(100, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_AfterUpdate_GrowingMax() {
+        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        tree.Update(0, 100); // 10 → 110, now the new max
+        Assert.Equal(110, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_AfterUpdate_ShrinkingTheCurrentMax() {
+        // The element that was the max gets reduced below another element.
+        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        tree.Update(2, -25); // 30 → 5; new max should be 20
+        Assert.Equal(20, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_AfterUpdate_NonMaxElement_DoesNotChangeMax() {
+        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        tree.Update(0, 5); // 10 → 15; max still 30
+        Assert.Equal(30, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_AfterInsertAt_NewLargest() {
+        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        tree.InsertAt(1, 99);
+        Assert.Equal(99, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_AfterInsertAt_NotLargest() {
+        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        tree.InsertAt(1, 5);
+        Assert.Equal(30, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_AfterRemoveAt_RemovingTheUniqueMax() {
+        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        tree.RemoveAt(2); // remove 30; new max should be 20
+        Assert.Equal(20, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_AfterRemoveAt_RemovingNonMax_KeepsMax() {
+        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        tree.RemoveAt(0); // remove 10; max still 30
+        Assert.Equal(30, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_AfterRemoveAt_DuplicateMax_KeepsMax() {
+        // Two elements share the max value; removing one must not drop it.
+        var tree = LineIndexTree.FromValues([10, 30, 20, 30]);
+        tree.RemoveAt(1); // remove first 30; the other 30 should remain max
+        Assert.Equal(30, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_AfterInsertRange_NewLargest() {
+        var tree = LineIndexTree.FromValues([10, 20]);
+        tree.InsertRange(1, [5, 999, 7]);
+        Assert.Equal(999, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_AfterRemoveRange_TakesNewMaxFromSurvivors() {
+        var tree = LineIndexTree.FromValues([10, 999, 998, 20, 30]);
+        tree.RemoveRange(1, 2); // remove 999 and 998; survivors are 10/20/30
+        Assert.Equal(30, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_AfterRebuild_ReturnsNewMax() {
+        var tree = LineIndexTree.FromValues([100, 200, 300]);
+        Assert.Equal(300, tree.MaxValue());
+        tree.Rebuild([5, 10, 15]);
+        Assert.Equal(15, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_AfterRebuildToEmpty_ReturnsZero() {
+        var tree = LineIndexTree.FromValues([100, 200, 300]);
+        tree.Rebuild([]);
+        Assert.Equal(0, tree.MaxValue());
+    }
+
+    [Fact]
+    public void MaxValue_LargeTree_BulkBuild() {
+        // Verify _max bubbles correctly through a treap built via the
+        // O(n) Cartesian-tree path (FromValues with > 256 elements
+        // exercises the heap-allocated build).
+        var values = new int[1024];
+        for (var i = 0; i < values.Length; i++) values[i] = i + 1;
+        // Insert one outlier near the middle.
+        values[500] = 10_000;
+        var tree = LineIndexTree.FromValues(values);
+        Assert.Equal(10_000, tree.MaxValue());
+    }
+
     [Fact]
     public void FindByPrefixSum_AfterUpdate_StillCorrect() {
         int[] v = [10, 20, 30, 40];
@@ -324,6 +465,12 @@ public class LineIndexTreeTests {
                 case 2: { // update
                     var idx = rng.Next(reference.Count);
                     var delta = rng.Next(-100, 100);
+                    // LineIndexTree assumes non-negative values (line
+                    // lengths are ≥ 0 by domain).  Clamp the delta so the
+                    // resulting value never goes below zero — this lets
+                    // us assert MaxValue() against the reference without
+                    // tripping the absent-child=0 sentinel in _max bookkeeping.
+                    if (reference[idx] + delta < 0) delta = -reference[idx];
                     tree.Update(idx, delta);
                     reference[idx] += delta;
                     break;
@@ -337,6 +484,13 @@ public class LineIndexTreeTests {
                 }
             }
             Assert.Equal(reference.Count, tree.Count);
+
+            // MaxValue must always agree with the reference's max (or 0 when
+            // empty).  Checking on every iteration covers all four operations,
+            // not just the one that just ran, because the operation may have
+            // disturbed an ancestor's _max bottom-up recompute.
+            var expectedMax = reference.Count == 0 ? 0 : reference.Max();
+            Assert.Equal(expectedMax, tree.MaxValue());
         }
 
         // Final full verification.
