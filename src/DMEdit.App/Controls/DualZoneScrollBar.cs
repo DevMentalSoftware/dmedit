@@ -100,7 +100,8 @@ public sealed class DualZoneScrollBar : Control {
     // Interaction state
     // -------------------------------------------------------------------------
 
-    private enum HitZone {
+    // Internal so tests can pass HitZone values to the internal drag helpers.
+    internal enum HitZone {
         None,
         ArrowUp,
         ArrowDown,
@@ -524,14 +525,17 @@ public sealed class DualZoneScrollBar : Control {
     // Dragging
     // -------------------------------------------------------------------------
 
-    private void StartInnerDrag(double mouseY) {
+    // Internal so tests can drive the drag state machine directly without
+    // synthesizing Avalonia pointer events.
+    internal void StartInnerDrag(double mouseY) {
         _isDragging = true;
+        _pressedZone = HitZone.InnerThumb;
         _dragStartMouseY = mouseY;
         _dragStartValue = Value;
         _outerDragVisualOffset = 0;
     }
 
-    private void StartOuterDrag(double mouseY, HitZone zone) {
+    internal void StartOuterDrag(double mouseY, HitZone zone) {
         _isDragging = true;
         _pressedZone = zone;
         _dragStartMouseY = mouseY;
@@ -539,7 +543,7 @@ public sealed class DualZoneScrollBar : Control {
         _outerDragVisualOffset = 0;
     }
 
-    private void HandleDragMove(double mouseY) {
+    internal void HandleDragMove(double mouseY) {
         var deltaPixels = mouseY - _dragStartMouseY;
 
         if (_pressedZone == HitZone.InnerThumb) {
@@ -550,6 +554,18 @@ public sealed class DualZoneScrollBar : Control {
                 var scrollPerPixel = Maximum / availableRange;
                 var newValue = _dragStartValue + deltaPixels * scrollPerPixel;
                 RequestScroll(newValue);
+
+                // Reset the drag anchor when scroll hits a boundary, matching
+                // the outer-zone branch below.  Without this, dragging past the
+                // extent (top or bottom) accumulates unreachable "virtual"
+                // travel in newValue; on reversal the thumb doesn't move until
+                // the mouse returns to the position where it first hit the
+                // extent.  This is a regression of a prior fix that evidently
+                // wasn't covered by a test.
+                if (Math.Abs(Value - newValue) > 0.01) {
+                    _dragStartMouseY = mouseY;
+                    _dragStartValue = Value;
+                }
             }
         } else if (_pressedZone == HitZone.OuterTop || _pressedZone == HitZone.OuterBottom) {
             // Middle-drag: flip the visual zone based on drag direction so
@@ -603,12 +619,25 @@ public sealed class DualZoneScrollBar : Control {
         InvalidateVisual();
     }
 
-    /// <summary>Update the external middle-drag with a pixel delta from the press point.</summary>
+    /// <summary>
+    /// Update the external middle-drag with the cumulative pixel delta
+    /// from the press point.  The delta is passed straight through to
+    /// <see cref="HandleDragMove"/> as a "virtual mouseY" — the press point
+    /// is the virtual origin (mouseY = 0) so cumulative delta IS mouseY
+    /// in the virtual coordinate system.
+    ///
+    /// <b>Important:</b> do not add <c>_dragStartMouseY</c> to the delta.
+    /// That field serves as the handler-local anchor for delta math and
+    /// is reset when scroll clamps at an extent (the dead-travel fix).
+    /// Adding it here would contaminate the external coordinate system
+    /// with the internal anchor shifts, breaking direction reversal after
+    /// an overshoot — exactly the bug the anchor reset is supposed to fix.
+    /// </summary>
     public void UpdateExternalMiddleDrag(double deltaPixels) {
         if (!_isMiddleDrag) {
             return;
         }
-        HandleDragMove(_dragStartMouseY + deltaPixels);
+        HandleDragMove(deltaPixels);
     }
 
     /// <summary>End the external middle-drag; snap visuals back.</summary>
@@ -627,17 +656,31 @@ public sealed class DualZoneScrollBar : Control {
     // Scroll helpers
     // -------------------------------------------------------------------------
 
-    private void ScrollByRows(int rows) {
+    // Tests drive this directly to verify the fp-drift fix for RowHeight
+    // values that aren't binary-exact (e.g. 17.6 at 125% DPI).
+    internal void ScrollByRows(int rows) {
         // Snap to row boundaries so each arrow click aligns to a full row.
         // If already aligned, moves by exactly |rows| rows.
         // If mid-row (e.g. from a thumb drag), the first click finishes
         // the partial row, then subsequent clicks move full rows.
-        double newValue;
-        if (rows > 0) {
-            newValue = (Math.Floor(Value / RowHeight) + rows) * RowHeight;
-        } else {
-            newValue = (Math.Ceiling(Value / RowHeight) + rows) * RowHeight;
-        }
+        //
+        // The +/- eps before floor/ceil is load-bearing: when RowHeight is
+        // not exactly representable in binary (e.g. 17.6 at 125% DPI), for
+        // certain integer row counts k the expression (k*RH)/RH evaluates
+        // to (k − ulp), so Math.Floor returns k − 1 instead of k — and the
+        // resulting newValue = ((k − 1) + 1)*RH = k*RH equals Value within
+        // a few ulps.  RequestScroll's "meaningful change" guard would then
+        // silently drop the click, leaving the arrow dead at that specific
+        // scroll position until the user nudged the view off the boundary
+        // with some other mechanism.  Nudging the floor argument up by eps
+        // (or the ceil argument down) keeps the snap logic on the right
+        // side of the integer without shifting non-boundary values.
+        const double eps = 1e-6;
+        double currentRowF = Value / RowHeight;
+        double currentRow = rows > 0
+            ? Math.Floor(currentRowF + eps)
+            : Math.Ceiling(currentRowF - eps);
+        var newValue = (currentRow + rows) * RowHeight;
         RequestScroll(newValue);
     }
 
@@ -655,9 +698,18 @@ public sealed class DualZoneScrollBar : Control {
 
     private void StartRepeat(Action action) {
         StopRepeat();
-        _repeatTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        // Match the Windows default keyboard auto-repeat rate so a held
+        // scrollbar arrow/track-zone feels consistent with a held-down key:
+        //   KeyboardDelay = 1 → (1+1) * 250 = 500 ms initial delay
+        //   KeyboardSpeed = 31 → 400 − 12*31 = 28 ms repeat interval
+        // (These are the Windows 10/11 out-of-the-box defaults — the
+        // registry values in HKCU\Control Panel\Keyboard on a fresh
+        // profile.)  Not sourced from SPI_GETKEYBOARDDELAY/SPEED at
+        // runtime because the savings aren't worth the P/Invoke for
+        // values that almost no one changes.
+        _repeatTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _repeatTimer.Tick += (_, _) => {
-            _repeatTimer.Interval = TimeSpan.FromMilliseconds(50); // accelerate after first tick
+            _repeatTimer.Interval = TimeSpan.FromMilliseconds(28); // accelerate after first tick
             action();
         };
         _repeatTimer.Start();

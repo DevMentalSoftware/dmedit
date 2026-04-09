@@ -1,5 +1,7 @@
 # DMEdit — Claude Session Context
 
+Important! Never chain Bash commands together with &&, because this essentially bypasses the settings rules we've configured. 
+
 ## First steps for every session
 
 1. Read `docs/design-journal.md` — index of all design decisions and architectural

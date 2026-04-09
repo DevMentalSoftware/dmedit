@@ -13,6 +13,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="DMEdit.App.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <AvaloniaResource Include="app_icon.ico" />
     <AvaloniaResource Include="..\..\resources\FluentSystemIcons-Regular.ttf" Link="Resources\FluentSystemIcons-Regular.ttf" />
     <AvaloniaResource Include="..\..\resources\dev_mental_head.png" Link="Resources\dev_mental_head.png" />

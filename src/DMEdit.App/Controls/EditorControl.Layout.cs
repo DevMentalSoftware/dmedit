@@ -484,6 +484,29 @@ public sealed partial class EditorControl {
             topLine = EstimateWrappedTopLine(_scrollOffset.Y, doc.Table, lineCount, charsPerRow, rh);
         }
 
+        // Sanity check: the incremental cache (_winTopLine) must stay within
+        // ±1 row of the formula topLine per frame — that's the whole point
+        // of the constraint below.  If a sequence of small scroll ticks has
+        // drifted the cache more than 1 row from reality, the cache is stale
+        // and must be discarded so the formula path runs.
+        //
+        // How drift accumulates: the constraint caps topLine changes at ±1
+        // per frame, but the formula can legitimately jump by more when ds
+        // straddles multiple line boundaries (e.g. dragging up by 33 px from
+        // a non-line-aligned position crosses two line boundaries but only
+        // produces one retreat).  The "safety clamp" `if (RenderOffsetY > 0)
+        // RenderOffsetY = 0;` further masks the inconsistency by erasing the
+        // evidence of a positive render offset that would otherwise indicate
+        // the cache is wrong.  Over many small-scroll ticks during a slow
+        // drag, _winTopLine can drift arbitrarily far from the correct value
+        // — and because the layout is then cached with the drifted state,
+        // the symptom persists until something forces a fresh layout pass
+        // (e.g. dragging to the bottom, which produces a huge ds that takes
+        // the formula path).
+        if (_winTopLine >= 0 && Math.Abs(_winTopLine - topLine) > 1) {
+            _winTopLine = -1;
+        }
+
         // For single-row scrolls (arrow buttons), constrain topLine to change
         // by at most ±1 from the previous frame.  This lets the incremental
         // render-offset logic use the actual cached line height instead of
