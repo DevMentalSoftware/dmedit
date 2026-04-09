@@ -823,33 +823,39 @@ public sealed class PieceTable {
         // -----------------------------------------------------------------
         // Fast path: no cross-boundary interaction.  The inserted text can
         // be scanned locally without looking at the surrounding buffer.
+        // Delegates the CR/LF/CRLF state machine to LineScanner — the
+        // canonical scanner in Core — and patches the scanner output with
+        // the affected-line prefix/suffix so the result matches what the
+        // full document would have in the region we're about to splice.
         // -----------------------------------------------------------------
 
         var prefixLen = (int)(insertOfs - lineStart);
         var suffixLen = oldLineLen - prefixLen;
-        var newLines = new List<int>();
-        var cur = prefixLen;
-        var prevCr = false;
+
+        var fastScanner = new LineScanner();
         if (textLen > 0) {
             var scanBuf = new char[Math.Min(textLen, MaxVisitChunk)];
             var scanned = 0;
             while (scanned < textLen) {
                 var take = Math.Min(textLen - scanned, scanBuf.Length);
                 buf.CopyTo(bufStart + scanned, scanBuf, take);
-                for (var i = 0; i < take; i++) {
-                    var ch = scanBuf[i];
-                    if (prevCr) {
-                        prevCr = false;
-                        if (ch == '\n') { newLines[^1]++; continue; }
-                    }
-                    cur++;
-                    if (ch == '\n') { newLines.Add(cur); cur = 0; } else if (ch == '\r') { newLines.Add(cur); cur = 0; prevCr = true; }
-                }
+                fastScanner.Scan(scanBuf.AsSpan(0, take));
                 scanned += take;
             }
         }
-        cur += suffixLen;
-        newLines.Add(cur);
+        fastScanner.Finish();
+
+        // fastScanner.LineLengths covers the inserted text only.  The first
+        // entry is the length from the first inserted char to the first
+        // terminator (or the whole insert if it has no terminators); the
+        // last entry is the trailing content after the final terminator
+        // (0 when the insert ends in a terminator, and always present
+        // because Finish() emits a trailing line).  Patch both endpoints
+        // with the original affected line's prefix and suffix to get the
+        // full post-splice line lengths.
+        var newLines = fastScanner.LineLengths;
+        newLines[0] += prefixLen;
+        newLines[^1] += suffixLen;
 
         var span2 = CollectionsMarshal.AsSpan(newLines);
         _lineTree!.RemoveAt(line);

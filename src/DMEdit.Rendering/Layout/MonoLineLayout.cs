@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Media;
+using DMEdit.Core.Documents;
 
 namespace DMEdit.Rendering.Layout;
 
@@ -105,34 +106,13 @@ public sealed class MonoLineLayout : IDisposable {
         var rowIdx = 0;
         while (pos < text.Length) {
             var rowChars = rowIdx == 0 ? firstRowChars : contRowChars;
-            var (drawLen, nextStart) = NextRow(text, pos, rowChars);
+            var (drawLen, nextStart) = MonoRowBreaker.NextRow(text, pos, rowChars);
             var xOffset = rowIdx == 0 ? 0.0 : ctx.HangingIndentPx;
             rows.Add(new RowSpan(pos, drawLen, xOffset));
             pos = nextStart;
             rowIdx++;
         }
         return new MonoLineLayout(ctx, text, rows.ToArray());
-    }
-
-    /// <summary>
-    /// Computes the next row's draw length and next row start position.
-    /// Backwards-scans for a space inside the row width to break at;
-    /// drops the space from the drawn row and skips it for the next row.
-    /// Falls back to a hard mid-token break if no space is found.
-    /// Mirrors <c>WpfPrintService.PlainTextPaginator.NextRow</c>.
-    /// </summary>
-    private static (int DrawLen, int NextStart) NextRow(string line, int rowStart, int charsPerRow) {
-        var remaining = line.Length - rowStart;
-        if (remaining <= charsPerRow) {
-            return (remaining, line.Length);
-        }
-        var hardLimit = rowStart + charsPerRow;
-        for (var i = hardLimit - 1; i > rowStart; i--) {
-            if (line[i] == ' ') {
-                return (i - rowStart, i + 1);
-            }
-        }
-        return (charsPerRow, hardLimit);
     }
 
     // -------------------------------------------------------------------------

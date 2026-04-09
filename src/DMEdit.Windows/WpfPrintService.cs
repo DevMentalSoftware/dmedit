@@ -611,28 +611,12 @@ file sealed class PlainTextPaginator : DocumentPaginator {
     }
 
     /// <summary>
-    /// Computes the break position for the next visual row starting at
-    /// <paramref name="rowStart"/> in <paramref name="line"/>.  Word-break
-    /// rules: if a space exists inside the row width, break at the last
-    /// space — the space itself is dropped from the drawn row and the next
-    /// row starts after it.  If no space is found (a very long unbroken
-    /// token), fall back to a hard break at <paramref name="charsPerRow"/>.
-    /// Used by both <see cref="ComputePageBreaks"/> and
-    /// <see cref="GetPage"/> so pagination and rendering stay in sync.
+    /// Computes the break position for the next visual row.  Delegates to
+    /// <see cref="MonoRowBreaker.NextRow"/> in Core so pagination and the
+    /// editor's <c>MonoLineLayout</c> share a single row-break implementation.
     /// </summary>
-    private static (int DrawLen, int NextStart) NextRow(string line, int rowStart, int charsPerRow) {
-        var remaining = line.Length - rowStart;
-        if (remaining <= charsPerRow) {
-            return (remaining, line.Length);
-        }
-        var hardLimit = rowStart + charsPerRow;
-        for (var i = hardLimit - 1; i > rowStart; i--) {
-            if (line[i] == ' ') {
-                return (i - rowStart, i + 1);
-            }
-        }
-        return (charsPerRow, hardLimit);
-    }
+    private static (int DrawLen, int NextStart) NextRow(string line, int rowStart, int charsPerRow) =>
+        MonoRowBreaker.NextRow(line, rowStart, charsPerRow);
 
     private void SlowPath(DrawingContext dc, string line, int rowStart, int rowLen, double x, double y) {
         var segment = line.Substring(rowStart, rowLen);

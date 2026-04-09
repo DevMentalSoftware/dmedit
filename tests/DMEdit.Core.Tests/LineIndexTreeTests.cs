@@ -539,4 +539,151 @@ public class LineIndexTreeTests {
         Assert.Equal(99, tree.FindByPrefixSum(5050));
         Assert.Equal(100, tree.FindByPrefixSum(5051));
     }
+
+    // ---------------------------------------------------------------
+    //  Group D — InsertRange stackalloc/heap threshold (TRIAGE P2)
+    //
+    //  LineIndexTree.BuildBalanced picks between a stack-allocated and
+    //  a heap-allocated working stack based on span length ≤ 256.
+    //  The two paths are otherwise identical — but without a direct
+    //  test on BOTH sides of the boundary, a future refactor that
+    //  breaks the heap branch (the less-exercised one in normal
+    //  editor usage) would go unnoticed.
+    // ---------------------------------------------------------------
+
+    private static int[] MakeRamp(int n, int startAt) {
+        var r = new int[n];
+        for (var i = 0; i < n; i++) r[i] = startAt + i;
+        return r;
+    }
+
+    [Fact]
+    public void InsertRange_StackallocPath_255Elements_IsConsistent() {
+        // Below the threshold: BuildBalanced takes the stackalloc branch.
+        var tree = LineIndexTree.FromValues([1, 2, 3]);
+        var inserted = MakeRamp(255, startAt: 100);
+
+        tree.InsertRange(1, inserted);
+
+        Assert.Equal(258, tree.Count);
+        Assert.Equal(1, tree.ValueAt(0));
+        // Inserted values at positions [1..255]
+        for (var i = 0; i < 255; i++) {
+            Assert.Equal(100 + i, tree.ValueAt(1 + i));
+        }
+        Assert.Equal(2, tree.ValueAt(256));
+        Assert.Equal(3, tree.ValueAt(257));
+
+        // TotalSum cross-check: 1+2+3 + sum(100..354).
+        var expected = 1L + 2 + 3 + (100L + 354) * 255 / 2;
+        Assert.Equal(expected, tree.TotalSum());
+        // MaxValue: largest inserted element, 354.
+        Assert.Equal(354, tree.MaxValue());
+    }
+
+    [Fact]
+    public void InsertRange_BoundaryExactly256Elements_IsConsistent() {
+        // Exactly at the threshold (≤ 256 → still stackalloc).  The
+        // boundary has historically been a common off-by-one source.
+        var tree = LineIndexTree.FromValues([7, 8]);
+        var inserted = MakeRamp(256, startAt: 1000);
+
+        tree.InsertRange(0, inserted);
+
+        Assert.Equal(258, tree.Count);
+        for (var i = 0; i < 256; i++) {
+            Assert.Equal(1000 + i, tree.ValueAt(i));
+        }
+        Assert.Equal(7, tree.ValueAt(256));
+        Assert.Equal(8, tree.ValueAt(257));
+
+        var expected = 7L + 8 + (1000L + 1255) * 256 / 2;
+        Assert.Equal(expected, tree.TotalSum());
+        Assert.Equal(1255, tree.MaxValue());
+    }
+
+    [Fact]
+    public void InsertRange_HeapPath_257Elements_IsConsistent() {
+        // Just over the threshold (> 256 → heap allocation).  This is
+        // the branch that's exercised only by very large paste or
+        // refactor operations in production.
+        var tree = LineIndexTree.FromValues([5, 6]);
+        var inserted = MakeRamp(257, startAt: 500);
+
+        tree.InsertRange(1, inserted);
+
+        Assert.Equal(259, tree.Count);
+        Assert.Equal(5, tree.ValueAt(0));
+        for (var i = 0; i < 257; i++) {
+            Assert.Equal(500 + i, tree.ValueAt(1 + i));
+        }
+        Assert.Equal(6, tree.ValueAt(258));
+
+        var expected = 5L + 6 + (500L + 756) * 257 / 2;
+        Assert.Equal(expected, tree.TotalSum());
+        Assert.Equal(756, tree.MaxValue());
+    }
+
+    [Fact]
+    public void InsertRange_HeapPath_LargeBatch_IsConsistent() {
+        // Well over the threshold — exercises the heap path with a
+        // realistic bulk insert.  Also re-verifies the prefix-sum
+        // index is correct after a large splice.
+        const int batchSize = 2048;
+        var tree = LineIndexTree.FromValues([10, 20, 30]);
+        var inserted = new int[batchSize];
+        for (var i = 0; i < batchSize; i++) inserted[i] = i + 1;
+
+        tree.InsertRange(2, inserted);
+
+        Assert.Equal(3 + batchSize, tree.Count);
+        Assert.Equal(10, tree.ValueAt(0));
+        Assert.Equal(20, tree.ValueAt(1));
+        // Inserted values: 1..batchSize at positions [2..2+batchSize-1]
+        Assert.Equal(1, tree.ValueAt(2));
+        Assert.Equal(batchSize / 2, tree.ValueAt(2 + batchSize / 2 - 1));
+        Assert.Equal(batchSize, tree.ValueAt(2 + batchSize - 1));
+        Assert.Equal(30, tree.ValueAt(2 + batchSize));
+
+        // TotalSum: 10 + 20 + 30 + (1+2+...+batchSize).
+        var expected = 60L + (long)batchSize * (batchSize + 1) / 2;
+        Assert.Equal(expected, tree.TotalSum());
+        // MaxValue: max(30, batchSize) == batchSize for batchSize > 30.
+        Assert.Equal(batchSize, tree.MaxValue());
+
+        // Prefix-sum spot check on the inserted region: sum([1..k]) == k*(k+1)/2.
+        // Plus the prefix 10 + 20 for positions 0 and 1.
+        var k = batchSize / 2;
+        Assert.Equal(10L + 20 + (long)k * (k + 1) / 2,
+            tree.PrefixSum(2 + k - 1));
+    }
+
+    [Fact]
+    public void InsertRange_HeapPath_FollowedByMutations_StaysValid() {
+        // Insert a heap-sized batch, then mutate: the post-insert tree
+        // must behave identically to one built element-by-element.
+        const int batchSize = 300;
+        var tree = LineIndexTree.FromValues(MakeRamp(5, 1));
+        tree.InsertRange(3, MakeRamp(batchSize, 1000));
+
+        // Spot mutations covering update / remove / insert after a heap-path build.
+        tree.Update(50, 7);              // +7 to an inserted element
+        tree.RemoveAt(100);              // drop one inserted element
+        tree.InsertAt(0, 99999);         // insert a new max
+
+        // Reference reconstruction — same operations on a List<int>.
+        var reference = new List<int>(MakeRamp(5, 1));
+        reference.InsertRange(3, MakeRamp(batchSize, 1000));
+        reference[50] += 7;
+        reference.RemoveAt(100);
+        reference.Insert(0, 99999);
+
+        Assert.Equal(reference.Count, tree.Count);
+        Assert.Equal(reference.ToArray(), tree.ExtractValues());
+        Assert.Equal(reference.Max(), tree.MaxValue());
+
+        long expectedSum = 0;
+        foreach (var v in reference) expectedSum += v;
+        Assert.Equal(expectedSum, tree.TotalSum());
+    }
 }

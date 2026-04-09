@@ -1,3 +1,5 @@
+using DMEdit.Core.Documents;
+
 namespace DMEdit.Core.Buffers;
 
 /// <summary>
@@ -34,30 +36,24 @@ internal sealed class StringBuffer : IBuffer {
 
     public void Dispose() { }
 
+    /// <summary>
+    /// Builds a line-starts array and computes the longest-line length by
+    /// delegating to <see cref="LineScanner"/> — the canonical CR/LF/CRLF
+    /// state machine in Core.  Line starts are derived from the scanner's
+    /// line-length output via prefix sum.
+    /// </summary>
     private static (long[] starts, int longestLine) BuildLineIndex(string data) {
-        var starts = new List<long> { 0L };
-        for (var i = 0; i < data.Length; i++) {
-            var ch = data[i];
-            if (ch == '\n') {
-                starts.Add(i + 1);
-            } else if (ch == '\r') {
-                if (i + 1 < data.Length && data[i + 1] == '\n') {
-                    starts.Add(i + 2);
-                    i++; // skip \n of \r\n pair
-                } else {
-                    starts.Add(i + 1);
-                }
-            }
-        }
+        var scanner = new LineScanner();
+        scanner.Scan(data.AsSpan());
+        scanner.Finish();
 
-        var maxLen = 0;
-        for (var i = 1; i < starts.Count; i++) {
-            var len = (int)(starts[i] - starts[i - 1]);
-            if (len > maxLen) maxLen = len;
+        var lengths = scanner.LineLengths;
+        var starts = new long[lengths.Count];
+        var cum = 0L;
+        for (var i = 0; i < lengths.Count; i++) {
+            starts[i] = cum;
+            cum += lengths[i];
         }
-        var lastLen = (int)(data.Length - starts[^1]);
-        if (lastLen > maxLen) maxLen = lastLen;
-
-        return (starts.ToArray(), maxLen);
+        return (starts, scanner.LongestLine);
     }
 }

@@ -379,6 +379,17 @@ public sealed class StreamingFileBuffer : IProgressBuffer {
     /// at <paramref name="start"/> for newlines. Appends line-start offsets and updates
     /// <c>_prevWasCr</c> for cross-chunk \r\n handling.
     /// </summary>
+    /// <remarks>
+    /// Note on duplication: this reimplements the same CR/LF/CRLF state machine
+    /// that lives in <see cref="Documents.LineScanner"/>.  Delegating here would
+    /// require either (a) converting LineScanner's List&lt;int&gt; line-length
+    /// output back into the long[] line-starts array this buffer exposes, or
+    /// (b) reshaping LineScanner to emit line starts directly.  Both options
+    /// pay an ongoing cost on the background load hot path that the current
+    /// duplication avoids, and this buffer has its own regression suite
+    /// covering the boundary cases.  If the state machine ever changes, update
+    /// both sites — the canonical behaviour lives in <see cref="Documents.LineScanner"/>.
+    /// </remarks>
     private void ScanNewlines(char[] data, int start, int charCount) {
         var end = start + charCount;
         var scanStart = start;

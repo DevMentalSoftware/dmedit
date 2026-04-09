@@ -49,15 +49,18 @@ still accurate background reading.
    approximate offset — closed in `caff3d0`. Tests in
    `FileSaverTests`.
 
-## Priority 2 — test gaps (status update)
+## Priority 2 — cleared
 
-Items marked ✅ have been closed on `HardenAndCoverage`.
-Items marked 🟡 remain open.
+All Priority-2 test gaps have been closed on
+`HardenAndCoverage`.  Items below are annotated with the
+commit or test file that closed each one.
 
 - ✅ **`LineIndexTree.MaxValue`** — five direct paths added
   (`1ff1a68`).
-- 🟡 **`LineIndexTree.InsertRange`** with ≥ 256 elements
-  (the `BuildBalanced` stackalloc vs heap threshold).
+- ✅ **`LineIndexTree.InsertRange`** — both sides of the
+  `BuildBalanced` stackalloc/heap threshold covered (255,
+  256, 257, 2048, and a mutation-after-heap-path test) in
+  `LineIndexTreeTests` "Group D".
 - **`PagedFileBuffer`**:
   - ✅ LRU promote / evict ordering.
   - ✅ Dispose mid-scan.
@@ -98,53 +101,62 @@ Items marked 🟡 remain open.
 
 ## Priority 3 — architectural refactors (high blast radius)
 
-### `EditorControl` split (5 007 lines → ~10 partial files)
+### ✅ `EditorControl` split — done in `3a21544`
 
-Single biggest win. Suggested partial split:
-```
-EditorControl.Properties.cs
-EditorControl.Input.cs
-EditorControl.Scroll.cs
-EditorControl.Layout.cs
-EditorControl.Render.cs
-EditorControl.Selection.cs
-EditorControl.Search.cs
-EditorControl.Coalesce.cs
-EditorControl.Clipboard.cs
-EditorControl.PerfStats.cs
-```
-Mechanical refactor; no behavior change. Prerequisite to
-every other EditorControl improvement.
+Split into `EditorControl.Properties/Input/Scroll/Layout/
+Render/Selection/Search/Coalesce/Clipboard/PerfStats.cs`
+partial files.
 
-### `MainWindow` split (3 859 lines → ~10 partials)
+### ✅ `MainWindow` split — done in `3a21544`
 
-Same rationale and mechanism. See `app-MainWindow.md`.
+Split into `MainWindow.FileOps/Input/Session/StatusBar/
+Tabs/MenuToolbar/Dialogs.cs` partial files.
 
-### `Document` god-class (1 278 lines)
+### `Document` god-class (1 334 lines)
 
 Extract editing commands, word classification, line ops,
 bulk replace wrappers into partial files or extension
 methods. See `core-document-Document.md`.
 
-### `PieceTable` + `_maxLineLen` cleanup
+### ✅ `PieceTable` + `_maxLineLen` cleanup — done in `1ff1a68`
 
-Drop the cache (priority 1 #3) and unify the two "Insert"
-paths (`Insert(string)` and `InsertFromBuffer`). See
-`core-document-PieceTable.md`.
+Cache removed; every path reads `_lineTree.MaxValue()` (O(1))
+directly.  `AssertLineTreeValid` cross-checks against a
+ground-truth walk in DEBUG so any future drift is caught
+immediately.
 
-### Shared `LineScanner` across `StringBuffer`,
-`StreamingFileBuffer`, `PieceTable.SpliceInsertLines`,
-`FileSaver.NormalizeLineEndings`
+### ✅ Shared `LineScanner` unification — partially done
 
-Four parallel `\n`/`\r`/`\r\n` state machines. Every bug
-fix to one drifts from the others. Unify on `LineScanner`.
+`LineScanner` is now the canonical CR/LF/CRLF state machine
+in Core.  Three of four call sites have been unified:
 
-### Shared pagination helper
+- ✅ `StringBuffer.BuildLineIndex` — delegates to
+  `LineScanner`; line starts derived from lengths via
+  prefix sum.
+- ✅ `PieceTable.SpliceInsertLines` fast path — delegates
+  to `LineScanner`, then patches `LineLengths[0] += prefixLen`
+  and `LineLengths[^1] += suffixLen` so the scanner output
+  matches the post-splice line shape.
+- ✅ `LineEndingInfo.Detect(string)` and `Detect(IBuffer)` —
+  both delegate to `LineScanner.DetectedLineEnding`.
+- 🟡 `StreamingFileBuffer.ScanNewlines` — intentionally
+  unchanged (runs on the hot background load path with a
+  different `long[]` line-starts output shape).  Marked
+  with a pointer to `LineScanner` as the canonical state
+  machine so the duplication is visible.
+- 🟡 `FileSaver.NormalizeLineEndings` — intentionally
+  unchanged (emits a transformed byte stream, not line
+  metadata — no productive way to delegate).  Same marker
+  comment.
 
-`MonoLineLayout.NextRow` and
-`WpfPrintService.PlainTextPaginator.NextRow` are
-comment-documented mirrors. Move to a single
-`PlainTextPaginator` in Core.
+### ✅ Shared pagination helper — done
+
+Extracted as `DMEdit.Core.Documents.MonoRowBreaker.NextRow`.
+Both `MonoLineLayout` (editor) and
+`WpfPrintService.PlainTextPaginator` (print) now delegate
+to it, so on-screen wrapping and print pagination are
+guaranteed byte-identical.  Direct tests in
+`MonoRowBreakerTests`.
 
 ## Priority 4 — hygiene and code quality
 

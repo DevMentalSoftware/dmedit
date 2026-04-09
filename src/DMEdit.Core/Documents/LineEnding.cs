@@ -44,50 +44,34 @@ public readonly record struct LineEndingInfo(LineEnding Dominant, bool IsMixed,
     /// <summary>
     /// Detects the predominant line ending in a string.
     /// Returns the dominant style and whether the text has mixed endings.
+    /// Delegates to <see cref="LineScanner"/> so there is a single canonical
+    /// CR/LF/CRLF state machine in Core.
     /// </summary>
     public static LineEndingInfo Detect(string text) {
-        int lf = 0, crlf = 0, cr = 0;
-
-        for (var i = 0; i < text.Length; i++) {
-            var ch = text[i];
-            if (ch == '\r') {
-                if (i + 1 < text.Length && text[i + 1] == '\n') {
-                    crlf++;
-                    i++; // skip \n of \r\n pair
-                } else {
-                    cr++;
-                }
-            } else if (ch == '\n') {
-                lf++;
-            }
-        }
-
-        return FromCounts(lf, crlf, cr);
+        var scanner = new LineScanner();
+        scanner.Scan(text.AsSpan());
+        scanner.Finish();
+        return scanner.DetectedLineEnding;
     }
 
     /// <summary>
     /// Detects the predominant line ending by scanning an <see cref="Buffers.IBuffer"/>.
     /// Only scans up to <paramref name="sampleLen"/> characters for performance.
+    /// Delegates to <see cref="LineScanner"/>.
     /// </summary>
     public static LineEndingInfo Detect(Buffers.IBuffer buffer, int sampleLen = 64 * 1024) {
-        int lf = 0, crlf = 0, cr = 0;
-        var len = Math.Min(buffer.Length, sampleLen);
-
-        for (var i = 0L; i < len; i++) {
-            var ch = buffer[i];
-            if (ch == '\r') {
-                if (i + 1 < len && buffer[i + 1] == '\n') {
-                    crlf++;
-                    i++; // skip \n of \r\n pair
-                } else {
-                    cr++;
-                }
-            } else if (ch == '\n') {
-                lf++;
-            }
+        var len = (int)Math.Min(buffer.Length, sampleLen);
+        var scanner = new LineScanner();
+        if (len > 0) {
+            // Bulk-copy into a char[] window before scanning rather than walking
+            // the buffer char-by-char — the per-char indexer on a paged buffer
+            // can be O(log N), and the sample ceiling bounds this to 64KB anyway.
+            var window = new char[len];
+            buffer.CopyTo(0, window, len);
+            scanner.Scan(window);
         }
-
-        return FromCounts(lf, crlf, cr);
+        scanner.Finish();
+        return scanner.DetectedLineEnding;
     }
 
     /// <summary>

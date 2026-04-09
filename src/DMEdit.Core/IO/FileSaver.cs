@@ -204,6 +204,15 @@ public static class FileSaver {
     /// of chars written to <paramref name="dst"/>.
     /// <paramref name="prevCr"/> carries \r state across chunk boundaries.
     /// </summary>
+    /// <remarks>
+    /// Note on duplication: this contains a CR/LF/CRLF state machine that
+    /// parallels <see cref="Documents.LineScanner"/>.  The difference is
+    /// that LineScanner emits line-length metadata while this function
+    /// emits a transformed character stream — there is no productive way
+    /// to delegate the one to the other.  If the state machine ever
+    /// changes, update both sites; the canonical behaviour for metadata
+    /// lives in <see cref="Documents.LineScanner"/>.
+    /// </remarks>
     private static int NormalizeLineEndings(
             char[] src, int srcLen, char[] dst, string nl, ref bool prevCr) {
         var w = 0;
