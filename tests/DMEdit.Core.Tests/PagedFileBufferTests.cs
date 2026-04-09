@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using DMEdit.Core.Buffers;
@@ -624,5 +625,257 @@ public class PagedFileBufferTests : IDisposable {
         Assert.Equal(LineTerminatorType.CRLF, buf.GetLineTerminator(1));
         Assert.Equal(LineTerminatorType.CR, buf.GetLineTerminator(2));
         Assert.Equal(LineTerminatorType.None, buf.GetLineTerminator(3));
+    }
+
+    // -------------------------------------------------------------------------
+    // Page boundary edge cases (1 MB pages — TRIAGE Priority 2 gap)
+    // -------------------------------------------------------------------------
+
+    private const int PageSizeBytes = 1024 * 1024;
+
+    [Fact]
+    public void MultiByteCodepoint_StraddlesPageBoundary_DecodesCorrectly() {
+        // Construct a file where a 4-byte UTF-8 codepoint (the 🎉 emoji,
+        // F0 9F 8E 89) starts at byte (PageSize − 2), so its first 2 bytes
+        // are in page 0 and its last 2 are in page 1.  The decoder must
+        // carry the partial state across the page boundary or the emoji
+        // becomes a pair of replacement chars.
+        //
+        // Layout:
+        //   bytes [0..1_048_573]    = ASCII filler 'a' × (PageSize − 2)
+        //   bytes [1_048_574..577]  = 🎉 (F0 9F | 8E 89)
+        //   bytes [1_048_578..580]  = "end" (3 ASCII bytes)
+        const int prefixLen = PageSizeBytes - 2;
+        var content = new string('a', prefixLen) + "🎉" + "end";
+        var bytes = new UTF8Encoding(false).GetBytes(content);
+        // Sanity check our straddle math: emoji bytes at positions
+        // (prefixLen .. prefixLen + 3), so byte (PageSize - 2) is the
+        // emoji's first byte and byte (PageSize) is its third.
+        Assert.Equal(0xF0, bytes[prefixLen]);
+        Assert.Equal(0x9F, bytes[prefixLen + 1]);
+        Assert.Equal(0x8E, bytes[prefixLen + 2]);
+        Assert.Equal(0x89, bytes[prefixLen + 3]);
+
+        var path = WriteTempFileBytes(bytes);
+        using var buf = LoadAndWait(path);
+
+        // Char layout: prefix (1 char per byte) + 2 surrogate halves + 3 ASCII.
+        Assert.Equal(prefixLen + 2 + 3, buf.Length);
+        // Read the 5 chars around the boundary and verify they round-trip
+        // through the surrogate pair.
+        Span<char> window = stackalloc char[5];
+        buf.CopyTo(prefixLen, window, 5);
+        var slice = new string(window);
+        Assert.Equal("🎉end", slice);
+    }
+
+    [Fact]
+    public void CrLf_StraddlesPageBoundary_CountsAsSingleTerminator() {
+        // \r as the last byte of page 0, \n as the first byte of page 1.
+        // The line scanner has a _prevWasCr flag that's supposed to carry
+        // across Scan() calls, so this should be one CRLF, not a CR + LF.
+        const int prefixLen = PageSizeBytes - 1;
+        var content = new string('a', prefixLen) + "\r\n" + "end";
+        var path = WriteTempFile(content);
+        using var buf = LoadAndWait(path);
+
+        // 2 lines: the prefix line (terminated by CRLF) + "end".
+        Assert.Equal(2L, buf.LineCount);
+        Assert.Equal(LineTerminatorType.CRLF, buf.GetLineTerminator(0));
+    }
+
+    // -------------------------------------------------------------------------
+    // BOM edge cases (TRIAGE Priority 2 gap)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Bom_OneBytePartialUtf8_TreatedAsData() {
+        // Single 0xEF byte — looks like the start of a UTF-8 BOM, but
+        // there are not enough bytes to confirm.  Should fall back to
+        // "no BOM, UTF-8" and decode the byte as a (replacement) char.
+        var path = WriteTempFileBytes([0xEF]);
+        using var buf = LoadAndWait(path);
+
+        Assert.Equal(FileEncoding.Utf8, buf.DetectedEncoding.Encoding);
+        // 1 raw byte → at least 1 decoded char (UTF-8 replacement for the
+        // incomplete sequence).  We don't pin the exact replacement char,
+        // but we do pin that the file isn't reported as zero-length.
+        Assert.True(buf.Length >= 1);
+    }
+
+    [Fact]
+    public void Bom_TwoBytesPartialUtf8_TreatedAsData() {
+        // 0xEF 0xBB — first two bytes of UTF-8 BOM, third missing.
+        // Same as above: should fall back to "no BOM, UTF-8".
+        var path = WriteTempFileBytes([0xEF, 0xBB]);
+        using var buf = LoadAndWait(path);
+
+        Assert.Equal(FileEncoding.Utf8, buf.DetectedEncoding.Encoding);
+        Assert.True(buf.Length >= 1);
+    }
+
+    [Fact]
+    public void Bom_Utf8BomOnly_NoContent_ReportsBomAndZeroChars() {
+        // Exactly the 3-byte UTF-8 BOM, no payload.
+        var path = WriteTempFileBytes([0xEF, 0xBB, 0xBF]);
+        using var buf = LoadAndWait(path);
+
+        Assert.Equal(FileEncoding.Utf8Bom, buf.DetectedEncoding.Encoding);
+        Assert.Equal(0L, buf.Length);
+    }
+
+    [Fact]
+    public void Bom_Utf16LeBomOnly_NoContent_ReportsBomAndZeroChars() {
+        var path = WriteTempFileBytes([0xFF, 0xFE]);
+        using var buf = LoadAndWait(path);
+
+        Assert.Equal(FileEncoding.Utf16Le, buf.DetectedEncoding.Encoding);
+        Assert.Equal(0L, buf.Length);
+    }
+
+    [Fact]
+    public void Bom_Utf16BeBomOnly_NoContent_ReportsBomAndZeroChars() {
+        var path = WriteTempFileBytes([0xFE, 0xFF]);
+        using var buf = LoadAndWait(path);
+
+        Assert.Equal(FileEncoding.Utf16Be, buf.DetectedEncoding.Encoding);
+        Assert.Equal(0L, buf.Length);
+    }
+
+    // -------------------------------------------------------------------------
+    // SHA-1 correctness vs independent hash (TRIAGE Priority 2 gap)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Sha1_MatchesIndependentHash_AsciiContent() {
+        var content = "Hello, world!\nLine 2\nLine 3\n";
+        var path = WriteTempFile(content);
+        using var buf = LoadAndWait(path);
+
+        var fileBytes = File.ReadAllBytes(path);
+        var expected = Convert.ToHexStringLower(SHA1.HashData(fileBytes));
+        Assert.Equal(expected, buf.Sha1);
+    }
+
+    [Fact]
+    public void Sha1_MatchesIndependentHash_WithUtf8Bom() {
+        // 3-byte UTF-8 BOM + ASCII payload "hello".
+        var bytes = new byte[] { 0xEF, 0xBB, 0xBF, (byte)'h', (byte)'e', (byte)'l', (byte)'l', (byte)'o' };
+        var path = WriteTempFileBytes(bytes);
+        using var buf = LoadAndWait(path);
+
+        var fileBytes = File.ReadAllBytes(path);
+        var expected = Convert.ToHexStringLower(SHA1.HashData(fileBytes));
+        // The BOM bytes should be hashed too (full file from byte 0).
+        Assert.Equal(expected, buf.Sha1);
+    }
+
+    [Fact]
+    public void Sha1_MatchesIndependentHash_LargeMultiPage() {
+        // ~3 MB of content, 3 pages worth.  Catches any "missed bytes"
+        // bug in the page-by-page hashing.
+        var content = new string('x', 3 * PageSizeBytes + 137);
+        var path = WriteTempFile(content);
+        using var buf = LoadAndWait(path);
+
+        var fileBytes = File.ReadAllBytes(path);
+        var expected = Convert.ToHexStringLower(SHA1.HashData(fileBytes));
+        Assert.Equal(expected, buf.Sha1);
+    }
+
+    // -------------------------------------------------------------------------
+    // TakeLineLengths / TakeTerminatorRuns double-call (TRIAGE Priority 2 gap)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void TakeLineLengths_DoubleCall_SecondReturnsNull() {
+        var path = WriteTempFile("a\nb\nc\n");
+        using var buf = LoadAndWait(path);
+
+        var first = buf.TakeLineLengths();
+        Assert.NotNull(first);
+        Assert.NotEmpty(first);
+
+        // The "Take" semantics: caller takes ownership, buffer drops its
+        // reference.  A second call must therefore return null, not a
+        // duplicate of the same list (which would risk callers mutating
+        // each other's data).
+        var second = buf.TakeLineLengths();
+        Assert.Null(second);
+    }
+
+    [Fact]
+    public void TakeTerminatorRuns_DoubleCall_SecondReturnsNull() {
+        var path = WriteTempFile("a\nb\nc\n");
+        using var buf = LoadAndWait(path);
+
+        var first = buf.TakeTerminatorRuns();
+        Assert.NotNull(first);
+
+        var second = buf.TakeTerminatorRuns();
+        Assert.Null(second);
+    }
+
+    [Fact]
+    public void TakeLineLengths_AfterTake_GetLineStartReturnsMinusOne_ByDesign() {
+        // Documented footgun: TakeLineLengths transfers ownership of the
+        // line-length list to the caller and clears the buffer's reference.
+        // GetLineStart depends on that list to compute line offsets, so
+        // after Take it can only answer for line 0 — line 1+ returns -1.
+        // The production call pattern (load → TakeLineLengths →
+        // PieceTable.InstallLineTree) never queries GetLineStart on the
+        // buffer post-Take, so this is acceptable.  This test pins the
+        // current contract; if a future change makes GetLineStart survive
+        // Take, this test should be updated to assert the new behavior.
+        var path = WriteTempFile("a\nb\nc\n");
+        using var buf = LoadAndWait(path);
+
+        buf.TakeLineLengths();
+
+        // Length and indexer (which use page data, not _lineLengths) still work.
+        Assert.Equal(6L, buf.Length);
+        Assert.Equal('a', buf[0]);
+        // Line 0 always starts at 0 (short-circuited).
+        Assert.Equal(0L, buf.GetLineStart(0));
+        // Line 1+ returns -1 because _lineLengths is gone.
+        Assert.Equal(-1L, buf.GetLineStart(1));
+        Assert.Equal(-1L, buf.GetLineStart(2));
+    }
+
+    // -------------------------------------------------------------------------
+    // Dispose mid-load (TRIAGE Priority 2 gap)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Dispose_BeforeLoadStarts_DoesNotThrow() {
+        var path = WriteTempFile("hello");
+        var fi = new FileInfo(path);
+        var buf = new PagedFileBuffer(path, fi.Length);
+        // Dispose before StartLoading — should be a clean no-op, no
+        // background thread to cancel.
+        buf.Dispose();
+    }
+
+    [Fact]
+    public void Dispose_DuringActiveLoad_NoDeadlock() {
+        // Construct a multi-page file so the background scan takes
+        // measurable time, then Dispose immediately after StartLoading.
+        // The Dispose path must signal cancellation and the scan thread
+        // must terminate without blocking the test.
+        var content = new string('a', 5 * PageSizeBytes); // 5 MB
+        var path = WriteTempFile(content);
+        var fi = new FileInfo(path);
+        var buf = new PagedFileBuffer(path, fi.Length);
+
+        buf.StartLoading();
+        // Dispose mid-scan.  No assertion on what state the load reached;
+        // just that Dispose returns and the test thread isn't blocked.
+        buf.Dispose();
+
+        // Wait briefly to give any leaked background thread a chance to
+        // crash a follow-up test if Dispose didn't actually clean up.
+        // (We can't directly assert no thread leak in xUnit, but a process
+        // hang here would manifest as a test timeout, which IS observable.)
+        Thread.Sleep(50);
     }
 }

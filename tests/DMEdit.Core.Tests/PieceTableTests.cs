@@ -543,6 +543,165 @@ public class PieceTableTests {
     }
 
     // -------------------------------------------------------------------------
+    // CRLF emergence across edits — bare-CR + bare-LF cross-edit splicing
+    //
+    // SpliceInsertLines's CRLF detection (the local `prevCr` flag at line ~706)
+    // only sees the inserted text, not the surrounding buffer.  Open question:
+    // when the buffer already contains a bare \r and an edit inserts a \n
+    // immediately after it (or vice versa), does the line tree treat the
+    // resulting \r\n as one CRLF terminator or as two separate terminators?
+    //
+    // These tests pin the current behavior so we know what we have.  If it
+    // turns out to be wrong, the splice algorithm needs to peek at the
+    // buffer character preceding/following the insert.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Insert_LfAfterBareCr_LineCountReflectsCurrentBehavior() {
+        // Document "abc\r" has 2 lines: ["abc\r" (4), "" (0)].
+        var t = new PieceTable("abc\r");
+        Assert.Equal(2L, t.LineCount);
+
+        // Insert "\n" at the end (offset 4, right after the \r).
+        t.Insert(4, "\n");
+
+        // Document is now "abc\r\n".  Two valid interpretations:
+        //   (A) CRLF merged: 2 lines [5, 0]   ← every editor in the world
+        //   (B) CR + LF as separate terminators: 3 lines [4, 1, 0]
+        //       where line 0 is "abc\r" (4), line 1 is "" terminated by
+        //       the new \n (1), line 2 is the trailing empty.
+        //
+        // The line tree's sum invariant holds in both cases, so
+        // AssertLineTreeValid (sum == Length) wouldn't catch a wrong split.
+        Assert.Equal(5, t.GetText().Length);
+        // Pin the CURRENT behavior so any future fix is visible as a test
+        // diff (and so we know whether the current behavior is A or B).
+        var lineCount = t.LineCount;
+        var lineLengths = t.SnapshotLineLengths();
+        // If lineCount == 2, current behavior is (A) — CRLF merged. ✓
+        // If lineCount == 3, current behavior is (B) — bug, no merge.
+        Assert.Equal(2L, lineCount);
+        Assert.Equal(new[] { 5, 0 }, lineLengths);
+    }
+
+    [Fact]
+    public void Insert_CrBeforeBareLf_LineCountReflectsCurrentBehavior() {
+        // Symmetric: document "abc\nd" has 2 lines: ["abc\n" (4), "d" (1)].
+        var t = new PieceTable("abc\nd");
+        Assert.Equal(2L, t.LineCount);
+
+        // Insert "\r" at offset 3 (right before the \n).
+        t.Insert(3, "\r");
+
+        // Document is now "abc\r\nd".  Natural interpretation:
+        //   2 lines: ["abc\r\n" (5), "d" (1)] — sum 6.
+        // Wrong interpretation if the splice doesn't peek forward:
+        //   3 lines: ["abc\r" (4), "" (1, terminated by the existing \n),
+        //             "d" (1)] — sum 6.
+        Assert.Equal(6, t.GetText().Length);
+        var lineCount = t.LineCount;
+        var lineLengths = t.SnapshotLineLengths();
+        Assert.Equal(2L, lineCount);
+        Assert.Equal(new[] { 5, 1 }, lineLengths);
+    }
+
+    [Fact]
+    public void Insert_CrLfAtomic_BehavesAsCrLf() {
+        // Sanity check: inserting "\r\n" as a single operation should
+        // produce a single CRLF terminator.  This is the easy case the
+        // local prevCr flag handles correctly.
+        var t = new PieceTable("abcd");
+        t.Insert(2, "\r\n");
+        Assert.Equal("ab\r\ncd", t.GetText());
+        Assert.Equal(2L, t.LineCount);
+        Assert.Equal(new[] { 4, 2 }, t.SnapshotLineLengths());
+    }
+
+    [Fact]
+    public void Insert_TwoSteps_BareCrThenBareLf_BehavesAsCrLf() {
+        // Two-step variant: insert \r, then insert \n right after it.
+        // After both inserts the document content is identical to the
+        // single-step "\r\n" insert above, so the line tree should match.
+        var t = new PieceTable("abcd");
+        t.Insert(2, "\r");
+        t.Insert(3, "\n");
+        Assert.Equal("ab\r\ncd", t.GetText());
+        // Same content as the atomic insert above — the line tree should
+        // produce the same shape.  If it doesn't, we have a bug.
+        Assert.Equal(2L, t.LineCount);
+        Assert.Equal(new[] { 4, 2 }, t.SnapshotLineLengths());
+    }
+
+    [Fact]
+    public void Insert_BareCr_IntoMiddleOfExistingCrLf_SplitsCorrectly() {
+        // Setup: document "abc\r\n" has the CRLF at positions 3-4.
+        // Insert \r at offset 4 (between the existing \r and \n).
+        // Post-insert: "abc\r\r\n".  The original CRLF is broken: the
+        // first \r becomes a bare CR terminator, and the inserted \r
+        // + the original \n form a new CRLF.
+        var t = new PieceTable("abc\r\n");
+        Assert.Equal(new[] { 5, 0 }, t.SnapshotLineLengths());
+
+        t.Insert(4, "\r");
+
+        Assert.Equal("abc\r\r\n", t.GetText());
+        Assert.Equal(3L, t.LineCount);
+        // "abc\r" (bare CR, 4) + "\r\n" (CRLF empty line, 2) + "" (trailing).
+        Assert.Equal(new[] { 4, 2, 0 }, t.SnapshotLineLengths());
+    }
+
+    [Fact]
+    public void Insert_NonNewline_IntoMiddleOfExistingCrLf_SplitsCorrectly() {
+        // Related bug: a non-newline insert between an existing \r and \n
+        // also splits the CRLF.  The first \r becomes a bare CR, the
+        // inserted text + original \n become the next line.  The
+        // non-newline fast path in Insert would silently produce the
+        // wrong line count; we re-route through SpliceInsertLines when
+        // this case is detected.
+        var t = new PieceTable("abc\r\n");
+        t.Insert(4, "XYZ");
+
+        Assert.Equal("abc\rXYZ\n", t.GetText());
+        Assert.Equal(3L, t.LineCount);
+        // "abc\r" (4) + "XYZ\n" (4) + "" (0).
+        Assert.Equal(new[] { 4, 4, 0 }, t.SnapshotLineLengths());
+    }
+
+    [Fact]
+    public void Insert_LfCr_IntoMiddleOfExistingCrLf_EmergesTwoCrLfs() {
+        // Tricky case: insert "\n\r" between an existing \r and \n.
+        // The inserted \n attaches to the existing \r (first CRLF stays
+        // intact, spanning the boundary).  The inserted \r then attaches
+        // to the original \n (a second CRLF forms).  Result: two CRLFs
+        // where there was one.
+        var t = new PieceTable("abc\r\n");
+        t.Insert(4, "\n\r");
+
+        Assert.Equal("abc\r\n\r\n", t.GetText());
+        Assert.Equal(3L, t.LineCount);
+        // "abc\r\n" (5, first CRLF) + "\r\n" (2, second CRLF) + "" (0).
+        Assert.Equal(new[] { 5, 2, 0 }, t.SnapshotLineLengths());
+    }
+
+    [Fact]
+    public void Insert_LfMultiLine_AtBareCrEnd_CrossesLineAndMerges() {
+        // Starting with "abc\r" (bare CR, 2 lines [4, 0]), insert a
+        // multi-line text that begins with \n.  The leading \n merges
+        // with the existing \r to form CRLF, and the rest of the insert
+        // creates its own lines.  Requires the rescan to extend backward
+        // by one line so the previous line's terminator is included.
+        var t = new PieceTable("abc\r");
+        Assert.Equal(new[] { 4, 0 }, t.SnapshotLineLengths());
+
+        t.Insert(4, "\nXYZ\n");
+
+        Assert.Equal("abc\r\nXYZ\n", t.GetText());
+        Assert.Equal(3L, t.LineCount);
+        // "abc\r\n" (5, CRLF) + "XYZ\n" (4, LF) + "" (0, tail).
+        Assert.Equal(new[] { 5, 4, 0 }, t.SnapshotLineLengths());
+    }
+
+    // -------------------------------------------------------------------------
     // MaxLineLength + HasLongLines
     //
     // After dropping the _maxLineLen cache, MaxLineLength delegates to

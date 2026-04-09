@@ -243,12 +243,25 @@ public sealed class PieceTable {
         }
 
         // Post-mutation: update line tree.
-        if (affectedLine >= 0 && !hasNewlines) {
-            // No newlines, tree exists: O(log L) incremental update.
+        //
+        // Even a newline-free insert can change the line tree structure if
+        // it splits an existing CRLF terminator (e.g. inserting "X" between
+        // a \r and its paired \n).  Detect that edge case up front and route
+        // through SpliceInsertLines so the rescan path picks it up; otherwise
+        // use the fast incremental Update.
+        var splitsExistingCrlf = !hasNewlines && affectedLine >= 0
+            && text.Length > 0
+            && ofs > 0
+            && CharAt(ofs - 1) == '\r'
+            && (ofs + text.Length) < Length
+            && CharAt(ofs + text.Length) == '\n';
+
+        if (affectedLine >= 0 && !hasNewlines && !splitsExistingCrlf) {
+            // No newlines, no CRLF split: O(log L) incremental update.
             _lineTree!.Update(affectedLine, text.Length);
             CheckLongLine(_lineTree.ValueAt(affectedLine));
-        } else if (affectedLine >= 0 && hasNewlines) {
-            // Newlines inserted: splice line lengths via chunked buffer read.
+        } else if (affectedLine >= 0) {
+            // Newlines inserted OR CRLF split: splice line lengths.
             SpliceInsertLines(affectedLine, lineStart, oldLineLen, ofs,
                 _addBuf, addStart, text.Length);
         } else {
@@ -697,36 +710,150 @@ public sealed class PieceTable {
     /// </summary>
     private void SpliceInsertLines(LineIndex line, BufOffset lineStart, int oldLineLen,
                                    BufOffset insertOfs, IBuffer buf, long bufStart, int textLen) {
+        // -----------------------------------------------------------------
+        // Cross-edit CRLF boundary handling
+        //
+        // The fast local scan below (the chunked loop at the bottom) only
+        // sees inside the inserted text.  It misses CRLFs that emerge — or
+        // are broken — across the edit boundary, where one half of the CRLF
+        // is in the buffer and the other is in the insert.  Four cases that
+        // the fast path gets wrong:
+        //
+        //   (a) Insert starts with \n, buffer char at insertOfs - 1 is \r →
+        //       the \n attaches to the \r as CRLF.
+        //   (b) Insert ends with \r, buffer char at (post-insert)
+        //       insertOfs + textLen is \n → the \r attaches as CRLF.
+        //   (c) Insert into the middle of an existing \r\n terminator, and
+        //       the first inserted char is NOT \n → the original CRLF breaks
+        //       and re-forms around the insert (or splits entirely).
+        //   (d) Combinations of the above with multi-char inserts that
+        //       contain their own \r/\n.
+        //
+        // Rather than patching the fast path for each sub-case (and missing
+        // combinations), we fall back to a full LineScanner rescan of the
+        // affected region whenever ANY boundary interaction is detected.
+        // LineScanner already handles every CRLF case correctly because it's
+        // the same scanner used to build the line tree from scratch at load
+        // time.  The rescan reads `oldLineLen + textLen` chars (a single line
+        // worth), which is negligible for normal editing.
+        //
+        // For the leading-merge case (the \n attaches to a \r in the PREVIOUS
+        // line), the rescan range is extended backward by one line so the
+        // previous line's terminator is included and correctly merged.
+        //
+        // Note on offsets: at this point the inserted text is already in the
+        // piece list, so chars before insertOfs are unchanged and the original
+        // char that was at insertOfs is now at insertOfs + textLen.
+        // -----------------------------------------------------------------
+
+        var docLen = Length;
+        char CharAtPostInsert(BufOffset ofs) =>
+            ofs >= 0 && ofs < docLen ? CharAt(ofs) : '\0';
+
+        if (textLen > 0) {
+            var firstInsertedChar = buf[bufStart];
+            var lastInsertedChar = buf[bufStart + textLen - 1];
+            var prevBufChar = CharAtPostInsert(insertOfs - 1);
+            var nextBufChar = CharAtPostInsert(insertOfs + textLen);
+
+            // Detect any of the cross-boundary interactions described above.
+            var needsRescan =
+                // Left boundary: previous char is \r AND insert starts with
+                // \n (leading-merge) OR the original next char was \n
+                // (CRLF-split or crossing).
+                (prevBufChar == '\r' && (firstInsertedChar == '\n' || nextBufChar == '\n'))
+                // Right boundary: next char is \n AND insert ends with \r
+                // (trailing-merge).
+                || (nextBufChar == '\n' && lastInsertedChar == '\r');
+
+            if (needsRescan) {
+                // Determine the rescan range.  Default to the affected line;
+                // extend backward by one line if the leading-merge case
+                // applies (the previous line's terminator is part of the
+                // merged CRLF).
+                var rescanLineStart = (int)line;
+                var rescanLineEnd = (int)line; // inclusive
+                var rescanStart = lineStart;
+                var rescanEnd = lineStart + oldLineLen + textLen;
+
+                if (prevBufChar == '\r' && firstInsertedChar == '\n' && line > 0) {
+                    var prevLineLen = _lineTree!.ValueAt((int)line - 1);
+                    rescanLineStart = (int)line - 1;
+                    rescanStart -= prevLineLen;
+                }
+
+                var contentLen = (int)(rescanEnd - rescanStart);
+                var contentBuf = new char[contentLen];
+                var writeIdx = 0;
+                VisitPieces(rescanStart, contentLen, span => {
+                    span.CopyTo(contentBuf.AsSpan(writeIdx));
+                    writeIdx += span.Length;
+                });
+
+                var scanner = new LineScanner();
+                scanner.Scan(contentBuf);
+                scanner.Finish();
+                var rescanLines = scanner.LineLengths;
+
+                // LineScanner always emits a trailing "in-progress" entry from
+                // Finish() — the content after the last terminator.  If the
+                // rescan range doesn't include the tail (there's still a line
+                // after our rescanLineEnd in the tree), that trailing entry is
+                // always 0 (the affected line's last char is a terminator in
+                // the cases where rescan fires) AND it would duplicate the
+                // existing next-line entry if we inserted it, so drop it.
+                // When the rescan range DOES include the tail, the trailing
+                // entry represents the document's actual tail and must be kept.
+                var rangeIncludesTail = rescanLineEnd == _lineTree!.Count - 1;
+                if (!rangeIncludesTail) {
+                    Debug.Assert(rescanLines[^1] == 0,
+                        "Non-tail rescan should end at a terminator (trailing entry = 0)");
+                    rescanLines.RemoveAt(rescanLines.Count - 1);
+                }
+
+                _lineTree.RemoveRange(rescanLineStart,
+                    rescanLineEnd - rescanLineStart + 1);
+                _lineTree.InsertRange(rescanLineStart,
+                    CollectionsMarshal.AsSpan(rescanLines));
+                foreach (var l in rescanLines) CheckLongLine(l);
+                return;
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // Fast path: no cross-boundary interaction.  The inserted text can
+        // be scanned locally without looking at the surrounding buffer.
+        // -----------------------------------------------------------------
+
         var prefixLen = (int)(insertOfs - lineStart);
         var suffixLen = oldLineLen - prefixLen;
-
-        // Scan the inserted text in chunks, building line lengths incrementally.
         var newLines = new List<int>();
         var cur = prefixLen;
         var prevCr = false;
-        var scanBuf = new char[Math.Min(textLen, MaxVisitChunk)];
-        var scanned = 0;
-        while (scanned < textLen) {
-            var take = Math.Min(textLen - scanned, scanBuf.Length);
-            buf.CopyTo(bufStart + scanned, scanBuf, take);
-            for (var i = 0; i < take; i++) {
-                var ch = scanBuf[i];
-                if (prevCr) {
-                    prevCr = false;
-                    if (ch == '\n') { newLines[^1]++; continue; }
+        if (textLen > 0) {
+            var scanBuf = new char[Math.Min(textLen, MaxVisitChunk)];
+            var scanned = 0;
+            while (scanned < textLen) {
+                var take = Math.Min(textLen - scanned, scanBuf.Length);
+                buf.CopyTo(bufStart + scanned, scanBuf, take);
+                for (var i = 0; i < take; i++) {
+                    var ch = scanBuf[i];
+                    if (prevCr) {
+                        prevCr = false;
+                        if (ch == '\n') { newLines[^1]++; continue; }
+                    }
+                    cur++;
+                    if (ch == '\n') { newLines.Add(cur); cur = 0; } else if (ch == '\r') { newLines.Add(cur); cur = 0; prevCr = true; }
                 }
-                cur++;
-                if (ch == '\n') { newLines.Add(cur); cur = 0; } else if (ch == '\r') { newLines.Add(cur); cur = 0; prevCr = true; }
+                scanned += take;
             }
-            scanned += take;
         }
         cur += suffixLen;
         newLines.Add(cur);
 
-        // Replace the single line with the new lines.
-        var span = CollectionsMarshal.AsSpan(newLines);
+        var span2 = CollectionsMarshal.AsSpan(newLines);
         _lineTree!.RemoveAt(line);
-        _lineTree.InsertRange(line, span);
+        _lineTree.InsertRange(line, span2);
         foreach (var l in newLines) {
             CheckLongLine(l);
         }

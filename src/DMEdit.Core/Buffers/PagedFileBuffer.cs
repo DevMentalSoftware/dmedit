@@ -452,6 +452,14 @@ public sealed class PagedFileBuffer : IProgressBuffer {
     /// Returns the exact line lengths computed during the scan.
     /// Only valid after <see cref="LoadComplete"/> has fired.
     /// The caller takes ownership; the buffer clears its reference.
+    ///
+    /// <para><b>Side effect:</b> after this returns, <see cref="GetLineStart"/>
+    /// can no longer answer queries for any line ≥ 1 (it returns <c>-1</c>)
+    /// because the line-length data is gone.  This is acceptable because the
+    /// production call pattern is always: load → <c>TakeLineLengths</c> →
+    /// <c>PieceTable.InstallLineTree</c>, after which line-position queries
+    /// go through the <c>PieceTable</c>, never back to the buffer.  Don't
+    /// call <c>GetLineStart</c> on the buffer after Take.</para>
     /// </summary>
     public List<int>? TakeLineLengths() {
         lock (_lock) {
