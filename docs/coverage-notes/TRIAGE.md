@@ -4,88 +4,97 @@ This document summarizes findings across the 116 per-file
 coverage notes generated 2026-04-08. Use it to schedule
 remediation work.
 
-## Priority 1 — concrete bugs worth fixing soon
+## Priority 1 — cleared
 
-1. **`StreamingFileBuffer.LongestLine => 10_000` is a lie.**
-   Hardcoded constant. For a zip containing a multi-MB
-   single-line JSON, CharWrap mode will not trigger → the
-   `TextLayout` slow path that caused the entry 22 crash is
-   reachable. Either scan line lengths (symmetric with
-   `LineScanner`) or return −1 and have PieceTable treat
-   unknown as "assume big." See
-   `core-buffers-StreamingFileBuffer.md`.
+All nine Priority-1 items from the initial triage have been
+fixed on `HardenAndCoverage`. Cross-references below point
+at the commit that closed each item; the per-file notes are
+still accurate background reading.
 
-2. **`StyleSheet.UpdateFontMetrics` mutates the shared
-   default block style** when the BlockType isn't
-   registered. `GetBlockStyle(unknownType)` returns the
-   singleton default; mutating its `AvgCharWidth` affects
-   every other unregistered type. See
-   `core-styles-StyleSheet.md`.
+1. ✅ **`StreamingFileBuffer.LongestLine`** now tracks the
+   real longest line (per-line during scan + end-of-scan
+   finalization for a trailing unterminated line) — closed
+   in `faedfc2` (CharWrapMode detection fix). Regression
+   tests in `StreamingFileBufferTests` cover multi-MB
+   single-line files, multi-line outliers, and trailing
+   unterminated lines.
+2. ✅ **`StyleSheet.UpdateFontMetrics`** now clones the
+   shared default before registering when an unregistered
+   `BlockType` is updated — closed in `caff3d0`. Tests in
+   `StyleSheetTests`.
+3. ✅ **`PieceTable._maxLineLen`** cache removed; every path
+   now reads `_lineTree.MaxValue()` directly and
+   `AssertLineTreeValid` cross-checks against a ground-truth
+   walk in DEBUG — closed in `1ff1a68`.
+4. ✅ **`LineIndexTree.MaxValue()`** has direct coverage
+   for insert, remove, update-growing-max,
+   update-shrinking-max, and randomized property tests —
+   closed in `1ff1a68`.
+5. ✅ **`PieceTable.BulkReplace`** now validates that match
+   positions are sorted ascending and non-overlapping, and
+   that uniform/varying replacement counts match — closed
+   in `caff3d0`. Tests in `BulkReplaceTests`.
+6. ✅ **`Document.InsertAtCursors` with newline** now drops
+   column mode after a multi-line broadcast (documented in
+   the method's XML-doc comment). Tests in `DocumentTests`.
+7. ✅ **`Document.PasteAtCursors` length-mismatch** now
+   processes `min(carets, lines)` with the "drop excess"
+   rule documented on the method — both under- and
+   over-sized inputs behave predictably.
+8. ✅ **`Document.SelectWord`** now uses a growing window
+   that doubles (capped at int.MaxValue) when the window
+   edge is reached inside the line — no silent truncation.
+9. ✅ **`FileSaver` encoding fallback** wraps
+   `EncoderFallbackException` with file path, encoding, and
+   approximate offset — closed in `caff3d0`. Tests in
+   `FileSaverTests`.
 
-3. **`PieceTable._maxLineLen` is a cached duplicate of
-   `_lineTree.MaxValue()`** maintained by five different
-   update paths. Every new line-tree mutation risks
-   drift. Recommend: drop the cache, always call
-   `_lineTree.MaxValue()` (O(1)). See
-   `core-document-PieceTable.md`.
+## Priority 2 — test gaps (status update)
 
-4. **`LineIndexTree.MaxValue()` has zero direct test
-   coverage** despite being load-bearing for
-   `PieceTable.MaxLineLength` → CharWrap trigger → entry 22
-   crash fix. The per-update bottom-up recompute is
-   silent on failure. See `core-collections-LineIndexTree.md`.
+Items marked ✅ have been closed on `HardenAndCoverage`.
+Items marked 🟡 remain open.
 
-5. **`PieceTable.BulkReplace` accepts unsorted or
-   overlapping matches without validation** and will
-   corrupt the piece list. Add a precondition. See
-   `core-document-PieceTable.md`.
-
-6. **`Document.InsertAtCursors` with text containing a
-   newline** inserts the newline at each cursor, producing
-   undefined multi-line behavior. Either forbid or
-   document. See `core-document-Document.md`.
-
-7. **`Document.PasteAtCursors` with
-   `lines.Length != colSel.LineCount`** silently no-ops.
-   Should throw. See `core-document-Document.md`.
-
-8. **`Document.SelectWord` window-clamp silently truncates
-   long words.** 1 024-char window means any word starting
-   more than 1 024 chars into a single-line file has its
-   selection cut short. See `core-document-Document.md`.
-
-9. **`FileSaver`: encoding round-trip failure** leaves a
-   raw `EncoderFallbackException` for the user. Wrap
-   with context. See `core-io-FileSaver.md`.
-
-## Priority 2 — high-impact test gaps
-
-- **`LineIndexTree.MaxValue`** — all five uncovered paths
-  (insert, remove, update changing the max, unique max
-  removal, randomized property).
-- **`LineIndexTree.InsertRange`** with ≥ 256 elements (the
-  `BuildBalanced` stackalloc vs heap threshold).
+- ✅ **`LineIndexTree.MaxValue`** — five direct paths added
+  (`1ff1a68`).
+- 🟡 **`LineIndexTree.InsertRange`** with ≥ 256 elements
+  (the `BuildBalanced` stackalloc vs heap threshold).
 - **`PagedFileBuffer`**:
-  - LRU promote / evict ordering.
-  - Dispose mid-scan.
-  - `ScanError` propagation.
-  - SHA-1 correctness vs independent hash.
-  - BOM edge cases (file < 3 bytes, `EF BB` only, etc.).
-  - Multi-byte codepoint straddling 1 MB page boundary.
-  - `TakeLineLengths` / `TakeTerminatorRuns` double-call.
-- **`StreamingFileBuffer`** — no direct tests at all.
-- **`PieceTable.Insert` / `Delete` bare-CR + bare-LF split
-  across edits** — CRLF merge semantics in the line tree.
-- **`CodepointBoundary` span overloads** — no direct tests.
-- **`EditHistory.CanUndo` during an open compound with
-  mixed undo-stack state** — sharp corner.
-- **`EditHistory.EndCompound` called without matching Begin.**
-- **`LineScanner.Finish` called twice** (not idempotent).
-- **Test that every `IDocumentEdit` subclass is
-  recognized by `EditSerializer`** — reflection smoke test.
-- **Test that every `Commands.All` entry has a unique Id.**
-- **Test that every `SettingsRegistry.All` entry resolves
-  to a real `AppSettings` property.**
+  - ✅ LRU promote / evict ordering.
+  - ✅ Dispose mid-scan.
+  - ✅ `ScanError` propagation.
+  - ✅ SHA-1 correctness vs independent hash.
+  - ✅ BOM edge cases (file < 3 bytes, `EF BB` only, etc.).
+  - ✅ Multi-byte codepoint straddling 1 MB page boundary.
+  - ✅ `TakeLineLengths` / `TakeTerminatorRuns` double-call.
+- ✅ **`StreamingFileBuffer`** — covered via
+  `StreamingFileBufferTests` (LongestLine regression suite
+  + trailing unterminated line + multi-line outlier).
+- ✅ **`PieceTable.Insert` / `Delete` bare-CR + bare-LF
+  split across edits** — CRLF merge semantics pinned in
+  `PieceTableTests` (`Insert_LfAfterBareCr_*`,
+  `Insert_CrBeforeBareLf_*`, and four more).
+- ✅ **`CodepointBoundary` span overloads** — direct tests
+  in `DocumentTests` cover `WidthAt`, `WidthBefore`,
+  `StepRight`, `StepLeft`, and `SnapToBoundary` for both
+  BMP and surrogate-pair paths.
+- ✅ **`EditHistory.CanUndo` during an open compound with
+  mixed undo-stack state** — direct tests in
+  `EditHistorySerializationTests`.
+- ✅ **`EditHistory.EndCompound` called without matching
+  Begin** — direct test in
+  `EditHistorySerializationTests` (silent no-op + nested
+  commit invariants).
+- ✅ **`LineScanner.Finish` called twice** — current
+  non-idempotent behavior pinned in `LineScannerTests`.
+- ✅ **Test that every `IDocumentEdit` subclass is
+  recognized by `EditSerializer`** — reflection smoke test
+  in `EditSerializerTests`.
+- ✅ **Test that every `Commands.All` entry has a unique
+  Id** — already covered by `CommandRegistryTests`.
+- ✅ **Test that every `SettingsRegistry.All` entry
+  resolves to a real `AppSettings` property** — plus type
+  match, category validity, and `EnabledWhenKey` cross-ref
+  — in new `SettingsRegistryTests`.
 
 ## Priority 3 — architectural refactors (high blast radius)
 

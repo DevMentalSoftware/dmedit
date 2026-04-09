@@ -878,4 +878,137 @@ public class PagedFileBufferTests : IDisposable {
         // hang here would manifest as a test timeout, which IS observable.)
         Thread.Sleep(50);
     }
+
+    // -------------------------------------------------------------------------
+    // LRU promote / evict ordering (TRIAGE Priority 2 gap)
+    //
+    // The LRU cache is covered by IsLoaded() for each page.  Build a file
+    // with more pages than MaxPagesInMemory, then exercise the cache by
+    // reading pages in a controlled order and asserting which pages remain
+    // resident.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Lru_EvictsOldestPage_WhenCacheIsFull() {
+        // maxPages = 2 means only 2 pages can live in memory at once.
+        // Build a 4-page file so eviction is guaranteed.
+        var content = new string('a', 4 * PageSizeBytes);
+        var path = WriteTempFile(content);
+        var fi = new FileInfo(path);
+        using var buf = new PagedFileBuffer(path, fi.Length, maxPages: 2);
+        var done = new ManualResetEventSlim(false);
+        buf.LoadComplete += () => done.Set();
+        buf.StartLoading();
+        Assert.True(done.Wait(TimeSpan.FromSeconds(10)));
+
+        // After the scan, the cache retains the LAST 2 pages loaded during
+        // the scan (the scan walks forward and stops adding once full, so
+        // pages 0 and 1 are cached, pages 2 and 3 were never cached — see
+        // the scanner's `if (_loadedPageCount < MaxPagesInMemory)` check).
+        // The production cache fills on-demand via LoadPageFromDisk, so
+        // drive eviction explicitly by reading from each page.
+
+        // Read from page 2 — evicts whichever cached page is at the LRU tail.
+        _ = buf[2L * PageSizeBytes];
+        Assert.True(buf.IsLoaded(2L * PageSizeBytes, 1));
+
+        // Read from page 3 — evicts the next LRU tail entry.
+        _ = buf[3L * PageSizeBytes];
+        Assert.True(buf.IsLoaded(3L * PageSizeBytes, 1));
+
+        // With maxPages = 2, only the two most-recently-touched pages can
+        // still be resident.  Exact identity depends on promote order, but
+        // the CACHE SIZE invariant must hold.
+        var residentCount = 0;
+        for (var p = 0; p < 4; p++) {
+            if (buf.IsLoaded(p * PageSizeBytes, 1)) residentCount++;
+        }
+        Assert.Equal(2, residentCount);
+    }
+
+    [Fact]
+    public void Lru_PromotesAccessedPage_PreventingEviction() {
+        // Build a 3-page file with maxPages = 2.  Establish a cache state,
+        // then touch an older page so it moves back to the head of the LRU
+        // list — the next eviction should pick the OTHER page instead.
+        var content = new string('a', 3 * PageSizeBytes);
+        var path = WriteTempFile(content);
+        var fi = new FileInfo(path);
+        using var buf = new PagedFileBuffer(path, fi.Length, maxPages: 2);
+        var done = new ManualResetEventSlim(false);
+        buf.LoadComplete += () => done.Set();
+        buf.StartLoading();
+        Assert.True(done.Wait(TimeSpan.FromSeconds(10)));
+
+        // Prime cache with pages 0 and 1 (scan may or may not have loaded
+        // page 2, depending on timing — the maxPages gate makes it skip).
+        _ = buf[0];
+        _ = buf[PageSizeBytes];
+
+        // Touch page 0 again — should promote it to the head of the LRU list.
+        _ = buf[1];
+
+        // Now access page 2 — this should evict page 1 (the LRU tail), not
+        // page 0 (just promoted).
+        _ = buf[2L * PageSizeBytes];
+
+        // Page 0 must still be cached (was just promoted), page 2 must be
+        // cached (just loaded).  Page 1 must be the one that got evicted.
+        Assert.True(buf.IsLoaded(0, 1),
+            "Page 0 was promoted but got evicted — promote order is broken.");
+        Assert.True(buf.IsLoaded(2L * PageSizeBytes, 1),
+            "Page 2 was just loaded but is not resident.");
+        Assert.False(buf.IsLoaded(PageSizeBytes, 1),
+            "Page 1 should have been evicted as the LRU tail.");
+    }
+
+    // -------------------------------------------------------------------------
+    // ScanError propagation (TRIAGE Priority 2 gap)
+    //
+    // The scan worker catches any exception from the background thread and
+    // stores it on the public ScanError property.  Without a test, a
+    // refactor that swallows errors silently would be invisible.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ScanError_FileDeletedMidScan_IsNull_ForSimpleCase() {
+        // Happy-path ScanError is null after a clean scan.
+        var path = WriteTempFile("hello\nworld\n");
+        using var buf = LoadAndWait(path);
+        Assert.Null(buf.ScanError);
+    }
+
+    [Fact]
+    public void ScanError_CannotOpenFile_IsPropagated() {
+        // Construct a PagedFileBuffer with a bogus byteLen pointing at a
+        // file that doesn't exist.  The scan worker should catch the
+        // FileNotFoundException and store it on ScanError rather than
+        // crashing the process.
+        var bogusPath = Path.Combine(Path.GetTempPath(),
+            $"pfb_missing_{Guid.NewGuid():N}.txt");
+        // Do NOT create the file.  Pretend it's 1 KB so the constructor accepts it.
+        var buf = new PagedFileBuffer(bogusPath, 1024);
+        var done = new ManualResetEventSlim(false);
+        buf.LoadComplete += () => done.Set();
+        buf.StartLoading();
+        // LoadComplete fires even on error (LengthIsKnown flips to true
+        // inside the catch).  Fall back to a brief poll if no event.
+        var ok = done.Wait(TimeSpan.FromSeconds(5));
+        if (!ok) {
+            // Some code paths may never fire LoadComplete on I/O error —
+            // poll LengthIsKnown / ScanError directly.
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < deadline && buf.ScanError is null && !buf.LengthIsKnown) {
+                Thread.Sleep(20);
+            }
+        }
+
+        // The ScanError must be a FileNotFoundException (or a similarly
+        // descriptive I/O exception) — NOT null, NOT silent.
+        Assert.NotNull(buf.ScanError);
+        Assert.True(
+            buf.ScanError is FileNotFoundException or IOException,
+            $"Expected FileNotFoundException / IOException, got {buf.ScanError.GetType().Name}: {buf.ScanError.Message}");
+        buf.Dispose();
+    }
 }

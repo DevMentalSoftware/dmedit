@@ -509,6 +509,128 @@ public class DocumentTests {
         Assert.Equal(3, CodepointBoundary.SnapToBoundary(doc.Table, 3, forward: true));
     }
 
+    // ------------------------------------------------------------------
+    // CodepointBoundary span overloads (TRIAGE Priority 2 gap)
+    //
+    // The span-based overloads are used by Document.SelectWord's bounded
+    // windowing (and any other caller that has materialised a slice of
+    // text and wants to walk it by code points without re-querying the
+    // buffer).  They share logic with the PieceTable overloads but have
+    // their own range checks — the span overloads should be directly
+    // exercised so a future divergence doesn't silently break word
+    // selection at an emoji.
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public void CodepointBoundary_Span_WidthAt_ReturnsOneForBmp() {
+        var text = ("a" + Emoji + "b").AsSpan();
+        Assert.Equal(1, CodepointBoundary.WidthAt(text, 0));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_WidthAt_ReturnsTwoForPair() {
+        var text = ("a" + Emoji + "b").AsSpan();
+        // Offset 1 is the high surrogate of the emoji.
+        Assert.Equal(2, CodepointBoundary.WidthAt(text, 1));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_WidthAt_AtOrPastEnd_ReturnsZero() {
+        var text = "ab".AsSpan();
+        Assert.Equal(0, CodepointBoundary.WidthAt(text, 2));
+        Assert.Equal(0, CodepointBoundary.WidthAt(text, 100));
+        Assert.Equal(0, CodepointBoundary.WidthAt(text, -1));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_WidthAt_LoneHighSurrogate_ReturnsOne() {
+        // High surrogate with no following low surrogate — not a valid pair,
+        // treat it as width-1 (the sanitizer will stomp it on commit, but
+        // the walker must make forward progress if it ever sees one).
+        var text = "a\uD83Db".AsSpan();
+        Assert.Equal(1, CodepointBoundary.WidthAt(text, 1));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_WidthBefore_AtOrBeforeStart_ReturnsZero() {
+        var text = "ab".AsSpan();
+        Assert.Equal(0, CodepointBoundary.WidthBefore(text, 0));
+        Assert.Equal(0, CodepointBoundary.WidthBefore(text, -1));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_WidthBefore_BmpReturnsOne() {
+        var text = "ab".AsSpan();
+        Assert.Equal(1, CodepointBoundary.WidthBefore(text, 1));
+        Assert.Equal(1, CodepointBoundary.WidthBefore(text, 2));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_WidthBefore_PairReturnsTwo() {
+        var text = ("a" + Emoji + "b").AsSpan();
+        // Offset 3 is immediately after the emoji pair.
+        Assert.Equal(2, CodepointBoundary.WidthBefore(text, 3));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_StepRight_OverPair_AdvancesTwo() {
+        var text = ("a" + Emoji + "b").AsSpan();
+        Assert.Equal(3, CodepointBoundary.StepRight(text, 1));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_StepRight_OverBmp_AdvancesOne() {
+        var text = ("a" + Emoji + "b").AsSpan();
+        Assert.Equal(1, CodepointBoundary.StepRight(text, 0));
+        Assert.Equal(4, CodepointBoundary.StepRight(text, 3));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_StepRight_AtEnd_ReturnsSameIndex() {
+        // Width is 0 at the end; StepRight must not overshoot.
+        var text = "ab".AsSpan();
+        Assert.Equal(2, CodepointBoundary.StepRight(text, 2));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_StepLeft_OverPair_RetreatsTwo() {
+        var text = ("a" + Emoji + "b").AsSpan();
+        Assert.Equal(1, CodepointBoundary.StepLeft(text, 3));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_StepLeft_OverBmp_RetreatsOne() {
+        var text = ("a" + Emoji + "b").AsSpan();
+        Assert.Equal(3, CodepointBoundary.StepLeft(text, 4));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_StepLeft_AtStart_ReturnsSameIndex() {
+        var text = "ab".AsSpan();
+        Assert.Equal(0, CodepointBoundary.StepLeft(text, 0));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_SnapToBoundary_MidPair_SnapsForward() {
+        var text = ("a" + Emoji + "b").AsSpan();
+        // Offset 2 lies between the two halves of the emoji.
+        Assert.Equal(3, CodepointBoundary.SnapToBoundary(text, 2, forward: true));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_SnapToBoundary_MidPair_SnapsBackward() {
+        var text = ("a" + Emoji + "b").AsSpan();
+        Assert.Equal(1, CodepointBoundary.SnapToBoundary(text, 2, forward: false));
+    }
+
+    [Fact]
+    public void CodepointBoundary_Span_SnapToBoundary_OnBoundary_NoOp() {
+        var text = ("a" + Emoji + "b").AsSpan();
+        Assert.Equal(1, CodepointBoundary.SnapToBoundary(text, 1, forward: true));
+        Assert.Equal(3, CodepointBoundary.SnapToBoundary(text, 3, forward: true));
+        Assert.Equal(0, CodepointBoundary.SnapToBoundary(text, 0, forward: true));
+    }
+
     [Fact]
     public void ColumnSelection_OfsToCol_MidPair_SnapsBackward() {
         var doc = MakeDoc("a" + Emoji + "b");

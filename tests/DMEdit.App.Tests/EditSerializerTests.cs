@@ -1,3 +1,5 @@
+using System.Linq;
+using System.Reflection;
 using DMEdit.App.Services;
 using DMEdit.Core.Documents;
 using DMEdit.Core.Documents.History;
@@ -147,5 +149,79 @@ public class EditSerializerTests {
         var ins = Assert.IsType<SpanInsertEdit>(u[0].Edit);
         Assert.Equal(text.Length, ins.Len);
         Assert.Equal(bufStart, ins.AddBufStart);
+    }
+
+    // ------------------------------------------------------------------
+    // Reflection smoke test: every concrete IDocumentEdit subclass must
+    // have a serialize + deserialize path (TRIAGE Priority 2 gap).
+    //
+    // Without this, adding a new IDocumentEdit subclass in Core would
+    // silently drop out of session persistence — Serialize would throw
+    // NotSupportedException on a user's undo stack and lose their work.
+    //
+    // New subclasses must be added to the factory table below so the
+    // test enumerates them.  A subclass that exists in the assembly but
+    // is missing from the factory fails this test with a clear message.
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public void EditSerializer_RecognizesEveryConcreteIDocumentEditSubclass() {
+        var table = new PieceTable();
+        var bufStart = table.AppendToAddBuffer("x");
+
+        // Factory table: each entry is (subclass type, minimal instance).
+        // Add a new entry when you introduce a new IDocumentEdit subclass.
+        var factories = new Dictionary<System.Type, IDocumentEdit> {
+            [typeof(SpanInsertEdit)] = new SpanInsertEdit(0, bufStart, 1),
+            [typeof(DeleteEdit)] = new DeleteEdit(0, 1, System.Array.Empty<Piece>()),
+            [typeof(CompoundEdit)] = new CompoundEdit(new List<IDocumentEdit> {
+                new SpanInsertEdit(0, bufStart, 1),
+            }),
+            [typeof(UniformBulkReplaceEdit)] = new UniformBulkReplaceEdit(
+                System.Array.Empty<long>(), 0, string.Empty,
+                System.Array.Empty<Piece>(), System.Array.Empty<int>(), 0L),
+            [typeof(VaryingBulkReplaceEdit)] = new VaryingBulkReplaceEdit(
+                System.Array.Empty<(long Pos, int Len)>(),
+                System.Array.Empty<string>(),
+                System.Array.Empty<Piece>(), System.Array.Empty<int>(), 0L),
+        };
+
+        // Discover every concrete IDocumentEdit in the Core assembly.  If
+        // the factory is missing one, fail loudly — don't silently skip.
+        var coreAsm = typeof(IDocumentEdit).Assembly;
+        var concreteSubclasses = coreAsm.GetTypes()
+            .Where(t => !t.IsAbstract
+                        && !t.IsInterface
+                        && typeof(IDocumentEdit).IsAssignableFrom(t))
+            .ToList();
+
+        var missingFromFactory = concreteSubclasses
+            .Where(t => !factories.ContainsKey(t))
+            .Select(t => t.Name)
+            .ToList();
+        Assert.True(missingFromFactory.Count == 0,
+            $"New IDocumentEdit subclasses without a factory entry: " +
+            $"{string.Join(", ", missingFromFactory)}.  " +
+            $"Add them to the factory table AND to EditSerializer.");
+
+        // Every subclass in the factory must round-trip through the
+        // serializer without hitting the NotSupportedException default.
+        var unrecognized = new List<string>();
+        foreach (var (type, instance) in factories) {
+            var undo = new List<EditHistory.HistoryEntry> {
+                new(instance, Selection.Collapsed(0)),
+            };
+            try {
+                var json = EditSerializer.Serialize(undo, [], table);
+                var (u, _) = EditSerializer.Deserialize(json);
+                Assert.Single(u);
+                Assert.Equal(type, u[0].Edit.GetType());
+            } catch (NotSupportedException ex) {
+                unrecognized.Add($"{type.Name}: {ex.Message}");
+            }
+        }
+
+        Assert.True(unrecognized.Count == 0,
+            $"EditSerializer does not recognize: {string.Join(", ", unrecognized)}");
     }
 }

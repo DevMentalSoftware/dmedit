@@ -229,4 +229,114 @@ public class EditHistorySerializationTests {
         Assert.True(changedFired);
         Assert.True(wasDirtyAtChange);
     }
+
+    // -------------------------------------------------------------------------
+    // Compound lifecycle edge cases (TRIAGE Priority 2 gap)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void CanUndo_DuringOpenCompound_ReflectsPendingEdits() {
+        // `CanUndo` must return true when a compound is open AND an edit has
+        // been pushed into it — callers checking CanUndo inside the compound
+        // (e.g. a coalescing path that rewinds on timeout) need to see the
+        // uncommitted work.  Returning false here would make those callers
+        // skip the rewind and leak edits.
+        var doc = new Document("hello");
+        Assert.False(doc.CanUndo);
+
+        doc.BeginCompound();
+        // No edits yet: still nothing undoable.
+        Assert.False(doc.CanUndo);
+
+        doc.Selection = Selection.Collapsed(5);
+        doc.Insert(" world");
+        // Compound is open and has an edit — CanUndo must now be true.
+        Assert.True(doc.CanUndo);
+
+        doc.EndCompound();
+        // After commit, CanUndo is still true — the compound moved onto the stack.
+        Assert.True(doc.CanUndo);
+    }
+
+    [Fact]
+    public void CanUndo_DuringOpenCompound_OnTopOfExistingUndoStack() {
+        // Mixed state: an edit already on the undo stack plus an open
+        // compound with no edits.  CanUndo must reflect the stack entry.
+        var doc = new Document("hello");
+        doc.Selection = Selection.Collapsed(5);
+        doc.Insert("A");
+        Assert.True(doc.CanUndo);
+
+        doc.BeginCompound();
+        // Stack still has the earlier edit, so CanUndo remains true even
+        // though the new compound is empty.
+        Assert.True(doc.CanUndo);
+
+        doc.EndCompound();
+        Assert.True(doc.CanUndo);
+    }
+
+    [Fact]
+    public void EndCompound_WithoutBegin_IsNoOp() {
+        // Calling EndCompound without a matching BeginCompound must be a
+        // no-op, NOT an exception — the coalescing path may race with a
+        // BeginCompound that hasn't happened yet in certain teardown flows.
+        var doc = new Document("hello");
+
+        // This used to be silent — now we pin it as the documented contract.
+        doc.EndCompound();
+
+        // State should be unchanged: empty undo stack, at save point.
+        Assert.False(doc.CanUndo);
+        Assert.True(doc.IsAtSavePoint);
+
+        // And a subsequent begin/push/end cycle still works.
+        doc.BeginCompound();
+        doc.Selection = Selection.Collapsed(5);
+        doc.Insert("!");
+        doc.EndCompound();
+        Assert.True(doc.CanUndo);
+        Assert.Equal("hello!", doc.Table.GetText());
+    }
+
+    [Fact]
+    public void EndCompound_UnbalancedExtraEnd_DoesNotCommitPending() {
+        // Sharper variant: Begin → push → End → End (extra).  The first End
+        // commits the compound; the second End must NOT pop or corrupt the
+        // stack.  Undo must then restore the pre-compound state in one step.
+        var doc = new Document("hello");
+        doc.BeginCompound();
+        doc.Selection = Selection.Collapsed(5);
+        doc.Insert("!");
+        doc.EndCompound();  // commits "!"
+        doc.EndCompound();  // extra End — must be silent no-op
+
+        Assert.Equal("hello!", doc.Table.GetText());
+        Assert.True(doc.CanUndo);
+
+        doc.Undo();
+        Assert.Equal("hello", doc.Table.GetText());
+    }
+
+    [Fact]
+    public void NestedCompound_OnlyOuterEndCommits() {
+        // EditHistory supports nested Begin/End pairs via _compoundDepth.
+        // Only the outermost End commits the compound as a single undo step.
+        // Inner Begin/End pairs must NOT create intermediate stack entries.
+        var doc = new Document("hello");
+        doc.BeginCompound();                       // depth 1
+        doc.Selection = Selection.Collapsed(5);
+        doc.Insert(" a");                          // edit 1
+        doc.BeginCompound();                       // depth 2
+        doc.Insert(" b");                          // edit 2 — inside inner
+        doc.EndCompound();                         // depth 1 (no commit)
+        doc.Insert(" c");                          // edit 3 — inside outer
+        doc.EndCompound();                         // depth 0 (commit)
+
+        Assert.Equal("hello a b c", doc.Table.GetText());
+
+        // Single undo should revert the entire compound — all three inserts.
+        doc.Undo();
+        Assert.Equal("hello", doc.Table.GetText());
+    }
 }

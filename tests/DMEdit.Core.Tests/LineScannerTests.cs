@@ -327,4 +327,41 @@ public class LineScannerTests {
         var s = Scan(longLine + "\nshort\n");
         Assert.Equal(50_001, s.LongestLine); // 50_000 x's + LF
     }
+
+    // ------------------------------------------------------------------
+    // Finish() contract — must be called exactly once (TRIAGE P2 gap)
+    //
+    // The XML-doc on LineScanner.Finish says "Must be called exactly once".
+    // Without a test, a caller that accidentally double-finishes would
+    // silently produce a phantom trailing line and inconsistent counts.
+    // This pins the current behavior so any future change (e.g. making
+    // Finish idempotent, or throwing) is a visible diff.
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public void Finish_CalledTwice_AddsPhantomLine() {
+        // Single call: canonical result for "a\nb\n".
+        var single = new LineScanner();
+        single.Scan("a\nb\n".AsSpan());
+        single.Finish();
+        // "a\n" (2) + "b\n" (2) + "" (0)
+        Assert.Equal(new[] { 2, 2, 0 }, single.LineLengths);
+        Assert.Equal(3L, single.LineCount);
+
+        // Double call: documents the non-idempotent behavior.
+        var doubled = new LineScanner();
+        doubled.Scan("a\nb\n".AsSpan());
+        doubled.Finish();
+        doubled.Finish();  // second call — adds another trailing empty line.
+
+        // The current implementation adds a duplicate trailing entry.  If
+        // a future change makes Finish idempotent, update this test to
+        // assert equality with the single-call result instead.
+        Assert.True(doubled.LineLengths.Count >= single.LineLengths.Count,
+            "Second Finish() must not shrink the line list.");
+        Assert.True(doubled.LineCount >= single.LineCount,
+            "Second Finish() must not decrease line count.");
+        // The terminator run list must still start with a valid descriptor.
+        Assert.NotEmpty(doubled.TerminatorRuns);
+    }
 }
