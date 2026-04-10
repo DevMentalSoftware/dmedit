@@ -89,10 +89,13 @@ public sealed class LayoutLine : IDisposable {
     /// Returns the caret bounds for character offset <paramref name="posInLine"/>
     /// (relative to the start of this line), in line-local coordinates.
     /// </summary>
-    public Rect HitTestTextPosition(int posInLine) {
+    public Rect HitTestTextPosition(int posInLine, bool isAtEnd = false) {
         if (Mono is { } mono) {
-            return mono.GetCaretBounds(posInLine);
+            return mono.GetCaretBounds(posInLine, isAtEnd);
         }
+        // Proportional path: Avalonia's HitTestTextPosition doesn't
+        // support affinity natively.  Left-affinity at soft breaks
+        // would need TextLines enumeration — deferred.
         return Layout!.HitTestTextPosition(posInLine);
     }
 

@@ -238,7 +238,7 @@ public sealed partial class EditorControl {
                     continue;
                 }
 
-                var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout);
+                var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout, _caretIsAtEnd);
                 var caretScreenY = caretRect.Y + RenderOffsetY;
                 var caretH = Math.Ceiling(Math.Max(caretRect.Height, rh));
                 // Convert screen-Y back to doc-Y for the policy computation.
@@ -951,7 +951,7 @@ public sealed partial class EditorControl {
         var totalChars = layout.Lines[^1].CharEnd;
         if (localCaret < 0 || localCaret > totalChars) return null;
 
-        var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout);
+        var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout, _caretIsAtEnd);
         var screenY = caretRect.Y + RenderOffsetY;
         // Only preserve when the caret was actually visible in the viewport
         // — preserving a caret that was off-screen is worse than just
@@ -972,7 +972,7 @@ public sealed partial class EditorControl {
         var totalChars = layout.Lines[^1].CharEnd;
         if (localCaret < 0 || localCaret > totalChars) return null;
 
-        var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout);
+        var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout, _caretIsAtEnd);
         return caretRect.Y + RenderOffsetY;
     }
 
@@ -987,6 +987,26 @@ public sealed partial class EditorControl {
     /// preserve the caret's vertical position.
     /// </summary>
     internal double? GetCaretScreenYForTest() => TryCaptureCaretScreenY();
+
+    /// <summary>
+    /// Invokes <see cref="MoveCaretToLineEdge"/> on behalf of a test.
+    /// Mirrors the NavMoveHome / NavMoveEnd command bindings.
+    /// </summary>
+    internal void MoveCaretToLineEdgeForTest(bool toStart, bool extend) {
+        var doc = Document;
+        if (doc == null) return;
+        MoveCaretToLineEdge(doc, toStart, extend);
+    }
+
+    /// <summary>
+    /// Invokes <see cref="MoveCaretHorizontal"/> on behalf of a test.
+    /// Mirrors the NavMoveLeft / NavMoveRight command bindings.
+    /// </summary>
+    internal void MoveCaretHorizontalForTest(int delta, bool byWord, bool extend) {
+        var doc = Document;
+        if (doc == null) return;
+        MoveCaretHorizontal(doc, delta, byWord, extend);
+    }
 
     /// <summary>
     /// Invokes <see cref="MoveCaretVertical"/> on behalf of a test.
@@ -1028,7 +1048,7 @@ public sealed partial class EditorControl {
             var localCaret = (int)(doc.Selection.Caret - curLayout.ViewportBase);
             var totalChars = curLayout.Lines[^1].CharEnd;
             if (localCaret >= 0 && localCaret <= totalChars) {
-                var caretRect = _layoutEngine.GetCaretBounds(localCaret, curLayout);
+                var caretRect = _layoutEngine.GetCaretBounds(localCaret, curLayout, _caretIsAtEnd);
                 caretRow = GetCaretScreenRow(caretRect, rh);
                 if (_preferredCaretX < 0) {
                     _preferredCaretX = caretRect.X;
@@ -1069,6 +1089,7 @@ public sealed partial class EditorControl {
 
     private void OnDocumentChanged(object? sender, EventArgs e) {
         InvalidateRowIndex(); // content changed — row counts are stale
+        _caretIsAtEnd = false; // edit invalidates boundary context
         InvalidateLayout();
     }
 

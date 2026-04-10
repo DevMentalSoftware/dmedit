@@ -715,10 +715,44 @@ public sealed partial class EditorControl {
         var caret = doc.Selection.Caret;
         var table = doc.Table;
         var len = table.Length;
-        long newCaret;
 
+        // At a soft-break boundary, two visual positions share one offset:
+        //   isAtEnd=true  → end of current row (right edge)
+        //   isAtEnd=false → start of next row (left edge)
+        //
+        // Arrow keys visit BOTH positions when crossing a boundary:
+        //
+        //   Right: ...lastChar → endOfRow(isAtEnd) → startOfNextRow → nextChar...
+        //   Left:  ...secondChar → startOfRow → endOfPrevRow(isAtEnd) → prevChar...
+        //
+        // When the caret is already at one of these two positions, the
+        // next arrow press in the same direction just flips isAtEnd
+        // without changing the offset.
+        if (!byWord && (_wrapLines || _charWrapMode)) {
+            // Right from isAtEnd at any boundary: flip to !isAtEnd.
+            // This handles End-then-right (word-wrap) and arrow traversal
+            // through hard breaks (CharWrap / forced mid-word breaks).
+            if (delta > 0 && _caretIsAtEnd && IsAtSoftRowBoundary(caret)) {
+                _caretIsAtEnd = false;
+                if (!extend) doc.Selection = Selection.Collapsed(caret);
+                InvalidateVisual();
+                ResetCaretBlink();
+                return;
+            }
+            // Left from !isAtEnd at a hard break: flip to isAtEnd.
+            // Only for hard breaks — at space-breaks, left arrow advances
+            // through the space character naturally.
+            if (delta < 0 && !_caretIsAtEnd && IsAtHardBreakBoundary(caret, table)) {
+                _caretIsAtEnd = true;
+                if (!extend) doc.Selection = Selection.Collapsed(caret);
+                InvalidateVisual();
+                ResetCaretBlink();
+                return;
+            }
+        }
+
+        long newCaret;
         if (!byWord) {
-            // Step by one code point so surrogate pairs move together.
             newCaret = delta < 0
                 ? CodepointBoundary.StepLeft(table, caret)
                 : CodepointBoundary.StepRight(table, caret);
@@ -735,12 +769,130 @@ public sealed partial class EditorControl {
             newCaret = SnapOutOfDeadZone(table, newCaret, delta > 0);
         }
 
+        // Right arrow landing at a hard-break boundary → isAtEnd.
+        if (delta > 0 && (_wrapLines || _charWrapMode)
+                && IsAtHardBreakBoundary(newCaret, table)) {
+            _caretIsAtEnd = true;
+        } else {
+            _caretIsAtEnd = false;
+        }
+
         doc.Selection = extend
             ? doc.Selection.ExtendTo(newCaret)
             : Selection.Collapsed(newCaret);
         ScrollCaretIntoView();
         InvalidateVisual();
         ResetCaretBlink();
+    }
+
+    /// <summary>
+    /// <summary>
+    /// Returns true if <paramref name="ofs"/> is at a hard row boundary —
+    /// a break with no consumed space (prevEnd == curStart).  CharWrap
+    /// boundaries are always hard.  Word-wrap breaks that consumed a
+    /// space are NOT hard boundaries.
+    /// </summary>
+    private bool IsAtHardRowBoundary(long ofs) {
+        if (ofs <= 0) return false;
+
+        // CharWrap: every cpr boundary is a hard break.
+        if (_charWrapMode && _charWrapCharsPerRow > 0) {
+            return ofs % _charWrapCharsPerRow == 0 && ofs < Document!.Table.Length;
+        }
+
+        if (!_wrapLines) return false;
+        var layout = EnsureLayout();
+        if (layout.Lines.Count == 0) return false;
+        var localOfs = (int)(ofs - layout.ViewportBase);
+        if (localOfs < 0 || localOfs > layout.Lines[^1].CharEnd) return false;
+
+        for (var i = layout.Lines.Count - 1; i >= 0; i--) {
+            if (layout.Lines[i].CharStart <= localOfs) {
+                var ll = layout.Lines[i];
+                if (ll.Mono is not { } mono || mono.Rows.Length <= 1) return false;
+                var posInLine = localOfs - ll.CharStart;
+                var r = mono.RowForChar(posInLine);
+                if (r == 0) return false;
+                var prevEnd = mono.Rows[r - 1].CharStart + mono.Rows[r - 1].CharLen;
+                var curStart = mono.Rows[r].CharStart;
+                // Hard break: no gap between previous row's drawn content
+                // and next row's start.
+                return prevEnd == curStart && posInLine == curStart;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="ofs"/> is at a hard row boundary —
+    /// a break between two non-space characters (or a CharWrap break).
+    /// Space-break boundaries are NOT hard: the space is a navigable
+    /// character on the current row, so arrow keys cross the boundary
+    /// by advancing through the space naturally.
+    /// </summary>
+    private bool IsAtHardBreakBoundary(long ofs, PieceTable table) {
+        if (ofs <= 0) return false;
+
+        // CharWrap: every cpr boundary is a hard break.
+        if (_charWrapMode && _charWrapCharsPerRow > 0) {
+            return ofs % _charWrapCharsPerRow == 0 && ofs < table.Length;
+        }
+
+        if (!_wrapLines) return false;
+
+        // Check IsAtSoftRowBoundary first (is this even a boundary?).
+        if (!IsAtSoftRowBoundary(ofs)) return false;
+
+        // It's a boundary. Check if the character just before it is a
+        // space — if so, it's a space-break, not a hard break.
+        var charBefore = ofs - 1;
+        if (charBefore >= 0 && charBefore < table.Length) {
+            var text = table.GetText(charBefore, 1);
+            if (text.Length > 0 && text[0] == ' ') return false;
+        }
+        return true;
+    }
+
+    /// Returns true if the caret at <paramref name="ofs"/> is at a soft
+    /// row boundary — a position where <c>isAtEnd</c> makes a visual
+    /// difference (end of previous row vs start of next row).
+    ///
+    /// Covers both hard breaks (offset == Rows[r].CharStart) and word-
+    /// wrap breaks where the consumed space sits before CharStart
+    /// (offset &lt; Rows[r].CharStart but RowForChar still returns r).
+    ///
+    /// Used by both left-arrow (flip to isAtEnd) and right-arrow (set
+    /// isAtEnd on arrival).
+    /// </summary>
+    private bool IsAtSoftRowBoundary(long ofs) {
+        if (ofs <= 0) return false;
+
+        if (_charWrapMode && _charWrapCharsPerRow > 0) {
+            return ofs % _charWrapCharsPerRow == 0 && ofs < Document!.Table.Length;
+        }
+
+        if (!_wrapLines) return false;
+        var layout = EnsureLayout();
+        if (layout.Lines.Count == 0) return false;
+        var localOfs = (int)(ofs - layout.ViewportBase);
+        if (localOfs < 0 || localOfs > layout.Lines[^1].CharEnd) return false;
+
+        for (var i = layout.Lines.Count - 1; i >= 0; i--) {
+            if (layout.Lines[i].CharStart <= localOfs) {
+                var ll = layout.Lines[i];
+                if (ll.Mono is not { } mono || mono.Rows.Length <= 1) return false;
+                var posInLine = localOfs - ll.CharStart;
+                var r = mono.RowForChar(posInLine);
+                if (r == 0) return false;
+                // A position is at a soft boundary when RowForChar
+                // assigns it to row r but it's at or before that row's
+                // first drawn char.  This covers both hard breaks
+                // (pos == CharStart) and consumed word-break spaces
+                // (pos < CharStart).
+                return posInLine <= mono.Rows[r].CharStart;
+            }
+        }
+        return false;
     }
 
     /// <summary>
@@ -786,11 +938,14 @@ public sealed partial class EditorControl {
         }
 
         var rh = layout.RowHeight;
-        var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout);
+        var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout, _caretIsAtEnd);
 
-        // On the first vertical move, capture the caret's current X as the
-        // "preferred" column.  Subsequent vertical moves reuse this so the
-        // caret returns to the original column after traversing short lines.
+        // On the first vertical move, capture the caret's current VISUAL
+        // X as the "preferred" column.  Subsequent vertical moves reuse
+        // this so the caret returns to the original column after
+        // traversing short lines.  When isAtEnd, the visual X is at the
+        // right edge of the row — use that so "End → Down" lands at
+        // the end of the next row (or as far right as it goes).
         if (_preferredCaretX < 0) {
             _preferredCaretX = caretRect.X;
         }
@@ -827,6 +982,48 @@ public sealed partial class EditorControl {
                 : Selection.Collapsed(newCaret);
         }
 
+        // If vertical movement landed at a row boundary, set isAtEnd
+        // only if HitTest clamped the position because the target row
+        // was too short.  We detect this by checking whether the landed
+        // position is at the END of its row (col == CharLen) as opposed
+        // to a real character position within the row.
+        // CharWrapMode: all rows are the same length, so vertical movement
+        // simply preserves the current isAtEnd state.
+        //
+        // Word-wrap mode: rows have variable lengths.  If the target row
+        // is shorter than the preferred X, HitTest clamps to the row
+        // boundary and we need isAtEnd=true so the caret renders at the
+        // end of that shorter row.  If the target row is long enough,
+        // isAtEnd=false.
+        var landedCaret = doc.Selection.Caret;
+        if (_charWrapMode) {
+            // Preserve current isAtEnd — all rows are the same width.
+        } else if (_wrapLines && IsAtSoftRowBoundary(landedCaret)) {
+            var landedLocal = (int)(landedCaret - layout.ViewportBase);
+            var llIdx2 = layout.Lines.Count - 1;
+            for (var i = layout.Lines.Count - 1; i >= 0; i--) {
+                if (layout.Lines[i].CharStart <= landedLocal) {
+                    llIdx2 = i; break;
+                }
+            }
+            var ll2 = layout.Lines[llIdx2];
+            if (ll2.Mono is { } mono2) {
+                var posInLine = landedLocal - ll2.CharStart;
+                var r = mono2.RowForChar(posInLine);
+                if (r > 0) {
+                    var prevSpan = mono2.Rows[r - 1];
+                    var prevRowEndX = prevSpan.XOffset + prevSpan.CharLen * GetCharWidth();
+                    _caretIsAtEnd = _preferredCaretX >= prevRowEndX - GetCharWidth() / 2;
+                } else {
+                    _caretIsAtEnd = false;
+                }
+            } else {
+                _caretIsAtEnd = false;
+            }
+        } else {
+            _caretIsAtEnd = false;
+        }
+
         // Do NOT call ScrollCaretIntoView here — both branches above already
         // handle visibility correctly at row granularity (the top/bottom-edge
         // branch slides by exactly one row, the in-viewport branch doesn't
@@ -846,10 +1043,17 @@ public sealed partial class EditorControl {
             var cpr = _charWrapCharsPerRow;
             var docLen = doc.Table.Length;
             var currentRow = caretOfs / cpr;
+            // Left affinity: caret visually sits on the previous row.
+            if (_caretIsAtEnd && caretOfs > 0 && caretOfs % cpr == 0) {
+                currentRow--;
+            }
             var rowStart = currentRow * cpr;
-            // End = last char of this row (not first char of next row).
-            var rowEnd = Math.Min(rowStart + cpr - 1, docLen);
+            // End = position after the last char of this row.
+            var rowEnd = Math.Min(rowStart + cpr, docLen);
             var target = toStart ? rowStart : rowEnd;
+            // End → left affinity (park at right edge of row).
+            // Home → right affinity (park at left edge of row).
+            _caretIsAtEnd = !toStart;
             doc.Selection = extend
                 ? doc.Selection.ExtendTo(target)
                 : Selection.Collapsed(target);
@@ -858,24 +1062,109 @@ public sealed partial class EditorControl {
             ResetCaretBlink();
             return;
         }
+
         var table = doc.Table;
         var caret = doc.Selection.Caret;
         var lineIdx = (int)table.LineFromOfs(Math.Min(caret, table.Length));
         var lineStart = table.LineStartOfs(lineIdx);
         if (lineStart < 0) return;
+        var lineContentLen = table.LineContentLength(lineIdx);
+        var lineEnd = lineStart + lineContentLen;
 
-        long newCaret;
+        // Row-aware navigation: when wrap is on and the caret's line is
+        // in the current layout, use the actual row break positions from
+        // the layout engine.  Cascading behaviour:
+        //
+        // Home: row start → line start → smart-home (first-non-ws ↔ col 0)
+        // End:  row end   → line end
+        //
+        // When wrap is off, or the line uses proportional layout, or the
+        // caret isn't in the current layout, fall through to the logical-
+        // line path below.
+        if (_wrapLines && !_charWrapMode) {
+            var layout = EnsureLayout();
+            var localCaret = (int)(caret - layout.ViewportBase);
+            if (layout.Lines.Count > 0
+                    && localCaret >= 0
+                    && localCaret <= layout.Lines[^1].CharEnd) {
+                // Find the LayoutLine containing the caret.
+                var llIdx = layout.Lines.Count - 1;
+                for (var i = layout.Lines.Count - 1; i >= 0; i--) {
+                    if (layout.Lines[i].CharStart <= localCaret) {
+                        llIdx = i;
+                        break;
+                    }
+                }
+                var ll = layout.Lines[llIdx];
+
+                if (ll.IsMono && ll.Mono is { } mono) {
+                    var posInLine = Math.Max(0, localCaret - ll.CharStart);
+                    var rowIdx = mono.RowForChar(posInLine);
+                    // Left affinity: the caret visually sits on the
+                    // previous row (at its right edge).  Adjust the row
+                    // index so Home/End operate on the visual row.
+                    if (_caretIsAtEnd && rowIdx > 0
+                            && posInLine <= mono.Rows[rowIdx].CharStart) {
+                        rowIdx--;
+                    }
+                    var span = mono.Rows[rowIdx];
+
+                    var absLineStart = layout.ViewportBase + ll.CharStart;
+                    var absRowStart = absLineStart + span.CharStart;
+                    // The position between this row and the next — both
+                    // the end of this row (isAtEnd=true) and the start
+                    // of the next row (isAtEnd=false).
+                    var rowBoundary = absLineStart + span.CharStart + span.CharLen;
+
+                    long newCaret;
+                    if (toStart) {
+                        _caretIsAtEnd = false;
+                        if (caret != absRowStart) {
+                            newCaret = absRowStart;
+                        } else if (caret != lineStart) {
+                            newCaret = lineStart;
+                        } else {
+                            // Smart home: toggle first-non-ws ↔ line start.
+                            var wsLen = LeadingWhitespaceLength(table.GetLine(lineIdx));
+                            var firstNonWs = lineStart + wsLen;
+                            newCaret = caret == firstNonWs ? lineStart : firstNonWs;
+                        }
+                    } else {
+                        if (caret != rowBoundary) {
+                            _caretIsAtEnd = true;
+                            newCaret = rowBoundary;
+                        } else {
+                            _caretIsAtEnd = false;
+                            newCaret = lineEnd;
+                        }
+                    }
+
+                    doc.Selection = extend
+                        ? doc.Selection.ExtendTo(newCaret)
+                        : Selection.Collapsed(newCaret);
+                    ScrollCaretIntoView();
+                    InvalidateVisual();
+                    ResetCaretBlink();
+                    return;
+                }
+            }
+        }
+
+        // Fallback: logical line (wrap off, proportional font, or caret
+        // not in current layout window).
+        _caretIsAtEnd = false; // logical-line Home/End: no soft break
+        long fallbackCaret;
         if (toStart) {
             // Smart Home: toggle between first non-whitespace and column 0.
             var wsLen = LeadingWhitespaceLength(table.GetLine(lineIdx));
             var firstNonWs = lineStart + wsLen;
-            newCaret = caret == firstNonWs ? lineStart : firstNonWs;
+            fallbackCaret = caret == firstNonWs ? lineStart : firstNonWs;
         } else {
-            newCaret = lineStart + table.LineContentLength(lineIdx);
+            fallbackCaret = lineEnd;
         }
         doc.Selection = extend
-            ? doc.Selection.ExtendTo(newCaret)
-            : Selection.Collapsed(newCaret);
+            ? doc.Selection.ExtendTo(fallbackCaret)
+            : Selection.Collapsed(fallbackCaret);
         ScrollCaretIntoView();
         InvalidateVisual();
         ResetCaretBlink();

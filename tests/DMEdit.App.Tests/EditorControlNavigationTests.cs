@@ -402,4 +402,70 @@ public class EditorControlNavigationTests {
             caretYBefore.Value - rh - Tolerance,
             caretYBefore.Value - rh + Tolerance);
     }
+
+    // ------------------------------------------------------------------
+    //  Caret affinity: End then Home on a wrapped row stays on the same
+    //  visual row.  Regression for the bug where Home from "end of row"
+    //  (left affinity) jumped to the start of the NEXT row because
+    //  RowForChar returned the next row's index without adjusting for
+    //  affinity.
+    // ------------------------------------------------------------------
+
+    [AvaloniaFact]
+    public void EndThenHome_WrapOn_StaysOnSameRow() {
+        // Build a doc with a line long enough to wrap.
+        var sb = new System.Text.StringBuilder();
+        sb.Append("short\n");
+        sb.Append(new string('a', 200)); // wraps into multiple rows
+        sb.Append('\n');
+        sb.Append("end\n");
+        var doc = new Document();
+        doc.Insert(sb.ToString());
+
+        var editor = new EditorControl {
+            Document = doc,
+            FontFamily = new FontFamily("Consolas, Courier New, monospace"),
+            FontSize = 14,
+            Width = ViewportWidth,
+            Height = ViewportHeight,
+            WrapLines = true,
+        };
+        editor.Measure(new Size(ViewportWidth, ViewportHeight));
+        editor.Arrange(new Rect(0, 0, ViewportWidth, ViewportHeight));
+
+        // Place caret somewhere in the middle of the long line's
+        // continuation row (not the first row).
+        var rh = editor.RowHeightValue;
+        var line1Start = doc.Table.LineStartOfs(1);
+        // Pick a position well past the first row's width.
+        var midPos = line1Start + 100;
+        editor.GoToPosition(midPos);
+        Relayout(editor);
+
+        var caretYBefore = editor.GetCaretScreenYForTest();
+        Assert.NotNull(caretYBefore);
+
+        // Press End — should go to end of current visual row.
+        editor.MoveCaretToLineEdgeForTest(toStart: false, extend: false);
+        Relayout(editor);
+
+        var caretYAfterEnd = editor.GetCaretScreenYForTest();
+        Assert.NotNull(caretYAfterEnd);
+        // End should stay on the same row (same Y).
+        Assert.InRange(caretYAfterEnd!.Value,
+            caretYBefore!.Value - Tolerance,
+            caretYBefore.Value + Tolerance);
+
+        // Press Home — should go to start of the SAME visual row,
+        // NOT the next row.
+        editor.MoveCaretToLineEdgeForTest(toStart: true, extend: false);
+        Relayout(editor);
+
+        var caretYAfterHome = editor.GetCaretScreenYForTest();
+        Assert.NotNull(caretYAfterHome);
+        // Home should also stay on the same row.
+        Assert.InRange(caretYAfterHome!.Value,
+            caretYBefore.Value - Tolerance,
+            caretYBefore.Value + Tolerance);
+    }
 }

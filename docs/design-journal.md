@@ -65,6 +65,19 @@ small one — it is the primary way a fresh session recovers context.
   `Render` for text/selection/caret.  Fixes Avalonia #12809.
   See [13-custom-textbox](design-journal/13-custom-textbox.md).
 
+- **Hanging indent + line indentation interaction** — the current hanging
+  indent is a fixed offset (`_indentWidth / 2` character cells) applied to
+  continuation rows.  It doesn't account for the logical line's own
+  indentation level (4, 8, 100+ chars of leading whitespace).  This means
+  a line indented 8 spaces with a 2-char hanging indent wraps continuation
+  rows at indent 2, visually disconnected from the line's own indent.
+  The correct behavior: continuation rows should indent relative to the
+  line's indentation level (`lineIndent + hangingIndent`).  This also
+  affects caret up/down movement at row boundaries — the X offset between
+  the first row and continuation rows differs, and `MoveCaretVertical`
+  must handle this correctly.  Retest all caret movement (up/down/Home/End)
+  after fixing the indentation model.
+
 - **Search Within Selection** — when OpenFindBar runs with a multi-line
   selection, scope dropdown should auto-pick "Current Selection" and all
   Find/Replace bound to that range.  No materialization, just integer

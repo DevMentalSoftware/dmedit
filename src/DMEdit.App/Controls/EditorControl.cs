@@ -214,6 +214,7 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     /// Home/End, click, etc.).
     /// </summary>
     private double _preferredCaretX = -1;
+    internal double PreferredCaretXForTest => _preferredCaretX;
 
     // Edit coalescing: groups consecutive similar edits into single undo
     // entries.  Uses a string "coalesce key" to identify the edit type and
@@ -521,6 +522,17 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     // arrow scrolls where `_winTopLine == topLine` holds only because
     // the previous frame happened to end at the same topLine.
     private bool _winExactPinActive;
+
+    // Caret "is at end of row" flag.  When true, a caret sitting at a
+    // soft line break boundary renders at the END of the current row
+    // instead of the START of the next row (the default).  Set by End
+    // key and mouse click on the right edge of a wrapped row.  Reset
+    // to false by Home key, arrow keys, edits, and most other caret
+    // movements.
+    private bool _caretIsAtEnd;
+
+    /// <summary>Whether the caret is at the end-of-row position (for status bar display).</summary>
+    public bool CaretIsAtEnd => _caretIsAtEnd;
 
     // -------------------------------------------------------------------------
     // Performance stats

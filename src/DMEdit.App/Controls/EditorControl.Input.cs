@@ -48,6 +48,21 @@ public sealed partial class EditorControl {
         var layoutPt = new Point(pt.X - _gutterWidth + _scrollOffset.X, pt.Y - RenderOffsetY);
         var localOfs = _layoutEngine.HitTest(layoutPt, layout);
         var ofs = layout.ViewportBase + localOfs;
+
+        // Determine caret affinity from click position.  If the hit-test
+        // offset lands at a soft-break boundary, the click Y tells us
+        // which visual row the user intended: if the default rendering
+        // (right affinity) would place the caret on a DIFFERENT row than
+        // the one clicked, use left affinity to park the caret at the end
+        // of the clicked row instead.
+        _caretIsAtEnd = false;
+        var defaultRect = _layoutEngine.GetCaretBounds(localOfs, layout);
+        var clickRow = (int)(layoutPt.Y / layout.RowHeight);
+        var defaultRow = (int)((defaultRect.Y) / layout.RowHeight);
+        if (defaultRow > clickRow) {
+            _caretIsAtEnd = true;
+        }
+
         var isLeft = props.IsLeftButtonPressed;
         // Left-click: place caret or extend selection (with Shift).
         // Right-click: place caret only (no Shift-extend, no drag-select).

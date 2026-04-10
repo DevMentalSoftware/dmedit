@@ -266,7 +266,8 @@ public partial class MainWindow {
                     var maxLineLen = table.MaxLineLength;
                     var chWidth = maxLineLen > 0 ? $"{maxLineLen:N0}".Length : lcWidth;
                     var chText = $"{col:N0}".PadLeft(chWidth);
-                    lineCol = $"Ln {lnText} Ch {chText}";
+                    var endMark = Editor.CaretIsAtEnd ? "\u2082" : "";
+                    lineCol = $"Ln {lnText} Ch {chText}{endMark}";
                 }
             }
 

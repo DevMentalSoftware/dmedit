@@ -166,7 +166,8 @@ public sealed class TextLayoutEngine {
     /// Returns the bounding rectangle of the caret at logical offset <paramref name="charOfs"/>,
     /// in layout coordinates (Y is absolute document Y in pixels).
     /// </summary>
-    public Rect GetCaretBounds(int charOfs, LayoutResult result) {
+    public Rect GetCaretBounds(int charOfs, LayoutResult result,
+            bool isAtEnd = false) {
         var lines = result.Lines;
         if (lines.Count == 0) {
             return new Rect(0, 0, 1, 16);
@@ -184,7 +185,7 @@ public sealed class TextLayoutEngine {
             // returns a clean rect at column 0 so we skip this shim there.
             relRect = new Rect(0, 0, 0, rh);
         } else {
-            relRect = line.HitTestTextPosition(posInLine);
+            relRect = line.HitTestTextPosition(posInLine, isAtEnd);
         }
 
         return new Rect(

@@ -106,9 +106,14 @@ public sealed class MonoLineLayout : IDisposable {
         var rowIdx = 0;
         while (pos < text.Length) {
             var rowChars = rowIdx == 0 ? firstRowChars : contRowChars;
-            var (drawLen, nextStart) = MonoRowBreaker.NextRow(text, pos, rowChars);
+            var (_, nextStart) = MonoRowBreaker.NextRow(text, pos, rowChars);
             var xOffset = rowIdx == 0 ? 0.0 : ctx.HangingIndentPx;
-            rows.Add(new RowSpan(pos, drawLen, xOffset));
+            // CharLen includes all characters owned by this row —
+            // including any trailing break-space.  This ensures
+            // Rows[r].CharStart + CharLen == Rows[r+1].CharStart
+            // with no gaps, so RowForChar and GetCaretBounds treat
+            // the break-space as belonging to the current row.
+            rows.Add(new RowSpan(pos, nextStart - pos, xOffset));
             pos = nextStart;
             rowIdx++;
         }
@@ -172,16 +177,34 @@ public sealed class MonoLineLayout : IDisposable {
     /// Returns the bounding rectangle of the caret immediately before
     /// <paramref name="charInLine"/>, in line-local coordinates.
     /// </summary>
-    public Rect GetCaretBounds(int charInLine) {
+    /// <param name="charInLine">Character offset within this line.</param>
+    /// <param name="isAtEnd">When true and the caret sits at a soft
+    /// line break boundary (at or before a continuation row's first char),
+    /// render at the end of the <em>previous</em> row instead of the start
+    /// of the next.  Used by End key and left-arrow so the caret can park
+    /// at the right edge of a wrapped row.</param>
+    public Rect GetCaretBounds(int charInLine, bool isAtEnd = false) {
         if (Rows.Length == 0) return new Rect(0, 0, 0, Context.RowHeight);
         var clamped = Math.Clamp(charInLine, 0, Text.Length);
         var r = RowForChar(clamped);
         var span = Rows[r];
+
+        // Left affinity at a soft-break boundary: render at the end of the
+        // previous row.  Fires when the caret is at or before the current
+        // row's CharStart (i.e., in the "gap" of a consumed word-break
+        // space, or exactly at a CharWrap boundary).
+        if (isAtEnd && r > 0 && clamped <= span.CharStart) {
+            var prev = Rows[r - 1];
+            var x = prev.XOffset + prev.CharLen * Context.CharWidth;
+            var y = (r - 1) * Context.RowHeight;
+            return new Rect(x, y, 0, Context.RowHeight);
+        }
+
         var col = clamped - span.CharStart;
         if (col < 0) col = 0;
-        var x = span.XOffset + col * Context.CharWidth;
-        var y = r * Context.RowHeight;
-        return new Rect(x, y, 0, Context.RowHeight);
+        var x2 = span.XOffset + col * Context.CharWidth;
+        var y2 = r * Context.RowHeight;
+        return new Rect(x2, y2, 0, Context.RowHeight);
     }
 
     /// <summary>
@@ -235,8 +258,10 @@ public sealed class MonoLineLayout : IDisposable {
 /// One wrapped row inside a <see cref="MonoLineLayout"/>.
 /// </summary>
 /// <param name="CharStart">Character index (in the line) where this row begins.</param>
-/// <param name="CharLen">Number of characters drawn on this row.  Excludes the
-/// trailing space at a word-break boundary.</param>
+/// <param name="CharLen">Total characters owned by this row, including the trailing
+/// break-space at a word-wrap boundary.  For any two adjacent rows,
+/// <c>Rows[r].CharStart + Rows[r].CharLen == Rows[r+1].CharStart</c> —
+/// no gaps between rows.</param>
 /// <param name="XOffset">Pixel X offset from the line origin — 0 for the first
 /// row, <see cref="MonoLayoutContext.HangingIndentPx"/> for continuation rows.</param>
 public readonly record struct RowSpan(int CharStart, int CharLen, double XOffset);
