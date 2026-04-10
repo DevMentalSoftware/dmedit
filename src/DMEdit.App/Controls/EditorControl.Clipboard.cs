@@ -119,7 +119,7 @@ public sealed partial class EditorControl {
                 await PasteLargeAsync(doc, nativeClip, clipSize);
                 // Post to dispatcher so the layout cycle resolves
                 // scrollbar visibility before we compute scroll position.
-                Dispatcher.UIThread.Post(ScrollCaretIntoView);
+                Dispatcher.UIThread.Post(() => ScrollCaretIntoView());
             } else {
                 PasteSmall(doc, nativeClip);
                 ScrollCaretIntoView();

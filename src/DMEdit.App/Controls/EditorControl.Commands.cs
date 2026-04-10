@@ -524,7 +524,7 @@ public sealed partial class EditorControl {
         Reg(Cmd.NavMoveDocStart, doc => {
             FlushCompound();
             doc.Selection = Selection.Collapsed(0);
-            ScrollCaretIntoView();
+            ScrollCaretIntoView(ScrollPolicy.Top);
             InvalidateVisual();
             ResetCaretBlink();
         });
@@ -532,7 +532,7 @@ public sealed partial class EditorControl {
         Reg(Cmd.NavSelectDocStart, doc => {
             FlushCompound();
             doc.Selection = doc.Selection.ExtendTo(0);
-            ScrollCaretIntoView();
+            ScrollCaretIntoView(ScrollPolicy.Top);
             InvalidateVisual();
             ResetCaretBlink();
         });
@@ -540,7 +540,7 @@ public sealed partial class EditorControl {
         Reg(Cmd.NavMoveDocEnd, doc => {
             FlushCompound();
             doc.Selection = Selection.Collapsed(doc.Table.Length);
-            ScrollCaretIntoView();
+            ScrollCaretIntoView(ScrollPolicy.Bottom);
             InvalidateVisual();
             ResetCaretBlink();
         });
@@ -548,7 +548,7 @@ public sealed partial class EditorControl {
         Reg(Cmd.NavSelectDocEnd, doc => {
             FlushCompound();
             doc.Selection = doc.Selection.ExtendTo(doc.Table.Length);
-            ScrollCaretIntoView();
+            ScrollCaretIntoView(ScrollPolicy.Bottom);
             InvalidateVisual();
             ResetCaretBlink();
         });
@@ -827,7 +827,14 @@ public sealed partial class EditorControl {
                 : Selection.Collapsed(newCaret);
         }
 
-        ScrollCaretIntoView();
+        // Do NOT call ScrollCaretIntoView here — both branches above already
+        // handle visibility correctly at row granularity (the top/bottom-edge
+        // branch slides by exactly one row, the in-viewport branch doesn't
+        // need to scroll at all).  Adding a generic ScrollCaretIntoView call
+        // on top of that is what caused "click top row, arrow down, scroll
+        // jumps up by one row" — the generic path can't tell that the move
+        // is intentionally to the edge and treats the caret as needing to
+        // be scrolled *further* into view.
         InvalidateVisual();
         ResetCaretBlink();
     }

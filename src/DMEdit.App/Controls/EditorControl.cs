@@ -248,19 +248,24 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
         get => _wrapLines;
         set {
             if (_wrapLines == value) return;
-            _wrapLines = value;
-            // Column mode is incompatible with wrapping — exit if active.
-            if (_wrapLines) {
+            // PreserveCaretScreenYAcross runs the mutation, invalidates layout,
+            // then adjusts ScrollValue so the caret stays at the same screen-Y
+            // position.  Previously the caret appeared to jump to a different
+            // viewport row because _scrollOffset.Y was kept verbatim across
+            // the toggle but mapped to a different row in the new layout.
+            PreserveCaretScreenYAcross(() => {
+                _wrapLines = value;
                 // Column mode is incompatible with wrapping — exit if active.
-                if (Document?.ColumnSel != null) {
-                    Document.ClearColumnSelection(_indentWidth);
+                if (_wrapLines) {
+                    if (Document?.ColumnSel != null) {
+                        Document.ClearColumnSelection(_indentWidth);
+                    }
+                    // Reset horizontal scroll when wrapping is enabled.
+                    HScrollValue = 0;
                 }
-                // Reset horizontal scroll when wrapping is enabled.
-                HScrollValue = 0;
-            }
-            InvalidateLayout();
+            });
             if (_charWrapMode) {
-                Dispatcher.UIThread.Post(ScrollCaretIntoView,
+                Dispatcher.UIThread.Post(() => ScrollCaretIntoView(),
                     Avalonia.Threading.DispatcherPriority.Background);
             }
         }
@@ -275,10 +280,9 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
         get => _wrapLinesAt;
         set {
             if (_wrapLinesAt == value) return;
-            _wrapLinesAt = value;
-            InvalidateLayout();
+            PreserveCaretScreenYAcross(() => _wrapLinesAt = value);
             if (_charWrapMode) {
-                Dispatcher.UIThread.Post(ScrollCaretIntoView,
+                Dispatcher.UIThread.Post(() => ScrollCaretIntoView(),
                     Avalonia.Threading.DispatcherPriority.Background);
             }
         }
@@ -349,8 +353,7 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
         get => _useWrapColumn;
         set {
             if (_useWrapColumn == value) return;
-            _useWrapColumn = value;
-            InvalidateLayout();
+            PreserveCaretScreenYAcross(() => _useWrapColumn = value);
         }
     }
 
@@ -373,8 +376,7 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
         get => _hangingIndent;
         set {
             if (_hangingIndent == value) return;
-            _hangingIndent = value;
-            InvalidateLayout();
+            PreserveCaretScreenYAcross(() => _hangingIndent = value);
         }
     }
 
@@ -510,6 +512,15 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     private double _winScrollOffset;
     private double _winRenderOffsetY;
     private double _winFirstLineHeight;
+
+    // Exact-pin flag — set by ScrollExact, consumed by ONE LayoutWindowed
+    // pass, then cleared.  While set, LayoutWindowed trusts the cached
+    // topLine exactly (skipping pull-back and the extent estimate for
+    // end-of-doc targets).  Without this gate the pull-back skip and
+    // tight-extent math incorrectly fire during ordinary wheel/drag/
+    // arrow scrolls where `_winTopLine == topLine` holds only because
+    // the previous frame happened to end at the same topLine.
+    private bool _winExactPinActive;
 
     // -------------------------------------------------------------------------
     // Performance stats
@@ -761,12 +772,14 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
             _rowHeight = 0;         // force line-height recomputation
             _charWidth = 0;
             PerfStats.Reset();
+            InvalidateRowIndex(); // new document — row counts are stale
             InvalidateLayout();
         } else if (e.Property == FontFamilyProperty
                      || e.Property == FontSizeProperty
                      || e.Property == ForegroundBrushProperty) {
             _rowHeight = 0;
             _charWidth = 0;
+            InvalidateRowIndex(); // font change — row counts depend on char width
             InvalidateLayout();
         } else if (e.Property == CaretBrushProperty || e.Property == CaretWidthProperty) {
             // Push directly into the layer; UpdateCaretLayers also picks

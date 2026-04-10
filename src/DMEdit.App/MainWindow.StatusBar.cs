@@ -97,7 +97,8 @@ public partial class MainWindow {
             $"Load: {load} | Save: {save}{replaceAll} | " +
             $"Mem: {s.MemoryMb:F0} MB (max {s.PeakMemoryMb:F0} MB) | " +
             $"GC: {s.Gen0}/{s.Gen1}/{s.Gen2} | " +
-            $"Inv/Rnd: {s.LayoutInvalidations}/{s.RenderCalls}";
+            $"Inv/Rnd: {s.LayoutInvalidations}/{s.RenderCalls}" +
+            (s.RowIndexBuilds > 0 ? $" | RowIdx: {s.RowIndexBuilds}× {s.RowIndexBuildMs:F2}ms" : "");
         if (StatsBarIO.Text != ioText) StatsBarIO.Text = ioText;
     }
 
@@ -294,7 +295,13 @@ public partial class MainWindow {
                 BtnIndent.IsVisible = false;
             } else {
                 StatusSep1b.IsVisible = true;
-                SetText(StatusLineCount, $"{lcText} {countLabel}");
+                var rowSuffix = "";
+                var rowInfo = Editor.TotalVisualRows;
+                if (rowInfo is { } ri && ri.rows != displayCount) {
+                    var prefix = ri.isExact ? "" : "~";
+                    rowSuffix = $" ({prefix}{ri.rows:N0} rows)";
+                }
+                SetText(StatusLineCount, $"{lcText} {countLabel}{rowSuffix}");
                 StatusSep2.IsVisible = true;
                 SetText(StatusEncoding, doc.EncodingInfo.Label);
                 StatusSep3.IsVisible = true;

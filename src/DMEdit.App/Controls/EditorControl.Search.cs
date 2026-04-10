@@ -50,7 +50,7 @@ public sealed partial class EditorControl {
             return false;
         }
         doc.Selection = new Selection(found, found + opts.MatchLength(table, found));
-        ScrollCaretIntoView();
+        ScrollSelectionIntoView(SearchDirection.Forward);
         InvalidateVisual();
         return true;
     }
@@ -75,7 +75,7 @@ public sealed partial class EditorControl {
             return false;
         }
         doc.Selection = new Selection(found, found + opts.MatchLength(table, found));
-        ScrollCaretIntoView();
+        ScrollSelectionIntoView(SearchDirection.Backward);
         InvalidateVisual();
         return true;
     }
@@ -168,9 +168,11 @@ public sealed partial class EditorControl {
         }
         FlushCompound();
         doc.Insert(replacement);
-        ScrollCaretIntoView();
         InvalidateVisual();
-        // Advance to next match.
+        // Advance to next match — FindNext handles the scroll to reveal the
+        // new match, which is the only scroll the user cares about here.
+        // (Any ScrollCaretIntoView on the replacement's caret would be
+        // immediately superseded by FindNext's ScrollSelectionIntoView.)
         FindNext(matchCase, wholeWord, mode);
         return true;
     }
@@ -417,7 +419,7 @@ public sealed partial class EditorControl {
                 if (nextChars.Equals(text, StringComparison.OrdinalIgnoreCase)) {
                     doc.Selection = new Selection(sel.Start, endOfSel + text.Length);
                     _lastSearchTerm = _isearchString;
-                    ScrollCaretIntoView();
+                    ScrollSelectionIntoView(SearchDirection.Forward);
                     InvalidateVisual();
                     IncrementalSearchChanged?.Invoke(this, EventArgs.Empty);
                     return;
@@ -431,7 +433,7 @@ public sealed partial class EditorControl {
         if (found >= 0) {
             doc.Selection = new Selection(found, found + _isearchString.Length);
             _lastSearchTerm = _isearchString;
-            ScrollCaretIntoView();
+            ScrollSelectionIntoView(SearchDirection.Forward);
             InvalidateVisual();
         } else {
             _isearchFailed = true;
@@ -575,9 +577,35 @@ public sealed partial class EditorControl {
     }
 
     /// <summary>
+    /// Test-only wrapper for <see cref="SearchChunkedBackward"/>.  The
+    /// inner function is private (and <see cref="SearchOptions"/> is
+    /// private), but the 2026-04-09 hang regression needs direct access
+    /// with a synthetic options object and a deadline-guarded thread.
+    /// </summary>
+    internal static long SearchChunkedBackwardForTest(
+            PieceTable table, string needle, long start, long end) {
+        var opts = new SearchOptions(needle,
+            matchCase: false, wholeWord: false, mode: SearchMode.Normal);
+        return SearchChunkedBackward(table, opts, start, end, maxOverlap: 1024);
+    }
+
+    /// <summary>
     /// Searches backward from <paramref name="end"/> to <paramref name="start"/>
     /// in bounded chunks, returning the last match position in the range.
     /// </summary>
+    /// <remarks>
+    /// Termination: each iteration searches <c>[chunkStart, chunkEnd)</c>
+    /// where <c>chunkStart = max(start, chunkEnd - chunkSize - overlap)</c>.
+    /// If the chunk we just searched started at <paramref name="start"/>,
+    /// we have covered the entire range and must break — the overlap-step
+    /// that normally retreats <c>chunkEnd</c> would otherwise leave us
+    /// re-searching the same chunk forever (seen in 2026-04-09 as an app
+    /// hang when FindPrevious wrapped on a document with a single match
+    /// whose offset was small enough that <c>end - start ≤ chunkSize</c>
+    /// on the first iteration).  The <c>chunkEnd &lt;= start</c> check
+    /// below doesn't catch this case because the overlap-reset leaves
+    /// <c>chunkEnd = start + overlap &gt; start</c>.
+    /// </remarks>
     private static long SearchChunkedBackward(PieceTable table, SearchOptions opts,
             long start, long end, int maxOverlap) {
         const int chunkSize = 64 * 1024;
@@ -609,6 +637,12 @@ public sealed partial class EditorControl {
                     hit = idx >= 0 ? chunkStart + idx : -1;
                 }
                 if (hit >= 0) return hit;
+
+                // If we just searched the entire [start, chunkEnd) range,
+                // there's no point reducing chunkEnd further — we've
+                // covered everything.  Break before the overlap-step
+                // that would leave chunkEnd above start forever.
+                if (chunkStart == start) break;
 
                 chunkEnd = chunkStart + overlap;
                 if (chunkEnd <= start) break;

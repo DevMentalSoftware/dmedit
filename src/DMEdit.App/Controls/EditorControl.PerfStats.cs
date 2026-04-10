@@ -71,6 +71,10 @@ public sealed partial class EditorControl {
         public int Gen2 { get; set; }
         /// <summary>Cumulative count of InvalidateLayout calls.</summary>
         public long LayoutInvalidations { get; set; }
+        /// <summary>Cumulative count of row index rebuilds.</summary>
+        public long RowIndexBuilds { get; set; }
+        /// <summary>Time of the most recent row index build in ms.</summary>
+        public double RowIndexBuildMs { get; set; }
         /// <summary>Cumulative count of Render calls.</summary>
         public long RenderCalls { get; set; }
 

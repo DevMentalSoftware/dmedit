@@ -30,6 +30,12 @@ public sealed partial class EditorControl {
         _layout?.Dispose();
         _layout = null;
         _winTopLine = -1; // reset incremental scroll (content changed)
+        _winExactPinActive = false; // any pending exact pin is stale
+        // Don't InvalidateRowIndex() here — the row index detects stale
+        // charsPerRow lazily in EnsureRowIndex() and only rebuilds when
+        // the effective wrap width actually changes.  Nulling it on every
+        // InvalidateLayout (which fires on every resize frame) would
+        // cause dozens of throwaway rebuilds during a window resize drag.
         PerfStats.LayoutInvalidations++;
         InvalidateMeasure();
         InvalidateVisual();
@@ -476,36 +482,30 @@ public sealed partial class EditorControl {
             totalVisualRows = lineCount;
             topLine = Math.Clamp((long)(_scrollOffset.Y / rh), 0, Math.Max(0, lineCount - 1));
         } else {
-            // Wrapping on: lines can span multiple rows (estimated).
-            var totalChars = doc.Table.Length;
-            totalVisualRows = charsPerRow > 0
-                ? Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow))
-                : lineCount;
-            topLine = EstimateWrappedTopLine(_scrollOffset.Y, doc.Table, lineCount, charsPerRow, rh);
+            // Wrapping on: lines can span multiple rows.  Use the exact
+            // per-line row index when available; fall back to the char-
+            // density estimate for docs above the build threshold.
+            totalVisualRows = ExactOrEstimateTotalRows(doc.Table, lineCount, charsPerRow);
+            topLine = ExactOrEstimateTopLine(_scrollOffset.Y, doc.Table,
+                lineCount, charsPerRow, rh);
         }
 
-        // Sanity check: the incremental cache (_winTopLine) must stay within
-        // ±1 row of the formula topLine per frame — that's the whole point
-        // of the constraint below.  If a sequence of small scroll ticks has
-        // drifted the cache more than 1 row from reality, the cache is stale
-        // and must be discarded so the formula path runs.
+        // Note: no "sanity-check" drift clear here.  The incremental cache
+        // is the source of truth — the small-scroll branch below constrains
+        // topLine to ±1 from the cache so we track the rendered position
+        // line-by-line, regardless of what the estimate formula says.  For
+        // wrap-on docs with mixed wrap counts, the formula's topLine can
+        // legitimately jump by several lines per frame as the char-density
+        // estimate crosses line boundaries.  Clearing the cache on that
+        // drift was a bug — it dropped us into the large-jump render path
+        // and produced visible content jumps during smooth drag (2026-04-09
+        // session, "thumb drags broken for wrap-on mixed-wrap doc").
         //
-        // How drift accumulates: the constraint caps topLine changes at ±1
-        // per frame, but the formula can legitimately jump by more when ds
-        // straddles multiple line boundaries (e.g. dragging up by 33 px from
-        // a non-line-aligned position crosses two line boundaries but only
-        // produces one retreat).  The "safety clamp" `if (RenderOffsetY > 0)
-        // RenderOffsetY = 0;` further masks the inconsistency by erasing the
-        // evidence of a positive render offset that would otherwise indicate
-        // the cache is wrong.  Over many small-scroll ticks during a slow
-        // drag, _winTopLine can drift arbitrarily far from the correct value
-        // — and because the layout is then cached with the drifted state,
-        // the symptom persists until something forces a fresh layout pass
-        // (e.g. dragging to the bottom, which produces a huge ds that takes
-        // the formula path).
-        if (_winTopLine >= 0 && Math.Abs(_winTopLine - topLine) > 1) {
-            _winTopLine = -1;
-        }
+        // Drift CAN accumulate a row or two over hundreds of sub-pixel
+        // small-scroll ticks, but the self-correction at every large jump
+        // (wheel notch > 2*rh, thumb track click, page-up/down) re-primes
+        // the cache from the formula.  Arbitrary drift was a mirage — the
+        // apparent "drift" was the formula being wrong, not the cache.
 
         // For single-row scrolls (arrow buttons), constrain topLine to change
         // by at most ±1 from the previous frame.  This lets the incremental
@@ -550,7 +550,18 @@ public sealed partial class EditorControl {
         // If showing the end of the document but topLine is too high to
         // fill the viewport (e.g. after deleting a line while scrolled to
         // the bottom), pull topLine back so the layout has enough content.
-        if (bottomLine >= lineCount && lineCount > visibleRows) {
+        //
+        // Gate: when ScrollExact has armed `_winExactPinActive`, it has
+        // already computed the target topLine using exact per-line row
+        // counts (via the tail-walk in ScrollSelectionIntoView).  Pull-
+        // back's visibleRows count assumes 1 row per line, so it can
+        // drag topLine further back than ScrollExact wants and corrupt
+        // the cache override (bugs #2/#3 from the 2026-04-09 Find
+        // scrolling session).  The flag is single-use — it's cleared
+        // further down this method so subsequent wheel/drag/arrow
+        // scrolls go through the normal pull-back path and never see
+        // the gate fire.
+        if (!_winExactPinActive && bottomLine >= lineCount && lineCount > visibleRows) {
             topLine = Math.Min(topLine, lineCount - visibleRows);
         }
 
@@ -600,10 +611,29 @@ public sealed partial class EditorControl {
         _layout.TopLine = topLine;
 
         // When the layout covers the entire document, use exact height
-        // instead of the estimate — gives pixel-perfect scrolling on small files.
-        var extentHeight = (topLine == 0 && bottomLine >= lineCount)
-            ? _layout.TotalHeight
-            : totalVisualRows * rh;
+        // instead of the estimate — gives pixel-perfect scrolling on
+        // small files.
+        //
+        // Exact-pin end-of-doc: when ScrollExact has armed the exact-pin
+        // flag for a target that lands at the tail of the doc, tighten
+        // the extent so that ScrollMaximum exactly equals the current
+        // scroll value.  This makes the scrollbar thumb sit at the
+        // bottom, lets the render path's max-scroll clamp kick in
+        // cleanly, and prevents the next ScrollSelectionIntoView call
+        // from finding a stale extent.  The flag is single-use (cleared
+        // below) so ordinary wheel/drag/arrow scrolling never takes
+        // this path — ordinary scroll needs the estimate-based extent
+        // to stay consistent frame-to-frame.
+        double extentHeight;
+        if (topLine == 0 && bottomLine >= lineCount) {
+            extentHeight = _layout.TotalHeight;
+        } else if (_winExactPinActive && bottomLine >= lineCount) {
+            extentHeight = Math.Max(
+                _layout.TotalHeight,
+                _scrollOffset.Y + _viewport.Height);
+        } else {
+            extentHeight = totalVisualRows * rh;
+        }
         var contentWidth = !_wrapLines
             ? _gutterWidth + doc.Table.MaxLineLength * GetCharWidth() + TextAreaPadRight
             : extentWidth;
@@ -640,9 +670,12 @@ public sealed partial class EditorControl {
                 - (_scrollOffset.Y - _winScrollOffset)
                 - _layout.Lines[0].HeightInRows * rh;
         } else {
-            // First layout or large jump.
+            // First layout or large jump.  Use the exact row index when
+            // available so dragging the thumb lands at the precise content
+            // position — no more "topLine+RenderOffsetY estimate disagrees
+            // with actual first-line position" jumps during drag.
             RenderOffsetY = _wrapLines
-                ? EstimateWrappedLineY(topLine, doc.Table, charsPerRow, rh) - _scrollOffset.Y
+                ? ExactOrEstimateLineY(topLine, doc.Table, charsPerRow, rh) - _scrollOffset.Y
                 : topLine * rh - _scrollOffset.Y;
         }
 
@@ -678,6 +711,10 @@ public sealed partial class EditorControl {
         _winScrollOffset = _scrollOffset.Y;
         _winRenderOffsetY = RenderOffsetY;
         _winFirstLineHeight = _layout.Lines.Count > 0 ? _layout.Lines[0].HeightInRows * rh : rh;
+        // Consume the exact-pin flag — it applies only to the single
+        // layout pass that renders ScrollExact's target.  Subsequent
+        // wheel/drag/arrow scrolls start with the flag already clear.
+        _winExactPinActive = false;
     }
 
     /// <summary>
