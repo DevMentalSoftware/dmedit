@@ -233,7 +233,7 @@ public partial class SettingsControl : UserControl {
 
             if (_rowsByCategory.TryGetValue(cat, out var rows)) {
                 foreach (var row in rows) {
-                    if (row.Tag is SettingDescriptor desc) {
+                    if (row.Tag is ISettingDescriptor desc) {
                         var matchesSearch = string.IsNullOrEmpty(search)
                             || desc.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase)
                             || (desc.Description?.Contains(search, StringComparison.OrdinalIgnoreCase) == true);

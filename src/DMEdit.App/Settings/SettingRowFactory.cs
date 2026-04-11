@@ -30,7 +30,7 @@ public static class SettingRowFactory {
     /// Builds a row control for the given descriptor. Returns a Border
     /// containing the appropriate input control(s).
     /// </summary>
-    public static Border CreateRow(SettingDescriptor desc, AppSettings settings, Action<string> onChanged) {
+    public static Border CreateRow(ISettingDescriptor desc, AppSettings settings, Action<string> onChanged) {
         var prop = typeof(AppSettings).GetProperty(desc.Key)
                    ?? throw new InvalidOperationException($"No property '{desc.Key}' on AppSettings");
 
@@ -75,15 +75,15 @@ public static class SettingRowFactory {
     /// value. Hidden when the setting already has its default.
     /// </summary>
     private static Button CreateResetButton(
-        SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
+        ISettingDescriptor desc, PropertyInfo prop, AppSettings settings,
         Action<string> onChanged, Border border) {
         var btn = CreateResetIconButton();
-        var modified = !Equals(prop.GetValue(settings), desc.DefaultValue);
+        var modified = !Equals(prop.GetValue(settings), desc.BoxedDefault);
         btn.Opacity = modified ? 1 : 0;
         btn.IsHitTestVisible = modified;
 
         btn.Click += (_, _) => {
-            prop.SetValue(settings, desc.DefaultValue);
+            prop.SetValue(settings, desc.BoxedDefault);
             settings.ScheduleSave();
             UpdateModifiedIndicator(border, desc, prop, settings);
             onChanged(desc.Key);
@@ -155,7 +155,7 @@ public static class SettingRowFactory {
     }
 
     private static Control CreateBoolRow(
-        SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
+        ISettingDescriptor desc, PropertyInfo prop, AppSettings settings,
         Action<string> onChanged, Border border) {
         var isChecked = (bool)prop.GetValue(settings)!;
 
@@ -212,14 +212,14 @@ public static class SettingRowFactory {
     }
 
     private static Panel CreateIntRow(
-        SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
+        ISettingDescriptor desc, PropertyInfo prop, AppSettings settings,
         Action<string> onChanged, Border border) {
         var panel = new StackPanel { Spacing = 4 };
 
         var nud = new NumericUpDown {
             Value = Convert.ToDecimal(prop.GetValue(settings)),
-            Minimum = desc.Min is not null ? Convert.ToDecimal(desc.Min) : decimal.MinValue,
-            Maximum = desc.Max is not null ? Convert.ToDecimal(desc.Max) : decimal.MaxValue,
+            Minimum = desc.BoxedMin is not null ? Convert.ToDecimal(desc.BoxedMin) : decimal.MinValue,
+            Maximum = desc.BoxedMax is not null ? Convert.ToDecimal(desc.BoxedMax) : decimal.MaxValue,
             Increment = desc.Increment >= 1 ? (decimal)desc.Increment : 1,
             Width = 180,
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -227,7 +227,7 @@ public static class SettingRowFactory {
         };
 
         var resetBtn = CreateResetButton(desc, prop, settings, onChanged, border);
-        resetBtn.Click += (_, _) => nud.Value = Convert.ToDecimal(desc.DefaultValue);
+        resetBtn.Click += (_, _) => nud.Value = Convert.ToDecimal(desc.BoxedDefault);
 
         panel.Children.Add(CreateLabelRow(desc.DisplayName, resetBtn));
 
@@ -245,14 +245,14 @@ public static class SettingRowFactory {
     }
 
     private static Panel CreateLongRow(
-        SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
+        ISettingDescriptor desc, PropertyInfo prop, AppSettings settings,
         Action<string> onChanged, Border border) {
         var panel = new StackPanel { Spacing = 4 };
 
         var nud = new NumericUpDown {
             Value = Convert.ToDecimal(prop.GetValue(settings)),
-            Minimum = desc.Min is not null ? Convert.ToDecimal(desc.Min) : decimal.MinValue,
-            Maximum = desc.Max is not null ? Convert.ToDecimal(desc.Max) : decimal.MaxValue,
+            Minimum = desc.BoxedMin is not null ? Convert.ToDecimal(desc.BoxedMin) : decimal.MinValue,
+            Maximum = desc.BoxedMax is not null ? Convert.ToDecimal(desc.BoxedMax) : decimal.MaxValue,
             Increment = 1048576, // 1 MB steps
             Width = 180,
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -260,7 +260,7 @@ public static class SettingRowFactory {
         };
 
         var resetBtn = CreateResetButton(desc, prop, settings, onChanged, border);
-        resetBtn.Click += (_, _) => nud.Value = Convert.ToDecimal(desc.DefaultValue);
+        resetBtn.Click += (_, _) => nud.Value = Convert.ToDecimal(desc.BoxedDefault);
 
         panel.Children.Add(CreateLabelRow(desc.DisplayName, resetBtn));
 
@@ -278,14 +278,14 @@ public static class SettingRowFactory {
     }
 
     private static Panel CreateDoubleRow(
-        SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
+        ISettingDescriptor desc, PropertyInfo prop, AppSettings settings,
         Action<string> onChanged, Border border) {
         var panel = new StackPanel { Spacing = 4 };
 
         var nud = new NumericUpDown {
             Value = Convert.ToDecimal(prop.GetValue(settings)),
-            Minimum = desc.Min is not null ? Convert.ToDecimal(desc.Min) : 0,
-            Maximum = desc.Max is not null ? Convert.ToDecimal(desc.Max) : 1000,
+            Minimum = desc.BoxedMin is not null ? Convert.ToDecimal(desc.BoxedMin) : 0,
+            Maximum = desc.BoxedMax is not null ? Convert.ToDecimal(desc.BoxedMax) : 1000,
             Increment = (decimal)desc.Increment,
             Width = 180,
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -293,7 +293,7 @@ public static class SettingRowFactory {
         };
 
         var resetBtn = CreateResetButton(desc, prop, settings, onChanged, border);
-        resetBtn.Click += (_, _) => nud.Value = Convert.ToDecimal(desc.DefaultValue);
+        resetBtn.Click += (_, _) => nud.Value = Convert.ToDecimal(desc.BoxedDefault);
 
         panel.Children.Add(CreateLabelRow(desc.DisplayName, resetBtn));
 
@@ -311,7 +311,7 @@ public static class SettingRowFactory {
     }
 
     private static Panel CreateEnumRow(
-        SettingDescriptor desc, PropertyInfo prop, AppSettings settings,
+        ISettingDescriptor desc, PropertyInfo prop, AppSettings settings,
         Action<string> onChanged, Border border) {
         var enumType = desc.EnumType
                        ?? throw new InvalidOperationException($"EnumType required for {desc.Key}");
@@ -336,7 +336,7 @@ public static class SettingRowFactory {
         combo.SelectedItem = current;
 
         var resetBtn = CreateResetButton(desc, prop, settings, onChanged, border);
-        resetBtn.Click += (_, _) => combo.SelectedItem = desc.DefaultValue.ToString();
+        resetBtn.Click += (_, _) => combo.SelectedItem = desc.BoxedDefault.ToString();
 
         panel.Children.Add(CreateLabelRow(desc.DisplayName, resetBtn));
 
@@ -355,9 +355,9 @@ public static class SettingRowFactory {
     }
 
     private static void UpdateModifiedIndicator(
-        Border border, SettingDescriptor desc, PropertyInfo prop, AppSettings settings) {
+        Border border, ISettingDescriptor desc, PropertyInfo prop, AppSettings settings) {
         var current = prop.GetValue(settings);
-        var isDefault = Equals(current, desc.DefaultValue);
+        var isDefault = Equals(current, desc.BoxedDefault);
         border.BorderBrush = isDefault ? Brushes.Transparent : CurrentTheme.SettingsAccent;
         // Toggle reset button visibility (Opacity, not IsVisible, to preserve layout).
         if (FindByTag(border, "reset") is Control resetBtn) {
@@ -491,10 +491,10 @@ public static class SettingRowFactory {
     /// </summary>
     public static Border CreateFontRow(AppSettings settings, Action<string> onChanged) {
         // Use a SettingDescriptor tag so ApplyFilter search works.
-        var desc = new SettingDescriptor(
+        var desc = new SettingDescriptor<int>(
             "EditorFontFamily", "Editor Font",
             "Font family and size used for the editor.",
-            "Display", SettingKind.Int, 0);
+            "Display", 0);
 
         var border = new Border {
             Padding = new Thickness(12, 6, 12, 6),

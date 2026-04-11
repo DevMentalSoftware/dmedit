@@ -54,7 +54,7 @@ public class SettingsRegistryTests {
     }
 
     [Fact]
-    public void EveryDescriptorDefault_MatchesPropertyType() {
+    public void EveryDescriptorDefault_IsAssignableToProperty() {
         var props = typeof(AppSettings).GetProperties(
             BindingFlags.Public | BindingFlags.Instance);
         var propByName = props.ToDictionary(p => p.Name, p => p);
@@ -62,39 +62,17 @@ public class SettingsRegistryTests {
         var mismatches = new List<string>();
         foreach (var desc in SettingsRegistry.All) {
             if (!propByName.TryGetValue(desc.Key, out var prop)) {
-                // Already reported by the first test.
                 continue;
             }
             var propType = System.Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-            switch (desc.Kind) {
-                case SettingKind.Bool:
-                    if (propType != typeof(bool)) {
-                        mismatches.Add($"{desc.Key}: Kind=Bool but property is {propType.Name}");
-                    }
-                    break;
-                case SettingKind.Int:
-                    if (propType != typeof(int)) {
-                        mismatches.Add($"{desc.Key}: Kind=Int but property is {propType.Name}");
-                    }
-                    break;
-                case SettingKind.Long:
-                    if (propType != typeof(long)) {
-                        mismatches.Add($"{desc.Key}: Kind=Long but property is {propType.Name}");
-                    }
-                    break;
-                case SettingKind.Double:
-                    if (propType != typeof(double)) {
-                        mismatches.Add($"{desc.Key}: Kind=Double but property is {propType.Name}");
-                    }
-                    break;
-                case SettingKind.Enum:
-                    if (!propType.IsEnum) {
-                        mismatches.Add($"{desc.Key}: Kind=Enum but property is {propType.Name}");
-                    } else if (desc.EnumType != null && desc.EnumType != propType) {
-                        mismatches.Add(
-                            $"{desc.Key}: EnumType={desc.EnumType.Name} but property is {propType.Name}");
-                    }
-                    break;
+            var defaultType = desc.BoxedDefault.GetType();
+
+            // The generic SettingDescriptor<T> guarantees Kind matches T,
+            // but we still verify the property type matches the boxed default
+            // since the Key→property mapping is string-based.
+            if (!propType.IsAssignableFrom(defaultType)) {
+                mismatches.Add(
+                    $"{desc.Key}: default is {defaultType.Name} but property is {propType.Name}");
             }
         }
 
