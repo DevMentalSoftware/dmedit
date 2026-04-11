@@ -622,13 +622,13 @@ public sealed partial class EditorControl {
             FlushCompound();
             ScrollValue -= GetRowHeight();
             InvalidateVisual();
-            InvalidateArrange(); // reposition caret layers
+            ResetCaretBlink(); // re-show caret (ScrollValue setter hides it)
         }, isVerticalNav: true);
         Reg(Cmd.ViewScrollLineDown, _ => {
             FlushCompound();
             ScrollValue += GetRowHeight();
             InvalidateVisual();
-            InvalidateArrange(); // reposition caret layers
+            ResetCaretBlink(); // re-show caret (ScrollValue setter hides it)
         }, isVerticalNav: true);
 
         // -- Column selection commands (handled in preamble, register with empty action) --
