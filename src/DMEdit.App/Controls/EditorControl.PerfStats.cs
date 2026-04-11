@@ -59,6 +59,8 @@ public sealed partial class EditorControl {
         public long ScrollRetries { get; set; }
         /// <summary>How many times ScrollCaretIntoView ran (past all early exits).</summary>
         public long ScrollCaretCalls { get; set; }
+        /// <summary>How many times ScrollExact ran (should be 0 or 1 per user action).</summary>
+        public long ScrollExactCalls { get; set; }
         /// <summary>Current GC memory in MB.</summary>
         public double MemoryMb { get; set; }
         /// <summary>Peak GC memory seen this session in MB.</summary>

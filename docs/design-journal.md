@@ -34,14 +34,43 @@ small one — it is the primary way a fresh session recovers context.
 | [20-hanging-indent](design-journal/20-hanging-indent.md) | 2026-04-06 | Hanging indent on wrapped rows, Avalonia monospace GlyphRun fast path, first step toward removing TextLayout from the editor |
 | [21-ascii-fast-path](design-journal/21-ascii-fast-path.md) | 2026-04-07 | ChunkedUtf8Buffer per-chunk IsAllAscii flag — column-mode insert ~28× faster, all CharAt-touching code paths benefit |
 | [22-textlayout-crash-hardening](design-journal/22-textlayout-crash-hardening.md) | 2026-04-07 | Slow-path TextLayout sanitize + try/catch fallback — fixes real user crash scrolling a binary file (Avalonia split bug) |
+| [23-scroll-invariants](design-journal/23-scroll-invariants.md) | 2026-04-11 | Debug invariants for scroll/layout alignment, `GetMonoCharWidth` bug fix, `_lastTextWidth` cache, `ShouldUseSlowPath` unification, `PerfStats.ScrollExactCalls` |
 
 ---
 
 ## Current State
 
-**Test baseline: 933** (662 Core + 60 Rendering + 211 App, 1 skipped)
+**Test baseline: 1016** (662 Core + 60 Rendering + 294 App, 1 skipped)
 
 ### In progress
+
+- **Scroll/layout/caret comprehensive test coverage** — Invariant
+  infrastructure is in place (entry 23): five `Debug.Assert` invariants
+  catch row-count misalignment, bounds violations, and near-end remap
+  failures on every Debug layout pass.  `ShouldUseSlowPath` unifies the
+  mono/TextLayout decision.  `PerfStats.ScrollExactCalls` enables
+  hidden-behavior assertions in tests.
+
+  **Remaining work:** write the actual test suite.  Priority order:
+  1. Test infrastructure (parameterized helpers, PerfStats snapshot)
+  2. `ComputeTargetScrollY` pure-function tests (~40 tests)
+  3. `MoveCaretVertical` + Up/Down symmetry proof
+  4. `FindNext`/`FindPrev` scroll pinning + wrap-around
+  5. `PageUp`/`PageDown` (zero direct coverage today)
+  6. `Home`/`End` cascading on wrapped lines
+
+  Estimated ~12,500 net new test cases, mostly via parameterized
+  `[Theory]` methods (~500-800 test methods emitting thousands of
+  logical cases).
+
+  **Avalonia 12 upgrade is deferred** until this test coverage exists.
+  The upgrade changes are understood and documented but not applied.
+  Key changes needed: `IGlyphTypeface` → `GlyphTypeface`,
+  `GotFocusEventArgs` → `FocusChangedEventArgs`, `SystemDecorations`
+  → `WindowDecorations`, clipboard/drag-drop API, `RenderScaling`
+  moved to `TopLevel`, `Avalonia.Diagnostics` removed,
+  `ExtendClientAreaChromeHints` removed, xunit v2 → v3, SkiaSharp
+  2.x → 3.x.  Linux resize workaround still needed.
 
 - **Surrogate-pair safety** — Backspace/Delete used to split a UTF-16
   surrogate pair and leave a stranded half in the buffer, which then
@@ -88,6 +117,20 @@ small one — it is the primary way a fresh session recovers context.
   See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **Scroll/layout invariant infrastructure** (2026-04-11) — Five
+  `Debug.Assert` invariants guard row-count alignment, row-of-char
+  consistency, near-end remap postcondition, scroll bounds, and caret
+  bounds.  Found and fixed latent char-width divergence bug: scroll math
+  used `GetCharWidth()` (TextLayout "0" width) while the renderer used
+  glyph-advance width — different values produced different row counts,
+  causing Find to land off-viewport.  New `GetMonoCharWidth()` derives
+  width from the same glyph-advance source as `MonoLayoutContext`.  New
+  `_lastTextWidth` cache prevents `GetMonoRowWidths` from recomputing
+  width from `Bounds` during `MeasureOverride` (where `Bounds` is 0).
+  `ShouldUseSlowPath(text)` unifies two duplicated font-path decisions.
+  `PerfStats.ScrollExactCalls` tracks calls for hidden-behavior tests.
+  See [23-scroll-invariants](design-journal/23-scroll-invariants.md).
 
 - **Coverage audit completed** (2026-04-10) — All test coverage gaps
   identified in the 2026-04-08 audit (Priority 1 and 2) are closed.

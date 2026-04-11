@@ -514,6 +514,12 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     private double _winRenderOffsetY;
     private double _winFirstLineHeight;
 
+    // Cached text-area width from the most recent EnsureLayout pass.
+    // ComputeLineRowCount / ComputeRowOfCharInLine must use the same
+    // width the layout engine used; recomputing from Bounds can disagree
+    // when called during Measure before Bounds is set.
+    private double _lastTextWidth;
+
     // Exact-pin flag — set by ScrollExact, consumed by ONE LayoutWindowed
     // pass, then cleared.  While set, LayoutWindowed trusts the cached
     // topLine exactly (skipping pull-back and the extent estimate for

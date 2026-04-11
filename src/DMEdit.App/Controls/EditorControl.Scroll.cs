@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using Avalonia;
 using Avalonia.Media;
@@ -146,6 +147,12 @@ public sealed partial class EditorControl {
 
         var table = doc.Table;
         var caret = doc.Selection.Caret;
+#if DEBUG
+        Debug.Assert(caret >= 0 && caret <= table.Length,
+            $"Caret {caret} outside [0, {table.Length}]");
+        Debug.Assert(doc.Selection.Anchor >= 0 && doc.Selection.Anchor <= table.Length,
+            $"Anchor {doc.Selection.Anchor} outside [0, {table.Length}]");
+#endif
         var lineCount = table.LineCount;
         if (lineCount <= 0) return;
 
@@ -297,7 +304,7 @@ public sealed partial class EditorControl {
     /// <c>[0, ScrollMaximum]</c>, so calling these near the document
     /// boundaries can't push the viewport past the content.</para>
     /// </summary>
-    private static double ComputeTargetScrollY(
+    internal static double ComputeTargetScrollY(
             ScrollPolicy policy, double caretDocY, double caretH,
             double viewportH, double currentScrollY) {
         switch (policy) {
@@ -358,6 +365,13 @@ public sealed partial class EditorControl {
         if (doc == null || IsLoading) return;
 
         var sel = doc.Selection;
+#if DEBUG
+        var table0 = doc.Table;
+        Debug.Assert(sel.Caret >= 0 && sel.Caret <= table0.Length,
+            $"Caret {sel.Caret} outside [0, {table0.Length}]");
+        Debug.Assert(sel.Anchor >= 0 && sel.Anchor <= table0.Length,
+            $"Anchor {sel.Anchor} outside [0, {table0.Length}]");
+#endif
         if (sel.IsEmpty) {
             // No selection → fall back to the caret-based primitive.
             ScrollCaretIntoView();
@@ -492,6 +506,21 @@ public sealed partial class EditorControl {
             if (targetRenderOffsetY > 0) targetRenderOffsetY = 0;
         }
 
+#if DEBUG
+        // Invariant: after near-end remap, the rows from targetTopLine to
+        // the end of the document must fill the viewport (or targetTopLine
+        // is 0, meaning the doc is shorter than the viewport).
+        {
+            var checkRows = 0;
+            for (var ln = targetTopLine; ln < lineCount; ln++) {
+                checkRows += ComputeLineRowCount(ln);
+            }
+            Debug.Assert(checkRows >= viewportRows || targetTopLine == 0,
+                $"Near-end remap: {checkRows} rows from line {targetTopLine} "
+                + $"< viewport {viewportRows} rows");
+        }
+#endif
+
         // --- Apply as a single state update ---
         ScrollExact(targetTopLine, targetRenderOffsetY);
     }
@@ -572,7 +601,7 @@ public sealed partial class EditorControl {
         // is critical: if ScrollExact computes a row count that differs
         // from the rendered row count, the target position will be off
         // by (difference × rh) pixels and the match can land off-viewport.
-        if (!IsFontMonospace() || ContainsSlowPathChars(text)) {
+        if (ShouldUseSlowPath(text)) {
             return SlowPathRowCount(text);
         }
 
@@ -611,11 +640,20 @@ public sealed partial class EditorControl {
         // chars, the actual rendering uses TextLayout and the mono
         // breaker's row index won't match — measure with TextLayout
         // instead via the slow path.
-        if (!IsFontMonospace() || ContainsSlowPathChars(text)) {
-            return SlowPathRowOfChar(text, charInLine);
+        int result;
+        if (ShouldUseSlowPath(text)) {
+            result = SlowPathRowOfChar(text, charInLine);
+        } else {
+            result = MonoRowBreaker.RowOfChar(text, charInLine, firstRowChars, contRowChars);
         }
 
-        return MonoRowBreaker.RowOfChar(text, charInLine, firstRowChars, contRowChars);
+#if DEBUG
+        // Invariant: the row index must be less than the total row count.
+        var rowCount = ComputeLineRowCount(lineIdx);
+        Debug.Assert(result < rowCount,
+            $"RowOfChar({charInLine}) = {result} >= LineRowCount({lineIdx}) = {rowCount}");
+#endif
+        return result;
     }
 
     /// <summary>
@@ -654,12 +692,33 @@ public sealed partial class EditorControl {
     /// <see cref="MonoLineLayout.TryBuild"/> uses for the current wrap
     /// settings.  Continuation rows are shrunk by the hanging-indent
     /// character count.
+    ///
+    /// <para><b>Critical:</b> the char width must come from the same source
+    /// as <see cref="MonoLayoutContext.CharWidth"/> — the space glyph's
+    /// advance in the resolved <c>GlyphTypeface</c>.  The layout engine
+    /// computes <c>maxCharsPerRow = maxWidth / monoCtx.CharWidth</c>; if
+    /// we used a different width here (e.g. <see cref="GetCharWidth"/>,
+    /// which measures <c>"0"</c> via <c>TextLayout</c>), rounding can
+    /// produce a different char count and the row counts diverge.</para>
     /// </summary>
     private (int firstRowChars, int contRowChars) GetMonoRowWidths() {
-        var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-        var textW = GetTextWidth(maxW);
+        // Use the cached text width from the most recent EnsureLayout pass
+        // when available.  Recomputing from Bounds disagrees during Measure
+        // (Bounds not yet set) and during the LayoutWindowed invariant check
+        // (Bounds may differ from what was passed to the layout engine).
+        double textW;
+        if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
+            textW = _lastTextWidth;
+        } else {
+            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+            textW = GetTextWidth(maxW);
+        }
         if (!double.IsFinite(textW) || textW <= 0) return (int.MaxValue, int.MaxValue);
-        var cw = GetCharWidth();
+
+        // Derive char width from the glyph advance — same path as
+        // MonoLayoutContext.  Falls back to GetCharWidth() (TextLayout
+        // based) if the font isn't monospace or has no space glyph.
+        var cw = GetMonoCharWidth();
         if (cw <= 0) return (int.MaxValue, int.MaxValue);
         var maxChars = Math.Max(1, (int)(textW / cw));
         var hangingIndentChars = _hangingIndent && _wrapLines && !_charWrapMode
@@ -668,6 +727,28 @@ public sealed partial class EditorControl {
         var firstRowChars = maxChars;
         var contRowChars = Math.Max(1, maxChars - hangingIndentChars);
         return (firstRowChars, contRowChars);
+    }
+
+    /// <summary>
+    /// Returns the mono-path character width derived from the space
+    /// glyph's advance — the same computation <see cref="MonoLayoutContext"/>
+    /// uses.  Falls back to <see cref="GetCharWidth"/> when the font
+    /// isn't monospace.
+    /// </summary>
+    private double GetMonoCharWidth() {
+        var typeface = new Typeface(FontFamily);
+        var gtf = typeface.GlyphTypeface;
+        if (gtf is null || !gtf.Metrics.IsFixedPitch) {
+            return GetCharWidth();
+        }
+        var emHeight = (double)gtf.Metrics.DesignEmHeight;
+        if (emHeight <= 0) return GetCharWidth();
+        if (!gtf.TryGetGlyph(' ', out var spaceGlyph)) {
+            return GetCharWidth();
+        }
+        var advance = gtf.GetGlyphAdvance(spaceGlyph);
+        var cw = advance / emHeight * EffectiveFontSize;
+        return cw > 0 ? cw : GetCharWidth();
     }
 
     /// <summary>
@@ -682,6 +763,17 @@ public sealed partial class EditorControl {
         }
         return false;
     }
+
+    /// <summary>
+    /// Single decision point: should this line use the TextLayout slow
+    /// path instead of the MonoRowBreaker fast path?  Both
+    /// <see cref="ComputeLineRowCount"/> and <see cref="ComputeRowOfCharInLine"/>
+    /// must make the same decision as the renderer
+    /// (<see cref="MonoLineLayout.TryBuild"/>).  Consolidating the check
+    /// here prevents the two scroll-side call sites from drifting apart.
+    /// </summary>
+    private bool ShouldUseSlowPath(string text) =>
+        !IsFontMonospace() || ContainsSlowPathChars(text);
 
     /// <summary>
     /// Counts rows via an Avalonia <c>TextLayout</c>.  Used only as a
@@ -726,6 +818,8 @@ public sealed partial class EditorControl {
     /// pixel-exact content positioning.</para>
     /// </summary>
     private void ScrollExact(long topLine, double renderOffsetY) {
+        PerfStats.ScrollExactCalls++;
+
         var doc = Document;
         if (doc == null) return;
         var table = doc.Table;
@@ -752,6 +846,10 @@ public sealed partial class EditorControl {
         // about to set.  We also dispose _layout manually so the next
         // EnsureLayout rebuilds with our state.
         _scrollOffset = new Vector(_scrollOffset.X, approxScroll);
+#if DEBUG
+        Debug.Assert(approxScroll >= 0,
+            $"ScrollExact: approxScroll {approxScroll} < 0 for topLine {topLine}");
+#endif
         _winTopLine = topLine;
         _winScrollOffset = approxScroll;
         _winRenderOffsetY = renderOffsetY;
@@ -1017,6 +1115,15 @@ public sealed partial class EditorControl {
         var doc = Document;
         if (doc == null) return;
         MoveCaretVertical(doc, lineDelta, extend);
+    }
+
+    /// <summary>
+    /// Invokes <see cref="MoveCaretByPage"/> on behalf of a test.
+    /// </summary>
+    internal void MoveCaretByPageForTest(int direction, bool extend) {
+        var doc = Document;
+        if (doc == null) return;
+        MoveCaretByPage(doc, direction, extend);
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using Avalonia;
 using Avalonia.Media;
@@ -201,6 +202,7 @@ public sealed partial class EditorControl {
         var boundsW = Bounds.Width > 0 ? Bounds.Width : 900;
         var extentW = Math.Max(100, boundsW - _gutterWidth);
         var textW = GetTextWidth(extentW);
+        _lastTextWidth = textW;
         var lineCount = doc?.Table.LineCount ?? 0;
 
         try {
@@ -264,6 +266,7 @@ public sealed partial class EditorControl {
             ? 0
             : Math.Max(100, availableSize.Width - _gutterWidth);
         var textW = GetTextWidth(extentW);
+        _lastTextWidth = textW;
 
         var lineCount = doc?.Table.LineCount ?? 0;
 
@@ -624,6 +627,25 @@ public sealed partial class EditorControl {
             maxWidth, startOfs, lineCount, doc.Table.Length, hangingIndentChars,
             _useFastTextLayout, rh);
         _layout.TopLine = topLine;
+
+#if DEBUG
+        // Invariant: the row count each rendered line actually has must
+        // match what ComputeLineRowCount returns.  If these diverge,
+        // ScrollExact targets the wrong row and Find matches land off-
+        // viewport.  Catching it here — on every layout pass in Debug —
+        // makes the entire mono/slow-path alignment test matrix redundant.
+        if (_wrapLines && !_charWrapMode) {
+            for (var i = 0; i < _layout.Lines.Count; i++) {
+                var ll = _layout.Lines[i];
+                var lineIdx = topLine + i;
+                var rendered = ll.HeightInRows;
+                var computed = ComputeLineRowCount(lineIdx);
+                Debug.Assert(rendered == computed,
+                    $"Row count mismatch line {lineIdx}: rendered {rendered}, "
+                    + $"computed {computed} (mono={ll.IsMono})");
+            }
+        }
+#endif
 
         // When the layout covers the entire document, use exact height
         // instead of the estimate — gives pixel-perfect scrolling on
