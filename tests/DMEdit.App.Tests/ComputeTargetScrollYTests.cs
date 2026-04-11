@@ -219,4 +219,109 @@ public class ComputeTargetScrollYTests {
             ScrollPolicy.Bottom, caretDocY, Rh, VpH, 0);
         Assert.InRange(center, bottom, top);
     }
+
+    // ================================================================
+    //  Parametric sweep: Minimal policy boundary precision
+    //
+    //  The Minimal policy has three branches: above viewport, below
+    //  viewport, already visible.  This sweep tests the exact
+    //  transition points between branches.
+    // ================================================================
+
+    public static IEnumerable<object[]> MinimalSweepData() {
+        // Sweep caretDocY from 0 to 2*VpH in steps of Rh/2,
+        // with currentScrollY at various positions.
+        var scrollPositions = new double[] { 0, 100, 500, 900, 1800 };
+        foreach (var scrollY in scrollPositions) {
+            for (var caretDocY = 0.0; caretDocY <= 2 * VpH; caretDocY += Rh / 2) {
+                yield return new object[] { caretDocY, scrollY };
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(MinimalSweepData))]
+    public void Minimal_Sweep_ResultIsConsistent(double caretDocY, double scrollY) {
+        var result = EditorControl.ComputeTargetScrollY(
+            ScrollPolicy.Minimal, caretDocY, Rh, VpH, scrollY);
+
+        // After applying the result, the caret should be visible:
+        //   result <= caretDocY  (caret not above viewport)
+        //   caretDocY + Rh <= result + VpH  (caret not below viewport)
+        // OR the result equals scrollY (no scroll needed because already visible).
+        if (Math.Abs(result - scrollY) < 0.01) {
+            // No scroll — caret was already visible.
+            Assert.True(caretDocY >= scrollY - 0.01,
+                $"No-scroll but caret ({caretDocY}) above viewport ({scrollY})");
+            Assert.True(caretDocY + Rh <= scrollY + VpH + 0.01,
+                $"No-scroll but caret bottom ({caretDocY + Rh}) below viewport bottom ({scrollY + VpH})");
+        } else {
+            // Scrolled — caret should be inside the new viewport.
+            Assert.True(caretDocY >= result - 0.01,
+                $"Caret ({caretDocY}) above viewport after scroll ({result})");
+            Assert.True(caretDocY + Rh <= result + VpH + 0.01,
+                $"Caret bottom ({caretDocY + Rh}) below viewport bottom ({result + VpH})");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(MinimalSweepData))]
+    public void Minimal_Sweep_NeverScrollsMoreThanNeeded(double caretDocY,
+            double scrollY) {
+        var result = EditorControl.ComputeTargetScrollY(
+            ScrollPolicy.Minimal, caretDocY, Rh, VpH, scrollY);
+
+        // The scroll delta should be the MINIMUM needed.
+        // If caret was above: result = caretDocY (pull viewport up to caret).
+        // If caret was below: result = caretDocY + Rh - VpH (pull viewport
+        //   down so caret bottom aligns with viewport bottom).
+        // If already visible: result = scrollY (no change).
+        var delta = Math.Abs(result - scrollY);
+        if (delta < 0.01) return; // no scroll
+
+        if (caretDocY < scrollY) {
+            // Caret was above — should scroll up to caret (no further).
+            Assert.Equal(caretDocY, result, 1e-6);
+        } else {
+            // Caret was below — should scroll down minimally.
+            Assert.Equal(caretDocY + Rh - VpH, result, 1e-6);
+        }
+    }
+
+    // ================================================================
+    //  Parametric sweep: all policies, varying viewport sizes
+    // ================================================================
+
+    public static IEnumerable<object[]> ViewportSizeData() {
+        var viewports = new double[] { 20, 100, 200, 400, 800 };
+        var positions = new double[] { 0, 50, 200, 500, 990 };
+        foreach (var vpH in viewports) {
+            foreach (var caretDocY in positions) {
+                yield return new object[] { caretDocY, vpH };
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(ViewportSizeData))]
+    public void AllPolicies_VaryingViewport_TopMinusCenterEqualsHalfVp(
+            double caretDocY, double vpH) {
+        var top = EditorControl.ComputeTargetScrollY(
+            ScrollPolicy.Top, caretDocY, Rh, vpH, 0);
+        var center = EditorControl.ComputeTargetScrollY(
+            ScrollPolicy.Center, caretDocY, Rh, vpH, 0);
+        // Top - Center = vpH/2 - Rh/2 (half viewport minus half caret).
+        Assert.Equal(vpH / 2 - Rh / 2, top - center, 1e-6);
+    }
+
+    [Theory]
+    [MemberData(nameof(ViewportSizeData))]
+    public void AllPolicies_VaryingViewport_BottomMinusCenterEqualsNegHalfVp(
+            double caretDocY, double vpH) {
+        var bottom = EditorControl.ComputeTargetScrollY(
+            ScrollPolicy.Bottom, caretDocY, Rh, vpH, 0);
+        var center = EditorControl.ComputeTargetScrollY(
+            ScrollPolicy.Center, caretDocY, Rh, vpH, 0);
+        Assert.Equal(-(vpH / 2 - Rh / 2), bottom - center, 1e-6);
+    }
 }
