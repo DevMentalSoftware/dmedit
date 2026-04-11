@@ -410,11 +410,13 @@ public class FindStressTests {
             Relayout(editor);
         }
 
-        // ScrollMaximum should not have drifted significantly.
-        // Bug #2 from the 2026-04-09 session caused ScrollMaximum to
-        // collapse to 0 after wrap-around near the doc end.
+        // ScrollMaximum must not drift.  The 2026-04-09 bug #2 caused
+        // collapse to 0; the 2026-04-11 user report showed inflation to
+        // 2-3× the real value (exact-pin extent used estimate-based
+        // scrollY + vpH instead of totalVisualRows * rh).  Allow 10%
+        // tolerance for estimate-based row count rounding.
         Assert.InRange(editor.ScrollMaximum,
-            initialMax * 0.5, initialMax * 2.0);
+            initialMax * 0.9, initialMax * 1.1);
     }
 
     // ------------------------------------------------------------------

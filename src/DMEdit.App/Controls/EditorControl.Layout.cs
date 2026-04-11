@@ -663,12 +663,17 @@ public sealed partial class EditorControl {
         // to stay consistent frame-to-frame.
         double extentHeight;
         if (topLine == 0 && bottomLine >= lineCount) {
+            // Entire doc in one layout — use exact height.
             extentHeight = _layout.TotalHeight;
-        } else if (_winExactPinActive && bottomLine >= lineCount) {
-            extentHeight = Math.Max(
-                _layout.TotalHeight,
-                _scrollOffset.Y + _viewport.Height);
         } else {
+            // Use the total visual rows count (exact or estimated)
+            // regardless of whether ScrollExact is active.  The old
+            // exact-pin branch inflated the extent to
+            // max(layoutHeight, scrollY + vpH), but scrollY is an
+            // estimate that can wildly over-/under-shoot for wrapped
+            // docs with variable line lengths — inflating the scrollbar
+            // extent after every FindNext (user-reported 2026-04-11).
+            // The clamping at line 684 handles scrollY > ScrollMaximum.
             extentHeight = totalVisualRows * rh;
         }
         var contentWidth = !_wrapLines

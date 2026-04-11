@@ -138,8 +138,17 @@ public sealed partial class EditorControl {
     /// </summary>
     private (int charsPerRow, int hangingIndent) GetRowIndexBuildParams() {
         if (!_wrapLines) return (0, 0);
-        var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-        var textW = GetTextWidth(maxW);
+        // Use _lastTextWidth so the row index is built with the same
+        // width the renderer uses.  Same fix as SlowPathRowCount —
+        // Bounds.Width can be 0 during MeasureOverride, falling back
+        // to 900px and producing wrong row counts.
+        double textW;
+        if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
+            textW = _lastTextWidth;
+        } else {
+            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+            textW = GetTextWidth(maxW);
+        }
         if (!double.IsFinite(textW) || textW <= 0) return (0, 0);
         var cw = GetCharWidth();
         if (cw <= 0) return (0, 0);
