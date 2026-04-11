@@ -649,8 +649,8 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
                 _layout = null;
                 // Hide caret during scroll. For drags the !scrollDrag gate
                 // in UpdateCaretLayers suppresses drawing; InteractionEnded
-                // shows it on release. For wheel/arrow the timer naturally
-                // recovers.
+                // shows it on release. For wheel/arrow, ResetCaretBlink()
+                // re-shows it after the scroll command completes.
                 _caretVisible = false;
                 SetCaretLayersVisible(false);
                 InvalidateVisual();

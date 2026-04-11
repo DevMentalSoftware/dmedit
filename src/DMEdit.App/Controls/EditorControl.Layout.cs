@@ -330,7 +330,11 @@ public sealed partial class EditorControl {
     private void UpdateCaretLayers() {
         if (_primaryCaret is null) return;
         var doc = Document;
-        var layout = _layout;
+        // Ensure the layout is current — the ScrollValue setter disposes
+        // _layout, and ArrangeOverride can run before MeasureOverride
+        // rebuilds it.  Without this, the caret layer is arranged to a
+        // zero rect (hidden) and never recovers.
+        var layout = _layout ?? (doc != null ? EnsureLayout() : null);
         var emptyRect = new Rect(0, 0, 0, 0);
 
         // Hide everything if no doc, no layout, scroll-drag, mid-paste,
