@@ -92,7 +92,7 @@ public sealed class MonoLayoutContext {
     /// </summary>
     public bool TryGetGlyph(char c, out ushort glyph) {
         if (c == '\t') { glyph = _asciiGlyphs[' ']; return true; }
-        if (c < 32) { glyph = 0; return false; }
+        if (c < 32) { glyph = _fallbackGlyph; return true; }
         if (c < 128) { glyph = _asciiGlyphs[c]; return true; }
         if (_extraGlyphs.TryGetValue(c, out glyph)) return true;
         if (GlyphTypeface.TryGetGlyph(c, out glyph)) {

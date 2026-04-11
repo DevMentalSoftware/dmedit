@@ -729,14 +729,6 @@ public sealed partial class EditorControl {
     /// the check in <see cref="MonoLineLayout.TryBuild"/> (character &lt; 32
     /// rejects the fast path).
     /// </summary>
-    private static bool ContainsSlowPathChars(string text) {
-        for (var i = 0; i < text.Length; i++) {
-            var c = text[i];
-            if (c < 32 && c != '\t') return true;
-        }
-        return false;
-    }
-
     /// <summary>True if <paramref name="text"/> contains any tab character.</summary>
     private static bool ContainsTabs(string text) {
         for (var i = 0; i < text.Length; i++) {
@@ -747,14 +739,13 @@ public sealed partial class EditorControl {
 
     /// <summary>
     /// Single decision point: should this line use the TextLayout slow
-    /// path instead of the MonoRowBreaker fast path?  Both
-    /// <see cref="ComputeLineRowCount"/> and <see cref="ComputeRowOfCharInLine"/>
-    /// must make the same decision as the renderer
-    /// (<see cref="MonoLineLayout.TryBuild"/>).  Consolidating the check
-    /// here prevents the two scroll-side call sites from drifting apart.
+    /// path instead of the MonoRowBreaker fast path?  Now only triggers
+    /// for proportional fonts — all characters (including control chars
+    /// and tabs) are handled by the mono fast path, with control chars
+    /// rendering as the fallback glyph.
     /// </summary>
     private bool ShouldUseSlowPath(string text) =>
-        !IsFontMonospace() || ContainsSlowPathChars(text);
+        !IsFontMonospace();
 
     /// <summary>
     /// Counts rows via an Avalonia <c>TextLayout</c>.  Used only as a

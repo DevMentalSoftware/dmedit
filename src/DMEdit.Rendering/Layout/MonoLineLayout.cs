@@ -95,11 +95,15 @@ public sealed class MonoLineLayout : IDisposable {
     public static MonoLineLayout? TryBuild(MonoLayoutContext ctx, string text, int maxCharsPerRow) {
         // Reject control characters other than tab.  Tab is handled via
         // column-aware advance in the tab-aware row breaker.
+        // Accept all characters — control chars render as the fallback
+        // glyph at one column width.  Only reject characters that the
+        // typeface truly can't handle (TryGetGlyph returns false for
+        // non-BMP chars without coverage).
         var hasTabs = false;
         for (var i = 0; i < text.Length; i++) {
             var c = text[i];
             if (c == '\t') { hasTabs = true; continue; }
-            if (c < 32) return null;
+            if (c < 32) continue; // control chars → fallback glyph
             if (!ctx.TryGetGlyph(c, out _)) return null;
         }
 
