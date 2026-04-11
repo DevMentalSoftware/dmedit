@@ -754,6 +754,23 @@ public sealed partial class EditorControl {
             }
         }
 
+        // Sync scrollbar: after all render-offset adjustments, update
+        // _scrollOffset.Y to the actual rendered position so the scrollbar
+        // thumb accurately tracks the viewport.  The formula:
+        //   trueScroll = ExactLineY(topLine) - RenderOffsetY
+        // is algebraically equivalent to the incremental ds computation
+        // for deltaTop 0 and ±1, so the scrollbar moves by exactly the
+        // user's scroll delta on each frame — no drift.
+        if (_wrapLines) {
+            var trueScroll = ExactOrEstimateLineY(topLine, doc.Table, charsPerRow, rh)
+                - RenderOffsetY;
+            var maxScroll = Math.Max(0, extentHeight - _viewport.Height);
+            trueScroll = Math.Clamp(trueScroll, 0, maxScroll);
+            if (double.IsFinite(trueScroll)) {
+                _scrollOffset = new Vector(_scrollOffset.X, trueScroll);
+            }
+        }
+
         // Cache state for next incremental frame.
         _winTopLine = topLine;
         _winScrollOffset = _scrollOffset.Y;

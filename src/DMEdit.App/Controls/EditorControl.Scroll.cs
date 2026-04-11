@@ -856,9 +856,12 @@ public sealed partial class EditorControl {
         double approxScroll;
         if (double.IsNaN(scrollY)) {
             var rh = GetRowHeight();
-            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-            var textW = GetTextWidth(maxW);
-            var charsPerRow = GetCharsPerRow(textW);
+            var charsPerRow = GetCharsPerRow(GetEffectiveTextWidth());
+            // Use the estimate here — it maps back to topLine via the
+            // same formula LayoutWindowed uses, keeping the scroll-to-
+            // topLine inversion consistent.  The post-layout sync in
+            // LayoutWindowed corrects the scrollbar to the true position
+            // using ExactOrEstimateLineY once RenderOffsetY is known.
             approxScroll = EstimateWrappedLineY(topLine, table, charsPerRow, rh);
         } else {
             approxScroll = Math.Max(0, scrollY);
