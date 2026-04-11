@@ -982,9 +982,15 @@ public sealed partial class EditorControl {
             // incremental layout tracking stays primed — the scroll
             // moves by a sub-row amount and LayoutWindowed's small-scroll
             // path handles the rendering precisely.
+            // Add a 1px safety buffer so the target row is scrolled fully
+            // into the viewport even with sub-pixel rounding.  Without
+            // this, the caret can land at screenY = -0.5 after the
+            // correction, making it invisible (user-reported: caret
+            // disappears when moving Up within a wrapped line at the
+            // viewport top edge).
             var scrollDelta = atBottomEdge
-                ? caretScreenY + 2 * rh - _viewport.Height
-                : caretScreenY - rh;
+                ? caretScreenY + 2 * rh - _viewport.Height + 1
+                : caretScreenY - rh - 1;
             _scrollOffset = new Vector(_scrollOffset.X, Math.Max(0, scrollBefore + scrollDelta));
             // Keep _winScrollOffset in sync — the temporary layout pass
             // above may have run the scrollbar sync, changing _winScrollOffset.
