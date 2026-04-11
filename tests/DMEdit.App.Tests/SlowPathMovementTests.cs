@@ -121,10 +121,6 @@ public class SlowPathMovementTests {
     [InlineData(true, "wrap")]
     public void Up_ThroughMixedLines_CaretAlwaysOnScreen(bool wrap,
             string desc) {
-        // Known issue: wrap+tab Up at viewport edge can leave caret
-        // off-screen (step ~42).  The edge-scroll delta doesn't account
-        // for tab-line row-height transitions.  Skip wrap until fixed.
-        if (wrap) return;
         var doc = MakeMixedDoc(100, 80, tabEvery: 5);
         var editor = CreateEditor(doc, wrap);
         doc.Selection = Selection.Collapsed(doc.Table.Length);

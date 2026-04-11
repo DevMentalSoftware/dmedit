@@ -986,6 +986,11 @@ public sealed partial class EditorControl {
                 ? caretScreenY + 2 * rh - _viewport.Height
                 : caretScreenY - rh;
             _scrollOffset = new Vector(_scrollOffset.X, Math.Max(0, scrollBefore + scrollDelta));
+            // Keep _winScrollOffset in sync — the temporary layout pass
+            // above may have run the scrollbar sync, changing _winScrollOffset.
+            // If we overwrite _scrollOffset without updating _winScrollOffset,
+            // the next layout sees a wrong ds and breaks incremental tracking.
+            _winScrollOffset = _scrollOffset.Y;
             _layout?.Dispose();
             _layout = null;
         } else {
