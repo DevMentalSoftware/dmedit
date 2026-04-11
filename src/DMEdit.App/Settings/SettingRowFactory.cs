@@ -185,10 +185,12 @@ public static class SettingRowFactory {
             });
         }
 
-        var row = new StackPanel {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
+        var row = new Grid {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
         };
+        glyph.Margin = new Thickness(0, 0, 8, 0);
+        Grid.SetColumn(glyph, 0);
+        Grid.SetColumn(contentStack, 1);
         row.Children.Add(glyph);
         row.Children.Add(contentStack);
 
