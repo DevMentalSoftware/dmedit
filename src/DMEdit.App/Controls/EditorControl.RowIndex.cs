@@ -208,7 +208,7 @@ public sealed partial class EditorControl {
     /// Always uses <see cref="MonoRowBreaker.CountRows"/> — see the
     /// comment in <see cref="BuildRowIndexFor"/> for rationale.
     /// </summary>
-    private static int ComputeLineRowCountForBuild(PieceTable table, long lineIdx,
+    private int ComputeLineRowCountForBuild(PieceTable table, long lineIdx,
             int firstRowChars, int contRowChars) {
         var lineStart = table.LineStartOfs(lineIdx);
         if (lineStart < 0) return 1; // streaming-load gap
@@ -217,6 +217,10 @@ public sealed partial class EditorControl {
         if (len > PieceTable.MaxGetTextLength) return 1; // too long, punt
 
         var text = table.GetText(lineStart, len);
+        if (text.Contains('\t')) {
+            return MonoRowBreaker.CountRowsTabAware(text, firstRowChars,
+                contRowChars, _indentWidth);
+        }
         return MonoRowBreaker.CountRows(text, firstRowChars, contRowChars);
     }
 

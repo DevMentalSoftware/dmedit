@@ -6,9 +6,11 @@ namespace DMEdit.Rendering.Layout;
 
 /// <summary>
 /// Monospace fast-path layout for one logical line.  Built when the line
-/// contains only printable characters that the resolved glyph typeface has
-/// glyphs for, and the typeface itself is monospace.  Tab and other control
-/// characters force the line back to the <c>TextLayout</c> slow path.
+/// contains only printable characters (or tabs) that the resolved glyph
+/// typeface has glyphs for, and the typeface itself is monospace.  Other
+/// control characters force the line back to the <c>TextLayout</c> slow path.
+/// Tabs are expanded to column-aligned positions using the editor's indent
+/// width as the tab stop interval.
 /// </summary>
 /// <remarks>
 /// Stores per-row spans so wrapped continuation rows can be drawn at an
@@ -40,12 +42,18 @@ public sealed class MonoLineLayout : IDisposable {
     // place without mutating the GlyphRun (which may be captured by
     // reference into Avalonia's deferred scene).
     private readonly GlyphRun?[] _rowRuns;
+
+    /// <summary>Whether this line contains tabs (enables column-aware positioning).</summary>
+    private readonly bool _hasTabs;
+
     private bool _disposed;
 
-    private MonoLineLayout(MonoLayoutContext context, string text, RowSpan[] rows) {
+    private MonoLineLayout(MonoLayoutContext context, string text, RowSpan[] rows,
+            bool hasTabs) {
         Context = context;
         Text = text;
         Rows = rows;
+        _hasTabs = hasTabs;
 
         _rowRuns = new GlyphRun?[rows.Length];
         var baselinePoint = new Point(0, context.Baseline);
@@ -55,16 +63,24 @@ public sealed class MonoLineLayout : IDisposable {
                 _rowRuns[r] = null;
                 continue;
             }
-            var glyphs = new ushort[span.CharLen];
-            for (var i = 0; i < span.CharLen; i++) {
-                context.TryGetGlyph(text[span.CharStart + i], out glyphs[i]);
+            if (hasTabs) {
+                // Tab-aware: Avalonia's GlyphRun doesn't support per-glyph
+                // advances, so we skip the cached GlyphRun for tab rows.
+                // Draw() handles tab rows by splitting at tab characters
+                // and positioning each segment explicitly.
+                _rowRuns[r] = null;
+            } else {
+                var glyphs = new ushort[span.CharLen];
+                for (var i = 0; i < span.CharLen; i++) {
+                    context.TryGetGlyph(text[span.CharStart + i], out glyphs[i]);
+                }
+                _rowRuns[r] = new GlyphRun(
+                    context.GlyphTypeface,
+                    context.FontSize,
+                    text.AsMemory(span.CharStart, span.CharLen),
+                    glyphs,
+                    baselinePoint);
             }
-            _rowRuns[r] = new GlyphRun(
-                context.GlyphTypeface,
-                context.FontSize,
-                text.AsMemory(span.CharStart, span.CharLen),
-                glyphs,
-                baselinePoint);
         }
     }
 
@@ -77,47 +93,61 @@ public sealed class MonoLineLayout : IDisposable {
     /// typeface has no glyph for — those lines must use the slow path.
     /// </summary>
     public static MonoLineLayout? TryBuild(MonoLayoutContext ctx, string text, int maxCharsPerRow) {
-        // Reject any control character — tab, CR, LF, etc.  Tabs in
-        // particular need column-aware advance, which the fast path
-        // does not yet implement.
+        // Reject control characters other than tab.  Tab is handled via
+        // column-aware advance in the tab-aware row breaker.
+        var hasTabs = false;
         for (var i = 0; i < text.Length; i++) {
             var c = text[i];
+            if (c == '\t') { hasTabs = true; continue; }
             if (c < 32) return null;
             if (!ctx.TryGetGlyph(c, out _)) return null;
         }
 
         // Effective row widths: first row uses the full column count,
         // continuation rows lose HangingIndentChars columns to the indent.
-        var firstRowChars = Math.Max(1, maxCharsPerRow);
-        var contRowChars = Math.Max(1, maxCharsPerRow - ctx.HangingIndentChars);
+        var firstRowCols = Math.Max(1, maxCharsPerRow);
+        var contRowCols = Math.Max(1, maxCharsPerRow - ctx.HangingIndentChars);
 
         // Empty line is a single row with zero content.
         if (text.Length == 0) {
-            return new MonoLineLayout(ctx, text, [new RowSpan(0, 0, 0)]);
+            return new MonoLineLayout(ctx, text, [new RowSpan(0, 0, 0)], false);
         }
 
-        // Short-line fast path: single row, no wrap math.
-        if (text.Length <= firstRowChars) {
-            return new MonoLineLayout(ctx, text, [new RowSpan(0, text.Length, 0)]);
+        if (hasTabs) {
+            // Tab-aware row breaking: uses column counts, not char counts.
+            var rows = new List<RowSpan>(4);
+            var pos = 0;
+            var rowIdx = 0;
+            while (pos < text.Length) {
+                var cols = rowIdx == 0 ? firstRowCols : contRowCols;
+                var (_, nextStart) = MonoRowBreaker.NextRowTabAware(
+                    text, pos, cols, ctx.TabWidth);
+                var xOffset = rowIdx == 0 ? 0.0 : ctx.HangingIndentPx;
+                rows.Add(new RowSpan(pos, nextStart - pos, xOffset));
+                pos = nextStart;
+                rowIdx++;
+            }
+            return new MonoLineLayout(ctx, text, rows.ToArray(), true);
         }
 
-        var rows = new List<RowSpan>(4);
-        var pos = 0;
-        var rowIdx = 0;
-        while (pos < text.Length) {
-            var rowChars = rowIdx == 0 ? firstRowChars : contRowChars;
-            var (_, nextStart) = MonoRowBreaker.NextRow(text, pos, rowChars);
-            var xOffset = rowIdx == 0 ? 0.0 : ctx.HangingIndentPx;
-            // CharLen includes all characters owned by this row —
-            // including any trailing break-space.  This ensures
-            // Rows[r].CharStart + CharLen == Rows[r+1].CharStart
-            // with no gaps, so RowForChar and GetCaretBounds treat
-            // the break-space as belonging to the current row.
-            rows.Add(new RowSpan(pos, nextStart - pos, xOffset));
-            pos = nextStart;
-            rowIdx++;
+        // Non-tab fast path (original logic).
+        if (text.Length <= firstRowCols) {
+            return new MonoLineLayout(ctx, text,
+                [new RowSpan(0, text.Length, 0)], false);
         }
-        return new MonoLineLayout(ctx, text, rows.ToArray());
+
+        var plainRows = new List<RowSpan>(4);
+        var plainPos = 0;
+        var plainRowIdx = 0;
+        while (plainPos < text.Length) {
+            var rowChars = plainRowIdx == 0 ? firstRowCols : contRowCols;
+            var (_, nextStart) = MonoRowBreaker.NextRow(text, plainPos, rowChars);
+            var xOffset = plainRowIdx == 0 ? 0.0 : ctx.HangingIndentPx;
+            plainRows.Add(new RowSpan(plainPos, nextStart - plainPos, xOffset));
+            plainPos = nextStart;
+            plainRowIdx++;
+        }
+        return new MonoLineLayout(ctx, text, plainRows.ToArray(), false);
     }
 
     // -------------------------------------------------------------------------
@@ -133,14 +163,56 @@ public sealed class MonoLineLayout : IDisposable {
     /// </summary>
     public void Draw(DrawingContext context, Point origin, IBrush? foreground = null) {
         var brush = foreground ?? Context.Foreground;
-        for (var r = 0; r < _rowRuns.Length; r++) {
-            var run = _rowRuns[r];
-            if (run is null) continue;
+        for (var r = 0; r < Rows.Length; r++) {
             var span = Rows[r];
-            var x = origin.X + span.XOffset;
-            var y = origin.Y + r * Context.RowHeight;
-            using (context.PushTransform(Matrix.CreateTranslation(x, y))) {
-                context.DrawGlyphRun(brush, run);
+            if (span.CharLen == 0) continue;
+            var rowX = origin.X + span.XOffset;
+            var rowY = origin.Y + r * Context.RowHeight;
+
+            if (!_hasTabs) {
+                // Non-tab fast path: single cached GlyphRun per row.
+                var run = _rowRuns[r];
+                if (run is null) continue;
+                using (context.PushTransform(Matrix.CreateTranslation(rowX, rowY))) {
+                    context.DrawGlyphRun(brush, run);
+                }
+            } else {
+                // Tab-aware: split the row at tab characters and draw
+                // each text segment at its column-based X position.
+                // Tabs themselves are drawn as whitespace (gap).
+                var baselinePoint = new Point(0, Context.Baseline);
+                var col = 0;
+                var segStart = span.CharStart;
+                for (var i = span.CharStart; i <= span.CharStart + span.CharLen; i++) {
+                    var isEnd = i == span.CharStart + span.CharLen;
+                    var isTab = !isEnd && Text[i] == '\t';
+                    if (isTab || isEnd) {
+                        var segLen = i - segStart;
+                        if (segLen > 0) {
+                            // Draw the text segment before this tab/end.
+                            var segX = rowX + col * Context.CharWidth;
+                            var glyphs = new ushort[segLen];
+                            for (var g = 0; g < segLen; g++) {
+                                Context.TryGetGlyph(Text[segStart + g], out glyphs[g]);
+                            }
+                            using var run = new GlyphRun(
+                                Context.GlyphTypeface,
+                                Context.FontSize,
+                                Text.AsMemory(segStart, segLen),
+                                glyphs,
+                                baselinePoint);
+                            using (context.PushTransform(Matrix.CreateTranslation(segX, rowY))) {
+                                context.DrawGlyphRun(brush, run);
+                            }
+                            col += segLen;
+                        }
+                        if (isTab) {
+                            // Advance column to next tab stop.
+                            col = (col / Context.TabWidth + 1) * Context.TabWidth;
+                            segStart = i + 1;
+                        }
+                    }
+                }
             }
         }
     }
@@ -183,6 +255,27 @@ public sealed class MonoLineLayout : IDisposable {
     /// render at the end of the <em>previous</em> row instead of the start
     /// of the next.  Used by End key and left-arrow so the caret can park
     /// at the right edge of a wrapped row.</param>
+    /// <summary>
+    /// Returns the column (screen position) of <paramref name="charInLine"/>
+    /// relative to the start of its row, accounting for tab expansion.
+    /// For non-tab lines this is just <c>charInLine - rowStart</c>.
+    /// </summary>
+    private int ColumnInRow(int charInLine, RowSpan span) {
+        if (!_hasTabs) return Math.Max(0, charInLine - span.CharStart);
+        return MonoRowBreaker.ColumnOfChar(Text, span.CharStart,
+            Math.Min(charInLine, span.CharStart + span.CharLen),
+            Context.TabWidth);
+    }
+
+    /// <summary>
+    /// Returns the total column width of a row (for isAtEnd positioning).
+    /// </summary>
+    private int RowColumnWidth(RowSpan span) {
+        if (!_hasTabs) return span.CharLen;
+        return MonoRowBreaker.ColumnOfChar(Text, span.CharStart,
+            span.CharStart + span.CharLen, Context.TabWidth);
+    }
+
     public Rect GetCaretBounds(int charInLine, bool isAtEnd = false) {
         if (Rows.Length == 0) return new Rect(0, 0, 0, Context.RowHeight);
         var clamped = Math.Clamp(charInLine, 0, Text.Length);
@@ -190,18 +283,16 @@ public sealed class MonoLineLayout : IDisposable {
         var span = Rows[r];
 
         // Left affinity at a soft-break boundary: render at the end of the
-        // previous row.  Fires when the caret is at or before the current
-        // row's CharStart (i.e., in the "gap" of a consumed word-break
-        // space, or exactly at a CharWrap boundary).
+        // previous row.
         if (isAtEnd && r > 0 && clamped <= span.CharStart) {
             var prev = Rows[r - 1];
-            var x = prev.XOffset + prev.CharLen * Context.CharWidth;
+            var prevCols = RowColumnWidth(prev);
+            var x = prev.XOffset + prevCols * Context.CharWidth;
             var y = (r - 1) * Context.RowHeight;
             return new Rect(x, y, 0, Context.RowHeight);
         }
 
-        var col = clamped - span.CharStart;
-        if (col < 0) col = 0;
+        var col = ColumnInRow(clamped, span);
         var x2 = span.XOffset + col * Context.CharWidth;
         var y2 = r * Context.RowHeight;
         return new Rect(x2, y2, 0, Context.RowHeight);
@@ -219,10 +310,24 @@ public sealed class MonoLineLayout : IDisposable {
         var span = Rows[rIdx];
         var localX = local.X - span.XOffset;
         if (localX < 0) localX = 0;
-        var col = (int)Math.Round(localX / Context.CharWidth);
-        if (col < 0) col = 0;
-        if (col > span.CharLen) col = span.CharLen;
-        return span.CharStart + col;
+        var targetCol = (int)Math.Round(localX / Context.CharWidth);
+
+        if (!_hasTabs) {
+            var col = Math.Clamp(targetCol, 0, span.CharLen);
+            return span.CharStart + col;
+        }
+
+        // Tab-aware: walk characters accumulating columns until we
+        // reach or pass the target column.
+        var cumCol = 0;
+        for (var i = 0; i < span.CharLen; i++) {
+            var c = Text[span.CharStart + i];
+            var cw = MonoRowBreaker.CharColumns(c, cumCol, Context.TabWidth);
+            var mid = cumCol + cw / 2.0;
+            if (targetCol <= mid) return span.CharStart + i;
+            cumCol += cw;
+        }
+        return span.CharStart + span.CharLen;
     }
 
     /// <summary>
@@ -240,14 +345,21 @@ public sealed class MonoLineLayout : IDisposable {
             var span = Rows[r];
             var rowStart = span.CharStart;
             var rowEnd = span.CharStart + span.CharLen;
-            // Treat the trailing edge of the last row inclusively so the
-            // selection extends to the end of the line.
             var lo = Math.Max(rangeStart, rowStart);
             var hi = Math.Min(rangeEnd, rowEnd);
             if (hi <= lo && !(r == Rows.Length - 1 && rangeEnd == Text.Length)) continue;
             if (hi < lo) hi = lo;
-            var x = span.XOffset + (lo - rowStart) * Context.CharWidth;
-            var w = (hi - lo) * Context.CharWidth;
+
+            double x, w;
+            if (_hasTabs) {
+                var loCol = MonoRowBreaker.ColumnOfChar(Text, rowStart, lo, Context.TabWidth);
+                var hiCol = MonoRowBreaker.ColumnOfChar(Text, rowStart, hi, Context.TabWidth);
+                x = span.XOffset + loCol * Context.CharWidth;
+                w = (hiCol - loCol) * Context.CharWidth;
+            } else {
+                x = span.XOffset + (lo - rowStart) * Context.CharWidth;
+                w = (hi - lo) * Context.CharWidth;
+            }
             var y = r * Context.RowHeight;
             yield return new Rect(x, y, w, Context.RowHeight);
         }

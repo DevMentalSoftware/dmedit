@@ -629,7 +629,7 @@ public sealed partial class EditorControl {
         _layout = _layoutEngine.LayoutLines(
             doc.Table, topLine, bottomLine, typeface, EffectiveFontSize, ForegroundBrush,
             maxWidth, startOfs, lineCount, doc.Table.Length, hangingIndentChars,
-            _useFastTextLayout, rh);
+            _useFastTextLayout, rh, _indentWidth);
         _layout.TopLine = topLine;
 
 #if DEBUG

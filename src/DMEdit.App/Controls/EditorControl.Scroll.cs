@@ -565,6 +565,9 @@ public sealed partial class EditorControl {
             return SlowPathRowCount(text);
         }
 
+        if (ContainsTabs(text)) {
+            return MonoRowBreaker.CountRowsTabAware(text, firstRowChars, contRowChars, _indentWidth);
+        }
         return MonoRowBreaker.CountRows(text, firstRowChars, contRowChars);
     }
 
@@ -603,6 +606,8 @@ public sealed partial class EditorControl {
         int result;
         if (ShouldUseSlowPath(text)) {
             result = SlowPathRowOfChar(text, charInLine);
+        } else if (ContainsTabs(text)) {
+            result = MonoRowBreaker.RowOfCharTabAware(text, charInLine, firstRowChars, contRowChars, _indentWidth);
         } else {
             result = MonoRowBreaker.RowOfChar(text, charInLine, firstRowChars, contRowChars);
         }
@@ -726,7 +731,16 @@ public sealed partial class EditorControl {
     /// </summary>
     private static bool ContainsSlowPathChars(string text) {
         for (var i = 0; i < text.Length; i++) {
-            if (text[i] < 32) return true;
+            var c = text[i];
+            if (c < 32 && c != '\t') return true;
+        }
+        return false;
+    }
+
+    /// <summary>True if <paramref name="text"/> contains any tab character.</summary>
+    private static bool ContainsTabs(string text) {
+        for (var i = 0; i < text.Length; i++) {
+            if (text[i] == '\t') return true;
         }
         return false;
     }

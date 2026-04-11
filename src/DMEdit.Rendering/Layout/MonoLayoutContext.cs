@@ -39,6 +39,10 @@ public sealed class MonoLayoutContext {
     /// <summary>Foreground brush used by default when drawing a row.</summary>
     public IBrush Foreground { get; }
 
+    /// <summary>Tab stop interval in character columns (e.g. 4 means tab
+    /// stops at columns 0, 4, 8, 12, ...).  Matches the editor's IndentWidth.</summary>
+    public int TabWidth { get; }
+
     private readonly ushort[] _asciiGlyphs = new ushort[128];
     private readonly Dictionary<int, ushort> _extraGlyphs = new();
     private readonly ushort _fallbackGlyph;
@@ -48,7 +52,8 @@ public sealed class MonoLayoutContext {
         double fontSize,
         double rowHeight,
         int hangingIndentChars,
-        IBrush foreground) {
+        IBrush foreground,
+        int tabWidth = 4) {
         GlyphTypeface = glyphTypeface;
         FontSize = fontSize;
         RowHeight = rowHeight;
@@ -70,6 +75,7 @@ public sealed class MonoLayoutContext {
 
         HangingIndentChars = Math.Max(0, hangingIndentChars);
         HangingIndentPx = HangingIndentChars * CharWidth;
+        TabWidth = Math.Max(1, tabWidth);
 
         // Pre-populate ASCII printable range so the inner draw/hit-test loop
         // hits a flat array indexed by char rather than a dictionary lookup.
@@ -85,6 +91,7 @@ public sealed class MonoLayoutContext {
     /// cache so we only ask once per session per char.
     /// </summary>
     public bool TryGetGlyph(char c, out ushort glyph) {
+        if (c == '\t') { glyph = _asciiGlyphs[' ']; return true; }
         if (c < 32) { glyph = 0; return false; }
         if (c < 128) { glyph = _asciiGlyphs[c]; return true; }
         if (_extraGlyphs.TryGetValue(c, out glyph)) return true;

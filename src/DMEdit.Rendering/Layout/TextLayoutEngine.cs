@@ -53,7 +53,8 @@ public sealed class TextLayoutEngine {
         long docLength = -1,
         int hangingIndentChars = 0,
         bool useFastTextLayout = true,
-        double rowHeightOverride = 0) {
+        double rowHeightOverride = 0,
+        int tabWidth = 4) {
 
         using var spaceLayout = MakeTextLayout(" ", typeface, fontSize, foreground, double.PositiveInfinity);
         // The caller may pass a pre-snapped row height that matches its own
@@ -72,7 +73,7 @@ public sealed class TextLayoutEngine {
         // also force the TextLayout path (for font ligatures at the cost of
         // speed and hanging indent) by passing useFastTextLayout: false.
         var monoCtx = useFastTextLayout
-            ? TryBuildMonoContext(typeface, fontSize, rowHeight, hangingIndentChars, foreground)
+            ? TryBuildMonoContext(typeface, fontSize, rowHeight, hangingIndentChars, foreground, tabWidth)
             : null;
 
         var lines = new List<LayoutLine>();
@@ -201,11 +202,11 @@ public sealed class TextLayoutEngine {
 
     private static MonoLayoutContext? TryBuildMonoContext(
         Typeface typeface, double fontSize, double rowHeight,
-        int hangingIndentChars, IBrush foreground) {
+        int hangingIndentChars, IBrush foreground, int tabWidth = 4) {
         var gtf = typeface.GlyphTypeface;
         if (gtf is null) return null;
         if (!MonoLayoutContext.IsMonospace(gtf)) return null;
-        return new MonoLayoutContext(gtf, fontSize, rowHeight, hangingIndentChars, foreground);
+        return new MonoLayoutContext(gtf, fontSize, rowHeight, hangingIndentChars, foreground, tabWidth);
     }
 
     private static TextLayout MakeTextLayout(

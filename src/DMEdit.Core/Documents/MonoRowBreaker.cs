@@ -49,6 +49,123 @@ public static class MonoRowBreaker {
         return (charsPerRow, hardLimit);
     }
 
+    // -----------------------------------------------------------------
+    // Tab-aware variants
+    //
+    // These track COLUMNS (screen positions) instead of characters.
+    // A tab at column C expands to column ((C / tabWidth) + 1) * tabWidth.
+    // All other characters advance by one column.
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Returns the column width of one character at the given column.
+    /// Tabs expand to the next <paramref name="tabWidth"/> boundary.
+    /// </summary>
+    public static int CharColumns(char c, int col, int tabWidth) {
+        if (c == '\t' && tabWidth > 0) {
+            return (col / tabWidth + 1) * tabWidth - col;
+        }
+        return 1;
+    }
+
+    /// <summary>
+    /// Computes the column (screen position) of character at
+    /// <paramref name="charIdx"/> within the range starting at
+    /// <paramref name="start"/>, accounting for tab expansion.
+    /// </summary>
+    public static int ColumnOfChar(string text, int start, int charIdx, int tabWidth) {
+        var col = 0;
+        for (var i = start; i < charIdx && i < text.Length; i++) {
+            col += CharColumns(text[i], col, tabWidth);
+        }
+        return col;
+    }
+
+    /// <summary>
+    /// Tab-aware row break.  Walks characters from <paramref name="rowStart"/>,
+    /// accumulating columns until hitting <paramref name="colsPerRow"/>.
+    /// Word-break logic is the same as <see cref="NextRow"/> but applied
+    /// after tab expansion.
+    /// </summary>
+    public static (int DrawLen, int NextStart) NextRowTabAware(
+            string line, int rowStart, int colsPerRow, int tabWidth) {
+        var remaining = line.Length - rowStart;
+        if (remaining <= 0) return (0, line.Length);
+
+        // Walk characters, accumulating columns.
+        var col = 0;
+        var lastSpace = -1;
+        var charCount = 0;
+        for (var i = rowStart; i < line.Length; i++) {
+            var c = line[i];
+            var cw = CharColumns(c, col, tabWidth);
+            if (col + cw > colsPerRow && charCount > 0) {
+                // This character would exceed the row width.
+                // Try to break at a word boundary.
+                if (lastSpace >= 0) {
+                    var drawLen = lastSpace - rowStart;
+                    return (drawLen, lastSpace + 1);
+                }
+                // No space — hard break at current position.
+                return (charCount, i);
+            }
+            col += cw;
+            charCount++;
+            if (c == ' ') lastSpace = i;
+        }
+        // Everything fits.
+        return (remaining, line.Length);
+    }
+
+    /// <summary>
+    /// Tab-aware row count.  Uses <see cref="NextRowTabAware"/> for the
+    /// row-break logic.
+    /// </summary>
+    public static int CountRowsTabAware(string line, int firstRowCols,
+            int contRowCols, int tabWidth) {
+        if (line.Length == 0) return 1;
+        firstRowCols = System.Math.Max(1, firstRowCols);
+        contRowCols = System.Math.Max(1, contRowCols);
+
+        var rows = 0;
+        var pos = 0;
+        while (pos < line.Length) {
+            var cols = rows == 0 ? firstRowCols : contRowCols;
+            var (_, nextStart) = NextRowTabAware(line, pos, cols, tabWidth);
+            rows++;
+            if (nextStart <= pos) break;
+            pos = nextStart;
+        }
+        return System.Math.Max(1, rows);
+    }
+
+    /// <summary>
+    /// Tab-aware row-of-char.  Returns the zero-based row containing
+    /// <paramref name="charInLine"/>.
+    /// </summary>
+    public static int RowOfCharTabAware(string line, int charInLine,
+            int firstRowCols, int contRowCols, int tabWidth) {
+        if (line.Length == 0 || charInLine <= 0) return 0;
+        firstRowCols = System.Math.Max(1, firstRowCols);
+        contRowCols = System.Math.Max(1, contRowCols);
+
+        var pos = 0;
+        var row = 0;
+        while (pos < line.Length) {
+            var cols = row == 0 ? firstRowCols : contRowCols;
+            var (_, nextStart) = NextRowTabAware(line, pos, cols, tabWidth);
+            if (charInLine < nextStart) return row;
+            row++;
+            if (nextStart <= pos) break;
+            pos = nextStart;
+        }
+        return System.Math.Max(0, row - 1);
+    }
+
+    // -----------------------------------------------------------------
+    // Original (non-tab) variants — used for lines without tabs
+    // -----------------------------------------------------------------
+
     /// <summary>
     /// Counts the total number of rows a line would occupy when laid out
     /// with the given row widths.  The first row uses
