@@ -640,8 +640,17 @@ public sealed partial class EditorControl {
     /// tabs that force the slow path.
     /// </summary>
     private int SlowPathRowOfChar(string text, int charInLine) {
-        var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-        var textW = GetTextWidth(maxW);
+        // Use _lastTextWidth (cached from the most recent layout pass) so
+        // the maxWidth matches what the renderer used.  Same pattern as
+        // GetMonoRowWidths.  Without this, Bounds.Width=0 during Measure
+        // falls back to 900px, producing wrong row indices for tab lines.
+        double textW;
+        if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
+            textW = _lastTextWidth;
+        } else {
+            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+            textW = GetTextWidth(maxW);
+        }
         var typeface = new Typeface(FontFamily);
         using var tl = new TextLayout(
             text, typeface, EffectiveFontSize, ForegroundBrush,
@@ -746,8 +755,15 @@ public sealed partial class EditorControl {
     /// control chars, proportional font ligatures, etc.).
     /// </summary>
     private int SlowPathRowCount(string text) {
-        var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-        var textW = GetTextWidth(maxW);
+        // Use _lastTextWidth so the maxWidth matches the renderer.
+        // Same fix as SlowPathRowOfChar — see comment there.
+        double textW;
+        if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
+            textW = _lastTextWidth;
+        } else {
+            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+            textW = GetTextWidth(maxW);
+        }
         var typeface = new Typeface(FontFamily);
         using var tl = new TextLayout(
             text, typeface, EffectiveFontSize, ForegroundBrush,
