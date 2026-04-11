@@ -30,7 +30,11 @@ public sealed class ClipboardRing {
     /// </summary>
     public void Push(string text) {
         if (string.IsNullOrEmpty(text)) return;
-        if (text.Length > MaxEntryChars) return;
+        if (text.Length > MaxEntryChars) {
+            System.Diagnostics.Debug.WriteLine(
+                $"ClipboardRing: dropped entry ({text.Length} chars > {MaxEntryChars} limit)");
+            return;
+        }
         _entries.Remove(text);
         _entries.Insert(0, text);
         while (_entries.Count > MaxSize) {

@@ -159,25 +159,8 @@ public sealed class BlockLayoutEngine {
         Typeface typeface,
         double fontSize,
         IBrush foreground,
-        double maxWidth) {
-
-        var wrapping = double.IsFinite(maxWidth) && maxWidth > 0
-            ? TextWrapping.Wrap
-            : TextWrapping.NoWrap;
-        var effectiveMaxWidth = double.IsFinite(maxWidth) && maxWidth > 0
-            ? maxWidth
-            : double.PositiveInfinity;
-
-        return new TextLayout(
-            text,
-            typeface,
-            fontSize,
-            foreground,
-            textAlignment: TextAlignment.Left,
-            textWrapping: wrapping,
-            maxWidth: effectiveMaxWidth,
-            maxHeight: double.PositiveInfinity);
-    }
+        double maxWidth) =>
+        TextLayoutHelper.Create(text, typeface, fontSize, foreground, maxWidth);
 
     /// <summary>
     /// Measures the average character width from the layout and feeds it

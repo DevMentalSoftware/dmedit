@@ -1113,7 +1113,7 @@ public sealed class PieceTable {
     /// Truncates the add buffer to <paramref name="len"/> characters.
     /// Used by bulk-replace undo to discard appended replacement text.
     /// </summary>
-    public void TrimAddBuffer(long len) {
+    internal void TrimAddBuffer(long len) {
         _addBuf.TrimToCharLength(len);
     }
 

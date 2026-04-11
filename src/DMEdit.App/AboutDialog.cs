@@ -15,7 +15,7 @@ namespace DMEdit.App;
 /// Shows application name, version, copyright, and a link to the GitHub repo.
 /// </summary>
 public class AboutDialog : Window {
-    private const string GitHubUrl = "https://github.com/DevMentalSoftware/dmedit";
+    private static string GitHubUrl => AppConstants.GitHubRepositoryUrl;
 
     public AboutDialog(EditorTheme theme) {
         Title = "About DMEdit";

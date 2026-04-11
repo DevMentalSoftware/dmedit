@@ -92,38 +92,35 @@ public static class FileSaver {
 
     private static string WriteToFile(IBuffer buf, string path,
             EncodingInfo encInfo, string nl, CancellationToken ct) {
-        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
-        using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
-
-        WritePreamble(fs, hasher, encInfo);
-
-        var enc = encInfo.GetDotNetEncoding();
-        var encoder = enc.GetEncoder();
-        var charBuf = new char[WriteChunk];
-        var nlSize = NlBufSize(nl);
-        var nlBuf = new char[nlSize];
-        var byteBuf = new byte[enc.GetMaxByteCount(nlSize)];
-        var len = buf.Length;
-        var pos = 0L;
-        var prevCr = false;
-
-        while (pos < len) {
-            ct.ThrowIfCancellationRequested();
-            var take = (int)Math.Min(WriteChunk, len - pos);
-            buf.CopyTo(pos, charBuf.AsSpan(0, take), take);
-            var flush = pos + take >= len;
-            var nlLen = NormalizeLineEndings(charBuf, take, nlBuf, nl, ref prevCr);
-            var byteCount = EncodeChunk(encoder, nlBuf, nlLen, byteBuf, flush, path, enc, pos);
-            hasher.AppendData(byteBuf, 0, byteCount);
-            fs.Write(byteBuf, 0, byteCount);
-            pos += take;
-        }
-
-        return Convert.ToHexStringLower(hasher.GetHashAndReset());
+        return WriteToFileCore(buf.Length, path, encInfo, nl, ct,
+            (pos, charBuf, take) => {
+                buf.CopyTo(pos, charBuf.AsSpan(0, take), take);
+                return take;
+            });
     }
 
     private static string WriteToFile(PieceTable table, string path,
             EncodingInfo encInfo, string nl, CancellationToken ct) {
+        return WriteToFileCore(table.Length, path, encInfo, nl, ct,
+            (pos, charBuf, take) => {
+                var filled = 0;
+                table.ForEachPiece(pos, take, span => {
+                    span.CopyTo(charBuf.AsSpan(filled));
+                    filled += span.Length;
+                });
+                return filled;
+            });
+    }
+
+    /// <summary>
+    /// Shared write loop: streams chars through encoding + line-ending
+    /// normalization in <see cref="WriteChunk"/>-sized bites.
+    /// <paramref name="fillChunk"/> reads <c>take</c> chars starting at
+    /// <c>pos</c> into <c>charBuf</c> and returns the number actually filled.
+    /// </summary>
+    private static string WriteToFileCore(long length, string path,
+            EncodingInfo encInfo, string nl, CancellationToken ct,
+            Func<long, char[], int, int> fillChunk) {
         using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
         using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
 
@@ -135,19 +132,14 @@ public static class FileSaver {
         var nlSize = NlBufSize(nl);
         var nlBuf = new char[nlSize];
         var byteBuf = new byte[enc.GetMaxByteCount(nlSize)];
-        var len = table.Length;
         var pos = 0L;
         var prevCr = false;
 
-        while (pos < len) {
+        while (pos < length) {
             ct.ThrowIfCancellationRequested();
-            var take = (int)Math.Min(WriteChunk, len - pos);
-            var filled = 0;
-            table.ForEachPiece(pos, take, span => {
-                span.CopyTo(charBuf.AsSpan(filled));
-                filled += span.Length;
-            });
-            var flush = pos + take >= len;
+            var take = (int)Math.Min(WriteChunk, length - pos);
+            var filled = fillChunk(pos, charBuf, take);
+            var flush = pos + take >= length;
             var nlLen = NormalizeLineEndings(charBuf, filled, nlBuf, nl, ref prevCr);
             var byteCount = EncodeChunk(encoder, nlBuf, nlLen, byteBuf, flush, path, enc, pos);
             hasher.AppendData(byteBuf, 0, byteCount);

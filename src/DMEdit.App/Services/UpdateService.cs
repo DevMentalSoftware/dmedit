@@ -11,9 +11,7 @@ namespace DMEdit.App.Services;
 /// is not installed through a Velopack installer.
 /// </summary>
 sealed class UpdateService {
-    private const string RepoUrl = "https://github.com/DevMentalSoftware/dmedit";
-
-    private readonly UpdateManager _mgr = new(new GithubSource(RepoUrl, null, false));
+    private readonly UpdateManager _mgr = new(new GithubSource(AppConstants.GitHubRepositoryUrl, null, false));
     private UpdateInfo? _pendingUpdate;
     private bool _downloaded;
 

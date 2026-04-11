@@ -8,7 +8,7 @@ namespace DMEdit.App.Services;
 /// Builds pre-filled GitHub issue URLs and opens them in the default browser.
 /// </summary>
 public static class GitHubIssueHelper {
-    private const string RepoUrl = "https://github.com/DevMentalSoftware/dmedit";
+    private static string RepoUrl => AppConstants.GitHubRepositoryUrl;
     private const int MaxUrlLength = 7500;
 
     /// <summary>

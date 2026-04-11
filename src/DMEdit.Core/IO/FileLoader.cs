@@ -23,7 +23,7 @@ public sealed record LoadResult(Document Document, string DisplayName, bool WasZ
     /// the decompressed entry bytes, not the outer archive.
     /// <c>null</c> for untitled documents or while still loading.
     /// </summary>
-    public string? BaseSha1 { get; set; }
+    public string? BaseSha1 { get; internal set; }
 
     /// <summary>
     /// Completes when the background scan finishes (line endings, SHA-1,

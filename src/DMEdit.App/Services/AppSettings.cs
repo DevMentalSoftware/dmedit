@@ -495,8 +495,9 @@ public sealed class AppSettings {
             } else {
                 settings = new AppSettings();
             }
-        } catch {
+        } catch (Exception ex) {
             // Corrupted or unreadable — use defaults.
+            System.Diagnostics.Debug.WriteLine($"AppSettings.Load failed: {ex.Message}");
             settings = new AppSettings();
         }
 
@@ -538,8 +539,9 @@ public sealed class AppSettings {
             var dir = Path.GetDirectoryName(StorePath)!;
             Directory.CreateDirectory(dir);
             File.WriteAllText(StorePath, JsonSerializer.Serialize(this, JsonOpts));
-        } catch {
+        } catch (Exception ex) {
             // Best-effort — non-fatal.
+            System.Diagnostics.Debug.WriteLine($"AppSettings.Save failed: {ex.Message}");
         }
     }
 
