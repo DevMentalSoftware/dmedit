@@ -39,7 +39,7 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 657** (521 Core + 47 Rendering + 89 App, 1 skipped)
+**Test baseline: 933** (662 Core + 60 Rendering + 211 App, 1 skipped)
 
 ### In progress
 
@@ -88,6 +88,16 @@ small one — it is the primary way a fresh session recovers context.
   See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **Coverage audit completed** (2026-04-10) — All test coverage gaps
+  identified in the 2026-04-08 audit (Priority 1 and 2) are closed.
+  Architectural refactors (EditorControl/MainWindow splits, Document
+  partial-file split, PieceTable cleanup, LineScanner unification,
+  shared pagination helper) are done.  Hidden state smells addressed
+  (`LoadResult.BaseSha1` → `internal set`, `TrimAddBuffer` → `internal`).
+  Settings bool-row text wrapping fixed (horizontal StackPanel → Grid
+  with `Auto,*` columns).  `docs/coverage-notes/` deleted — scratch
+  notes have served their purpose.  Test count: 572 → 933.
 
 - **TextLayout slow-path crash hardening** (2026-04-07) — Real user crash
   v0.5.231 scrolling a binary file: Avalonia's `PerformTextWrapping` →
@@ -306,26 +316,6 @@ small one — it is the primary way a fresh session recovers context.
   - **Visible feedback when a launch is consumed by the existing instance** —
     flash taskbar / focus existing window on `FileRequested` (and on an
     empty ping if we add one).  UX paper cut that compounds with the worse bug.
-
-- **Settings page width constraint regression (2026-04-08)** — long
-  setting descriptions in `SettingsControl.axaml`'s `SettingsContent`
-  StackPanel no longer wrap at the intended ~700px width; they extend
-  to the full available column width.  XAML still has `MaxWidth="700"`
-  and `HorizontalAlignment="Left"` (added in commit `237f2fe`,
-  2026-04-03), and the constraint used to work.  Surprising data point:
-  replacing `MaxWidth` with a rigid `Width="700"` *also* had no effect,
-  which rules out the standard "TextWrapping=Wrap measure-pass with
-  unconstrained available width" quirk and points at something further
-  up the layout chain (the `ContentScroll` ScrollViewer with
-  `HorizontalScrollBarVisibility="Disabled"`, the Grid column, or a
-  programmatic override).  Filtering to a single non-Commands category
-  does not help, so it's not the Commands section's fixed-width Border
-  forcing parent expansion.  Files: `SettingsControl.axaml`,
-  `SettingsControl.axaml.cs`, `SettingRowFactory.cs`.  Next-attempt
-  ideas: (a) wrap the StackPanel in a Border with the constraint;
-  (b) put the constraint on the ScrollViewer itself; (c) Avalonia
-  DevTools breakpoint on the StackPanel's `BoundsProperty` to see what's
-  actually setting its width.
 
 - **Preserve caret/selection viewport position on wrap toggle** — caret
   and selection anchor should keep their visual row-from-top when
