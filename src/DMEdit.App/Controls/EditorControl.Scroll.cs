@@ -213,16 +213,19 @@ public sealed partial class EditorControl {
             // e.g. after GoToPosition jumped across the document): seed
             // with the line-start estimate, rebuild, re-measure.  The
             // loop converges in at most 3 passes.
-            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-            var textW = GetTextWidth(maxW);
+            // Use _lastTextWidth so charsPerRow matches the renderer.
+            double textW;
+            if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
+                textW = _lastTextWidth;
+            } else {
+                var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+                textW = GetTextWidth(maxW);
+            }
             var charsPerRow = GetCharsPerRow(textW);
 
-            // Update extent from estimated total visual rows so that
-            // ScrollMaximum isn't stale (e.g. after a large paste).
-            var totalChars = table.Length;
-            var totalVisualRows = charsPerRow > 0
-                ? Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow))
-                : lineCount;
+            // Update extent from total visual rows (exact via row index
+            // when available, char-density estimate for huge docs).
+            var totalVisualRows = ExactOrEstimateTotalRows(table, lineCount, charsPerRow);
             _extent = new Size(_extent.Width, totalVisualRows * rh);
             if (_scrollOffset.Y > ScrollMaximum) {
                 ScrollValue = ScrollMaximum;
@@ -957,8 +960,14 @@ public sealed partial class EditorControl {
             // Wrapping on: exact when the row index is built, estimate
             // otherwise.  Nudge by a sub-pixel amount so the round-trip
             // in LayoutWindowed always resolves to targetLine.
-            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-            var textW = GetTextWidth(maxW);
+            // Use _lastTextWidth so charsPerRow matches the renderer.
+            double textW;
+            if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
+                textW = _lastTextWidth;
+            } else {
+                var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+                textW = GetTextWidth(maxW);
+            }
             var charsPerRow = GetCharsPerRow(textW);
             ScrollValue = ExactOrEstimateLineY(targetLine, table, charsPerRow, rh) + 0.01;
         }
