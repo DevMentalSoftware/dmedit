@@ -734,8 +734,14 @@ public sealed partial class EditorControl {
         // When at max scroll and the layout includes the end of the document,
         // anchor content bottom to viewport bottom so the last line is flush.
         // Only at max scroll — otherwise scrolling up from the bottom would be stuck.
+        // Gate: when ScrollExact has armed the exact-pin flag, it has already
+        // computed the precise renderOffsetY (including near-end remap).
+        // The anchor would override that targeting and push the match
+        // off-viewport — the root cause of FindPrev landing off-screen
+        // for matches near the document tail.
         var scrollMax = _extent.Height - _viewport.Height;
-        if (bottomLine >= lineCount && _scrollOffset.Y >= scrollMax - 1.0
+        if (!_winExactPinActive
+                && bottomLine >= lineCount && _scrollOffset.Y >= scrollMax - 1.0
                 && _layout.TotalHeight >= _viewport.Height) {
             var contentBottom = RenderOffsetY + _layout.TotalHeight;
             if (contentBottom != _viewport.Height) {

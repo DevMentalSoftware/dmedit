@@ -424,47 +424,12 @@ public sealed partial class EditorControl {
         var charInLine = (int)(pinOfs - pinLineStart);
         var pinRowInLine = ComputeRowOfCharInLine(pinLine, charInLine);
 
-        long targetTopLine;
-        double targetRenderOffsetY;
-        if (direction == SearchDirection.Backward) {
-            // Pin the match's first row to viewport top: topLine is the
-            // match's line, renderOffsetY shifts so the first rows of
-            // the line are above the viewport.  O(1) — no walk needed.
-            targetTopLine = pinLine;
-            targetRenderOffsetY = -pinRowInLine * rh;
-        } else {
-            // Pin the match's last row to viewport bottom: walk backward
-            // from matchLine accumulating row counts until we have
-            // enough rows above the match to push it to the bottom.
-            //
-            // We want (sumRowsAbove + pinRowInLine + 1) * rh ≥ vpH, so
-            // the bottom of the match's row lands at or past the
-            // viewport bottom.  We'll overshoot by a fraction then pull
-            // back via a negative renderOffsetY.
-            //
-            // Max walk is bounded by vpH / rh lines (each contributes
-            // at least 1 row), so this is cheap even on massive docs.
-            var rowsNeededAbove = (int)Math.Ceiling(vpH / rh) - pinRowInLine - 1;
-            if (rowsNeededAbove < 0) rowsNeededAbove = 0;
-
-            targetTopLine = pinLine;
-            var sumRowsAbove = 0;
-            while (sumRowsAbove < rowsNeededAbove && targetTopLine > 0) {
-                targetTopLine--;
-                sumRowsAbove += ComputeLineRowCount(targetTopLine);
-            }
-
-            // (sumRowsAbove + pinRowInLine) * rh is the layout Y of the
-            // match's row top.  We want its BOTTOM at vpH, so its top
-            // should be at vpH − rh.  renderOffsetY adjusts.
-            var matchRowLayoutY = (sumRowsAbove + pinRowInLine) * rh;
-            targetRenderOffsetY = (vpH - rh) - matchRowLayoutY;
-            // If we ran out of lines (near doc start), renderOffsetY may
-            // end up positive — clamp to 0 so we show from line 0, top-
-            // aligned, accepting that the match can't be pushed to the
-            // bottom.
-            if (targetRenderOffsetY > 0) targetRenderOffsetY = 0;
-        }
+        // Use the shared targeting helpers to compute the precise scroll
+        // position.  Backward pins the match's first row to the viewport
+        // top; Forward pins the match's last row to the viewport bottom.
+        var (targetTopLine, targetRenderOffsetY) = direction == SearchDirection.Backward
+            ? ComputeScrollPinToTop(pinLine, pinRowInLine, rh)
+            : ComputeScrollPinToBottom(pinLine, pinRowInLine, rh, vpH);
 
         // --- Near-end remap: anchor to doc tail ---
         //
@@ -817,55 +782,104 @@ public sealed partial class EditorControl {
     /// position (so the scrollbar thumb isn't wildly off) while guaranteeing
     /// pixel-exact content positioning.</para>
     /// </summary>
-    private void ScrollExact(long topLine, double renderOffsetY) {
-        PerfStats.ScrollExactCalls++;
+    // -------------------------------------------------------------------------
+    // Shared scroll-targeting helpers
+    //
+    // These compute the precise (topLine, renderOffsetY) that places a
+    // specific row of a specific line at a viewport edge.  Used by both
+    // ScrollSelectionIntoView (Find/Replace) and MoveCaretVertical (arrow
+    // keys at the viewport edge) — sharing the math ensures the
+    // "reveal minimally" principle is implemented once.
+    // -------------------------------------------------------------------------
 
+    /// <summary>
+    /// Computes the <c>(topLine, renderOffsetY)</c> that places row
+    /// <paramref name="pinRow"/> of line <paramref name="pinLine"/> at
+    /// the viewport <b>bottom</b> edge.  Walks backward from
+    /// <paramref name="pinLine"/> accumulating exact row counts.
+    /// Does NOT apply the near-end remap — callers that need it
+    /// (<see cref="ScrollSelectionIntoView"/>) apply it separately.
+    /// </summary>
+    private (long topLine, double renderOffsetY) ComputeScrollPinToBottom(
+            long pinLine, int pinRow, double rh, double vpH) {
+        var rowsNeededAbove = (int)Math.Ceiling(vpH / rh) - pinRow - 1;
+        if (rowsNeededAbove < 0) rowsNeededAbove = 0;
+
+        var topLine = pinLine;
+        var sumRowsAbove = 0;
+        while (sumRowsAbove < rowsNeededAbove && topLine > 0) {
+            topLine--;
+            sumRowsAbove += ComputeLineRowCount(topLine);
+        }
+
+        var matchRowLayoutY = (sumRowsAbove + pinRow) * rh;
+        var renderOfsY = (vpH - rh) - matchRowLayoutY;
+        if (renderOfsY > 0) renderOfsY = 0;
+        return (topLine, renderOfsY);
+    }
+
+    /// <summary>
+    /// Computes the <c>(topLine, renderOffsetY)</c> that places row
+    /// <paramref name="pinRow"/> of line <paramref name="pinLine"/> at
+    /// the viewport <b>top</b> edge.
+    /// </summary>
+    private static (long topLine, double renderOffsetY) ComputeScrollPinToTop(
+            long pinLine, int pinRow, double rh) {
+        return (pinLine, -pinRow * rh);
+    }
+
+    /// <summary>
+    /// Writes the scroll cache fields to position the viewport at the
+    /// given <c>(topLine, renderOffsetY)</c> on the next layout pass.
+    /// Arms <see cref="_winExactPinActive"/> so <see cref="LayoutWindowed"/>
+    /// trusts the cache over the estimate.  Disposes the current layout.
+    /// Does <b>not</b> fire scroll-changed events or increment PerfStats —
+    /// use <see cref="ScrollExact"/> for Find/Replace targeting that needs
+    /// those side effects.
+    /// </summary>
+    /// <param name="scrollY">
+    /// Explicit scroll value for the scrollbar.  When <c>NaN</c> (the
+    /// default), an estimate is computed from <paramref name="topLine"/>.
+    /// Callers that need smooth scrollbar progression (arrow keys) pass
+    /// the precise delta from the previous scroll instead.
+    /// </param>
+    private void ApplyScrollTarget(long topLine, double renderOffsetY,
+            double scrollY = double.NaN) {
         var doc = Document;
         if (doc == null) return;
         var table = doc.Table;
-        if (topLine < 0) topLine = 0;
         var lineCount = table.LineCount;
+        if (topLine < 0) topLine = 0;
         if (topLine >= lineCount) topLine = Math.Max(0, lineCount - 1);
 
-        var rh = GetRowHeight();
-        var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-        var textW = GetTextWidth(maxW);
-        var charsPerRow = GetCharsPerRow(textW);
+        double approxScroll;
+        if (double.IsNaN(scrollY)) {
+            var rh = GetRowHeight();
+            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+            var textW = GetTextWidth(maxW);
+            var charsPerRow = GetCharsPerRow(textW);
+            approxScroll = EstimateWrappedLineY(topLine, table, charsPerRow, rh);
+        } else {
+            approxScroll = Math.Max(0, scrollY);
+        }
 
-        // Pick a scroll value that falls in the estimate's scroll-window
-        // for `topLine`.  EstimateWrappedLineY(topLine) is the lower edge
-        // of that window, so we sit right at its start.  The cache override
-        // (below) carries the exact rendering info; the scroll value is
-        // just a cosmetic hint for the scrollbar and for preventing the
-        // cache-invalidation guard from tripping.
-        var approxScroll = EstimateWrappedLineY(topLine, table, charsPerRow, rh);
-
-        // Assign _scrollOffset directly (bypassing the ScrollValue setter)
-        // so we can update it in lock-step with the cache fields without
-        // triggering the side effects that would clear the cache we're
-        // about to set.  We also dispose _layout manually so the next
-        // EnsureLayout rebuilds with our state.
         _scrollOffset = new Vector(_scrollOffset.X, approxScroll);
 #if DEBUG
         Debug.Assert(approxScroll >= 0,
-            $"ScrollExact: approxScroll {approxScroll} < 0 for topLine {topLine}");
+            $"ApplyScrollTarget: approxScroll {approxScroll} < 0 for topLine {topLine}");
 #endif
         _winTopLine = topLine;
         _winScrollOffset = approxScroll;
         _winRenderOffsetY = renderOffsetY;
-        // _winFirstLineHeight is only consulted by the "advance by 1"
-        // branch in LayoutWindowed's isSmallScroll logic, which we won't
-        // hit (ds = 0).  Set to a reasonable placeholder via row count.
-        _winFirstLineHeight = ComputeLineRowCount(topLine) * rh;
-        // Arm the exact-pin gate.  LayoutWindowed will consume this on
-        // its next run and clear it, so only the frame that renders our
-        // target uses the pull-back skip and tight-extent math.  Any
-        // subsequent scroll (wheel / drag / arrow) sees the flag already
-        // cleared and goes through the normal path.
+        _winFirstLineHeight = ComputeLineRowCount(topLine) * (double)GetRowHeight();
         _winExactPinActive = true;
-
         _layout?.Dispose();
         _layout = null;
+    }
+
+    private void ScrollExact(long topLine, double renderOffsetY) {
+        PerfStats.ScrollExactCalls++;
+        ApplyScrollTarget(topLine, renderOffsetY);
         InvalidateVisual();
         InvalidateArrange();
         FireScrollChanged();

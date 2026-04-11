@@ -461,6 +461,104 @@ public class ScrollCoverageTests {
     }
 
     // ------------------------------------------------------------------
+    //  Over-scroll regression: Down/Up at viewport edge must scroll the
+    //  MINIMUM amount to reveal the target row, not a full row height.
+    // ------------------------------------------------------------------
+
+    [AvaloniaFact]
+    public void Down_BottomEdge_NonAlignedScroll_ScrollsLessThanRowHeight() {
+        var doc = MakeDoc(80, 20);
+        var editor = CreateEditor(doc, false);
+        var rh = editor.RowHeightValue;
+
+        // Position caret mid-document, then shift scroll by a fractional
+        // row to make it non-row-aligned (simulating wrapped-line scrolling).
+        editor.GoToPosition(doc.Table.LineStartOfs(30));
+        Relayout(editor);
+        editor.ScrollValue += rh * 0.4;
+        Relayout(editor);
+
+        // Walk down until a scroll event occurs.  The first edge-scroll
+        // should be strictly less than rh because the target row is only
+        // partially hidden (0.4 * rh hidden, 0.6 * rh visible).
+        for (var step = 0; step < 30; step++) {
+            var scrollBefore = editor.ScrollValue;
+
+            editor.MoveCaretVerticalForTest(+1, false);
+            Relayout(editor);
+
+            var scrollDelta = editor.ScrollValue - scrollBefore;
+            if (scrollDelta > 0.1) {
+                Assert.True(scrollDelta < rh - 0.5,
+                    $"Step {step}: expected partial scroll ({scrollDelta:F1}px) " +
+                    $"but got >= rh ({rh:F1}px). Over-scroll bug.");
+                AssertCaretOnScreen(editor, $"Down bottom-edge step {step}");
+                return;
+            }
+        }
+        Assert.Fail("Never triggered a scroll — test setup error");
+    }
+
+    [AvaloniaFact]
+    public void Up_TopEdge_NonAlignedScroll_ScrollsLessThanRowHeight() {
+        var doc = MakeDoc(80, 20);
+        var editor = CreateEditor(doc, false);
+        var rh = editor.RowHeightValue;
+
+        editor.GoToPosition(doc.Table.LineStartOfs(30));
+        Relayout(editor);
+        editor.ScrollValue += rh * 0.6;
+        Relayout(editor);
+
+        // Walk up until a scroll event occurs.
+        for (var step = 0; step < 30; step++) {
+            var scrollBefore = editor.ScrollValue;
+
+            editor.MoveCaretVerticalForTest(-1, false);
+            Relayout(editor);
+
+            var scrollDelta = scrollBefore - editor.ScrollValue;
+            if (scrollDelta > 0.1) {
+                Assert.True(scrollDelta < rh - 0.5,
+                    $"Step {step}: expected partial scroll ({scrollDelta:F1}px) " +
+                    $"but got >= rh ({rh:F1}px). Over-scroll bug.");
+                AssertCaretOnScreen(editor, $"Up top-edge step {step}");
+                return;
+            }
+        }
+        Assert.Fail("Never triggered a scroll — test setup error");
+    }
+
+    [AvaloniaFact]
+    public void Down_WrappedLines_ScrollDeltaNeverExceedsRowHeight() {
+        // Long lines that wrap → many visual rows per logical line.
+        var doc = MakeDoc(50, 200);
+        var editor = CreateEditor(doc, true);
+        var rh = editor.RowHeightValue;
+
+        editor.GoToPosition(doc.Table.LineStartOfs(10));
+        Relayout(editor);
+
+        // Walk down through 100 wrapped rows, checking every scroll event.
+        var overScrollCount = 0;
+        for (var step = 0; step < 100; step++) {
+            var scrollBefore = editor.ScrollValue;
+
+            editor.MoveCaretVerticalForTest(+1, false);
+            Relayout(editor);
+
+            var scrollDelta = editor.ScrollValue - scrollBefore;
+            if (scrollDelta > rh + 0.5) {
+                overScrollCount++;
+            }
+            if (scrollDelta > 0.1) {
+                AssertCaretOnScreen(editor, $"Down wrapped step {step}");
+            }
+        }
+        Assert.Equal(0, overScrollCount);
+    }
+
+    // ------------------------------------------------------------------
     //  Extend selection: isolated test — doesn't need full matrix
     // ------------------------------------------------------------------
 

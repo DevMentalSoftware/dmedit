@@ -958,17 +958,36 @@ public sealed partial class EditorControl {
         var atBottomEdge = lineDelta > 0 && caretScreenY + 2 * rh > _viewport.Height;
 
         if (atTopEdge || atBottomEdge) {
-            // Scroll the viewport by one row; keep the caret at the same
-            // screen position so the content slides under it.
+            // Capture the scroll before mutation so we can compute the
+            // precise delta for smooth scrollbar tracking.
+            var scrollBefore = _scrollOffset.Y;
+
+            // Find the target caret position via the proven hit-test
+            // approach: scroll by rh to bring the target row into the
+            // layout window, then hit-test at the same screen row.
             var caretScreenRow = GetCaretScreenRow(caretRect, rh);
             ScrollValue += lineDelta * rh;
             _layout?.Dispose();
             _layout = null;
-            var newLayout = EnsureLayout();
-            var newCaret = HitTestAtScreenRow(caretScreenRow, rh, newLayout);
+            var tempLayout = EnsureLayout();
+            var newCaret = HitTestAtScreenRow(caretScreenRow, rh, tempLayout);
             doc.Selection = extend
                 ? doc.Selection.ExtendTo(newCaret)
                 : Selection.Collapsed(newCaret);
+
+            // Set the scroll to the exact minimum delta needed to reveal
+            // the target row, using the same formula as the shared
+            // ComputeScrollPinToBottom/Top helpers.  We apply the delta
+            // directly rather than via ApplyScrollTarget so the
+            // incremental layout tracking stays primed — the scroll
+            // moves by a sub-row amount and LayoutWindowed's small-scroll
+            // path handles the rendering precisely.
+            var scrollDelta = atBottomEdge
+                ? caretScreenY + 2 * rh - _viewport.Height
+                : caretScreenY - rh;
+            _scrollOffset = new Vector(_scrollOffset.X, Math.Max(0, scrollBefore + scrollDelta));
+            _layout?.Dispose();
+            _layout = null;
         } else {
             // Normal movement within the viewport — move the caret one
             // visual row.  Use rh (not caretRect.Height) as the step so

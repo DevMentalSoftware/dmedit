@@ -40,7 +40,7 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 1016** (662 Core + 60 Rendering + 294 App, 1 skipped)
+**Test baseline: 3526** (662 Core + 60 Rendering + 2804 App, 1 skipped)
 
 ### In progress
 
@@ -51,17 +51,24 @@ small one — it is the primary way a fresh session recovers context.
   mono/TextLayout decision.  `PerfStats.ScrollExactCalls` enables
   hidden-behavior assertions in tests.
 
-  **Remaining work:** write the actual test suite.  Priority order:
-  1. Test infrastructure (parameterized helpers, PerfStats snapshot)
-  2. `ComputeTargetScrollY` pure-function tests (~40 tests)
-  3. `MoveCaretVertical` + Up/Down symmetry proof
-  4. `FindNext`/`FindPrev` scroll pinning + wrap-around
-  5. `PageUp`/`PageDown` (zero direct coverage today)
-  6. `Home`/`End` cascading on wrapped lines
+  **Progress:** First major wave shipped — ~1654 net new test cases
+  across `ScrollMatrixTests.cs` (large cross-product matrix: 6 doc sizes
+  × 2 wrap modes × 7 positions × ~28 invariant methods ≈ 1656 cases),
+  `ScrollCoverageTests.cs` (expanded with over-scroll regression tests),
+  and `ComputeTargetScrollYTests.cs` (26 pure-function tests).
 
-  Estimated ~12,500 net new test cases, mostly via parameterized
-  `[Theory]` methods (~500-800 test methods emitting thousands of
-  logical cases).
+  **Remaining work:**
+  1. More `ComputeTargetScrollY` parameterized sweep tests (~14 more)
+  2. `FindNext`/`FindPrev` matrix coverage (currently ~30 Find tests,
+     need wrap-on × long-line combinations)
+  3. `PageUp`/`PageDown` expanded matrix
+  4. `Home`/`End` cascading on wrapped lines (double-press behavior)
+  5. `MoveCaretHorizontal` boundary crossing (line end → next line)
+  6. Efficiency assertions (PerfStats layout-invalidation budgets)
+  7. Multi-step sequences (arrow×50, Find round-trips)
+
+  Estimated remaining: ~10,000 more test cases to reach the ~12,500
+  target, mostly additional [Theory] data rows and new action types.
 
   **Avalonia 12 upgrade is deferred** until this test coverage exists.
   The upgrade changes are understood and documented but not applied.
@@ -117,6 +124,36 @@ small one — it is the primary way a fresh session recovers context.
   See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **FindNext/FindPrev scroll-into-view fix** (2026-04-11) — Find matches
+  near the document tail frequently landed off-viewport (19 out of 34
+  stress tests failed).  Root cause: `LayoutWindowed`'s "max scroll
+  anchor" (lines 738-744) forced `contentBottom == vpH` by overwriting
+  `RenderOffsetY`, which clobbered the precise targeting that
+  `ScrollExact` had computed.  Fix: gate the anchor on
+  `!_winExactPinActive` — same pattern as the pull-back gate.
+  `ScrollExact`'s near-end remap already handles the bottom gap, so the
+  anchor is redundant for exact-pin targets.  One-line change.  34 new
+  Find stress tests in `FindStressTests.cs` (walk all matches forward/
+  backward, wrap-around, alternating direction, continuation-row matches,
+  dense matches, two-far-apart matches, single-match no-loop,
+  ScrollMaximum stability).
+
+- **MoveCaretVertical over-scroll fix + scroll targeting refactor**
+  (2026-04-11) — Down/Up arrow at the viewport edge scrolled by a full
+  `rh` regardless of how much was needed.  When the scroll was non-row-
+  aligned (common with wrapped lines), this over-scrolled, causing a
+  visual jump.  Fix: compute the precise minimum delta from the caret's
+  screen position, set `_scrollOffset` directly.  Three regression tests
+  in `ScrollCoverageTests`.  Shared scroll-targeting helpers extracted
+  from `ScrollSelectionIntoView`: `ComputeScrollPinToBottom`,
+  `ComputeScrollPinToTop`, `ApplyScrollTarget`.  `ScrollExact` refactored
+  to delegate to `ApplyScrollTarget`.  `ScrollSelectionIntoView` now uses
+  the shared helpers instead of inline math.  Arrow keys use the same
+  delta formula as the helpers but apply via direct `_scrollOffset` write
+  (preserving incremental layout tracking) rather than `ApplyScrollTarget`
+  (which replaces the viewport, appropriate for Find/GoTo but not for
+  sub-row incremental scroll).
 
 - **Scroll/layout invariant infrastructure** (2026-04-11) — Five
   `Debug.Assert` invariants guard row-count alignment, row-of-char

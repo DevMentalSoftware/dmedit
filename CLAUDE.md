@@ -35,8 +35,8 @@ dotnet build
 dotnet test
 ```
 
-All tests must pass before and after any change. Current baseline: **1016 tests**
-(662 Core + 60 Rendering + 294 App).
+All tests must pass before and after any change. Current baseline: **3526 tests**
+(662 Core + 60 Rendering + 2804 App).
 
 ## Dev mode
 
