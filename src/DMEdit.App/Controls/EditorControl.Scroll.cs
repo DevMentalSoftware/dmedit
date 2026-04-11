@@ -213,15 +213,7 @@ public sealed partial class EditorControl {
             // e.g. after GoToPosition jumped across the document): seed
             // with the line-start estimate, rebuild, re-measure.  The
             // loop converges in at most 3 passes.
-            // Use _lastTextWidth so charsPerRow matches the renderer.
-            double textW;
-            if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
-                textW = _lastTextWidth;
-            } else {
-                var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-                textW = GetTextWidth(maxW);
-            }
-            var charsPerRow = GetCharsPerRow(textW);
+            var charsPerRow = GetCharsPerRow(GetEffectiveTextWidth());
 
             // Update extent from total visual rows (exact via row index
             // when available, char-density estimate for huge docs).
@@ -643,17 +635,7 @@ public sealed partial class EditorControl {
     /// tabs that force the slow path.
     /// </summary>
     private int SlowPathRowOfChar(string text, int charInLine) {
-        // Use _lastTextWidth (cached from the most recent layout pass) so
-        // the maxWidth matches what the renderer used.  Same pattern as
-        // GetMonoRowWidths.  Without this, Bounds.Width=0 during Measure
-        // falls back to 900px, producing wrong row indices for tab lines.
-        double textW;
-        if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
-            textW = _lastTextWidth;
-        } else {
-            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-            textW = GetTextWidth(maxW);
-        }
+        var textW = GetEffectiveTextWidth();
         var typeface = new Typeface(FontFamily);
         using var tl = new TextLayout(
             text, typeface, EffectiveFontSize, ForegroundBrush,
@@ -662,6 +644,24 @@ public sealed partial class EditorControl {
         var hit = tl.HitTestTextPosition(clamped);
         var rh = GetRowHeight();
         return Math.Max(0, (int)Math.Round(hit.Y / rh));
+    }
+
+    /// <summary>
+    /// Returns the text-area width that the layout engine used on its most
+    /// recent pass.  All scroll-math callers (<see cref="GetMonoRowWidths"/>,
+    /// <see cref="SlowPathRowCount"/>, <see cref="SlowPathRowOfChar"/>,
+    /// <see cref="ScrollToTopLine"/>, <see cref="ScrollCaretIntoView"/>)
+    /// must use this instead of recomputing from <c>Bounds.Width</c>,
+    /// because <c>Bounds</c> can be 0 during <c>MeasureOverride</c>
+    /// (before Arrange), causing a 900px fallback that disagrees with the
+    /// renderer's actual width.
+    /// </summary>
+    private double GetEffectiveTextWidth() {
+        if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
+            return _lastTextWidth;
+        }
+        var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
+        return GetTextWidth(maxW);
     }
 
     /// <summary>
@@ -679,17 +679,7 @@ public sealed partial class EditorControl {
     /// produce a different char count and the row counts diverge.</para>
     /// </summary>
     private (int firstRowChars, int contRowChars) GetMonoRowWidths() {
-        // Use the cached text width from the most recent EnsureLayout pass
-        // when available.  Recomputing from Bounds disagrees during Measure
-        // (Bounds not yet set) and during the LayoutWindowed invariant check
-        // (Bounds may differ from what was passed to the layout engine).
-        double textW;
-        if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
-            textW = _lastTextWidth;
-        } else {
-            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-            textW = GetTextWidth(maxW);
-        }
+        var textW = GetEffectiveTextWidth();
         if (!double.IsFinite(textW) || textW <= 0) return (int.MaxValue, int.MaxValue);
 
         // Derive char width from the glyph advance — same path as
@@ -758,15 +748,7 @@ public sealed partial class EditorControl {
     /// control chars, proportional font ligatures, etc.).
     /// </summary>
     private int SlowPathRowCount(string text) {
-        // Use _lastTextWidth so the maxWidth matches the renderer.
-        // Same fix as SlowPathRowOfChar — see comment there.
-        double textW;
-        if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
-            textW = _lastTextWidth;
-        } else {
-            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-            textW = GetTextWidth(maxW);
-        }
+        var textW = GetEffectiveTextWidth();
         var typeface = new Typeface(FontFamily);
         using var tl = new TextLayout(
             text, typeface, EffectiveFontSize, ForegroundBrush,
@@ -960,15 +942,7 @@ public sealed partial class EditorControl {
             // Wrapping on: exact when the row index is built, estimate
             // otherwise.  Nudge by a sub-pixel amount so the round-trip
             // in LayoutWindowed always resolves to targetLine.
-            // Use _lastTextWidth so charsPerRow matches the renderer.
-            double textW;
-            if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
-                textW = _lastTextWidth;
-            } else {
-                var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-                textW = GetTextWidth(maxW);
-            }
-            var charsPerRow = GetCharsPerRow(textW);
+            var charsPerRow = GetCharsPerRow(GetEffectiveTextWidth());
             ScrollValue = ExactOrEstimateLineY(targetLine, table, charsPerRow, rh) + 0.01;
         }
     }

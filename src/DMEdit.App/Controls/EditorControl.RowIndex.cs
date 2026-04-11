@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using DMEdit.Core.Collections;
 using DMEdit.Core.Documents;
 
@@ -138,17 +139,7 @@ public sealed partial class EditorControl {
     /// </summary>
     private (int charsPerRow, int hangingIndent) GetRowIndexBuildParams() {
         if (!_wrapLines) return (0, 0);
-        // Use _lastTextWidth so the row index is built with the same
-        // width the renderer uses.  Same fix as SlowPathRowCount —
-        // Bounds.Width can be 0 during MeasureOverride, falling back
-        // to 900px and producing wrong row counts.
-        double textW;
-        if (_lastTextWidth > 0 && double.IsFinite(_lastTextWidth)) {
-            textW = _lastTextWidth;
-        } else {
-            var maxW = Math.Max(100, (Bounds.Width > 0 ? Bounds.Width : 900) - _gutterWidth);
-            textW = GetTextWidth(maxW);
-        }
+        var textW = GetEffectiveTextWidth();
         if (!double.IsFinite(textW) || textW <= 0) return (0, 0);
         var cw = GetCharWidth();
         if (cw <= 0) return (0, 0);
@@ -300,10 +291,18 @@ public sealed partial class EditorControl {
         if (rowIdx != null) {
             return rowIdx.TotalSum();
         }
-        // Legacy estimate.
-        var totalChars = table.Length;
+#if DEBUG
+        // If the doc is below the threshold, the row index should exist.
+        // Hitting this means EnsureRowIndex failed to build — likely a
+        // charsPerRow mismatch or a bug in the build path.
+        Debug.Assert(table.Length > RowIndexCharThreshold || !_wrapLines || lineCount <= 0,
+            $"Estimate fallback used for {table.Length}-char doc (threshold "
+            + $"{RowIndexCharThreshold}) — row index should have been available");
+#endif
+        // Char-density estimate (huge docs only).
+        var estTotalChars = table.Length;
         return charsPerRow > 0
-            ? Math.Max(lineCount, (long)Math.Ceiling((double)totalChars / charsPerRow))
+            ? Math.Max(lineCount, (long)Math.Ceiling((double)estTotalChars / charsPerRow))
             : lineCount;
     }
 
@@ -326,7 +325,12 @@ public sealed partial class EditorControl {
             if (line < 0) return Math.Max(0, lineCount - 1);
             return Math.Clamp(line, 0, lineCount - 1);
         }
-        // Legacy estimate.
+#if DEBUG
+        Debug.Assert(table.Length > RowIndexCharThreshold || !_wrapLines || lineCount <= 0,
+            $"Estimate fallback used for {table.Length}-char doc — row index "
+            + "should have been available");
+#endif
+        // Char-density estimate (huge docs only).
         return EstimateWrappedTopLine(scrollY, table, lineCount, charsPerRow, rh);
     }
 }
