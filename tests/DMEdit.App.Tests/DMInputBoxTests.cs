@@ -251,4 +251,57 @@ public class DMInputBoxTests {
         Assert.Equal(0, box.SelectionStart);
         Assert.Equal(0, box.SelectionEnd);
     }
+
+    // ---------------------------------------------------------------
+    // Word boundary helpers — regression for GH issue #12
+    // (IndexOutOfRangeException on double-click at end of text)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void PrevWordBoundary_PosAtLength_NoException() {
+        // Regression: double-click with pos at text.Length caused
+        // PrevWordBoundary(text, pos+1) = PrevWordBoundary(text, Length+1)
+        // → text[Length] → IndexOutOfRangeException.
+        var result = DMInputBox.PrevWordBoundary("hello world", 12);
+        Assert.InRange(result, 0, 11);
+    }
+
+    [Fact]
+    public void PrevWordBoundary_PosPastLength_NoException() {
+        var result = DMInputBox.PrevWordBoundary("hello world", 100);
+        Assert.InRange(result, 0, 11);
+    }
+
+    [Fact]
+    public void PrevWordBoundary_EmptyString_ReturnsZero() {
+        Assert.Equal(0, DMInputBox.PrevWordBoundary("", 0));
+        Assert.Equal(0, DMInputBox.PrevWordBoundary("", 1));
+    }
+
+    [Fact]
+    public void PrevWordBoundary_AtZero_ReturnsZero() {
+        Assert.Equal(0, DMInputBox.PrevWordBoundary("hello", 0));
+    }
+
+    [Fact]
+    public void PrevWordBoundary_MidWord_GoesToWordStart() {
+        var result = DMInputBox.PrevWordBoundary("hello world", 8);
+        Assert.Equal(6, result); // start of "world"
+    }
+
+    [Fact]
+    public void NextWordBoundary_AtLength_ReturnsLength() {
+        Assert.Equal(5, DMInputBox.NextWordBoundary("hello", 5));
+    }
+
+    [Fact]
+    public void NextWordBoundary_PastLength_ReturnsLength() {
+        Assert.Equal(5, DMInputBox.NextWordBoundary("hello", 100));
+    }
+
+    [Fact]
+    public void NextWordBoundary_MidWord_GoesToNextWordStart() {
+        var result = DMInputBox.NextWordBoundary("hello world", 3);
+        Assert.Equal(6, result); // start of "world"
+    }
 }

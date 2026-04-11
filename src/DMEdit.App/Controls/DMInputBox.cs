@@ -633,15 +633,15 @@ public class DMInputBox : Control {
     // Word boundary helpers
     // ---------------------------------------------------------------
 
-    private static int PrevWordBoundary(string text, int pos) {
-        if (pos <= 0) return 0;
-        pos--;
+    internal static int PrevWordBoundary(string text, int pos) {
+        if (pos <= 0 || text.Length == 0) return 0;
+        pos = Math.Min(pos - 1, text.Length - 1);
         while (pos > 0 && char.IsWhiteSpace(text[pos])) { pos--; }
         while (pos > 0 && !char.IsWhiteSpace(text[pos - 1])) { pos--; }
         return pos;
     }
 
-    private static int NextWordBoundary(string text, int pos) {
+    internal static int NextWordBoundary(string text, int pos) {
         if (pos >= text.Length) return text.Length;
         while (pos < text.Length && !char.IsWhiteSpace(text[pos])) { pos++; }
         while (pos < text.Length && char.IsWhiteSpace(text[pos])) { pos++; }
