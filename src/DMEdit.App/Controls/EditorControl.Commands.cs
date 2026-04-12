@@ -977,24 +977,18 @@ public sealed partial class EditorControl {
                 ? doc.Selection.ExtendTo(newCaret)
                 : Selection.Collapsed(newCaret);
 
-            // Set the scroll to the exact minimum delta needed to reveal
-            // the target row, using the same formula as the shared
-            // ComputeScrollPinToBottom/Top helpers.  We apply the delta
-            // directly rather than via ApplyScrollTarget so the
-            // incremental layout tracking stays primed — the scroll
-            // moves by a sub-row amount and LayoutWindowed's small-scroll
-            // path handles the rendering precisely.
+            // Correct the scroll to the precise minimum delta.  The first
+            // ScrollValue += rh was needed for the hit-test; now set the
+            // scroll to the exact target via the setter so the incremental
+            // cache (_winScrollOffset, _winRenderOffsetY) stays consistent.
+            // Writing to _scrollOffset directly left _winRenderOffsetY
+            // stale (from the full-rh temporary layout), causing the
+            // content to snap to a row boundary instead of showing a
+            // partial top row.
             var scrollDelta = atBottomEdge
                 ? caretScreenY + 2 * rh - _viewport.Height
                 : caretScreenY - rh;
-            _scrollOffset = new Vector(_scrollOffset.X, Math.Max(0, scrollBefore + scrollDelta));
-            // Keep _winScrollOffset in sync — the temporary layout pass
-            // above may have run the scrollbar sync, changing _winScrollOffset.
-            // If we overwrite _scrollOffset without updating _winScrollOffset,
-            // the next layout sees a wrong ds and breaks incremental tracking.
-            _winScrollOffset = _scrollOffset.Y;
-            _layout?.Dispose();
-            _layout = null;
+            ScrollValue = Math.Max(0, scrollBefore + scrollDelta);
         } else {
             // Normal movement within the viewport — move the caret one
             // visual row.  Use rh (not caretRect.Height) as the step so
