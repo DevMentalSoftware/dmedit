@@ -493,6 +493,14 @@ public class ScrollCoverageTests {
                     $"Step {step}: expected partial scroll ({scrollDelta:F1}px) " +
                     $"but got >= rh ({rh:F1}px). Over-scroll bug.");
                 AssertCaretOnScreen(editor, $"Down bottom-edge step {step}");
+
+                // The render offset must be negative (partial top row above
+                // viewport).  If it's 0, the content snapped to a row
+                // boundary instead of scrolling by the sub-row delta —
+                // this is the stale-cache bug from the 2026-04-11 session.
+                Assert.True(editor.RenderOffsetYForTest < -0.1,
+                    $"Step {step}: RenderOffsetY={editor.RenderOffsetYForTest:F1} " +
+                    $"should be negative (partial top row).");
                 return;
             }
         }

@@ -964,6 +964,59 @@ public class ScrollMatrixTests {
         }
     }
 
+    /// <summary>
+    /// Same as DownWalk but starts with a fractional scroll offset so
+    /// every edge-scroll hits the non-aligned path.  This catches bugs
+    /// where the edge-scroll's RenderOffsetY gets stale because the
+    /// correction doesn't properly invalidate the layout cache.
+    /// </summary>
+    [AvaloniaTheory]
+    [InlineData(80, 20, false, "noWrap-nonAligned")]
+    [InlineData(80, 20, true, "wrap-nonAligned")]
+    [InlineData(30, 200, true, "longWrap-nonAligned")]
+    public void DownWalk_NonAligned_CaretAlwaysOnScreen(int lineCount,
+            int lineLen, bool wrap, string desc) {
+        var doc = MakeDoc(lineCount, lineLen);
+        var editor = CreateEditor(doc, wrap);
+        var rh = editor.RowHeightValue;
+        // Start at line 5 with a fractional scroll offset.
+        doc.Selection = Selection.Collapsed(doc.Table.LineStartOfs(5));
+        editor.ScrollCaretIntoView();
+        Relayout(editor);
+        editor.ScrollValue += rh * 0.37;
+        Relayout(editor);
+        for (var step = 0; step < lineCount * 3; step++) {
+            var before = Caret(editor);
+            editor.MoveCaretVerticalForTest(+1, false);
+            Relayout(editor);
+            if (Caret(editor) == before) break;
+            AssertCaretOnScreen(editor, $"{desc} step {step}");
+        }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(80, 20, false, "noWrap-nonAligned")]
+    [InlineData(80, 20, true, "wrap-nonAligned")]
+    [InlineData(30, 200, true, "longWrap-nonAligned")]
+    public void UpWalk_NonAligned_CaretAlwaysOnScreen(int lineCount,
+            int lineLen, bool wrap, string desc) {
+        var doc = MakeDoc(lineCount, lineLen);
+        var editor = CreateEditor(doc, wrap);
+        var rh = editor.RowHeightValue;
+        doc.Selection = Selection.Collapsed(doc.Table.Length);
+        editor.ScrollCaretIntoView(ScrollPolicy.Bottom);
+        Relayout(editor);
+        editor.ScrollValue -= rh * 0.37;
+        Relayout(editor);
+        for (var step = 0; step < lineCount * 3; step++) {
+            var before = Caret(editor);
+            editor.MoveCaretVerticalForTest(-1, false);
+            Relayout(editor);
+            if (Caret(editor) == before) break;
+            AssertCaretOnScreen(editor, $"{desc} step {step}");
+        }
+    }
+
     [AvaloniaTheory]
     [InlineData(80, 20, false, "noWrap")]
     [InlineData(80, 20, true, "wrap")]

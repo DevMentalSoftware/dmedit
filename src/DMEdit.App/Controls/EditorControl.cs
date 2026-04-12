@@ -417,6 +417,11 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
         get => _renderOffsetY;
         set => _renderOffsetY = value; // tracepoint here
     }
+
+    /// <summary>Test-only: the sub-pixel offset of the first visible line
+    /// from the viewport top.  Negative means the first row is partially
+    /// above the viewport (expected after a sub-row scroll).</summary>
+    internal double RenderOffsetYForTest => _renderOffsetY;
     private EventHandler? _scrollInvalidated;
 
     /// <summary>
