@@ -231,7 +231,7 @@ public class ComputeTargetScrollYTests {
     public static IEnumerable<object[]> MinimalSweepData() {
         // Sweep caretDocY from 0 to 2*VpH in steps of Rh/2,
         // with currentScrollY at various positions.
-        var scrollPositions = new double[] { 0, 100, 500, 900, 1800 };
+        var scrollPositions = new double[] { 0, 50, 100, 300, 500, 900, 1200, 1800 };
         foreach (var scrollY in scrollPositions) {
             for (var caretDocY = 0.0; caretDocY <= 2 * VpH; caretDocY += Rh / 2) {
                 yield return new object[] { caretDocY, scrollY };
@@ -293,13 +293,68 @@ public class ComputeTargetScrollYTests {
     // ================================================================
 
     public static IEnumerable<object[]> ViewportSizeData() {
-        var viewports = new double[] { 20, 100, 200, 400, 800 };
-        var positions = new double[] { 0, 50, 200, 500, 990 };
+        var viewports = new double[] { 12, 20, 60, 100, 200, 400, 800 };
+        var positions = new double[] { 0, 10, 50, 100, 200, 500, 990 };
         foreach (var vpH in viewports) {
             foreach (var caretDocY in positions) {
                 yield return new object[] { caretDocY, vpH };
             }
         }
+    }
+
+    // ================================================================
+    //  Multi-row caret height sweep
+    // ================================================================
+
+    public static IEnumerable<object[]> CaretHeightData() {
+        var caretHeights = new double[] { Rh, Rh * 2, Rh * 3, Rh * 5 };
+        var positions = new double[] { 0, 100, 500, 1000, 1980 };
+        foreach (var ch in caretHeights) {
+            foreach (var pos in positions) {
+                yield return new object[] { pos, ch };
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(CaretHeightData))]
+    public void Minimal_TallCaret_ResultConsistent(double caretDocY, double caretH) {
+        var result = EditorControl.ComputeTargetScrollY(
+            ScrollPolicy.Minimal, caretDocY, caretH, VpH, 0);
+        // After scroll, the caret should fit in the viewport.
+        if (Math.Abs(result) < 0.01) {
+            Assert.True(caretDocY >= -0.01);
+            Assert.True(caretDocY + caretH <= VpH + 0.01);
+        } else {
+            Assert.True(caretDocY >= result - 0.01);
+            Assert.True(caretDocY + caretH <= result + VpH + 0.01);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(CaretHeightData))]
+    public void Center_TallCaret_CentersOnMidpoint(double caretDocY, double caretH) {
+        var result = EditorControl.ComputeTargetScrollY(
+            ScrollPolicy.Center, caretDocY, caretH, VpH, 0);
+        var caretMid = caretDocY + caretH / 2;
+        var vpMid = result + VpH / 2;
+        Assert.Equal(caretMid, vpMid, 1e-6);
+    }
+
+    [Theory]
+    [MemberData(nameof(CaretHeightData))]
+    public void Top_TallCaret_TopAligned(double caretDocY, double caretH) {
+        var result = EditorControl.ComputeTargetScrollY(
+            ScrollPolicy.Top, caretDocY, caretH, VpH, 0);
+        Assert.Equal(caretDocY, result, 1e-6);
+    }
+
+    [Theory]
+    [MemberData(nameof(CaretHeightData))]
+    public void Bottom_TallCaret_BottomAligned(double caretDocY, double caretH) {
+        var result = EditorControl.ComputeTargetScrollY(
+            ScrollPolicy.Bottom, caretDocY, caretH, VpH, 0);
+        Assert.Equal(caretDocY + caretH - VpH, result, 1e-6);
     }
 
     [Theory]
