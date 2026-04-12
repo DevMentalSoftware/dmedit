@@ -216,6 +216,7 @@ public partial class MainWindow : Window {
         RebuildRecentMenu();
         WireScrollBar();
         WireViewMenuState();
+        ApplyMenuIcons();
         InitializeToolbar();
         InitializeTabToolbar();
         ApplyAdvancedMenuVisibility();

@@ -28,6 +28,7 @@ public partial class MainWindow {
             var tab = AddTab(TabState.CreateUntitled(_tabs));
             SwitchToTab(tab);
         }
+        SyncTabPinStates();
 
         // Open any files passed on the command line (e.g. Explorer context
         // menu) as additional tabs, after session restore.
@@ -270,20 +271,29 @@ public partial class MainWindow {
     }
 
     private void CloseAllTabsDirect() {
+        // Pinned tabs survive "Close All".
+        var pinned = _tabs.Where(t => t.IsPinned).ToList();
         _tabs.Clear();
+        _tabs.AddRange(pinned);
         _activeTab = null;
-        var tab = AddTab(TabState.CreateUntitled(_tabs));
-        SwitchToTab(tab);
+        if (_tabs.Count > 0) {
+            SwitchToTab(_tabs[0]);
+        } else {
+            var tab = AddTab(TabState.CreateUntitled(_tabs));
+            SwitchToTab(tab);
+        }
     }
 
     private async Task CloseAllTabsAsync() {
-        var allTabs = _tabs.ToList();
-        var dirtyTabs = allTabs.Where(t => t.IsDirty && !t.IsSettings).ToList();
+        // Pinned tabs survive "Close All".
+        var toClose = _tabs.Where(t => !t.IsPinned).ToList();
+        if (toClose.Count == 0) return;
+        var dirtyTabs = toClose.Where(t => t.IsDirty && !t.IsSettings).ToList();
         if (dirtyTabs.Count == 0) {
             CloseAllTabsDirect();
             return;
         }
-        if (!await PromptAndCloseMultipleTabsAsync(allTabs)) {
+        if (!await PromptAndCloseMultipleTabsAsync(toClose)) {
             return; // Cancelled
         }
         // Ensure we have at least one tab.
@@ -320,6 +330,9 @@ public partial class MainWindow {
         TabBar.CloseTabsToRightClicked += idx => _ = CloseTabsToRightAsync(idx);
         TabBar.CloseOtherTabsClicked += idx => _ = CloseOtherTabsAsync(idx);
         TabBar.CloseAllTabsClicked += () => _ = CloseAllTabsAsync();
+        TabBar.PinTabClicked += idx => {
+            if (idx >= 0 && idx < _tabs.Count) ToggleTabPin(_tabs[idx]);
+        };
         TabBar.TabReordered += OnTabReordered;
         TabBar.DragAreaPressed += () => {
             // BeginMoveDrag is called from within a PointerPressed handler,
@@ -430,7 +443,8 @@ public partial class MainWindow {
 
     private async Task CloseTabsToRightAsync(int tabIndex) {
         if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
-        var toClose = _tabs.Skip(tabIndex + 1).ToList();
+        var toClose = _tabs.Skip(tabIndex + 1).Where(t => !t.IsPinned).ToList();
+        if (toClose.Count == 0) return;
         if (!await PromptAndCloseMultipleTabsAsync(toClose)) {
             return;
         }
@@ -445,7 +459,7 @@ public partial class MainWindow {
     private async Task CloseOtherTabsAsync(int tabIndex) {
         if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
         var keep = _tabs[tabIndex];
-        var toClose = _tabs.Where(t => t != keep).ToList();
+        var toClose = _tabs.Where(t => t != keep && !t.IsPinned).ToList();
         if (!await PromptAndCloseMultipleTabsAsync(toClose)) {
             return;
         }
@@ -454,6 +468,31 @@ public partial class MainWindow {
         } else {
             UpdateTabBar();
         }
+    }
+
+    private void ToggleTabPin(TabState tab) {
+        if (tab.IsSettings || tab.FilePath is null) return;
+        if (tab.IsPinned) {
+            _recentFiles.Unpin(tab.FilePath);
+        } else {
+            _recentFiles.Pin(tab.FilePath);
+        }
+        _recentFiles.Save();
+        SyncTabPinStates();
+        RebuildRecentMenu();
+        UpdateJumpList();
+    }
+
+    /// <summary>
+    /// Sets each tab's <see cref="TabState.IsPinned"/> from the recent
+    /// files store (the single source of truth for pin state).
+    /// </summary>
+    private void SyncTabPinStates() {
+        foreach (var tab in _tabs) {
+            tab.IsPinned = tab.FilePath is not null
+                && _recentFiles.IsPinned(tab.FilePath);
+        }
+        UpdateTabBar();
     }
 
     private void OnTabReordered(int fromIndex, int toIndex) {

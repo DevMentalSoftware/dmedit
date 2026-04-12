@@ -72,8 +72,12 @@ static class IconGlyphs {
     public const string StatusBar      = "\uF58B";  // ic_fluent_panel_bottom_20_regular
     public const string History        = "\uE36E";
 
+    // Pin
+    public const string Pin          = "\uF601";  // ic_fluent_pin_20_regular
+    public const string PinOff       = "\uF603";  // ic_fluent_pin_off_20_regular
+
     // Conflict / error indicators
-    public const string ErrorCircle  = "\uF4A0";  
+    public const string ErrorCircle  = "\uF4A0";
 
     // Window chrome glyphs (Linux custom title bar)
     public const string Minimize     = "\uEBD0";  // ─  ic_fluent_subtract_20_regular

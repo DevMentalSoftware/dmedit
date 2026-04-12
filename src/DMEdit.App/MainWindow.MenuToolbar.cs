@@ -62,7 +62,11 @@ public partial class MainWindow {
             _recentFiles.Clear();
             _recentFiles.Save();
             RebuildRecentMenu();
-            JumpListDiscovery.Service?.Clear();
+            if (_recentFiles.PinnedPaths.Count > 0) {
+                UpdateJumpList(); // Rebuild with pinned files only
+            } else {
+                JumpListDiscovery.Service?.Clear();
+            }
         });
 
         // -- View --
@@ -573,6 +577,26 @@ public partial class MainWindow {
     // View menu wiring
     // -------------------------------------------------------------------------
 
+    private static TextBlock CreateMenuIcon(string glyph) => new() {
+        Text = glyph,
+        FontFamily = IconGlyphs.Family,
+        FontSize = 14,
+        Margin = new Thickness(0, 2, 0, 0),
+    };
+
+    /// <summary>
+    /// Sets <see cref="MenuItem.Icon"/> for every menu-bound command that has
+    /// a <see cref="Command.ToolbarGlyph"/> and whose icon hasn't already been
+    /// set (e.g., View menu toggle check marks).
+    /// </summary>
+    private void ApplyMenuIcons() {
+        foreach (var (item, cmd) in _menuCommandBindings) {
+            if (cmd.ToolbarGlyph is not null && item.Icon is null) {
+                item.Icon = CreateMenuIcon(cmd.ToolbarGlyph);
+            }
+        }
+    }
+
     private static TextBlock CreateMenuCheckGlyph(bool isChecked) => new() {
         Text = IconGlyphs.CheckMark,
         FontFamily = IconGlyphs.Family,
@@ -764,8 +788,10 @@ public partial class MainWindow {
             return;
         }
 
-        var recentPaths = _recentFiles.Paths;
-        var visibleCount = Math.Min(recentPaths.Count, _settings.RecentFileCount);
+        var pinnedPaths = _recentFiles.PinnedPaths;
+        var unpinnedPaths = _recentFiles.UnpinnedPaths;
+        var unpinnedLimit = Math.Max(0, _settings.RecentFileCount - pinnedPaths.Count);
+        var unpinnedCount = Math.Min(unpinnedPaths.Count, unpinnedLimit);
 
         var menu = new ContextMenu {
             Placement = PlacementMode.Bottom,
@@ -773,14 +799,34 @@ public partial class MainWindow {
             FontSize = 12,
         };
 
-        if (visibleCount == 0) {
+        if (pinnedPaths.Count == 0 && unpinnedCount == 0) {
             menu.Items.Add(new MenuItem { Header = "(No recent files)", IsEnabled = false });
         } else {
-            for (var i = 0; i < visibleCount; i++) {
-                var captured = recentPaths[i];
+            // Pinned items with pin icon and right-click to unpin.
+            for (var i = 0; i < pinnedPaths.Count; i++) {
+                var captured = pinnedPaths[i];
+                var mi = new MenuItem {
+                    Header = Path.GetFileName(captured),
+                    Icon = CreateRecentPinIcon(),
+                };
+                UiHelpers.SetPathToolTip(mi, captured);
+                mi.Click += async (_, _) => await OpenFileInTabAsync(captured);
+                mi.ContextMenu = CreateRecentPinContextMenu(captured, true, menu);
+                menu.Items.Add(mi);
+            }
+
+            // Separator between pinned and unpinned.
+            if (pinnedPaths.Count > 0 && unpinnedCount > 0) {
+                menu.Items.Add(new Separator());
+            }
+
+            // Unpinned items with right-click to pin.
+            for (var i = 0; i < unpinnedCount; i++) {
+                var captured = unpinnedPaths[i];
                 var mi = new MenuItem { Header = Path.GetFileName(captured) };
                 UiHelpers.SetPathToolTip(mi, captured);
                 mi.Click += async (_, _) => await OpenFileInTabAsync(captured);
+                mi.ContextMenu = CreateRecentPinContextMenu(captured, false, menu);
                 menu.Items.Add(mi);
             }
         }
@@ -788,4 +834,40 @@ public partial class MainWindow {
         menu.Closed += (_, _) => { if (TabBar.ContextMenu == menu) TabBar.ContextMenu = null; };
         menu.Open(TabBar);
     }
+
+    /// <summary>
+    /// Creates a right-click context menu for a recent file item with
+    /// Pin/Unpin action. Closes the parent dropdown after toggling.
+    /// </summary>
+    private ContextMenu CreateRecentPinContextMenu(
+        string path, bool isPinned, ContextMenu parentMenu) {
+        var ctx = new ContextMenu { FontSize = 12 };
+        var label = isPinned ? "_Unpin" : "_Pin";
+        var glyph = isPinned ? IconGlyphs.PinOff : IconGlyphs.Pin;
+        var item = new MenuItem {
+            Header = label,
+            Icon = CreateMenuIcon(glyph),
+        };
+        item.Click += (_, _) => {
+            parentMenu.Close();
+            if (isPinned) {
+                _recentFiles.Unpin(path);
+            } else {
+                _recentFiles.Pin(path);
+            }
+            _recentFiles.Save();
+            SyncTabPinStates();
+            RebuildRecentMenu();
+            UpdateJumpList();
+        };
+        ctx.Items.Add(item);
+        return ctx;
+    }
+
+    private static TextBlock CreateRecentPinIcon() => new() {
+        Text = IconGlyphs.Pin,
+        FontFamily = IconGlyphs.Family,
+        FontSize = 14,
+        Margin = new Thickness(0, 2, 0, 0),
+    };
 }

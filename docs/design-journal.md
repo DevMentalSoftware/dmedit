@@ -49,6 +49,35 @@ small one — it is the primary way a fresh session recovers context.
 
 ### Recently completed
 
+- **Pinned documents** (2026-04-12) — Files can be pinned so they
+  permanently stay in the recent files list, never evicted by new opens.
+  Pin state lives in `RecentFilesStore` (single source of truth); tabs
+  derive their `IsPinned` flag via `SyncTabPinStates()`.
+  - **RecentFilesStore** — new JSON format `{ "pinned": [...], "recent": [...] }`
+    with backwards-compatible loading of old bare-array format.  New
+    `Pin()`, `Unpin()`, `IsPinned()`, `PinnedPaths`, `UnpinnedPaths` API.
+    `Push()` skips pinned paths.  `Clear()` only clears unpinned.
+    `PruneMissing()` removes non-existent files from both lists.
+  - **File menu** — pinned items shown first with pin glyph prefix
+    (StackPanel header — `MenuItem.Icon` doesn't render on dynamically-
+    added items in Avalonia `Menu`).  Separator between pinned/unpinned.
+  - **Tab toolbar dropdown** — same layout; right-click on any item shows
+    Pin/Unpin context menu.  Pin/unpin syncs open tabs and rebuilds menus.
+  - **Tab bar** — pinned tabs show pin icon in the close-button area
+    (dirty dot takes precedence; close X on hover).  Tab context menu
+    offers Pin/Unpin (disabled for untitled tabs).
+  - **Bulk close** — Close All, Close Others, Close Tabs to Right all
+    skip pinned tabs.  Individual close still works but does not unpin.
+  - **Session restore** — `IsPinned` is not persisted in the session
+    manifest; it is derived from the recent files store on restore.
+  - **Jump list** — `Paths` returns pinned first, so pinned files
+    naturally appear at the top of the Windows taskbar jump list.
+
+- **Menu icons** (2026-04-12) — `ApplyMenuIcons()` sets Fluent UI icon
+  glyphs on all menu items that have a `ToolbarGlyph` defined, skipping
+  View menu toggles that already use check-mark icons.  New
+  `CreateMenuIcon()` helper.  `IconGlyphs.Pin` and `PinOff` added.
+
 - **Easy-tasks batch** (2026-04-12):
   - **Ctrl+MouseWheel zoom** — `EditorControl.Input.cs` detects Ctrl modifier
     in `OnPointerWheelChanged` and adjusts `ZoomPercent` ±10 per notch.

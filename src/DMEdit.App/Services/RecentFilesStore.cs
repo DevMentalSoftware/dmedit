@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 
 namespace DMEdit.App.Services;
@@ -12,25 +13,83 @@ public sealed class RecentFilesStore {
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DMEdit", "recentfiles.json");
 
+    private static readonly StringComparer PathComparer = StringComparer.OrdinalIgnoreCase;
+
+    private readonly List<string> _pinnedPaths;
+    private readonly HashSet<string> _pinnedSet;
     private readonly List<string> _paths;
 
-    private RecentFilesStore(List<string> paths) => _paths = paths;
+    private RecentFilesStore(List<string> pinnedPaths, List<string> paths) {
+        _pinnedPaths = pinnedPaths;
+        _pinnedSet = new HashSet<string>(pinnedPaths, PathComparer);
+        _paths = paths;
+    }
 
-    public IReadOnlyList<string> Paths => _paths;
+    /// <summary>All paths: pinned first, then unpinned (for jump list etc.).</summary>
+    public IReadOnlyList<string> Paths {
+        get {
+            var result = new List<string>(_pinnedPaths.Count + _paths.Count);
+            result.AddRange(_pinnedPaths);
+            result.AddRange(_paths);
+            return result;
+        }
+    }
+
+    public IReadOnlyList<string> PinnedPaths => _pinnedPaths;
+    public IReadOnlyList<string> UnpinnedPaths => _paths;
+
+    public bool IsPinned(string path) => _pinnedSet.Contains(path);
+
+    public void Pin(string path) {
+        if (!_pinnedSet.Add(path)) return;
+        // Remove from unpinned if present.
+        _paths.RemoveAll(p => PathComparer.Equals(p, path));
+        _pinnedPaths.Add(path);
+    }
+
+    public void Unpin(string path) {
+        if (!_pinnedSet.Remove(path)) return;
+        _pinnedPaths.RemoveAll(p => PathComparer.Equals(p, path));
+        // Insert at front of unpinned (it was important enough to pin).
+        _paths.Insert(0, path);
+    }
+
+    // -----------------------------------------------------------------
+    // Persistence DTO — new JSON format is an object with two arrays.
+    // Old format was a bare JSON array (just the paths list).
+    // -----------------------------------------------------------------
+
+    private sealed class StoreData {
+        public List<string>? Pinned { get; set; }
+        public List<string>? Recent { get; set; }
+    }
 
     public static RecentFilesStore Load() {
         try {
             if (File.Exists(StorePath)) {
                 var json = File.ReadAllText(StorePath);
+                if (string.IsNullOrWhiteSpace(json)) {
+                    return new RecentFilesStore([], []);
+                }
+                // Try new object format first.
+                if (json.TrimStart().StartsWith('{')) {
+                    var data = JsonSerializer.Deserialize<StoreData>(json);
+                    if (data is not null) {
+                        return new RecentFilesStore(
+                            data.Pinned ?? [],
+                            data.Recent ?? []);
+                    }
+                }
+                // Fall back to old bare-array format.
                 var list = JsonSerializer.Deserialize<List<string>>(json);
                 if (list is not null) {
-                    return new RecentFilesStore(list);
+                    return new RecentFilesStore([], list);
                 }
             }
         } catch {
             // Corrupted or unreadable — start fresh.
         }
-        return new RecentFilesStore([]);
+        return new RecentFilesStore([], []);
     }
 
     /// <summary>
@@ -42,9 +101,14 @@ public sealed class RecentFilesStore {
     /// rebuild the menu).
     /// </summary>
     public bool PruneMissing() {
-        var before = _paths.Count;
+        var before = _paths.Count + _pinnedPaths.Count;
         _paths.RemoveAll(p => IsLocalPath(p) && !File.Exists(p));
-        if (_paths.Count < before) {
+        var removedPinned = _pinnedPaths.RemoveAll(p => IsLocalPath(p) && !File.Exists(p));
+        if (removedPinned > 0) {
+            _pinnedSet.Clear();
+            foreach (var p in _pinnedPaths) _pinnedSet.Add(p);
+        }
+        if (_paths.Count + _pinnedPaths.Count < before) {
             Save();
             return true;
         }
@@ -90,19 +154,25 @@ public sealed class RecentFilesStore {
         return false; // Relative or unrecognizable — leave it alone.
     }
 
-    /// <summary>Adds <paramref name="path"/> to the front, deduplicates, and trims to 10.</summary>
+    /// <summary>Adds <paramref name="path"/> to the front of the unpinned list (no-op if pinned).</summary>
     public void Push(string path) {
-        _paths.Remove(path);
+        if (_pinnedSet.Contains(path)) return;
+        _paths.RemoveAll(p => PathComparer.Equals(p, path));
         _paths.Insert(0, path);
         if (_paths.Count > MaxEntries) {
             _paths.RemoveRange(MaxEntries, _paths.Count - MaxEntries);
         }
     }
 
-    /// <summary>Removes a path (e.g. when the file is found to no longer exist on disk).</summary>
-    public void Remove(string path) => _paths.Remove(path);
+    /// <summary>Removes a path from both pinned and unpinned lists.</summary>
+    public void Remove(string path) {
+        _paths.RemoveAll(p => PathComparer.Equals(p, path));
+        if (_pinnedSet.Remove(path)) {
+            _pinnedPaths.RemoveAll(p => PathComparer.Equals(p, path));
+        }
+    }
 
-    /// <summary>Removes all entries from the recent files list.</summary>
+    /// <summary>Removes all unpinned entries. Pinned entries are kept.</summary>
     public void Clear() => _paths.Clear();
 
     /// <summary>Persists the list. Failures are silently swallowed (best-effort).</summary>
@@ -110,7 +180,14 @@ public sealed class RecentFilesStore {
         try {
             var dir = Path.GetDirectoryName(StorePath)!;
             Directory.CreateDirectory(dir);
-            File.WriteAllText(StorePath, JsonSerializer.Serialize(_paths));
+            var data = new StoreData {
+                Pinned = _pinnedPaths.Count > 0 ? _pinnedPaths : null,
+                Recent = _paths,
+            };
+            var json = JsonSerializer.Serialize(data, new JsonSerializerOptions {
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            });
+            File.WriteAllText(StorePath, json);
         } catch {
             // Best-effort — non-fatal if the OS won't let us write.
         }

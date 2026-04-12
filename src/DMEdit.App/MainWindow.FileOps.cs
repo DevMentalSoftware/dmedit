@@ -136,23 +136,59 @@ public partial class MainWindow {
         // menu visibility (M column in Settings > Commands) is enabled.
         if (!IsCommandMenuVisible(Cmd.FileRecent)) return;
 
-        var recentPaths = _recentFiles.Paths;
-        var visibleCount = Math.Min(recentPaths.Count, _settings.RecentFileCount);
+        var pinnedPaths = _recentFiles.PinnedPaths;
+        var unpinnedPaths = _recentFiles.UnpinnedPaths;
+        var unpinnedLimit = Math.Max(0, _settings.RecentFileCount - pinnedPaths.Count);
+        var unpinnedCount = Math.Min(unpinnedPaths.Count, unpinnedLimit);
 
-        if (visibleCount > 0) {
-            MenuFile.Items.Add(new Separator());
-            for (var i = 0; i < visibleCount; i++) {
-                var captured = recentPaths[i];
-                var item = new MenuItem { Header = Path.GetFileName(captured) };
-                Controls.UiHelpers.SetPathToolTip(item, captured);
-                item.Click += async (_, _) => {
-                    MenuBar.Close();
-                    await OpenFileInTabAsync(captured);
-                };
-                MenuFile.Items.Add(item);
-            }
+        if (pinnedPaths.Count == 0 && unpinnedCount == 0) return;
+
+        MenuFile.Items.Add(new Separator());
+
+        // Pinned items first, with pin icon.
+        for (var i = 0; i < pinnedPaths.Count; i++) {
+            var captured = pinnedPaths[i];
+            var icon = new TextBlock {
+                Text = IconGlyphs.Pin,
+                FontFamily = IconGlyphs.Family,
+                FontSize = 14,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 6, 0),
+            };
+            var label = new TextBlock {
+                Text = Path.GetFileName(captured),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            };
+            var panel = new StackPanel {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+            };
+            panel.Children.Add(icon);
+            panel.Children.Add(label);
+            var item = new MenuItem { Header = panel };
+            Controls.UiHelpers.SetPathToolTip(item, captured);
+            item.Click += async (_, _) => {
+                MenuBar.Close();
+                await OpenFileInTabAsync(captured);
+            };
+            MenuFile.Items.Add(item);
         }
 
+        // Separator between pinned and unpinned.
+        if (pinnedPaths.Count > 0 && unpinnedCount > 0) {
+            MenuFile.Items.Add(new Separator());
+        }
+
+        // Unpinned items.
+        for (var i = 0; i < unpinnedCount; i++) {
+            var captured = unpinnedPaths[i];
+            var item = new MenuItem { Header = Path.GetFileName(captured) };
+            Controls.UiHelpers.SetPathToolTip(item, captured);
+            item.Click += async (_, _) => {
+                MenuBar.Close();
+                await OpenFileInTabAsync(captured);
+            };
+            MenuFile.Items.Add(item);
+        }
     }
 
     /// <summary>

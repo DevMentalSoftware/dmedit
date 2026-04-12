@@ -34,6 +34,12 @@ public sealed class TabState {
     public bool IsSettings { get; init; }
 
     /// <summary>
+    /// When true, the tab is pinned: it shows a pin icon, groups left
+    /// after the Settings tab, and is exempt from "Close Unpinned" commands.
+    /// </summary>
+    public bool IsPinned { get; set; }
+
+    /// <summary>
     /// SHA-1 hash of the file's raw bytes at load time (lowercase hex).
     /// <c>null</c> for untitled documents. Used by session persistence
     /// to detect external modifications between sessions.

@@ -151,6 +151,7 @@ public sealed class TabBarControl : Control {
     public event Action<int, FileConflictChoice>? ConflictResolutionClicked;
     public event Action<int>? RevealInExplorerClicked;
     public event Action<int>? ToggleReadOnlyClicked;
+    public event Action<int>? PinTabClicked;
 
     // Custom chrome (Linux only)
     public event Action? MinimizeClicked;
@@ -864,6 +865,22 @@ public sealed class TabBarControl : Control {
             return;
         }
 
+        // Pinned tab: show pin icon by default; close X on hover;
+        // dirty dot takes precedence over pin when unsaved.
+        if (_tabs[index].IsPinned) {
+            if (isHoveringClose) {
+                DrawIconButton(ctx, closeX, closeY, CloseButtonSize, CloseButtonSize,
+                    true, _theme.TabCloseHoverBg, IconGlyphs.Close, _theme.TabCloseForeground);
+            } else if (isDirty) {
+                DrawIconButton(ctx, closeX, closeY, CloseButtonSize, CloseButtonSize,
+                    false, _theme.TabCloseHoverBg, IconGlyphs.Dirty, _theme.TabCloseForeground);
+            } else {
+                DrawIconButton(ctx, closeX, closeY, CloseButtonSize, CloseButtonSize,
+                    false, _theme.TabCloseHoverBg, IconGlyphs.Pin, _theme.TabCloseForeground);
+            }
+            return;
+        }
+
         // Show dirty dot when the tab has unsaved changes and the
         // close button is not being hovered; otherwise show the X.
         var glyph = isDirty && !isHoveringClose ? IconGlyphs.Dirty : IconGlyphs.Close;
@@ -1291,6 +1308,18 @@ public sealed class TabBarControl : Control {
         if (tabIndex >= 0 && tabIndex < _tabs.Count && !_tabs[tabIndex].IsSettings) {
             menu.Items.Add(new Separator());
             var tab = _tabs[tabIndex];
+            var pinItem = new MenuItem {
+                Header = tab.IsPinned ? "Unpin" : "Pin",
+                Icon = new TextBlock {
+                    Text = tab.IsPinned ? IconGlyphs.PinOff : IconGlyphs.Pin,
+                    FontFamily = IconGlyphs.Family,
+                    FontSize = 14,
+                    Margin = new Thickness(0, 2, 0, 0),
+                },
+                IsEnabled = tab.FilePath is not null,
+            };
+            pinItem.Click += (_, _) => PinTabClicked?.Invoke(tabIndex);
+            menu.Items.Add(pinItem);
             var roItem = new MenuItem {
                 Header = "Read Only",
                 Icon = new TextBlock {
