@@ -110,15 +110,6 @@ public partial class MainWindow {
         Cmd.PseudoMenuHelp.Wire(Noop);
 
         // -- Dev (DevMode-only) --
-        Cmd.DevThrowOnUIThread.Wire(
-            static () => throw new InvalidOperationException("DevMode test exception on UI thread"),
-            canExecute: () => _settings.DevMode);
-        Cmd.DevThrowOnBackground.Wire(
-            static () => new Thread(static () =>
-                throw new InvalidOperationException("DevMode test exception on background thread")) {
-                IsBackground = true, Name = "DevThrowTest",
-            }.Start(),
-            canExecute: () => _settings.DevMode);
     }
 
     private void CycleTab(int direction) {

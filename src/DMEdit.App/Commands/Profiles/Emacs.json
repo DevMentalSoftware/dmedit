@@ -101,9 +101,7 @@
     "Menu.Edit": "",
     "Menu.Search": "",
     "Menu.View": "",
-    "Menu.Help": "",
-    "Dev.ThrowOnUIThread": "",
-    "Dev.ThrowOnBackground": ""
+    "Menu.Help": ""
   },
   "bindings2": {
     "Nav.MoveLeft": "Ctrl+B",

@@ -12,7 +12,6 @@ public static class SettingsRegistry {
     public static readonly IReadOnlyList<string> Categories = [
         "Display",
         "Editor",
-        "Scrollbar",
         "Advanced",
         "Commands",
     ];
@@ -70,7 +69,7 @@ public static class SettingsRegistry {
 
         new SettingDescriptor<double>("OuterThumbScrollRateMultiplier", "Outer Thumb Scroll Rate",
             "Multiplier for the outer-thumb fixed scroll rate. 1.0 = baseline. Higher = faster scanning.",
-            "Scrollbar", 2.0, Min: 0.1, Max: 20.0),
+            "Display", 2.0, Min: 0.1, Max: 20.0),
 
         // -- Editor --
         new SettingDescriptor<int>("IndentWidth", "Indent Width",
