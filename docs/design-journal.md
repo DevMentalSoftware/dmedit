@@ -40,7 +40,7 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 3526** (662 Core + 60 Rendering + 2804 App, 1 skipped)
+**Test baseline: 11,086** (1269 Core + 60 Rendering + 9757 App, 1 skipped)
 
 ### In progress
 
@@ -51,24 +51,28 @@ small one — it is the primary way a fresh session recovers context.
   mono/TextLayout decision.  `PerfStats.ScrollExactCalls` enables
   hidden-behavior assertions in tests.
 
-  **Progress:** First major wave shipped — ~1654 net new test cases
-  across `ScrollMatrixTests.cs` (large cross-product matrix: 6 doc sizes
-  × 2 wrap modes × 7 positions × ~28 invariant methods ≈ 1656 cases),
-  `ScrollCoverageTests.cs` (expanded with over-scroll regression tests),
-  and `ComputeTargetScrollYTests.cs` (26 pure-function tests).
+  **Progress:** 11,086 tests (was 1016 at session start).  Major waves:
+  ScrollMatrixTests (10 doc sizes × 2 wraps × 13 positions × 40+
+  methods), FindStressTests (34 walk/wrap/dense tests), TabMatrixTests
+  (4 sizes × 2 wraps × 7 positions × 13 methods), MonoRowBreaker
+  parametric sweeps (600+ pure-function tests), ComputeTargetScrollY
+  (615 sweep tests), RowCountConsistencyTests, EditScrollTests,
+  HScrollAndControlCharTests, InputSimulationTests, SlowPathMovementTests.
 
-  **Remaining work:**
-  1. More `ComputeTargetScrollY` parameterized sweep tests (~14 more)
-  2. `FindNext`/`FindPrev` matrix coverage (currently ~30 Find tests,
-     need wrap-on × long-line combinations)
-  3. `PageUp`/`PageDown` expanded matrix
-  4. `Home`/`End` cascading on wrapped lines (double-press behavior)
-  5. `MoveCaretHorizontal` boundary crossing (line end → next line)
-  6. Efficiency assertions (PerfStats layout-invalidation budgets)
-  7. Multi-step sequences (arrow×50, Find round-trips)
-
-  Estimated remaining: ~10,000 more test cases to reach the ~12,500
-  target, mostly additional [Theory] data rows and new action types.
+  **Remaining untested branches (for future sessions):**
+  1. **Overwrite mode** — Insert key toggle, block caret, overwrite-
+     insert logic.  Zero tests.
+  2. **CharWrap mode** — entire code path for huge single-line files.
+     Explicitly deferred in entry 15.  Zero tests.
+  3. **Column selection UI integration** — Alt+click, column drag,
+     multi-cursor caret layers.  Math tested in Core, UI untested.
+  4. **IsLoading** — streaming load behavior, interaction lock.  Zero tests.
+  5. **Find horizontal scroll** — ScrollSelectionIntoView doesn't handle
+     horizontal scroll.  Known bug, documented in HScrollAndControlCharTests.
+  6. **GoToPosition near end of long-wrapped-line docs** — Center policy
+     convergence fails.  Known issue, skipped in GoTo_CaretOnScreen.
+  7. **PageDown+PageUp round-trip near doc end** — page boundaries shift
+     at the bottom.  Known issue, skipped in PageDownThenUp_NearOriginal.
 
   **Avalonia 12 upgrade is deferred** until this test coverage exists.
   The upgrade changes are understood and documented but not applied.
@@ -124,6 +128,45 @@ small one — it is the primary way a fresh session recovers context.
   See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **Tab mono fast path + control char elimination** (2026-04-11) — Tab
+  characters no longer force the TextLayout slow path.  Column-aware
+  advance in `MonoRowBreaker` (NextRowTabAware, CountRowsTabAware,
+  RowOfCharTabAware, ColumnOfChar, CharColumns).  `MonoLineLayout`
+  accepts tabs: TryBuild, Draw (split at tabs + GlyphRun per segment),
+  GetCaretBounds/HitTest/HitTestTextRange (column-based X).
+  `MonoLayoutContext.TabWidth` threaded through LayoutLines.  Control
+  chars (< 32) also handled as fallback glyphs — `ShouldUseSlowPath`
+  now only checks `IsFontMonospace()`.  The TextLayout slow path is
+  proportional-font-only.  Tab lines get hanging indent, consistent
+  row counts, and GlyphRun rendering.
+
+- **Caret layer null-layout fix** (2026-04-11) — `ScrollValue` setter
+  disposed `_layout`, and `ArrangeOverride` could run before
+  `MeasureOverride` rebuilt it.  `UpdateCaretLayers` saw `layout=null`
+  → hid everything.  Fix: `UpdateCaretLayers` calls `EnsureLayout()`
+  when `_layout` is null.  Also fixed Ctrl+Arrow scroll hiding the
+  caret: added `ResetCaretBlink()` to ViewScrollLineUp/Down commands.
+
+- **DMInputBox double-click crash** (2026-04-11, GH #12) —
+  `PrevWordBoundary(text, pos+1)` with pos=text.Length caused
+  `IndexOutOfRangeException`.  Fix: clamp pos.
+
+- **Scrollbar thumb drift** (2026-04-11) — After `ScrollExact`, the
+  scrollbar position diverged from the actual viewport.  Fix: post-
+  layout sync in `LayoutWindowed` sets `_scrollOffset.Y` to
+  `ExactOrEstimateLineY(topLine) - RenderOffsetY`.
+
+- **Scroll extent inflation after FindNext** (2026-04-11) — Exact-pin
+  branch inflated `extentHeight` via estimate-based scrollY.  Also
+  `GetRowIndexBuildParams` used wrong `maxWidth`.  Fix: removed exact-
+  pin extent branch, use `totalVisualRows * rh` always.  Extracted
+  `GetEffectiveTextWidth()` to centralize the `_lastTextWidth` pattern.
+  Added Debug.Assert in estimate fallback paths.
+
+- **Slow-path row count divergence** (2026-04-11) — `SlowPathRowCount`
+  and `SlowPathRowOfChar` used `Bounds.Width` (0 during Measure →
+  900px fallback).  Fix: use `GetEffectiveTextWidth()`.
 
 - **FindNext/FindPrev scroll-into-view fix** (2026-04-11) — Find matches
   near the document tail frequently landed off-viewport (19 out of 34
@@ -407,9 +450,10 @@ small one — it is the primary way a fresh session recovers context.
   is probably scoped too wide; may be amplified by per-draw allocations
   on the new mono path.
 
-- **Home/End on wrapped continuation rows** — should move to row start
-  first, then logical-line start on second press.  Trivial on the mono
-  path (RowSpan lookup); harder on `TextLayout` slow path.
+- **Home/End on wrapped continuation rows** — implemented: cascading
+  Home (row start → line start → smart-home) and End (row end → line
+  end).  Works on the mono path; proportional/slow-path falls through
+  to the logical-line path.
 
 - **"Editor Font" reset button in Settings** — single reset that
   restores both family and size.  Lives in `SettingRowFactory`.
