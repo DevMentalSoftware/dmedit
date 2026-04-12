@@ -145,6 +145,15 @@ public partial class MainWindow {
         if (tab == _findBarTab) {
             _findBarTab = null;
         }
+        // If this is the last document tab and it's an unedited untitled,
+        // close the window instead of spawning a replacement.
+        var isLastDoc = !_tabs.Any(t => t != tab && !t.IsSettings);
+        if (isLastDoc && tab.FilePath == null && !tab.IsDirty) {
+            _tabs.Remove(tab);
+            Close();
+            return;
+        }
+
         var closedIdx = _tabs.IndexOf(tab);
         _tabs.Remove(tab);
         var hasDocumentTab = _tabs.Any(t => !t.IsSettings);
