@@ -40,7 +40,7 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 11,086** (1269 Core + 60 Rendering + 9757 App, 1 skipped)
+**Test baseline: 11,091** (1269 Core + 60 Rendering + 9762 App, 1 skipped)
 
 ### In progress
 
@@ -74,14 +74,9 @@ small one — it is the primary way a fresh session recovers context.
   7. **PageDown+PageUp round-trip near doc end** — page boundaries shift
      at the bottom.  Known issue, skipped in PageDownThenUp_NearOriginal.
 
-  **Avalonia 12 upgrade is deferred** until this test coverage exists.
-  The upgrade changes are understood and documented but not applied.
-  Key changes needed: `IGlyphTypeface` → `GlyphTypeface`,
-  `GotFocusEventArgs` → `FocusChangedEventArgs`, `SystemDecorations`
-  → `WindowDecorations`, clipboard/drag-drop API, `RenderScaling`
-  moved to `TopLevel`, `Avalonia.Diagnostics` removed,
-  `ExtendClientAreaChromeHints` removed, xunit v2 → v3, SkiaSharp
-  2.x → 3.x.  Linux resize workaround still needed.
+  **Avalonia 12 upgrade completed** (2026-04-11).  All API changes
+  applied, 11,091 tests passing, manual testing verified on Windows
+  and Linux.
 
 - **Surrogate-pair safety** — Backspace/Delete used to split a UTF-16
   surrogate pair and leave a stranded half in the buffer, which then
@@ -128,6 +123,21 @@ small one — it is the primary way a fresh session recovers context.
   See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **Avalonia 12 upgrade** (2026-04-11) — Upgraded from Avalonia 11.3.12
+  to 12.0.0, SkiaSharp 2.88.9 to 3.119.3, xunit v2 to v3.  API changes:
+  `IGlyphTypeface` → `GlyphTypeface` (+ `CharacterToGlyphMap.TryGetGlyph`,
+  `TryGetHorizontalGlyphAdvance`), `GotFocusEventArgs` →
+  `FocusChangedEventArgs`, `SystemDecorations` → `WindowDecorations`,
+  `ExtendClientAreaChromeHints` removed (use `WindowDecorations.BorderOnly`),
+  `IClipboard.GetTextAsync` → `TryGetTextAsync`, `DragEventArgs.Data` →
+  `DataTransfer`, `RenderScaling` moved to `TopLevel`,
+  `Avalonia.Diagnostics` removed, `IScrollable` gained
+  `CanHorizontallyScroll`/`CanVerticallyScroll`, `TextBox.Watermark` →
+  `PlaceholderText`, `SKPaint` text APIs → `SKFont`.  Custom chrome
+  buttons retained (`WindowDecorations.BorderOnly` + extended client area).
+  `MenuItem.IsVisible = false` doesn't work when `ApplyAdvancedMenuVisibility`
+  resets it — use parent removal instead.  11,091 tests pass.
 
 - **Tab mono fast path + control char elimination** (2026-04-11) — Tab
   characters no longer force the TextLayout slow path.  Column-aware
