@@ -179,10 +179,11 @@ public partial class MainWindow {
                 // A menu was opened via Alt+letter (e.g. Alt+F). The Alt
                 // key is now being released — don't close the menu.
             } else {
-                // Alt was consumed as a modifier (e.g. Alt+Up).  Clear the
-                // access-key underlines that Avalonia's AccessKeyHandler may
-                // have turned on when it saw the initial Alt press.
-                ((Avalonia.Input.IInputRoot)this).ShowAccessKeys = false;
+                // Alt was consumed as a modifier (e.g. Alt+Up).
+                // Avalonia 12 made AccessKeyHandler internal, so we can no
+                // longer clear its ShowAccessKey flag directly.  The deferred
+                // focus restore below handles the functional side; access-key
+                // underlines (if shown) disappear once focus leaves the menu.
                 // The platform may still activate the menu bar via native
                 // Alt handling (WM_SYSKEYUP on Windows). Post a deferred
                 // focus restore to undo it.

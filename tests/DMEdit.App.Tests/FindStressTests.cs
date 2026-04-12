@@ -395,6 +395,7 @@ public class FindStressTests {
     [InlineData(100, 150, 5, 10, false, "100x150-noWrap")]
     public void ManyFinds_ScrollMaximumStable(int lineCount, int lineLen,
             int needleEvery, int needleCol, bool wrap, string desc) {
+        _ = desc;
         var (doc, matchCount) = MakeNeedleDoc(lineCount, lineLen,
             needleEvery, needleCol);
         var editor = CreateEditor(doc, wrap);

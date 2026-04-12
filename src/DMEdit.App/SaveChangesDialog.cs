@@ -57,7 +57,7 @@ public class SaveChangesDialog : Window {
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        SystemDecorations = SystemDecorations.Full;
+        WindowDecorations = WindowDecorations.Full;
 
         var message = new TextBlock {
             Text = $"Do you want to save changes to {displayName}?",
@@ -150,7 +150,7 @@ public class MultiSaveChangesDialog : Window {
         MaxHeight = 600;
         CanResize = true;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        SystemDecorations = SystemDecorations.Full;
+        WindowDecorations = WindowDecorations.Full;
 
         var heading = new TextBlock {
             Text = "The following files have unsaved changes:",

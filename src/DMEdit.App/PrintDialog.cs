@@ -68,7 +68,7 @@ public class PrintDialog : Window {
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        SystemDecorations = SystemDecorations.Full;
+        WindowDecorations = WindowDecorations.Full;
         ShowInTaskbar = false;
 
         var root = new StackPanel { Margin = new Thickness(20), Spacing = 4 };

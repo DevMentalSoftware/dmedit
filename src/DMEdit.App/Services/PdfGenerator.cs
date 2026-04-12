@@ -25,13 +25,12 @@ public static class PdfGenerator {
         using var paint = new SKPaint {
             Color = SKColors.Black,
             IsAntialias = true,
-            TextSize = DefaultFontSize,
-            Typeface = ResolveTypeface(),
         };
+        using var font = new SKFont(ResolveTypeface(), DefaultFontSize);
 
-        var lineHeight = GetLineHeight(paint);
+        var lineHeight = GetLineHeight(font);
         var linesPerPage = Math.Max(1, (int)(printH / lineHeight));
-        var pageBreaks = ComputePageBreaks(doc, paint, (float)printW, linesPerPage);
+        var pageBreaks = ComputePageBreaks(doc, font, (float)printW, linesPerPage);
 
         var pageCount = pageBreaks.Count;
         var from = settings.Range.HasValue ? Math.Max(0, settings.Range.Value.From - 1) : 0;
@@ -45,7 +44,7 @@ public static class PdfGenerator {
 
         for (var p = from; p < to; p++) {
             using var canvas = pdfDoc.BeginPage((float)pageW, (float)pageH);
-            RenderPage(canvas, doc, pageBreaks[p], linesPerPage, paint,
+            RenderPage(canvas, doc, pageBreaks[p], linesPerPage, font, paint,
                 (float)settings.Margins.Left, (float)settings.Margins.Top,
                 (float)printW, lineHeight);
             pdfDoc.EndPage();
@@ -60,11 +59,11 @@ public static class PdfGenerator {
 
     private static void RenderPage(
         SKCanvas canvas, Document doc, PageBreak brk,
-        int linesPerPage, SKPaint paint,
+        int linesPerPage, SKFont font, SKPaint paint,
         float marginLeft, float marginTop,
         float printWidth, float lineHeight) {
 
-        var baseline = -paint.FontMetrics.Ascent;
+        var baseline = -font.Metrics.Ascent;
         var y = marginTop + baseline;
         var visualLine = 0;
         var lineIdx = brk.FirstLogicalLine;
@@ -72,10 +71,10 @@ public static class PdfGenerator {
 
         while (visualLine < linesPerPage && lineIdx < doc.Table.LineCount) {
             var line = doc.Table.GetLine(lineIdx);
-            var wrappedLines = WrapLine(line, paint, printWidth);
+            var wrappedLines = WrapLine(line, font, printWidth);
 
             for (var w = wrapIdx; w < wrappedLines.Count && visualLine < linesPerPage; w++) {
-                canvas.DrawText(wrappedLines[w], marginLeft, y, paint);
+                canvas.DrawText(wrappedLines[w], marginLeft, y, SKTextAlign.Left, font, paint);
                 y += lineHeight;
                 visualLine++;
             }
@@ -89,7 +88,7 @@ public static class PdfGenerator {
     // -----------------------------------------------------------------
 
     private static List<PageBreak> ComputePageBreaks(
-        Document doc, SKPaint paint, float printWidth, int linesPerPage) {
+        Document doc, SKFont font, float printWidth, int linesPerPage) {
 
         var breaks = new List<PageBreak> { new(0, 0) };
         var lineCount = doc.Table.LineCount;
@@ -97,7 +96,7 @@ public static class PdfGenerator {
 
         for (var i = 0L; i < lineCount; i++) {
             var line = doc.Table.GetLine(i);
-            var wrappedCount = CountWrappedLines(line, paint, printWidth);
+            var wrappedCount = CountWrappedLines(line, font, printWidth);
 
             for (var w = 0; w < wrappedCount; w++) {
                 visualLinesOnPage++;
@@ -115,34 +114,34 @@ public static class PdfGenerator {
     // Word wrapping
     // -----------------------------------------------------------------
 
-    private static int CountWrappedLines(string line, SKPaint paint, float maxWidth) {
+    private static int CountWrappedLines(string line, SKFont font, float maxWidth) {
         if (string.IsNullOrEmpty(line)) {
             return 1;
         }
-        if (paint.MeasureText(line) <= maxWidth) {
+        if (font.MeasureText(line) <= maxWidth) {
             return 1;
         }
         var count = 0;
         var remaining = line.AsSpan();
         while (remaining.Length > 0) {
-            var fit = BreakAtWord(remaining, paint, maxWidth);
+            var fit = BreakAtWord(remaining, font, maxWidth);
             remaining = remaining[fit..];
             count++;
         }
         return Math.Max(1, count);
     }
 
-    private static List<string> WrapLine(string line, SKPaint paint, float maxWidth) {
+    private static List<string> WrapLine(string line, SKFont font, float maxWidth) {
         if (string.IsNullOrEmpty(line)) {
             return [""];
         }
-        if (paint.MeasureText(line) <= maxWidth) {
+        if (font.MeasureText(line) <= maxWidth) {
             return [line];
         }
         var result = new List<string>();
         var remaining = line.AsSpan();
         while (remaining.Length > 0) {
-            var fit = BreakAtWord(remaining, paint, maxWidth);
+            var fit = BreakAtWord(remaining, font, maxWidth);
             result.Add(remaining[..fit].ToString());
             remaining = remaining[fit..];
         }
@@ -153,8 +152,8 @@ public static class PdfGenerator {
     /// Returns the number of characters from <paramref name="text"/> that fit
     /// within <paramref name="maxWidth"/>, breaking at a word boundary when possible.
     /// </summary>
-    private static int BreakAtWord(ReadOnlySpan<char> text, SKPaint paint, float maxWidth) {
-        var fit = (int)paint.BreakText(text, maxWidth);
+    private static int BreakAtWord(ReadOnlySpan<char> text, SKFont font, float maxWidth) {
+        var fit = (int)font.BreakText(text, maxWidth);
         if (fit <= 0) {
             return 1; // at least one character to avoid infinite loop
         }
@@ -173,8 +172,8 @@ public static class PdfGenerator {
     // Helpers
     // -----------------------------------------------------------------
 
-    private static float GetLineHeight(SKPaint paint) {
-        var m = paint.FontMetrics;
+    private static float GetLineHeight(SKFont font) {
+        var m = font.Metrics;
         return m.Descent - m.Ascent + m.Leading;
     }
 

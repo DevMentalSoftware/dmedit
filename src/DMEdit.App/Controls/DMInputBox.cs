@@ -2,6 +2,7 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Threading;
@@ -379,7 +380,7 @@ public class DMInputBox : Control {
             if (IsFocused && _caretVisible) {
                 var caretHit = layout.HitTestTextPosition(CaretIndex);
                 var caretX = caretHit.X + textOrigin.X;
-                var scale = VisualRoot?.RenderScaling ?? 1.0;
+                var scale = (VisualRoot as TopLevel)?.RenderScaling ?? 1.0;
                 caretX = Math.Round(caretX * scale) / scale;
                 var caretBrush = CaretBrush ?? Foreground ?? Brushes.Black;
                 context.FillRectangle(caretBrush, new Rect(caretX, textY, CaretWidth, layout.Height));
@@ -417,13 +418,13 @@ public class DMInputBox : Control {
         _caretTimer.Start();
     }
 
-    protected override void OnGotFocus(GotFocusEventArgs e) {
+    protected override void OnGotFocus(FocusChangedEventArgs e) {
         base.OnGotFocus(e);
         ResetCaretBlink();
         InvalidateVisual();
     }
 
-    protected override void OnLostFocus(Avalonia.Interactivity.RoutedEventArgs e) {
+    protected override void OnLostFocus(FocusChangedEventArgs e) {
         base.OnLostFocus(e);
         _caretTimer.Stop();
         _caretVisible = false;
@@ -603,9 +604,7 @@ public class DMInputBox : Control {
     private async System.Threading.Tasks.Task PasteAsync() {
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard == null) return;
-#pragma warning disable CS0618 // GetTextAsync is deprecated but TryGetTextAsync requires IAsyncDataTransfer
-        var clip = await clipboard.GetTextAsync();
-#pragma warning restore CS0618
+        var clip = await clipboard.TryGetTextAsync();
         if (string.IsNullOrEmpty(clip)) return;
 
         // Strip newlines — single line only.

@@ -498,6 +498,14 @@ small one — it is the primary way a fresh session recovers context.
   implemented but not wired in.  Will be optional for Markdown.
   See [02-document-model](design-journal/02-document-model.md).
 
+- **Windows 11 Snap Layout on maximize button** — Avalonia 12 added
+  `WindowDecorationProperties.SetElementRole(visual, MaximizeButton)`
+  for non-client hit-testing.  Our custom maximize button in
+  `TabBarControl` is drawn in `Render`, not a separate visual, so we'd
+  need an invisible overlay control positioned over the button's hit
+  zone with the `MaximizeButton` role.  Low priority — snap layout
+  was never available in Avalonia 11 either.
+
 - **Windows 11 Mica transparency** — researched, not implemented.
   See [05-features](design-journal/05-features.md).
 

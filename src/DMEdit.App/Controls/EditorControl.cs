@@ -726,6 +726,8 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     bool ILogicalScrollable.CanHorizontallyScroll { get; set; }
     bool ILogicalScrollable.CanVerticallyScroll { get; set; }
 
+    bool IScrollable.CanHorizontallyScroll => true;
+    bool IScrollable.CanVerticallyScroll => true;
     Size IScrollable.Extent => _extent;
     Size IScrollable.Viewport => _viewport;
 

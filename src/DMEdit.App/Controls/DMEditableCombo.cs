@@ -273,7 +273,7 @@ public class DMEditableCombo : TemplatedControl {
     }
 
     /// <summary>Forward focus to the inner TextBox.</summary>
-    protected override void OnGotFocus(GotFocusEventArgs e) {
+    protected override void OnGotFocus(FocusChangedEventArgs e) {
         base.OnGotFocus(e);
         InnerTextBox?.Focus();
     }

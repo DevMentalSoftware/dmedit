@@ -31,7 +31,7 @@ public class ProgressDialog : Window {
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        SystemDecorations = SystemDecorations.None;
+        WindowDecorations = WindowDecorations.None;
 
         var panel = new StackPanel { Margin = new Thickness(20) };
 

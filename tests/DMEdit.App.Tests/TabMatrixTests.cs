@@ -182,6 +182,7 @@ public class TabMatrixTests {
     [AvaloniaTheory]
     [MemberData(nameof(DownData))]
     public void DownThenUp_RoundTrip(int lines, int len, bool wrap, int pos, string desc) {
+        _ = desc;
         var doc = MakeTabDoc(lines, len);
         var editor = SetupAtLine(doc, wrap, pos);
         var before = Caret(editor);
@@ -282,6 +283,7 @@ public class TabMatrixTests {
     [AvaloniaTheory]
     [MemberData(nameof(DownData))]
     public void DownExtend_AnchorFixed(int lines, int len, bool wrap, int pos, string desc) {
+        _ = desc;
         var doc = MakeTabDoc(lines, len);
         var editor = SetupAtLine(doc, wrap, pos);
         var before = Caret(editor);
@@ -298,6 +300,7 @@ public class TabMatrixTests {
     [AvaloniaTheory]
     [MemberData(nameof(FullData))]
     public void RightThroughTab_Advances(int lines, int len, bool wrap, int pos, string desc) {
+        _ = desc;
         var doc = MakeTabDoc(lines, len);
         var editor = SetupAtLine(doc, wrap, pos);
         var before = Caret(editor);

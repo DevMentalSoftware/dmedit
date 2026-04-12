@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using DMEdit.App.Services;
 using DMEdit.Core.Buffers;
@@ -127,9 +128,7 @@ public sealed partial class EditorControl {
         } else {
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard == null) { _editSw.Stop(); return; }
-#pragma warning disable CS0618 // GetTextAsync is deprecated but TryGetTextAsync requires IAsyncDataTransfer
-            var text = await clipboard.GetTextAsync();
-#pragma warning restore CS0618
+            var text = await clipboard.TryGetTextAsync();
             if (string.IsNullOrEmpty(text)) { _editSw.Stop(); return; }
             // Normalize Windows line endings to LF
             text = text.Replace("\r\n", "\n").Replace("\r", "\n");

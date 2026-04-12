@@ -187,7 +187,7 @@
 						         MinHeight="0"
 						         FontSize="{TemplateBinding FontSize}"
 						         Foreground="{TemplateBinding Foreground}"
-						         Watermark="{TemplateBinding Watermark}"
+						         PlaceholderText="{TemplateBinding PlaceholderText}"
 						         IsReadOnly="{TemplateBinding IsReadOnly}"
 						         VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
 						         HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"

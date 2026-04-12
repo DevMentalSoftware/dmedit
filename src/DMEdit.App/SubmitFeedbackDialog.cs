@@ -85,7 +85,7 @@ public class SubmitFeedbackDialog : Window {
         // Title — dock top
         var titleSection = new StackPanel { Spacing = 4 };
         titleSection.Children.Add(new TextBlock { Text = "Title", FontWeight = FontWeight.SemiBold });
-        _titleBox = new TextBox { Watermark = "Brief summary of your feedback" };
+        _titleBox = new TextBox { PlaceholderText = "Brief summary of your feedback" };
         titleSection.Children.Add(_titleBox);
         DockPanel.SetDock(titleSection, Dock.Top);
         form.Children.Add(titleSection);
@@ -141,7 +141,7 @@ public class SubmitFeedbackDialog : Window {
             VerticalAlignment = VerticalAlignment.Stretch,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalContentAlignment = VerticalAlignment.Top,
-            Watermark = "Describe the issue or suggestion...",
+            PlaceholderText = "Describe the issue or suggestion...",
             FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
             FontSize = 12,
         };

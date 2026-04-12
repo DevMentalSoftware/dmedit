@@ -715,10 +715,12 @@ public sealed partial class EditorControl {
         }
         var emHeight = (double)gtf.Metrics.DesignEmHeight;
         if (emHeight <= 0) return GetCharWidth();
-        if (!gtf.TryGetGlyph(' ', out var spaceGlyph)) {
+        if (!gtf.CharacterToGlyphMap.TryGetGlyph(' ', out var spaceGlyph)) {
             return GetCharWidth();
         }
-        var advance = gtf.GetGlyphAdvance(spaceGlyph);
+        if (!gtf.TryGetHorizontalGlyphAdvance(spaceGlyph, out var advance)) {
+            return GetCharWidth();
+        }
         var cw = advance / emHeight * EffectiveFontSize;
         return cw > 0 ? cw : GetCharWidth();
     }

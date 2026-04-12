@@ -174,13 +174,13 @@ public sealed partial class EditorControl {
         ResetCaretBlink();
     }
 
-    protected override void OnGotFocus(GotFocusEventArgs e) {
+    protected override void OnGotFocus(FocusChangedEventArgs e) {
         base.OnGotFocus(e);
         // Show caret even during loading — user can navigate and position caret.
         ResetCaretBlink();
     }
 
-    protected override void OnLostFocus(RoutedEventArgs e) {
+    protected override void OnLostFocus(FocusChangedEventArgs e) {
         base.OnLostFocus(e);
         _caretVisible = false;
         _caretTimer.Stop();

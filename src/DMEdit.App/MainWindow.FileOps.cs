@@ -219,24 +219,22 @@ public partial class MainWindow {
     // Drag-and-drop
     // -----------------------------------------------------------------
 
-#pragma warning disable CS0618 // Data/DataFormats.Files deprecated but IDataTransfer replacement lacks GetFiles
     private void OnDragOver(object? sender, DragEventArgs e) {
-        e.DragEffects = e.Data.Contains(DataFormats.Files)
+        e.DragEffects = e.DataTransfer.Contains(DataFormat.File)
             ? DragDropEffects.Copy
             : DragDropEffects.None;
         e.Handled = true;
     }
 
     private async void OnDrop(object? sender, DragEventArgs e) {
-        if (!e.Data.Contains(DataFormats.Files)) {
+        if (!e.DataTransfer.Contains(DataFormat.File)) {
             return;
         }
         e.Handled = true;
-        var items = e.Data.GetFiles();
+        var items = e.DataTransfer.TryGetFiles();
         if (items is null) {
             return;
         }
-#pragma warning restore CS0618
         foreach (var item in items) {
             if (item is IStorageFile file) {
                 var path = file.Path.LocalPath;

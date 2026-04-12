@@ -494,17 +494,68 @@ public class ScrollCoverageTests {
                     $"but got >= rh ({rh:F1}px). Over-scroll bug.");
                 AssertCaretOnScreen(editor, $"Down bottom-edge step {step}");
 
-                // The render offset must be negative (partial top row above
-                // viewport).  If it's 0, the content snapped to a row
-                // boundary instead of scrolling by the sub-row delta —
-                // this is the stale-cache bug from the 2026-04-11 session.
-                Assert.True(editor.RenderOffsetYForTest < -0.1,
-                    $"Step {step}: RenderOffsetY={editor.RenderOffsetYForTest:F1} " +
-                    $"should be negative (partial top row).");
+                // After a partial edge-scroll from a non-aligned position,
+                // the render offset should be negative (partial top row).
+                // Only assert when vpH/rh is non-integer — otherwise every
+                // edge-scroll lands on a row boundary by definition.
+                var vpRows = VpH / rh;
+                if (Math.Abs(vpRows - Math.Round(vpRows)) > 0.01) {
+                    Assert.True(editor.RenderOffsetYForTest < -0.1,
+                        $"Step {step}: RenderOffsetY={editor.RenderOffsetYForTest:F1} " +
+                        $"should be negative (partial top row).");
+                }
                 return;
             }
         }
         Assert.Fail("Never triggered a scroll — test setup error");
+    }
+
+    /// <summary>
+    /// Same as the non-aligned test above but with a viewport height that
+    /// guarantees vpH/rh is non-integer, so the RenderOffsetY assertion
+    /// always fires.  Uses a 407px viewport (407/16 = 25.44 on Avalonia 12,
+    /// 407/12 = 33.92 on Avalonia 11).
+    /// </summary>
+    [AvaloniaFact]
+    public void Down_BottomEdge_FractionalViewport_RenderOffsetNegative() {
+        var doc = MakeDoc(80, 20);
+        // Use a non-standard viewport height to guarantee fractional rows.
+        var fractionalVpH = 407.0;
+        var editor = new EditorControl {
+            Document = doc,
+            FontFamily = new FontFamily("Consolas, Courier New, monospace"),
+            FontSize = 14,
+            Width = VpW,
+            Height = fractionalVpH,
+            WrapLines = false,
+        };
+        editor.Measure(new Size(VpW, fractionalVpH));
+        editor.Arrange(new Rect(0, 0, VpW, fractionalVpH));
+        var rh = editor.RowHeightValue;
+
+        editor.GoToPosition(doc.Table.LineStartOfs(30));
+        editor.Measure(new Size(VpW, fractionalVpH));
+        editor.Arrange(new Rect(0, 0, VpW, fractionalVpH));
+
+        // Walk down to the edge and trigger a partial scroll.
+        for (var step = 0; step < 40; step++) {
+            var scrollBefore = editor.ScrollValue;
+
+            editor.MoveCaretVerticalForTest(+1, false);
+            editor.Measure(new Size(VpW, fractionalVpH));
+            editor.Arrange(new Rect(0, 0, VpW, fractionalVpH));
+
+            var scrollDelta = editor.ScrollValue - scrollBefore;
+            if (scrollDelta > 0.1 && scrollDelta < rh - 0.5) {
+                // Partial scroll triggered.  RenderOffsetY MUST be negative.
+                Assert.True(editor.RenderOffsetYForTest < -0.1,
+                    $"Step {step}: RenderOffsetY={editor.RenderOffsetYForTest:F2} " +
+                    $"should be negative after partial scroll " +
+                    $"(delta={scrollDelta:F2}, rh={rh:F2})");
+                return;
+            }
+        }
+        Assert.Fail("Never triggered a partial scroll");
     }
 
     [AvaloniaFact]

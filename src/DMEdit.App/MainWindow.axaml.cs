@@ -104,7 +104,7 @@ public partial class MainWindow : Window {
         // and handle resize ourselves. The window itself is transparent so
         // the rounded corners clip cleanly against the desktop.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
-            SystemDecorations = SystemDecorations.BorderOnly;
+            WindowDecorations = WindowDecorations.BorderOnly;
             TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
             Background = Brushes.Transparent;
             WindowBorder.CornerRadius = new CornerRadius(8);
@@ -180,8 +180,16 @@ public partial class MainWindow : Window {
         WireMenu(MenuScrollLineDown, Cmd.ViewScrollLineDown);
 
         // Print is only available on Windows when the WPF DLL is present.
-        MenuPrint.IsVisible = WindowsPrintService.IsAvailable;
-        MenuPrint.IsEnabled = WindowsPrintService.IsAvailable;
+        if (!WindowsPrintService.IsAvailable) {
+            MenuPrint.IsVisible = false;
+            // Avalonia 12: IsVisible on MenuItems may not hide them in all
+            // cases.  Remove from parent as a belt-and-suspenders fallback.
+            if (MenuPrint.Parent is MenuItem parent) {
+                parent.Items.Remove(MenuPrint);
+            } else if (MenuPrint.Parent is Menu menu) {
+                menu.Items.Remove(MenuPrint);
+            }
+        }
 
         // Help items don't have commands.
         MenuManual.Click += (_, _) => OpenHelpDocumentAsync("manual.md", "Manual");

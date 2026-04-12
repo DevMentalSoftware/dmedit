@@ -10,8 +10,8 @@
         Width="900" Height="650"
         MinWidth="640" MinHeight="480"
 		Icon="avares://dmedit/app_icon.ico"
+        WindowDecorations="BorderOnly"
         ExtendClientAreaToDecorationsHint="True"
-        ExtendClientAreaChromeHints="NoChrome"
         ExtendClientAreaTitleBarHeightHint="38"
         DragDrop.AllowDrop="True">
 	<Border x:Name="WindowBorder" ClipToBounds="True">

@@ -16,7 +16,7 @@ namespace DMEdit.Rendering.Layout;
 /// </remarks>
 public sealed class MonoLayoutContext {
     /// <summary>The resolved glyph typeface used for all glyph lookups.</summary>
-    public IGlyphTypeface GlyphTypeface { get; }
+    public GlyphTypeface GlyphTypeface { get; }
 
     /// <summary>Em size in DIPs (the same value passed to <see cref="GlyphRun.FontRenderingEmSize"/>).</summary>
     public double FontSize { get; }
@@ -48,7 +48,7 @@ public sealed class MonoLayoutContext {
     private readonly ushort _fallbackGlyph;
 
     public MonoLayoutContext(
-        IGlyphTypeface glyphTypeface,
+        GlyphTypeface glyphTypeface,
         double fontSize,
         double rowHeight,
         int hangingIndentChars,
@@ -67,11 +67,14 @@ public sealed class MonoLayoutContext {
         Baseline = Math.Abs((double)glyphTypeface.Metrics.Ascent) / emHeight * fontSize;
 
         // Char width from the space glyph's advance (design em units → pixels).
+        // Avalonia 12: TryGetGlyph moved to CharacterToGlyphMap,
+        // GetGlyphAdvance → TryGetHorizontalGlyphAdvance.
+        var cmap = glyphTypeface.CharacterToGlyphMap;
         ushort spaceGlyph = 0;
-        glyphTypeface.TryGetGlyph(' ', out spaceGlyph);
+        cmap.TryGetGlyph(' ', out spaceGlyph);
         _fallbackGlyph = spaceGlyph;
-        var advance = glyphTypeface.GetGlyphAdvance(spaceGlyph);
-        CharWidth = advance / emHeight * fontSize;
+        glyphTypeface.TryGetHorizontalGlyphAdvance(spaceGlyph, out var advanceRaw);
+        CharWidth = advanceRaw / emHeight * fontSize;
 
         HangingIndentChars = Math.Max(0, hangingIndentChars);
         HangingIndentPx = HangingIndentChars * CharWidth;
@@ -80,14 +83,14 @@ public sealed class MonoLayoutContext {
         // Pre-populate ASCII printable range so the inner draw/hit-test loop
         // hits a flat array indexed by char rather than a dictionary lookup.
         for (var i = 32; i < 128; i++) {
-            _asciiGlyphs[i] = glyphTypeface.TryGetGlyph((uint)i, out var g) ? g : spaceGlyph;
+            _asciiGlyphs[i] = cmap.TryGetGlyph(i, out var g) ? g : spaceGlyph;
         }
     }
 
     /// <summary>
     /// Tries to look up the glyph index for <paramref name="c"/>.  ASCII
     /// printable chars hit the cached table; everything else goes through
-    /// <see cref="IGlyphTypeface.TryGetGlyph"/> with a per-context dictionary
+    /// <see cref="GlyphTypeface.TryGetGlyph"/> with a per-context dictionary
     /// cache so we only ask once per session per char.
     /// </summary>
     public bool TryGetGlyph(char c, out ushort glyph) {
@@ -95,7 +98,7 @@ public sealed class MonoLayoutContext {
         if (c < 32) { glyph = _fallbackGlyph; return true; }
         if (c < 128) { glyph = _asciiGlyphs[c]; return true; }
         if (_extraGlyphs.TryGetValue(c, out glyph)) return true;
-        if (GlyphTypeface.TryGetGlyph(c, out glyph)) {
+        if (GlyphTypeface.CharacterToGlyphMap.TryGetGlyph(c, out glyph)) {
             _extraGlyphs[c] = glyph;
             return true;
         }
@@ -106,6 +109,6 @@ public sealed class MonoLayoutContext {
     /// Determines whether the typeface resolved as a fixed-pitch (monospace)
     /// font.  Computed from <see cref="FontMetrics.IsFixedPitch"/>.
     /// </summary>
-    public static bool IsMonospace(IGlyphTypeface glyphTypeface) =>
+    public static bool IsMonospace(GlyphTypeface glyphTypeface) =>
         glyphTypeface.Metrics.IsFixedPitch;
 }

@@ -47,7 +47,7 @@ public class ErrorDialog : Window {
         SizeToContent = SizeToContent.Height;
         CanResize = true;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        SystemDecorations = SystemDecorations.Full;
+        WindowDecorations = WindowDecorations.Full;
 
         // Use DockPanel so the button row anchors to the bottom even when
         // the window is resized taller, and the stack trace fills remaining space.

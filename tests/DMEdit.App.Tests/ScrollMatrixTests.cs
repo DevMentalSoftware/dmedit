@@ -717,6 +717,7 @@ public class ScrollMatrixTests {
     [MemberData(nameof(PageDownMatrix))]
     public void PageDown_NoScrollExact(int lineCount, int lineLen,
             bool wrap, int initialLine, string desc) {
+        _ = desc;
         var editor = SetupAtLine(lineCount, lineLen, wrap, initialLine);
         var snap = Snap(editor);
         editor.MoveCaretByPageForTest(+1, extend: false);
@@ -762,6 +763,7 @@ public class ScrollMatrixTests {
     [MemberData(nameof(PageDownMatrix))]
     public void PageDownThenUp_NearOriginal(int lineCount, int lineLen,
             bool wrap, int initialLine, string desc) {
+        _ = desc;
         // Skip positions near the doc end — PageDown hits the bottom
         // and the round-trip can't fully reverse.
         var rh2 = 12.0; // approx
@@ -785,6 +787,7 @@ public class ScrollMatrixTests {
     [MemberData(nameof(PageDownMatrix))]
     public void PageDownExtend_AnchorFixed(int lineCount, int lineLen,
             bool wrap, int initialLine, string desc) {
+        _ = desc;
         var editor = SetupAtLine(lineCount, lineLen, wrap, initialLine);
         var anchorBefore = Anchor(editor);
         editor.MoveCaretByPageForTest(+1, extend: true);
@@ -837,6 +840,7 @@ public class ScrollMatrixTests {
     [MemberData(nameof(FindMatrix))]
     public void FindNext_ScrollExactAtMostOne(int lineCount, int lineLen,
             bool wrap, int targetLine, string desc) {
+        _ = desc;
         var doc = MakeDoc(lineCount, lineLen);
         var editor = CreateEditor(doc, wrap);
         editor.LastSearchTerm = $"L{targetLine:D5}";
@@ -866,6 +870,7 @@ public class ScrollMatrixTests {
     [MemberData(nameof(FindMatrix))]
     public void FindPrev_ScrollExactAtMostOne(int lineCount, int lineLen,
             bool wrap, int targetLine, string desc) {
+        _ = desc;
         var doc = MakeDoc(lineCount, lineLen);
         var editor = CreateEditor(doc, wrap);
         var pastLine = Math.Min(targetLine + 20, lineCount - 1);
@@ -883,6 +888,7 @@ public class ScrollMatrixTests {
     [MemberData(nameof(FindMatrix))]
     public void FindNext_SelectsCorrectLine(int lineCount, int lineLen,
             bool wrap, int targetLine, string desc) {
+        _ = desc;
         var doc = MakeDoc(lineCount, lineLen);
         var editor = CreateEditor(doc, wrap);
         editor.LastSearchTerm = $"L{targetLine:D5}";
@@ -914,6 +920,7 @@ public class ScrollMatrixTests {
     [MemberData(nameof(LineEndMatrix))]
     public void Right_AtLineEnd_CrossesToNextLine(int lineCount,
             int lineLen, bool wrap, int initialLine, string desc) {
+        _ = desc;
         var doc = MakeDoc(lineCount, lineLen);
         var editor = CreateEditor(doc, wrap);
         var lineEnd = doc.Table.LineStartOfs(initialLine) + lineLen;
@@ -929,6 +936,7 @@ public class ScrollMatrixTests {
     [MemberData(nameof(LineEndMatrix))]
     public void Left_AtLineStart_CrossesToPrevLine(int lineCount,
             int lineLen, bool wrap, int initialLine, string desc) {
+        _ = desc;
         if (initialLine == 0) return;
         var doc = MakeDoc(lineCount, lineLen);
         var editor = CreateEditor(doc, wrap);
@@ -1042,6 +1050,7 @@ public class ScrollMatrixTests {
     [InlineData(200, 20, true, "wrap")]
     public void RightWalk_NeverStuck(int lineCount, int lineLen,
             bool wrap, string desc) {
+        _ = desc;
         var doc = MakeDoc(lineCount, lineLen);
         var editor = CreateEditor(doc, wrap);
         doc.Selection = Selection.Collapsed(0);
@@ -1067,6 +1076,7 @@ public class ScrollMatrixTests {
     [MemberData(nameof(FullMatrix))]
     public void End_NoScrollExact(int lineCount, int lineLen,
             bool wrap, int initialLine, string desc) {
+        _ = desc;
         var editor = SetupAtLine(lineCount, lineLen, wrap, initialLine);
         var snap = Snap(editor);
         editor.MoveCaretToLineEdgeForTest(toStart: false, extend: false);
@@ -1078,6 +1088,7 @@ public class ScrollMatrixTests {
     [MemberData(nameof(FullMatrix))]
     public void Home_NoScrollExact(int lineCount, int lineLen,
             bool wrap, int initialLine, string desc) {
+        _ = desc;
         var editor = SetupAtLine(lineCount, lineLen, wrap, initialLine);
         var lineStart = editor.Document!.Table.LineStartOfs(initialLine);
         var midOfs = lineStart + Math.Min(lineLen / 2, 5);
@@ -1191,6 +1202,7 @@ public class ScrollMatrixTests {
     [MemberData(nameof(FullMatrix))]
     public void DocStartExtend_AnchorFixed(int lineCount, int lineLen,
             bool wrap, int initialLine, string desc) {
+        _ = desc;
         var editor = SetupAtLine(lineCount, lineLen, wrap, initialLine);
         var anchorBefore = Caret(editor);
         editor.Document!.Selection = editor.Document.Selection.ExtendTo(0);
@@ -1204,6 +1216,7 @@ public class ScrollMatrixTests {
     [MemberData(nameof(FullMatrix))]
     public void DocEndExtend_AnchorFixed(int lineCount, int lineLen,
             bool wrap, int initialLine, string desc) {
+        _ = desc;
         var editor = SetupAtLine(lineCount, lineLen, wrap, initialLine);
         var anchorBefore = Caret(editor);
         var docLen = editor.Document!.Table.Length;

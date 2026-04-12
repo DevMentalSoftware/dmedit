@@ -85,7 +85,7 @@ public class DMTextBox : TemplatedControl {
     }
 
     /// <summary>Forward focus to the inner DMInputBox.</summary>
-    protected override void OnGotFocus(Avalonia.Input.GotFocusEventArgs e) {
+    protected override void OnGotFocus(Avalonia.Input.FocusChangedEventArgs e) {
         base.OnGotFocus(e);
         InnerTextBox?.Focus();
     }

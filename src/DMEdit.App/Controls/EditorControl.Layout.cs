@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
 using DMEdit.Core.Documents;
@@ -53,7 +54,7 @@ public sealed partial class EditorControl {
         var raw = tl.Height > 0 ? tl.Height : 20.0;
         // Snap to device pixel multiple so line.Row * rh is always
         // pixel-aligned and inter-line gaps stay uniform during scrolling.
-        var scale = VisualRoot?.RenderScaling ?? 1.0;
+        var scale = (VisualRoot as TopLevel)?.RenderScaling ?? 1.0;
         _rowHeight = Math.Ceiling(raw * scale) / scale;
         return _rowHeight;
     }
@@ -467,7 +468,7 @@ public sealed partial class EditorControl {
         } else {
             // Insertion-point: layer is exactly CaretWidth pixels wide,
             // device-pixel snapped so the line stays crisp.
-            var scale = VisualRoot?.RenderScaling ?? 1.0;
+            var scale = (VisualRoot as TopLevel)?.RenderScaling ?? 1.0;
             caretX = Math.Round((rect.X + TextOriginX) * scale) / scale;
             widthForLayer = CaretWidth;
         }

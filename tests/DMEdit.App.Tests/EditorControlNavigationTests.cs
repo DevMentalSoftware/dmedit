@@ -307,7 +307,10 @@ public class EditorControlNavigationTests {
         }) { IsBackground = true };
         worker.Start();
 
+        // xUnit1051: test uses manual threading, not async
+#pragma warning disable xUnit1051
         var signalled = done.Wait(TimeSpan.FromSeconds(5));
+#pragma warning restore xUnit1051
         Assert.True(signalled,
             "SearchChunkedBackward did not return within 5s — the " +
             "infinite-loop regression is back.");
