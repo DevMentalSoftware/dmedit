@@ -199,6 +199,14 @@ public sealed partial class EditorControl {
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e) {
         base.OnPointerWheelChanged(e);
+
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control)) {
+            var step = e.Delta.Y > 0 ? 10 : -10;
+            ZoomPercent += step;
+            e.Handled = true;
+            return;
+        }
+
         var rh = GetRowHeight();
         var delta = -e.Delta.Y * rh * 3; // 3 rows per wheel notch
         ScrollValue += delta;

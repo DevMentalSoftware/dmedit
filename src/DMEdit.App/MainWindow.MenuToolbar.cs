@@ -499,6 +499,12 @@ public partial class MainWindow {
         // Overwrite mode → status bar
         Editor.OverwriteModeChanged += (_, _) => UpdateStatusBar();
 
+        // Ctrl+MouseWheel zoom → persist to settings
+        Editor.ZoomPercentChanged += (_, _) => {
+            _settings.ZoomPercent = Editor.ZoomPercent;
+            _settings.ScheduleSave();
+        };
+
         // Incremental search → status bar
         Editor.IncrementalSearchChanged += (_, _) => UpdateIncrementalSearchStatus();
 

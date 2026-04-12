@@ -41,18 +41,34 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 11,108** (1269 Core + 60 Rendering + 9779 App, 1 skipped)
-
 ### In progress
 
 - **Test coverage gaps** — Remaining untested branches:
-  1. **Overwrite mode** — Insert key toggle, block caret, overwrite-insert logic.
-  2. **CharWrap mode** — entire code path for huge single-line files (entry 15).
-  3. **Column selection UI integration** — Alt+click, column drag, multi-cursor caret layers.  Math tested in Core, UI untested.
-  4. **IsLoading** — streaming load behavior, interaction lock.
-  5. **Find horizontal scroll** — `ScrollSelectionIntoView` doesn't handle horizontal scroll.  Known bug, documented in HScrollAndControlCharTests.
+  1. **CharWrap mode** — entire code path for huge single-line files (entry 15).
+  2. **Column selection UI integration** — Alt+click, column drag, multi-cursor caret layers.  Math tested in Core, UI untested.
 
 ### Recently completed
+
+- **Easy-tasks batch** (2026-04-12):
+  - **Ctrl+MouseWheel zoom** — `EditorControl.Input.cs` detects Ctrl modifier
+    in `OnPointerWheelChanged` and adjusts `ZoomPercent` ±10 per notch.
+    New `ZoomPercentChanged` event persists to settings via MainWindow.
+  - **ErrorDialog "Report a Bug" button** — Shown when `stackTrace` is
+    non-null (unexpected errors).  Opens pre-filled GitHub issue via
+    `GitHubIssueHelper.OpenFeedbackIssue`; reads crash report file if
+    available.  Does not close the dialog.
+  - **Find horizontal scroll fix** — `ScrollSelectionIntoView` now adjusts
+    `HScrollValue` when wrapping is off.  Extracted
+    `ScrollSelectionIntoViewHorizontal` helper called from both the
+    vertical short-circuit path and the normal path.  The "already fully
+    visible" fast-path now also checks horizontal visibility.
+  - **Overwrite mode tests** (10 tests) — Toggle, overwrite-insert logic,
+    end-of-line guard, end-of-document append, selection override,
+    insert-mode control, IsEditBlocked interaction.  New
+    `TypeTextForTest` helper exercises the full overwrite code path.
+  - **IsLoading / IsEditBlocked tests** (5 tests) — Edit blocking, block
+    clear, overwrite-mode under block, navigation passthrough, overwrite
+    toggle allowed.
 
 - **Column editing blocked-by-wrap notification** (2026-04-12) — Alt+Click,
   Alt+Drag, and Alt+Shift+Arrow now show "Column editing disabled by
@@ -128,9 +144,6 @@ Older completed entries: [24-completed-log](design-journal/24-completed-log.md)
 - **Memory growth while scrolling** — `MonoLineLayout.Draw` allocates
   fresh glyph buffers per row per draw.  Cache needed.
 
-- **"Editor Font" reset button in Settings** — restores both family and
-  size.
-
 - **Block model / WYSIWYG editor** — designed, partially implemented,
   not wired in.  See [02-document-model](design-journal/02-document-model.md).
 
@@ -140,11 +153,12 @@ Older completed entries: [24-completed-log](design-journal/24-completed-log.md)
 - **Windows 11 Mica transparency** — researched, not implemented.
   See [05-features](design-journal/05-features.md).
 
-- **Toolbar Undo/Redo buttons** — not yet implemented.
+- **Toolbar Undo/Redo history dropdown** — Undo and Redo toolbar buttons
+  with dropdown menus showing consecutive command history, allowing the
+  user to undo/redo multiple commands at once (like Microsoft Word).
+  Requires undo-stack UI exposure and multi-step undo API.
 
 - **Storage-backed large edits** — add buffer spill to disk.
-
-- **ErrorDialog "Report a Bug" button** — wire `GitHubIssueHelper`.
 
 - **Guard against whole-document materialization** — `ReplaceAll`
   match-collection phase on huge documents.

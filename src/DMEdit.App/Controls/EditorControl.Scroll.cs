@@ -383,9 +383,13 @@ public sealed partial class EditorControl {
         if (vpH <= 0) return;
 
         // Short-circuit: if the entire document fits in the viewport,
-        // there's nowhere to scroll.  Without this check, any non-trivial
-        // scroll target would clamp to 0 and visibly jump to the top.
-        if (ScrollMaximum <= 0.5) return;
+        // there's nowhere to scroll vertically.  Without this check, any
+        // non-trivial scroll target would clamp to 0 and visibly jump to
+        // the top.  Horizontal scroll may still be needed.
+        if (ScrollMaximum <= 0.5) {
+            ScrollSelectionIntoViewHorizontal(sel, table, direction);
+            return;
+        }
 
         // --- Fast path: is the match fully visible in the current layout? ---
         //
@@ -401,7 +405,26 @@ public sealed partial class EditorControl {
             if (sel.Start >= viewBase && sel.End <= viewEnd) {
                 var topScreenY = MeasureScreenYOfRowContainingOffset(sel.Start, viewBase, layout);
                 var bottomScreenY = MeasureScreenYOfRowContainingOffset(sel.End - 1, viewBase, layout);
-                if (topScreenY >= 0 && bottomScreenY + rh <= vpH + 0.5) {
+                var vertVisible = topScreenY >= 0 && bottomScreenY + rh <= vpH + 0.5;
+
+                // Also check horizontal visibility when wrapping is off.
+                var horzVisible = true;
+                if (vertVisible && !_wrapLines && !_charWrapMode) {
+                    var cw = GetCharWidth();
+                    var textAreaW = _viewport.Width - _gutterWidth;
+                    var matchLine = table.LineFromOfs(sel.Start);
+                    var matchLineStart = table.LineStartOfs(matchLine);
+                    if (matchLineStart >= 0) {
+                        var startCol = (int)(sel.Start - matchLineStart);
+                        var endCol = (int)(sel.End - 1 - matchLineStart);
+                        var startX = startCol * cw;
+                        var endX = (endCol + 1) * cw;
+                        horzVisible = startX >= _scrollOffset.X
+                            && endX <= _scrollOffset.X + textAreaW;
+                    }
+                }
+
+                if (vertVisible && horzVisible) {
                     return; // already fully visible, no scroll
                 }
             }
@@ -483,6 +506,34 @@ public sealed partial class EditorControl {
 
         // --- Apply as a single state update ---
         ScrollExact(targetTopLine, targetRenderOffsetY);
+        ScrollSelectionIntoViewHorizontal(sel, table, direction);
+    }
+
+    /// <summary>
+    /// Adjusts <see cref="HScrollValue"/> so the pinned match column is
+    /// visible.  Only applies when wrapping is off.  Called both from the
+    /// normal path and the vertical short-circuit path in
+    /// <see cref="ScrollSelectionIntoView"/>.
+    /// </summary>
+    private void ScrollSelectionIntoViewHorizontal(
+            Selection sel, PieceTable table, SearchDirection direction) {
+        if (_wrapLines || _charWrapMode) return;
+
+        var pinOfs = direction == SearchDirection.Forward ? sel.End - 1 : sel.Start;
+        var pinLine = table.LineFromOfs(pinOfs);
+        var pinLineStart = table.LineStartOfs(pinLine);
+        if (pinLineStart < 0) return;
+
+        var pinCol = (int)(pinOfs - pinLineStart);
+        var cw = GetCharWidth();
+        var pinX = pinCol * cw;
+        var textAreaW = _viewport.Width - _gutterWidth;
+
+        if (pinX < _scrollOffset.X) {
+            HScrollValue = Math.Max(0, pinX - cw);
+        } else if (pinX + cw + TextAreaPadRight > _scrollOffset.X + textAreaW) {
+            HScrollValue = pinX + cw + TextAreaPadRight - textAreaW;
+        }
     }
 
     /// <summary>
@@ -1303,5 +1354,40 @@ public sealed partial class EditorControl {
         InvalidateMeasure();
         InvalidateVisual();
         FireScrollChanged();
+    }
+
+    /// <summary>
+    /// Simulates text input for a test, exercising the same overwrite-mode
+    /// logic as <see cref="OnTextInput"/>.
+    /// </summary>
+    internal void TypeTextForTest(string text) {
+        var doc = Document;
+        if (doc == null || IsEditBlocked) return;
+
+        if (_overwriteMode && doc.Selection.IsEmpty) {
+            var caret = doc.Selection.Caret;
+            var table = doc.Table;
+            var len = table.Length;
+            var charsToOverwrite = 0;
+            var typedIdx = 0;
+            while (typedIdx < text.Length && caret + charsToOverwrite < len) {
+                var bufW = CodepointBoundary.WidthAt(table, caret + charsToOverwrite);
+                var ch = table.GetText(caret + charsToOverwrite, 1);
+                if (ch[0] is '\r' or '\n') break;
+                charsToOverwrite += bufW;
+                typedIdx += char.IsHighSurrogate(text[typedIdx])
+                    && typedIdx + 1 < text.Length
+                    && char.IsLowSurrogate(text[typedIdx + 1])
+                    ? 2 : 1;
+            }
+            if (charsToOverwrite > 0) {
+                doc.Selection = new Selection(caret, caret + charsToOverwrite);
+            }
+        }
+
+        doc.Insert(text);
+        ScrollCaretIntoView();
+        InvalidateLayout();
+        ResetCaretBlink();
     }
 }

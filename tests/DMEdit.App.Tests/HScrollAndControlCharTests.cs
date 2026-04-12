@@ -134,14 +134,23 @@ public class HScrollAndControlCharTests {
         Assert.Equal(0, editor.HScrollValue);
     }
 
-    // Known issue: ScrollSelectionIntoView (used by Find) handles
-    // vertical scroll but not horizontal scroll.  Find on a long
-    // unwrapped line scrolls to the right line but not to the match
-    // column.  The horizontal scroll is only in ScrollCaretIntoView
-    // (used by typing/navigation).
-    //
-    // [AvaloniaFact]
-    // public void HScroll_Find_MidLongLine_ScrollsToMatch() { ... }
+    [AvaloniaFact]
+    public void HScroll_Find_MidLongLine_ScrollsToMatch() {
+        var doc = new Document();
+        // "NEEDLE" at position 150 in a 300-char line.
+        doc.Insert(new string('x', 150) + "NEEDLE" + new string('x', 144) + '\n');
+        doc.Selection = Selection.Collapsed(0);
+        var editor = CreateEditor(doc, false);
+
+        Assert.Equal(0, editor.HScrollValue);
+
+        editor.LastSearchTerm = "NEEDLE";
+        Assert.True(editor.FindNext());
+        Relayout(editor);
+
+        Assert.True(editor.HScrollValue > 0,
+            "FindNext should scroll horizontally to reveal a mid-line match");
+    }
 
     [AvaloniaFact]
     public void HScroll_ShiftEnd_ExtendsSelection_ScrollsRight() {

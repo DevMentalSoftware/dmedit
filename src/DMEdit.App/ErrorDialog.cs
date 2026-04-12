@@ -99,6 +99,29 @@ public class ErrorDialog : Window {
             });
         }
 
+        // "Report a Bug" button — shown for unexpected errors (stackTrace present).
+        // Opens a pre-filled GitHub issue in the browser; does NOT close the dialog.
+        if (stackTrace is not null) {
+            var reportBtn = new Button {
+                Content = "Report a Bug",
+                Margin = new Thickness(0, 0, 0, 8),
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            reportBtn.Click += (_, _) => {
+                string? crashContent = null;
+                if (crashReportPath is not null) {
+                    try {
+                        crashContent = System.IO.File.ReadAllText(crashReportPath);
+                    } catch {
+                        // Best-effort; the issue body still gets the stack trace.
+                    }
+                }
+                GitHubIssueHelper.OpenFeedbackIssue(
+                    $"Bug: {title}", stackTrace, crashContent, this);
+            };
+            header.Children.Add(reportBtn);
+        }
+
         // Dev mode: expandable stack trace panel.
         if (devMode && stackTrace is not null) {
             var traceBox = new TextBox {

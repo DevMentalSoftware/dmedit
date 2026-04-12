@@ -87,9 +87,13 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
             _rowHeight = 0;
             _charWidth = 0;
             InvalidateLayout();
+            ZoomPercentChanged?.Invoke(this, EventArgs.Empty);
         }
     }
     private int _zoomPercent = 100;
+
+    /// <summary>Raised after <see cref="ZoomPercent"/> changes.</summary>
+    public event EventHandler? ZoomPercentChanged;
 
     /// <summary>FontSize scaled by the current zoom factor.</summary>
     private double EffectiveFontSize => FontSize * _zoomPercent / 100.0;
