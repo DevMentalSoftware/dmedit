@@ -447,4 +447,174 @@ public class MonoRowBreakerTests {
         Assert.True(lastCharRow < rowCount,
             $"RowOfChar({line.Length - 1})={lastCharRow} >= CountRows={rowCount}");
     }
+
+    // ==================================================================
+    //  Parametric sweeps — high test-case count from compact generators
+    // ==================================================================
+
+    // --- Non-tab sweep: line lengths × row widths × positions ---
+
+    public static IEnumerable<object[]> PlainSweepData() {
+        var widths = new[] { 5, 10, 20, 40, 80 };
+        var lengths = new[] { 0, 1, 5, 10, 20, 50, 100, 200 };
+        foreach (var w in widths) {
+            foreach (var len in lengths) {
+                yield return new object[] { len, w };
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(PlainSweepData))]
+    public void PlainSweep_CountRows_AtLeastOne(int lineLen, int width) {
+        var line = new string('a', lineLen);
+        var rows = MonoRowBreaker.CountRows(line, width, width);
+        Assert.True(rows >= 1);
+    }
+
+    [Theory]
+    [MemberData(nameof(PlainSweepData))]
+    public void PlainSweep_CountRows_UpperBound(int lineLen, int width) {
+        var line = new string('a', lineLen);
+        var rows = MonoRowBreaker.CountRows(line, width, width);
+        var expected = lineLen == 0 ? 1 : (int)Math.Ceiling((double)lineLen / width);
+        Assert.InRange(rows, 1, expected + 1);
+    }
+
+    [Theory]
+    [MemberData(nameof(PlainSweepData))]
+    public void PlainSweep_RowOfChar_InRange(int lineLen, int width) {
+        if (lineLen == 0) return;
+        var line = new string('a', lineLen);
+        var rowCount = MonoRowBreaker.CountRows(line, width, width);
+        // Test at several positions within the line.
+        foreach (var pos in new[] { 0, lineLen / 4, lineLen / 2, lineLen - 1 }) {
+            if (pos < 0 || pos >= lineLen) continue;
+            var row = MonoRowBreaker.RowOfChar(line, pos, width, width);
+            Assert.InRange(row, 0, rowCount - 1);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(PlainSweepData))]
+    public void PlainSweep_NextRow_CoversFull(int lineLen, int width) {
+        var line = new string('a', lineLen);
+        var pos = 0;
+        var totalDrawn = 0;
+        var safetyLimit = lineLen + 10;
+        while (pos < line.Length && safetyLimit-- > 0) {
+            var (drawLen, nextStart) = MonoRowBreaker.NextRow(line, pos, width);
+            Assert.True(drawLen > 0 || nextStart > pos,
+                $"No progress at pos={pos}");
+            totalDrawn += drawLen;
+            pos = nextStart;
+        }
+        // Total drawn chars should cover the line (minus dropped spaces).
+        Assert.InRange(totalDrawn, lineLen - lineLen / width - 1, lineLen);
+    }
+
+    // --- Tab sweep: various tab positions × row widths × tab widths ---
+
+    public static IEnumerable<object[]> TabSweepData() {
+        var widths = new[] { 8, 16, 40, 65 };
+        var tabWidths = new[] { 2, 4, 8 };
+        var tabPositions = new[] { 0, 1, 3, 7, 15, 30 };
+        foreach (var w in widths) {
+            foreach (var tw in tabWidths) {
+                foreach (var tabPos in tabPositions) {
+                    yield return new object[] { w, tw, tabPos };
+                }
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(TabSweepData))]
+    public void TabSweep_CountRows_AtLeastOne(int width, int tabWidth, int tabPos) {
+        var line = new string('a', tabPos) + '\t' + new string('b', 20);
+        var rows = MonoRowBreaker.CountRowsTabAware(line, width, width, tabWidth);
+        Assert.True(rows >= 1);
+    }
+
+    [Theory]
+    [MemberData(nameof(TabSweepData))]
+    public void TabSweep_RowOfChar_Consistent(int width, int tabWidth, int tabPos) {
+        var line = new string('a', tabPos) + '\t' + new string('b', 20);
+        var rowCount = MonoRowBreaker.CountRowsTabAware(line, width, width, tabWidth);
+        for (var pos = 0; pos < line.Length; pos++) {
+            var row = MonoRowBreaker.RowOfCharTabAware(line, pos, width, width, tabWidth);
+            Assert.InRange(row, 0, rowCount - 1);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(TabSweepData))]
+    public void TabSweep_ColumnOfChar_Monotonic(int width, int tabWidth, int tabPos) {
+        var line = new string('a', tabPos) + '\t' + new string('b', 20);
+        var prevCol = -1;
+        for (var i = 0; i <= line.Length; i++) {
+            var col = MonoRowBreaker.ColumnOfChar(line, 0, i, tabWidth);
+            Assert.True(col >= prevCol, $"Column decreased at char {i}");
+            prevCol = col;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(TabSweepData))]
+    public void TabSweep_NextRowTabAware_CoversFull(int width, int tabWidth, int tabPos) {
+        var line = new string('a', tabPos) + '\t' + new string('b', 20);
+        var pos = 0;
+        var safety = line.Length + 10;
+        while (pos < line.Length && safety-- > 0) {
+            var (drawLen, nextStart) = MonoRowBreaker.NextRowTabAware(
+                line, pos, width, tabWidth);
+            Assert.True(drawLen > 0 || nextStart > pos,
+                $"No progress at pos={pos}");
+            pos = nextStart;
+        }
+        Assert.Equal(line.Length, pos);
+    }
+
+    // --- Hanging indent sweep ---
+
+    public static IEnumerable<object[]> HangingIndentSweepData() {
+        var widths = new[] { 10, 20, 40, 65 };
+        var indents = new[] { 0, 1, 2, 4 };
+        var lengths = new[] { 15, 40, 100, 200 };
+        foreach (var w in widths) {
+            foreach (var indent in indents) {
+                foreach (var len in lengths) {
+                    yield return new object[] { len, w, indent };
+                }
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(HangingIndentSweepData))]
+    public void HangingIndent_CountRows_ContRowsSmaller(int lineLen, int width,
+            int indent) {
+        var line = new string('a', lineLen);
+        var contWidth = Math.Max(1, width - indent);
+        var rows = MonoRowBreaker.CountRows(line, width, contWidth);
+        Assert.True(rows >= 1);
+        if (lineLen > width) {
+            // With hanging indent, more rows needed than without.
+            var noIndentRows = MonoRowBreaker.CountRows(line, width, width);
+            Assert.True(rows >= noIndentRows);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(HangingIndentSweepData))]
+    public void HangingIndent_RowOfChar_InRange(int lineLen, int width,
+            int indent) {
+        var line = new string('a', lineLen);
+        var contWidth = Math.Max(1, width - indent);
+        var rowCount = MonoRowBreaker.CountRows(line, width, contWidth);
+        for (var pos = 0; pos < lineLen; pos += Math.Max(1, lineLen / 10)) {
+            var row = MonoRowBreaker.RowOfChar(line, pos, width, contWidth);
+            Assert.InRange(row, 0, rowCount - 1);
+        }
+    }
 }
