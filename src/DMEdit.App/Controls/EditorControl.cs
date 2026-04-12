@@ -260,11 +260,7 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
             // the toggle but mapped to a different row in the new layout.
             PreserveCaretScreenYAcross(() => {
                 _wrapLines = value;
-                // Column mode is incompatible with wrapping — exit if active.
                 if (_wrapLines) {
-                    if (Document?.ColumnSel != null) {
-                        Document.ClearColumnSelection(_indentWidth);
-                    }
                     // Reset horizontal scroll when wrapping is enabled.
                     HScrollValue = 0;
                 }

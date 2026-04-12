@@ -109,8 +109,6 @@
 						<MenuItem Header="Scroll Line _Down" x:Name="MenuScrollLineDown" />
 					</MenuItem>
 					<MenuItem Header="_Help" x:Name="MenuHelp">
-						<MenuItem Header="_Manual" x:Name="MenuManual" />
-						<Separator />
 						<MenuItem Header="_Submit Feedback..." x:Name="MenuSubmitFeedback" />
 						<Separator />
 						<MenuItem Header="_About DMEdit" x:Name="MenuAbout" />

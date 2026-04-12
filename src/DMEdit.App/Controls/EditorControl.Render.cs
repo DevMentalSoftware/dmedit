@@ -367,7 +367,8 @@ public sealed partial class EditorControl {
         for (var i = 1; i <= rects.Count; i++) {
             var split = i == rects.Count
                 || rects[i - 1].Right <= rects[i].Left
-                || rects[i].Right <= rects[i - 1].Left;
+                || rects[i].Right <= rects[i - 1].Left
+                || rects[i].Top - rects[i - 1].Bottom > 0.5;
             if (!split) continue;
             var count = i - groupStart;
             if (count == 1) {

@@ -35,7 +35,7 @@ public partial class MainWindow {
         Cmd.FileSave.Wire(() => OnSave(null, null!),
             canExecute: () => _activeTab is { IsSettings: false, IsReadOnly: false, IsDirty: true });
         Cmd.FileSaveAs.Wire(() => OnSaveAs(null, null!),
-            canExecute: () => _activeTab is { IsSettings: false, IsLocked: false });
+            canExecute: () => _activeTab is { IsSettings: false});
         Cmd.FileSaveAll.Wire(SaveAll);
         Cmd.FileClose.Wire(
             () => { if (_activeTab != null) _ = PromptAndCloseTabAsync(_activeTab); });
@@ -54,7 +54,7 @@ public partial class MainWindow {
         Cmd.FileSaveAsPdf.Wire(() => _ = SaveAsPdfAsync());
         Cmd.FileExit.Wire(Close);
         Cmd.FileToggleReadOnly.Wire(ToggleActiveReadOnly,
-            canExecute: () => _activeTab is { IsSettings: false, IsLocked: false });
+            canExecute: () => _activeTab is { IsSettings: false});
         Cmd.FileRevertFile.Wire(() => _ = RevertFileAsync());
         Cmd.FileReloadFile.Wire(() => _ = ReloadFileAsync(_activeTab));
         Cmd.FileRecent.Wire(() => { }); // Dropdown-only — handled by tab toolbar

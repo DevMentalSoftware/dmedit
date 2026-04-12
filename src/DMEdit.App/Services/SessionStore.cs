@@ -69,7 +69,7 @@ public static class SessionStore {
             var referencedIds = new HashSet<string>();
 
             foreach (var tab in tabs) {
-                if (tab.IsSettings || tab.IsLocked) {
+                if (tab.IsSettings) {
                     continue;
                 }
 

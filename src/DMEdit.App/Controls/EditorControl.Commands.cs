@@ -246,10 +246,10 @@ public sealed partial class EditorControl {
 
 
     private const string ColumnBlockedByWrap =
-        "Column editing disabled by wrapping.";
+        "Column editing disabled in character-wrap mode.";
 
     private void PerformColumnSelectVertical(Document doc, int delta) {
-        if (_wrapLines || _charWrapMode) {
+        if (_charWrapMode) {
             StatusMessage?.Invoke(ColumnBlockedByWrap);
             return;
         }
@@ -273,7 +273,7 @@ public sealed partial class EditorControl {
     }
 
     private void PerformColumnSelectHorizontal(Document doc, int delta) {
-        if (_wrapLines || _charWrapMode) {
+        if (_charWrapMode) {
             StatusMessage?.Invoke(ColumnBlockedByWrap);
             return;
         }

@@ -91,7 +91,7 @@ public partial class MainWindow {
                 Editor.Document = null;
             }
 
-            Editor.IsEditBlocked = tab.IsLoading || tab.IsReadOnly || tab.IsLocked;
+            Editor.IsEditBlocked = tab.IsLoading || tab.IsReadOnly;
             Editor.CharWrapMode = tab.CharWrapMode;
             Editor.Focus();
 
@@ -103,7 +103,7 @@ public partial class MainWindow {
                         Editor.CharWrapMode = tab.CharWrapMode;
                         Editor.Document = tab.Document;
                         Editor.RestoreScrollState(tab);
-                        Editor.IsEditBlocked = tab.IsReadOnly || tab.IsLocked;
+                        Editor.IsEditBlocked = tab.IsReadOnly;
                         Editor.ResetCaretBlink();
                         Editor.InvalidateLayout();
                         if (tab.CharWrapMode) Dispatcher.UIThread.Post(() => {
@@ -422,7 +422,7 @@ public partial class MainWindow {
     private void ToggleReadOnly(int tabIndex) {
         if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
         var tab = _tabs[tabIndex];
-        if (tab.IsLocked || tab.IsSettings) return;
+        if (tab.IsSettings) return;
         tab.IsReadOnly = !tab.IsReadOnly;
         if (_activeTab == tab) {
             Editor.IsEditBlocked = tab.IsReadOnly;
@@ -435,7 +435,7 @@ public partial class MainWindow {
     /// appear in the command palette and accept a keyboard shortcut.
     /// </summary>
     private void ToggleActiveReadOnly() {
-        if (_activeTab == null || _activeTab.IsLocked || _activeTab.IsSettings) return;
+        if (_activeTab == null || _activeTab.IsSettings) return;
         _activeTab.IsReadOnly = !_activeTab.IsReadOnly;
         Editor.IsEditBlocked = _activeTab.IsReadOnly;
         UpdateTabBar();

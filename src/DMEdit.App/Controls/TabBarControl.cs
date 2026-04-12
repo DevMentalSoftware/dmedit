@@ -1329,7 +1329,7 @@ public sealed class TabBarControl : Control {
                     Opacity = tab.IsReadOnly ? 1.0 : 0.0,
                     Margin = new Thickness(0, 2, 0, 0),
                 },
-                IsEnabled = !tab.IsLocked,
+                IsEnabled = true,
             };
             roItem.Click += (_, _) => ToggleReadOnlyClicked?.Invoke(tabIndex);
             menu.Items.Add(roItem);

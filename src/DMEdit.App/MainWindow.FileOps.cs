@@ -37,13 +37,6 @@ public partial class MainWindow {
         SwitchToTab(tab);
     }
 
-    /// <summary>
-    /// Opens a bundled help document (e.g. manual.md, about.md) in a read-only tab.
-    /// If already open, switches to the existing tab.
-    /// </summary>
-    private static void OpenUrl(string url) =>
-        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-
     private async void OpenHelpDocumentAsync(string filename, string displayName) {
         var dir = AppDomain.CurrentDomain.BaseDirectory;
         var path = Path.Combine(dir, filename);
@@ -67,7 +60,6 @@ public partial class MainWindow {
                 LoadResult = result,
                 IsLoading = true,
                 IsReadOnly = true,
-                IsLocked = true,
             };
             AddTab(tab);
             SwitchToTab(tab);

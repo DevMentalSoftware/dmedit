@@ -88,8 +88,10 @@ public sealed partial class EditorControl {
             }
             var alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
             var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-            if (alt && !_wrapLines && !_charWrapMode) {
+            if (alt && !_charWrapMode) {
                 // Alt+click: start column (block) selection.
+                // Works in wrap mode too — wrapping is display-only, so the
+                // selection operates on logical lines and columns as usual.
                 var table = doc.Table;
                 var line = (int)table.LineFromOfs(ofs);
                 var col = ColumnSelection.OfsToCol(table, ofs, _indentWidth);
@@ -103,8 +105,8 @@ public sealed partial class EditorControl {
                 // when dragging vertically with no horizontal extent.
                 _caretVisible = true;
                 _caretTimer.Stop();
-            } else if (alt && (_wrapLines || _charWrapMode)) {
-                // Alt+click while wrapping is on — notify user instead of
+            } else if (alt && _charWrapMode) {
+                // Alt+click while char-wrap is on — notify user instead of
                 // silently falling through to normal click.
                 StatusMessage?.Invoke(ColumnBlockedByWrap);
             } else {
