@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keyboard Shortcuts - DMEdit Manual</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body data-page="keyboard-shortcuts">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <h1>Keyboard Shortcuts</h1>
+            <p class="page-subtitle">Default key bindings, keyboard profiles, and customization.</p>
+
+            <h2>Keyboard Profiles</h2>
+            <p>DMEdit comes with six keyboard profiles that map shortcuts to match editors you may already be familiar with:</p>
+            <ul>
+                <li><strong>Default</strong> &mdash; DMEdit's own layout, documented in the tables below.</li>
+                <li><strong>VS Code</strong></li>
+                <li><strong>Visual Studio</strong></li>
+                <li><strong>JetBrains</strong> (IntelliJ, Rider, etc.)</li>
+                <li><strong>Eclipse</strong></li>
+                <li><strong>Emacs</strong></li>
+            </ul>
+            <p>Switch profiles in the Keyboard section of <a href="settings.html">Settings</a>. The active profile changes all default shortcuts to match that editor's conventions.</p>
+
+            <h2>Chord Shortcuts</h2>
+            <p>Some shortcuts use a two-key chord: press the first key combination, release it, then press the second key combination within the chord timeout (default: 3 seconds). For example:</p>
+            <ul>
+                <li><kbd>Ctrl</kbd>+<kbd>E</kbd>, <kbd>Ctrl</kbd>+<kbd>W</kbd> &mdash; toggle word wrap</li>
+                <li><kbd>Ctrl</kbd>+<kbd>R</kbd>, <kbd>Ctrl</kbd>+<kbd>W</kbd> &mdash; toggle whitespace</li>
+            </ul>
+            <p>When you press the first key of a chord, DMEdit waits for the second key. If you don't press it in time, the chord is cancelled.</p>
+
+            <h2>Default Profile Bindings</h2>
+            <p>The tables below show all shortcuts for the Default profile. Commands without a shortcut can be accessed from the command palette (<kbd>F1</kbd>) or assigned a custom binding.</p>
+
+            <h3>File</h3>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>New</td><td><kbd>Ctrl</kbd>+<kbd>N</kbd></td></tr>
+                    <tr><td>Open</td><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td></tr>
+                    <tr><td>Save</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td></tr>
+                    <tr><td>Save As</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>S</kbd></td></tr>
+                    <tr><td>Save All</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td></tr>
+                    <tr><td>Print</td><td><kbd>Ctrl</kbd>+<kbd>P</kbd></td></tr>
+                    <tr><td>Close</td><td><kbd>Ctrl</kbd>+<kbd>F4</kbd></td></tr>
+                    <tr><td>Close All</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F4</kbd></td></tr>
+                    <tr><td>Exit</td><td><kbd>Alt</kbd>+<kbd>F4</kbd></td></tr>
+                </tbody>
+            </table>
+
+            <h3>Edit</h3>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Undo</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td></tr>
+                    <tr><td>Redo</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td></tr>
+                    <tr><td>Cut</td><td><kbd>Ctrl</kbd>+<kbd>X</kbd></td></tr>
+                    <tr><td>Copy</td><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td></tr>
+                    <tr><td>Paste</td><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td></tr>
+                    <tr><td>Paste More</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd></td></tr>
+                    <tr><td>Delete</td><td><kbd>Delete</kbd></td></tr>
+                    <tr><td>Backspace</td><td><kbd>Backspace</kbd></td></tr>
+                    <tr><td>Select All</td><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td></tr>
+                    <tr><td>Select Word</td><td><kbd>Ctrl</kbd>+<kbd>W</kbd></td></tr>
+                    <tr><td>Expand Selection</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd></td></tr>
+                    <tr><td>Delete Line</td><td><kbd>Ctrl</kbd>+<kbd>Y</kbd></td></tr>
+                    <tr><td>Move Line Up</td><td><kbd>Alt</kbd>+<kbd>Up</kbd></td></tr>
+                    <tr><td>Move Line Down</td><td><kbd>Alt</kbd>+<kbd>Down</kbd></td></tr>
+                    <tr><td>Delete Word Left</td><td><kbd>Ctrl</kbd>+<kbd>Backspace</kbd></td></tr>
+                    <tr><td>Delete Word Right</td><td><kbd>Ctrl</kbd>+<kbd>Delete</kbd></td></tr>
+                    <tr><td>Smart Indent</td><td><kbd>Tab</kbd></td></tr>
+                    <tr><td>Outdent</td><td><kbd>Shift</kbd>+<kbd>Tab</kbd></td></tr>
+                    <tr><td>UPPER CASE</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd></td></tr>
+                    <tr><td>lower case</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd></td></tr>
+                    <tr><td>Toggle Overwrite</td><td><kbd>Insert</kbd></td></tr>
+                </tbody>
+            </table>
+
+            <h3>Search</h3>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Find</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td></tr>
+                    <tr><td>Replace</td><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td></tr>
+                    <tr><td>Find Next</td><td><kbd>F3</kbd></td></tr>
+                    <tr><td>Find Previous</td><td><kbd>Shift</kbd>+<kbd>F3</kbd></td></tr>
+                    <tr><td>Find Next Selection</td><td><kbd>Ctrl</kbd>+<kbd>F3</kbd></td></tr>
+                    <tr><td>Find Previous Selection</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F3</kbd></td></tr>
+                    <tr><td>Incremental Search</td><td><kbd>Ctrl</kbd>+<kbd>I</kbd></td></tr>
+                    <tr><td>Go To Line</td><td><kbd>Ctrl</kbd>+<kbd>G</kbd></td></tr>
+                    <tr><td>Command Palette</td><td><kbd>F1</kbd></td></tr>
+                </tbody>
+            </table>
+
+            <h3>View</h3>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Wrap Lines</td><td><kbd>Ctrl</kbd>+<kbd>E</kbd>, <kbd>Ctrl</kbd>+<kbd>W</kbd></td></tr>
+                    <tr><td>Whitespace</td><td><kbd>Ctrl</kbd>+<kbd>R</kbd>, <kbd>Ctrl</kbd>+<kbd>W</kbd></td></tr>
+                    <tr><td>Zoom In</td><td><kbd>Ctrl</kbd>+<kbd>PageUp</kbd></td></tr>
+                    <tr><td>Zoom Out</td><td><kbd>Ctrl</kbd>+<kbd>PageDown</kbd></td></tr>
+                    <tr><td>Zoom Reset</td><td><kbd>Ctrl</kbd>+<kbd>0</kbd></td></tr>
+                    <tr><td>Scroll Line Up</td><td><kbd>Ctrl</kbd>+<kbd>Up</kbd></td></tr>
+                    <tr><td>Scroll Line Down</td><td><kbd>Ctrl</kbd>+<kbd>Down</kbd></td></tr>
+                </tbody>
+            </table>
+
+            <h3>Navigation</h3>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th><th>With Selection</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Left / Right</td><td><kbd>Left</kbd> / <kbd>Right</kbd></td><td><kbd>Shift</kbd>+<kbd>Left</kbd> / <kbd>Right</kbd></td></tr>
+                    <tr><td>Up / Down</td><td><kbd>Up</kbd> / <kbd>Down</kbd></td><td><kbd>Shift</kbd>+<kbd>Up</kbd> / <kbd>Down</kbd></td></tr>
+                    <tr><td>Word Left / Right</td><td><kbd>Ctrl</kbd>+<kbd>Left</kbd> / <kbd>Right</kbd></td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Left</kbd> / <kbd>Right</kbd></td></tr>
+                    <tr><td>Home / End</td><td><kbd>Home</kbd> / <kbd>End</kbd></td><td><kbd>Shift</kbd>+<kbd>Home</kbd> / <kbd>End</kbd></td></tr>
+                    <tr><td>Document Start / End</td><td><kbd>Ctrl</kbd>+<kbd>Home</kbd> / <kbd>End</kbd></td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Home</kbd> / <kbd>End</kbd></td></tr>
+                    <tr><td>Page Up / Down</td><td><kbd>PageUp</kbd> / <kbd>PageDown</kbd></td><td><kbd>Shift</kbd>+<kbd>PageUp</kbd> / <kbd>PageDown</kbd></td></tr>
+                </tbody>
+            </table>
+
+            <h3>Column Selection</h3>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Column Select Up</td><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Up</kbd></td></tr>
+                    <tr><td>Column Select Down</td><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Down</kbd></td></tr>
+                    <tr><td>Column Select Left</td><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Left</kbd></td></tr>
+                    <tr><td>Column Select Right</td><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Right</kbd></td></tr>
+                </tbody>
+            </table>
+
+            <h3>Tabs</h3>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Next Tab</td><td><kbd>Ctrl</kbd>+<kbd>Tab</kbd></td></tr>
+                    <tr><td>Previous Tab</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd></td></tr>
+                </tbody>
+            </table>
+
+            <h2>Customizing Shortcuts</h2>
+            <p>You can override individual shortcuts in the Keyboard section of <a href="settings.html">Settings</a>. Your overrides are stored separately from the profile, so switching profiles doesn't lose your customizations. Set a binding to empty to unbind a command.</p>
+            <p>Each command can have up to two shortcut bindings (a primary and a secondary).</p>
+        </main>
+    </div>
+    <script src="../js/layout.js"></script>
+    <script src="../js/search-data.js"></script>
+    <script src="../js/search.js"></script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Status Bar - DMEdit Manual</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body data-page="status-bar">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <h1>Status Bar</h1>
+            <p class="page-subtitle">The interactive status bar at the bottom of the editor window.</p>
+
+            <p>The status bar shows information about the current document and your position in it. Many of the elements are clickable, giving you quick access to related actions.</p>
+            <p>Toggle the status bar from <strong>View &gt; Status Bar</strong>.</p>
+
+            <h2>Position Display</h2>
+            <p>The left side of the status bar shows:</p>
+            <ul>
+                <li><strong>Ln</strong> &mdash; the current line number.</li>
+                <li><strong>Ch</strong> &mdash; the current column number.</li>
+                <li><strong>Selection count</strong> &mdash; when text is selected, the number of selected characters is shown.</li>
+                <li><strong>Total lines</strong> &mdash; the total number of lines in the document.</li>
+            </ul>
+            <p><strong>Click</strong> the Ln / Ch display to open the <a href="navigation-selection.html">Go To Line</a> dialog.</p>
+
+            <h2>Encoding</h2>
+            <p>Shows the file's character encoding (for example, UTF-8). Click to see encoding options.</p>
+
+            <h2>Line Endings</h2>
+            <p>Shows the line ending style used in the document:</p>
+            <ul>
+                <li><strong>LF</strong> &mdash; Unix-style line feed (used on Linux and macOS).</li>
+                <li><strong>CRLF</strong> &mdash; Windows-style carriage return + line feed.</li>
+            </ul>
+            <p><strong>Click</strong> to convert between line ending styles. If the document has mixed line endings, a tooltip shows the count of each type. Conversion is a single undo operation.</p>
+
+            <h2>Indent Style</h2>
+            <p>Shows the current indentation style:</p>
+            <ul>
+                <li><strong>Spaces</strong> &mdash; indentation uses space characters.</li>
+                <li><strong>Tabs</strong> &mdash; indentation uses tab characters.</li>
+            </ul>
+            <p>When you open a file, DMEdit detects the indent style automatically. <strong>Click</strong> the indicator to convert all indentation in the document between spaces and tabs. Conversion is a single undo operation.</p>
+
+            <h2>Insert and Overwrite</h2>
+            <p>Shows the current editing mode:</p>
+            <ul>
+                <li><strong>INS</strong> &mdash; insert mode (typed characters push existing text to the right).</li>
+                <li><strong>OVR</strong> &mdash; overwrite mode (typed characters replace the character under the caret).</li>
+            </ul>
+            <p><strong>Click</strong> to toggle between modes. You can also press <kbd>Insert</kbd> on the keyboard.</p>
+
+            <h2>Tail Mode</h2>
+            <p>When tail mode is active, a <strong>Tail</strong> indicator appears in the status bar. Tail mode keeps the editor scrolled to the bottom of the file, so when the file is reloaded with new content (for example, a growing log file), you automatically see the latest lines.</p>
+            <p><strong>Click</strong> the indicator to toggle tail mode on or off. Tail mode only takes effect when the file is reloaded from disk (either manually or via auto-reload).</p>
+            <p>See <a href="settings.html">Settings</a> for more on auto-reload and tail mode.</p>
+
+            <h2>Update Notification</h2>
+            <p>When a new version of DMEdit is available and has been downloaded, a notification appears in the status bar. Click it to restart and apply the update.</p>
+            <p>Automatic updates can be turned on or off in <a href="settings.html">Settings</a>.</p>
+        </main>
+    </div>
+    <script src="../js/layout.js"></script>
+    <script src="../js/search-data.js"></script>
+    <script src="../js/search.js"></script>
+</body>
+</html>

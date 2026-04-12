@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DMEdit - A Fast Text Editor for Large Files</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body data-page="index">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <div class="hero">
+                <h1>DMEdit</h1>
+                <p class="tagline">A fast text editor that handles files of any size</p>
+                <div class="cta-buttons">
+                    <a href="manual/getting-started.html" class="btn btn-primary">Get Started</a>
+                    <a href="whats-new.html" class="btn btn-secondary">What's New</a>
+                </div>
+            </div>
+
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h3>Large File Support</h3>
+                    <p>Open and smoothly scroll through multi-gigabyte files. Memory usage stays low regardless of file size.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Tabbed Editing</h3>
+                    <p>Work with multiple documents in tabs. Each tab preserves its scroll position, selection, and undo history.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Find &amp; Replace</h3>
+                    <p>Search with literal text, wildcards, or regular expressions. Live match count and highlighting as you type.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Keyboard Profiles</h3>
+                    <p>Choose from Default, VS Code, Visual Studio, JetBrains, Eclipse, or Emacs key bindings. Customize individual shortcuts.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Print &amp; PDF Export</h3>
+                    <p>Print documents with configurable margins and paper sizes. Export directly to PDF. Progress tracking for large documents.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Smart Editing</h3>
+                    <p>Auto-indent, smart backspace, column selection with multi-cursor editing, clipboard history, and case transforms.</p>
+                </div>
+            </div>
+
+            <h2>Quick Reference</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Open file</td><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td></tr>
+                    <tr><td>Save</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td></tr>
+                    <tr><td>Find</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td></tr>
+                    <tr><td>Replace</td><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td></tr>
+                    <tr><td>Go to line</td><td><kbd>Ctrl</kbd>+<kbd>G</kbd></td></tr>
+                    <tr><td>Command palette</td><td><kbd>F1</kbd></td></tr>
+                    <tr><td>Wrap lines</td><td><kbd>Ctrl</kbd>+<kbd>E</kbd>, <kbd>Ctrl</kbd>+<kbd>W</kbd></td></tr>
+                    <tr><td>Zoom in / out</td><td><kbd>Ctrl</kbd>+<kbd>PageUp</kbd> / <kbd>PageDown</kbd></td></tr>
+                </tbody>
+            </table>
+        </main>
+    </div>
+    <script src="js/layout.js"></script>
+    <script src="js/search-data.js"></script>
+    <script src="js/search.js"></script>
+</body>
+</html>

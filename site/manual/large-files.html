@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Large Files - DMEdit Manual</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body data-page="large-files">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <h1>Large Files</h1>
+            <p class="page-subtitle">Working with multi-gigabyte files.</p>
+
+            <h2>Opening Large Files</h2>
+            <p>DMEdit can open files of virtually any size &mdash; including multi-gigabyte logs, data dumps, and other large text files. Files are loaded using a streaming approach that keeps memory usage low regardless of file size. You don't need to do anything special; just open the file as normal.</p>
+
+            <h2>Scrolling</h2>
+            <p>DMEdit uses a windowed rendering approach: only the portion of the document visible on screen (plus a small buffer) is held in memory and rendered at any time. This means scrolling through a 10 GB file feels the same as scrolling through a 10 KB file.</p>
+            <p>The dual-zone scroll bar is especially useful for large files:</p>
+            <ul>
+                <li><strong>Inner thumb</strong> &mdash; drag to jump proportionally through the document. Useful for getting to a rough position quickly.</li>
+                <li><strong>Outer thumb</strong> &mdash; drag for a fixed-speed scan. Useful for reading through content at a consistent pace. The scan speed is adjustable in <a href="settings.html">Settings</a>.</li>
+            </ul>
+
+            <h2>Character-Wrap Mode</h2>
+            <p>Some large files contain extremely long lines (for example, minified JavaScript or single-line JSON). When DMEdit detects a file that is both large (default: over 50 KB) and contains a line longer than 2,000 characters, it automatically switches to <strong>character-wrap mode</strong>.</p>
+            <p>In character-wrap mode:</p>
+            <ul>
+                <li>Lines are wrapped at a fixed character width rather than at word boundaries.</li>
+                <li>Scrolling uses optimized math that stays fast regardless of line length.</li>
+                <li>The editor remains responsive even with lines that are millions of characters long.</li>
+            </ul>
+            <p>The file size threshold for character-wrap mode is configurable in <a href="settings.html">Settings</a> under <strong>Char Wrap File Size (KB)</strong>.</p>
+
+            <h2>Performance</h2>
+            <p>A few things to know when working with very large files:</p>
+            <ul>
+                <li><strong>Search</strong> works across the entire file. Match counting runs asynchronously so it doesn't block the editor.</li>
+                <li><strong>Replace All</strong> processes the file in chunks with a progress indicator for very large documents.</li>
+                <li><strong>Selecting large amounts of text</strong> is handled efficiently without copying the entire selection into memory until needed (for example, when you copy it to the clipboard).</li>
+                <li><strong>Find and Replace</strong> operations near the end of a very large file work correctly and scroll to show the result.</li>
+            </ul>
+        </main>
+    </div>
+    <script src="../js/layout.js"></script>
+    <script src="../js/search-data.js"></script>
+    <script src="../js/search.js"></script>
+</body>
+</html>

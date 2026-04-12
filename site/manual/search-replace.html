@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search &amp; Replace - DMEdit Manual</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body data-page="search-replace">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <h1>Search &amp; Replace</h1>
+            <p class="page-subtitle">Finding and replacing text with literal, wildcard, or regex matching.</p>
+
+            <h2>Opening the Find Bar</h2>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>F</kbd> to open the find bar at the top of the editor. The find bar has a search box, match options, and navigation buttons.</p>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>H</kbd> to open the find bar in replace mode, which adds a replacement text box and replace buttons.</p>
+            <p>Press <kbd>Escape</kbd> to close the find bar and return focus to the editor.</p>
+
+            <h2>Finding Text</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Find next match</td><td><kbd>F3</kbd></td></tr>
+                    <tr><td>Find previous match</td><td><kbd>Shift</kbd>+<kbd>F3</kbd></td></tr>
+                    <tr><td>Find next using selection</td><td><kbd>Ctrl</kbd>+<kbd>F3</kbd></td></tr>
+                    <tr><td>Find previous using selection</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F3</kbd></td></tr>
+                </tbody>
+            </table>
+            <p>As you type in the search box, all matches are highlighted in the editor and the total match count appears inside the search box. The editor scrolls to show each match as you navigate.</p>
+            <p><strong>Find Next/Previous Selection</strong> uses whatever text is currently selected as the search term, without opening the find bar. This is a quick way to jump between occurrences of a word &mdash; select it (or press <kbd>Ctrl</kbd>+<kbd>W</kbd> to select the word at the caret), then press <kbd>Ctrl</kbd>+<kbd>F3</kbd> to jump to the next one.</p>
+
+            <h2>Match Options</h2>
+            <p>The find bar provides three toggle buttons for match options:</p>
+            <table>
+                <thead>
+                    <tr><th>Option</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Match Case</td>
+                        <td>When on, searching for "Hello" won't match "hello" or "HELLO". When off, search is case-insensitive.</td>
+                    </tr>
+                    <tr>
+                        <td>Whole Word</td>
+                        <td>When on, matches only occur at word boundaries. Searching for "the" won't match "other" or "them".</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>DMEdit remembers these settings between sessions.</p>
+
+            <h2>Search Modes</h2>
+            <p>The find bar has three search mode buttons:</p>
+            <table>
+                <thead>
+                    <tr><th>Mode</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Normal</td>
+                        <td>Matches the search text literally. This is the default mode.</td>
+                    </tr>
+                    <tr>
+                        <td>Wildcard</td>
+                        <td>Use <code>*</code> to match any sequence of characters, and <code>?</code> to match a single character. For example, <code>err*msg</code> matches "error_msg", "err_handler_msg", etc.</td>
+                    </tr>
+                    <tr>
+                        <td>Regex</td>
+                        <td>Use full regular expression syntax. For example, <code>\d{3}-\d{4}</code> matches phone number patterns like "555-1234".</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>The selected search mode is remembered between sessions.</p>
+
+            <h2>Replacing Text</h2>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>H</kbd> to open the find bar in replace mode. This shows a second text box for the replacement text.</p>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Replace</td>
+                        <td>Replace the current match and advance to the next one.</td>
+                    </tr>
+                    <tr>
+                        <td>Replace All</td>
+                        <td>Replace every match in the document at once. For large documents, a progress indicator is shown.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>Replace All is a single undo operation &mdash; press <kbd>Ctrl</kbd>+<kbd>Z</kbd> once to undo all replacements.</p>
+
+            <h2>Incremental Search</h2>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>I</kbd> to start an incremental search. In this mode, you type directly into the editor and the caret jumps to the first match as you type each character. Press <kbd>Escape</kbd> to end the incremental search and stay at the found location, or <kbd>Ctrl</kbd>+<kbd>I</kbd> again to advance to the next match.</p>
+
+            <h2>Find Bar Resizing</h2>
+            <p>The find bar can be resized by dragging its left edge. DMEdit remembers the width between sessions.</p>
+        </main>
+    </div>
+    <script src="../js/layout.js"></script>
+    <script src="../js/search-data.js"></script>
+    <script src="../js/search.js"></script>
+</body>
+</html>

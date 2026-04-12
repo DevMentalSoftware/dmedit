@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editing - DMEdit Manual</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body data-page="editing">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <h1>Editing</h1>
+            <p class="page-subtitle">Undo, clipboard, line operations, indentation, and case transforms.</p>
+
+            <h2>Undo and Redo</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Undo</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td></tr>
+                    <tr><td>Redo</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td></tr>
+                </tbody>
+            </table>
+            <p>DMEdit groups consecutive keystrokes into a single undo entry. When you pause typing, the current group is committed and the next keystrokes start a new group. This means undo jumps back over a natural chunk of editing rather than undoing one character at a time.</p>
+            <p>The grouping delay is configurable in <a href="settings.html">Settings</a> (default: 1000 ms).</p>
+            <p>Undo also restores your exact selection &mdash; the anchor position and direction are preserved, so after undoing you see the same selection you had before the edit.</p>
+
+            <h2>Clipboard</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Cut</td><td><kbd>Ctrl</kbd>+<kbd>X</kbd></td></tr>
+                    <tr><td>Copy</td><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td></tr>
+                    <tr><td>Paste</td><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td></tr>
+                </tbody>
+            </table>
+
+            <h3>Paste More (Clipboard Cycling)</h3>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> to paste the previous clipboard entry. Each press cycles back through your clipboard history while you keep <kbd>Ctrl</kbd> held. Release <kbd>Ctrl</kbd> to confirm the pasted text.</p>
+            <p>This lets you quickly access recently copied text without opening a separate dialog.</p>
+
+            <h3>Clipboard Ring</h3>
+            <p>DMEdit keeps a history of your recent clipboard entries (up to 10 by default). Use <strong>Edit &gt; Clipboard Ring</strong> to open a popup showing all entries, where you can click one to paste it.</p>
+
+            <h2>Deleting Text</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Delete character forward</td><td><kbd>Delete</kbd></td></tr>
+                    <tr><td>Delete character backward</td><td><kbd>Backspace</kbd></td></tr>
+                    <tr><td>Delete word left</td><td><kbd>Ctrl</kbd>+<kbd>Backspace</kbd></td></tr>
+                    <tr><td>Delete word right</td><td><kbd>Ctrl</kbd>+<kbd>Delete</kbd></td></tr>
+                    <tr><td>Delete entire line</td><td><kbd>Ctrl</kbd>+<kbd>Y</kbd></td></tr>
+                </tbody>
+            </table>
+
+            <h2>Line Operations</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Move line up</td>
+                        <td><kbd>Alt</kbd>+<kbd>Up</kbd></td>
+                        <td>Swap the current line (or selected lines) with the line above.</td>
+                    </tr>
+                    <tr>
+                        <td>Move line down</td>
+                        <td><kbd>Alt</kbd>+<kbd>Down</kbd></td>
+                        <td>Swap the current line (or selected lines) with the line below.</td>
+                    </tr>
+                    <tr>
+                        <td>Duplicate line</td>
+                        <td>&mdash;</td>
+                        <td>Insert a copy of the current line below it. Available from the Edit menu or command palette.</td>
+                    </tr>
+                    <tr>
+                        <td>Insert line below</td>
+                        <td>&mdash;</td>
+                        <td>Insert a blank line below the current line and move the caret to it.</td>
+                    </tr>
+                    <tr>
+                        <td>Insert line above</td>
+                        <td>&mdash;</td>
+                        <td>Insert a blank line above the current line and move the caret to it.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="callout callout-tip">
+                <strong>Tip:</strong> Commands without a default shortcut can be found in the command palette (<kbd>F1</kbd>) or assigned a custom shortcut in <a href="keyboard-shortcuts.html">Keyboard Shortcuts</a>.
+            </div>
+
+            <h2>Indentation</h2>
+            <h3>Auto-Indent</h3>
+            <p>When you press <kbd>Enter</kbd>, the new line automatically inherits the leading whitespace from the current line. DMEdit also removes trailing whitespace from the line you just left.</p>
+
+            <h3>Smart Backspace</h3>
+            <p>When the caret is in the leading whitespace of a line, pressing <kbd>Backspace</kbd> jumps back to the previous indent stop rather than deleting one space at a time. This works when the indent style is set to spaces.</p>
+
+            <h3>Indent and Outdent</h3>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Indent (or smart indent)</td><td><kbd>Tab</kbd></td></tr>
+                    <tr><td>Outdent</td><td><kbd>Shift</kbd>+<kbd>Tab</kbd></td></tr>
+                </tbody>
+            </table>
+            <p>When text is selected, <kbd>Tab</kbd> indents all selected lines and <kbd>Shift</kbd>+<kbd>Tab</kbd> removes one level of indentation. When nothing is selected, <kbd>Tab</kbd> inserts spaces or a tab character depending on the current indent style.</p>
+
+            <h3>Converting Indentation</h3>
+            <p>You can convert between spaces and tabs for the entire document. Click the indent style indicator in the <a href="status-bar.html">Status Bar</a> to access conversion options, or use the Edit menu.</p>
+
+            <h2>Case Transforms</h2>
+            <p>Select text and apply one of these transforms:</p>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th><th>Example</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>UPPER CASE</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd></td><td>hello world &rarr; HELLO WORLD</td></tr>
+                    <tr><td>lower case</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd></td><td>Hello World &rarr; hello world</td></tr>
+                    <tr><td>Proper Case</td><td>&mdash;</td><td>hello world &rarr; Hello World</td></tr>
+                </tbody>
+            </table>
+
+            <h2>Insert and Overwrite Modes</h2>
+            <p>Press <kbd>Insert</kbd> to toggle between insert mode (new text pushes existing text to the right) and overwrite mode (new text replaces the character under the caret). The current mode is shown in the <a href="status-bar.html">Status Bar</a> and can be toggled by clicking it there.</p>
+
+            <h2>Expand Selection</h2>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd> to progressively expand the selection. Each press selects a larger scope: subword boundary, word, line, then the entire document. The expansion mode (subword-first or word-first) is configurable in <a href="settings.html">Settings</a>.</p>
+        </main>
+    </div>
+    <script src="../js/layout.js"></script>
+    <script src="../js/search-data.js"></script>
+    <script src="../js/search.js"></script>
+</body>
+</html>

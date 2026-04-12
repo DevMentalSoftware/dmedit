@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - DMEdit Manual</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body data-page="settings">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <h1>Settings</h1>
+            <p class="page-subtitle">All configurable preferences, organized by category.</p>
+
+            <p>Open Settings from the <strong>Edit</strong> menu or through the command palette (<kbd>F1</kbd>). Settings are saved automatically and take effect immediately. They persist between sessions.</p>
+
+            <h2>Display</h2>
+            <table>
+                <thead>
+                    <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Theme</td>
+                        <td>System</td>
+                        <td>Choose between Light, Dark, or System (follows your OS setting).</td>
+                    </tr>
+                    <tr>
+                        <td>Use Wrap Column</td>
+                        <td>On</td>
+                        <td>When enabled, lines wrap at the Wrap Column limit instead of the viewport edge.</td>
+                    </tr>
+                    <tr>
+                        <td>Wrap Column</td>
+                        <td>100</td>
+                        <td>Column at which lines wrap when Use Wrap Column is enabled. Range: 1 &ndash; 10,000.</td>
+                    </tr>
+                    <tr>
+                        <td>Show Wrap Symbol</td>
+                        <td>On</td>
+                        <td>Show a small arrow glyph at the wrap point for lines that wrap to the next row.</td>
+                    </tr>
+                    <tr>
+                        <td>Hanging Indent</td>
+                        <td>On</td>
+                        <td>Indent wrapped continuation rows by half an indent level. Makes it easy to see where logical lines begin.</td>
+                    </tr>
+                    <tr>
+                        <td>Fast Text Layout</td>
+                        <td>On</td>
+                        <td>Use the fast monospace rendering path. Faster and enables hanging indent, but disables font ligatures. Turn off if you prefer ligatures.</td>
+                    </tr>
+                    <tr>
+                        <td>Caret Width</td>
+                        <td>1.0</td>
+                        <td>Width of the text caret in pixels. Range: 1.0 &ndash; 2.5, in 0.5 increments.</td>
+                    </tr>
+                    <tr>
+                        <td>Bright Selection</td>
+                        <td>Off</td>
+                        <td>Use a brighter, more visible selection highlight. Useful on monitors with limited contrast.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h2>Editor</h2>
+            <table>
+                <thead>
+                    <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Indent Width</td>
+                        <td>4</td>
+                        <td>Number of columns per indent level. Also controls the display width of tab characters. Range: 1 &ndash; 16.</td>
+                    </tr>
+                    <tr>
+                        <td>Undo Coalesce Timer</td>
+                        <td>1000 ms</td>
+                        <td>Idle time before consecutive edits are committed as a single undo entry. Higher values group more keystrokes together. Range: 100 &ndash; 10,000 ms.</td>
+                    </tr>
+                    <tr>
+                        <td>Expand Selection Mode</td>
+                        <td>Word</td>
+                        <td>Controls how Expand Selection (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd>) grows the selection. "Word" starts at whitespace boundaries; "SubwordFirst" starts at camelCase/underscore boundaries.</td>
+                    </tr>
+                    <tr>
+                        <td>Auto-Reload External Changes</td>
+                        <td>Off</td>
+                        <td>Automatically reload files modified by other programs, as long as the tab has no unsaved edits.</td>
+                    </tr>
+                    <tr>
+                        <td>Backup on Save</td>
+                        <td>Off</td>
+                        <td>Keep a .bak copy of the previous version when saving.</td>
+                    </tr>
+                    <tr>
+                        <td>Tail File</td>
+                        <td>Off</td>
+                        <td>When a file is reloaded and the editor is scrolled to the bottom, automatically scroll to show new content. Useful for monitoring log files.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h2>Font</h2>
+            <p>The font section (within Settings) lets you configure:</p>
+            <ul>
+                <li><strong>Font Family</strong> &mdash; choose any installed font. The default is Cascadia Code with Consolas and Courier New as fallbacks.</li>
+                <li><strong>Font Size</strong> &mdash; set the base font size in points (default: 11).</li>
+                <li><strong>Zoom</strong> &mdash; set the zoom percentage (default: 100%). Range: 10% &ndash; 800%. Zoom is independent of font size and can also be changed with <kbd>Ctrl</kbd>+<kbd>PageUp</kbd>/<kbd>PageDown</kbd>.</li>
+            </ul>
+            <p>A live preview shows sample text in your chosen font.</p>
+
+            <h2>Scrollbar</h2>
+            <table>
+                <thead>
+                    <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Outer Thumb Scroll Rate</td>
+                        <td>2.0</td>
+                        <td>Multiplier for the outer-thumb fixed scroll speed. Higher values scan through the document faster. Range: 0.1 &ndash; 20.0.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h2>Advanced</h2>
+            <table>
+                <thead>
+                    <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Recent File Count</td>
+                        <td>10</td>
+                        <td>Number of files shown in the File &gt; Recent list. Range: 0 &ndash; 50.</td>
+                    </tr>
+                    <tr>
+                        <td>Auto-Update</td>
+                        <td>On</td>
+                        <td>Download updates silently on startup and show a restart indicator in the status bar. When off, updates are still detected but require a manual download from Settings.</td>
+                    </tr>
+                    <tr>
+                        <td>Char Wrap File Size (KB)</td>
+                        <td>50</td>
+                        <td>Files larger than this that also contain very long lines automatically switch to character-wrapping mode. See <a href="large-files.html">Large Files</a>.</td>
+                    </tr>
+                    <tr>
+                        <td>Distribute Multi-Line Paste in Column Mode</td>
+                        <td>On</td>
+                        <td>When pasting into a column selection, distribute clipboard lines across cursors when counts match. When off, the entire clipboard is pasted at every cursor. See <a href="navigation-selection.html">Column Selection</a>.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h2>Commands</h2>
+            <table>
+                <thead>
+                    <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Chord Timeout</td>
+                        <td>3000 ms</td>
+                        <td>Time before a pending chord prefix is cancelled. When using a two-key chord shortcut, press the second key within this timeout. Range: 500 &ndash; 10,000 ms.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h2>Settings File</h2>
+            <p>Settings are stored in a <code>settings.json</code> file in your user data directory. Some advanced settings that aren't shown in the Settings UI can be edited directly in this file. Changes are picked up when DMEdit restarts.</p>
+        </main>
+    </div>
+    <script src="../js/layout.js"></script>
+    <script src="../js/search-data.js"></script>
+    <script src="../js/search.js"></script>
+</body>
+</html>

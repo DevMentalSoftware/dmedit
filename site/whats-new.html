@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What's New - DMEdit</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body data-page="whats-new">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <h1>What's New</h1>
+            <p class="page-subtitle">User-facing highlights from each release.</p>
+
+            <section class="version-section" id="v0.6">
+                <h2>Version 0.6 <span class="version-date">April 2026</span></h2>
+
+                <h3>Printing</h3>
+                <ul>
+                    <li><strong>Print your documents</strong> &mdash; full print support with configurable printer, paper size, orientation, and margins. DMEdit remembers your print settings between sessions.</li>
+                    <li><strong>Progress tracking</strong> &mdash; large documents show a progress dialog with page count and estimated time remaining. You can cancel at any time.</li>
+                    <li><strong>Save as PDF</strong> &mdash; export any document directly to a PDF file.</li>
+                </ul>
+
+                <h3>Smart Editing</h3>
+                <ul>
+                    <li><strong>Auto-indent on Enter</strong> &mdash; new lines automatically inherit the leading whitespace from the current line.</li>
+                    <li><strong>Smart Backspace</strong> &mdash; when the caret is in leading whitespace, Backspace jumps to the previous indent stop instead of deleting one space at a time.</li>
+                    <li><strong>Smart Home key</strong> &mdash; pressing Home toggles between the first non-whitespace character and column 1.</li>
+                    <li><strong>Trailing whitespace cleanup</strong> &mdash; pressing Enter removes trailing spaces from the line you just left.</li>
+                </ul>
+
+                <h3>Display Improvements</h3>
+                <ul>
+                    <li><strong>Wrap indicators</strong> &mdash; a small arrow glyph shows where a line wraps, making it clear which rows are continuations of a wrapped line.</li>
+                    <li><strong>Hanging indent</strong> &mdash; wrapped continuation rows are indented by half an indent level, so the start of each logical line is visually distinct.</li>
+                    <li><strong>Fast monospace rendering</strong> &mdash; a new rendering path for monospace fonts that is significantly faster and enables hanging indent. Ligatures can be re-enabled in Settings if preferred.</li>
+                </ul>
+
+                <h3>Large File Handling</h3>
+                <ul>
+                    <li><strong>Character-wrap mode</strong> &mdash; files with extremely long lines (such as minified code or single-line JSON) now wrap at fixed character widths with optimized scroll math. The editor stays responsive regardless of line length.</li>
+                </ul>
+
+                <h3>Reliability</h3>
+                <ul>
+                    <li><strong>Surrogate pair safety</strong> &mdash; Backspace, Delete, and clipboard operations correctly handle emoji and other characters that use surrogate pairs.</li>
+                    <li><strong>Binary file handling</strong> &mdash; opening a file that contains binary control characters no longer causes crashes during scrolling.</li>
+                    <li><strong>Scroll accuracy</strong> &mdash; fixed several issues where arrow-key scrolling at the viewport edge could jump or lose sync with the scrollbar.</li>
+                </ul>
+            </section>
+
+            <section class="version-section" id="v0.5">
+                <h2>Version 0.5 <span class="version-date">February &ndash; March 2026</span></h2>
+
+                <h3>Tabbed Document Interface</h3>
+                <ul>
+                    <li><strong>Multiple documents</strong> &mdash; open files in tabs, each with its own scroll position, selection, and undo history.</li>
+                    <li><strong>Tab switching</strong> &mdash; use <kbd>Ctrl</kbd>+<kbd>Tab</kbd> and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd>, or click a tab to switch.</li>
+                    <li><strong>Unsaved changes indicator</strong> &mdash; a dot appears on tabs with unsaved changes. It clears when you save or undo back to the saved state.</li>
+                </ul>
+
+                <h3>Status Bar</h3>
+                <ul>
+                    <li><strong>Interactive status bar</strong> &mdash; shows line, column, encoding, line endings, and indent style. Click elements to access related actions (Go To Line, encoding conversion, indent conversion).</li>
+                    <li><strong>Indentation detection</strong> &mdash; DMEdit auto-detects whether a file uses spaces or tabs when it's opened.</li>
+                    <li><strong>Line ending and indent conversion</strong> &mdash; convert between LF/CRLF or spaces/tabs with one click. Mixed-ending tooltips show the count of each type.</li>
+                </ul>
+
+                <h3>Find Bar</h3>
+                <ul>
+                    <li><strong>Search with highlighting</strong> &mdash; all matches are highlighted as you type, with a live match count inside the search box.</li>
+                    <li><strong>Search modes</strong> &mdash; toggle between literal text, wildcard patterns, and regular expressions.</li>
+                    <li><strong>Find Next/Previous Selection</strong> &mdash; jump between occurrences of the selected text without opening the find bar.</li>
+                    <li><strong>Incremental search</strong> &mdash; type-to-search mode that jumps to matches as you type.</li>
+                    <li><strong>Resizable find bar</strong> &mdash; drag the left edge to make the search box wider or narrower.</li>
+                </ul>
+
+                <h3>Keyboard Customization</h3>
+                <ul>
+                    <li><strong>Six keyboard profiles</strong> &mdash; Default, VS Code, Visual Studio, JetBrains, Eclipse, and Emacs.</li>
+                    <li><strong>55+ commands</strong> &mdash; a centralized command system with customizable bindings for every action.</li>
+                    <li><strong>Chord shortcuts</strong> &mdash; two-key combinations for less frequent commands (for example, <kbd>Ctrl</kbd>+<kbd>E</kbd>, <kbd>Ctrl</kbd>+<kbd>W</kbd> for wrap toggle).</li>
+                </ul>
+
+                <h3>Editing</h3>
+                <ul>
+                    <li><strong>Case transforms</strong> &mdash; convert selected text to UPPER CASE, lower case, or Proper Case.</li>
+                    <li><strong>Move line up/down</strong> &mdash; rearrange lines with <kbd>Alt</kbd>+<kbd>Up</kbd>/<kbd>Down</kbd>.</li>
+                    <li><strong>Delete line</strong> &mdash; remove the entire current line with <kbd>Ctrl</kbd>+<kbd>Y</kbd>.</li>
+                    <li><strong>Delete word</strong> &mdash; <kbd>Ctrl</kbd>+<kbd>Backspace</kbd> and <kbd>Ctrl</kbd>+<kbd>Delete</kbd> delete one word at a time.</li>
+                    <li><strong>Undo restores selection</strong> &mdash; undo now restores your exact selection (anchor position and direction), not just the caret.</li>
+                    <li><strong>Revert file</strong> &mdash; discard all unsaved changes and reload from disk.</li>
+                </ul>
+
+                <h3>Navigation</h3>
+                <ul>
+                    <li><strong>Go To Line</strong> &mdash; jump to a specific line or line:column with <kbd>Ctrl</kbd>+<kbd>G</kbd>.</li>
+                    <li><strong>Command palette</strong> &mdash; search and run any command with <kbd>F1</kbd>.</li>
+                    <li><strong>Middle-button scroll</strong> &mdash; middle-click and drag to scroll freely in any direction.</li>
+                </ul>
+
+                <h3>Display</h3>
+                <ul>
+                    <li><strong>Line numbers</strong> &mdash; a gutter on the left showing line numbers, with auto-adjusting width.</li>
+                    <li><strong>Column guide</strong> &mdash; a vertical line at the wrap column, visible whether wrapping is on or off.</li>
+                    <li><strong>Horizontal scrollbar</strong> &mdash; when word wrap is off, a horizontal scrollbar appears for long lines.</li>
+                    <li><strong>Window state persistence</strong> &mdash; window size, position, and maximized state are remembered between sessions.</li>
+                </ul>
+            </section>
+        </main>
+    </div>
+    <script src="js/layout.js"></script>
+    <script src="js/search-data.js"></script>
+    <script src="js/search.js"></script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabs &amp; Windows - DMEdit Manual</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body data-page="tabs-windows">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <h1>Tabs &amp; Windows</h1>
+            <p class="page-subtitle">Working with multiple documents.</p>
+
+            <h2>Opening Tabs</h2>
+            <p>Each file you open gets its own tab in the tab bar at the top of the editor. You can have many files open simultaneously. Each tab independently maintains its own:</p>
+            <ul>
+                <li>Scroll position</li>
+                <li>Caret position and selection</li>
+                <li>Undo/redo history</li>
+                <li>Find bar search term</li>
+            </ul>
+            <p>New documents created with <kbd>Ctrl</kbd>+<kbd>N</kbd> also open in their own tab.</p>
+
+            <h2>Switching Tabs</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Method</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Next tab</td><td><kbd>Ctrl</kbd>+<kbd>Tab</kbd></td></tr>
+                    <tr><td>Previous tab</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd></td></tr>
+                    <tr><td>Switch to a specific tab</td><td>Click its tab header</td></tr>
+                </tbody>
+            </table>
+
+            <h2>Closing Tabs</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Close current tab</td><td><kbd>Ctrl</kbd>+<kbd>F4</kbd></td></tr>
+                    <tr><td>Close all tabs</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F4</kbd></td></tr>
+                </tbody>
+            </table>
+            <p>If a tab has unsaved changes, you'll be prompted to save before closing.</p>
+
+            <h2>Tab Indicators</h2>
+            <p>Tabs show visual indicators for the document's state:</p>
+            <ul>
+                <li><strong>Unsaved changes dot</strong> &mdash; a bullet appears in the tab header when the document has been modified since the last save. It disappears when you save, or when you undo back to the saved state.</li>
+                <li><strong>Read-only badge</strong> &mdash; shown when the file is in read-only mode (either because you toggled it or because the file is read-only on disk).</li>
+                <li><strong>Conflict icon</strong> &mdash; appears when the file has been modified externally while you have unsaved changes. See the section below.</li>
+            </ul>
+
+            <h2>External File Changes</h2>
+            <p>If another program modifies a file that you have open:</p>
+            <ul>
+                <li><strong>No unsaved edits</strong> &mdash; if Auto-Reload is enabled in <a href="settings.html">Settings</a>, the file is reloaded automatically. Otherwise, a conflict icon appears on the tab.</li>
+                <li><strong>Unsaved edits</strong> &mdash; a conflict icon appears on the tab. You decide whether to reload the file (losing your edits) or keep your version.</li>
+            </ul>
+            <p>See <a href="file-operations.html">File Operations</a> for details on Auto-Reload and Revert.</p>
+
+            <h2>Window State</h2>
+            <p>DMEdit remembers your window size, position, and whether it was maximized. These are restored the next time you launch the application.</p>
+        </main>
+    </div>
+    <script src="../js/layout.js"></script>
+    <script src="../js/search-data.js"></script>
+    <script src="../js/search.js"></script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Display &amp; View - DMEdit Manual</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body data-page="display-view">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <h1>Display &amp; View</h1>
+            <p class="page-subtitle">Line numbers, whitespace, word wrap, zoom, and other visual options.</p>
+
+            <h2>Line Numbers</h2>
+            <p>Toggle line numbers from <strong>View &gt; Line Numbers</strong>. When enabled, a gutter on the left side of the editor shows the line number for each line. The gutter width adjusts automatically based on the number of digits needed.</p>
+
+            <h2>Whitespace Glyphs</h2>
+            <p>Toggle whitespace visibility with the chord shortcut <kbd>Ctrl</kbd>+<kbd>R</kbd>, <kbd>Ctrl</kbd>+<kbd>W</kbd> (press <kbd>Ctrl</kbd>+<kbd>R</kbd>, then press <kbd>Ctrl</kbd>+<kbd>W</kbd> within 3 seconds), or from <strong>View &gt; Whitespace</strong>.</p>
+            <p>When enabled, spaces, tabs, and non-breaking spaces are shown as visible glyphs. This is useful for spotting mixed indentation or trailing whitespace.</p>
+
+            <h2>Word Wrap</h2>
+            <p>Toggle word wrap with the chord shortcut <kbd>Ctrl</kbd>+<kbd>E</kbd>, <kbd>Ctrl</kbd>+<kbd>W</kbd>, or from <strong>View &gt; Wrap Lines</strong>.</p>
+            <p>When wrapping is enabled, long lines are soft-wrapped to fit within the editor viewport. The actual line content isn't changed &mdash; wrapping is purely visual.</p>
+
+            <h3>Wrap Column</h3>
+            <p>By default, DMEdit wraps lines at a column limit (default: 100) rather than the viewport edge. This can be configured in <a href="settings.html">Settings</a>:</p>
+            <ul>
+                <li><strong>Use Wrap Column</strong> &mdash; when enabled, lines wrap at the column limit or the viewport edge, whichever is narrower. When disabled, lines wrap at the viewport edge only.</li>
+                <li><strong>Wrap Column</strong> &mdash; the column number where wrapping occurs (default: 100).</li>
+            </ul>
+
+            <h3>Column Guide</h3>
+            <p>When Use Wrap Column is enabled, a thin vertical line is drawn at the wrap column. This provides a visual reference for line length even when wrapping is turned off.</p>
+
+            <h3>Hanging Indent</h3>
+            <p>When wrapping is on, continuation rows (the second and subsequent visual rows of a wrapped line) are indented by half of one indent level. This makes it easy to distinguish where a new logical line begins versus where a previous line continues.</p>
+            <p>Hanging indent can be toggled in <a href="settings.html">Settings</a>.</p>
+
+            <h3>Wrap Symbol</h3>
+            <p>When wrapping is on, a small arrow glyph appears at the wrap column for lines that wrap to the next row. This can be toggled in <a href="settings.html">Settings</a>.</p>
+
+            <h2>Horizontal Scrolling</h2>
+            <p>When word wrap is off, a horizontal scrollbar appears if any visible line extends beyond the viewport edge. Use it to scroll left and right through long lines.</p>
+
+            <h2>Zoom</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Zoom in</td><td><kbd>Ctrl</kbd>+<kbd>PageUp</kbd></td></tr>
+                    <tr><td>Zoom out</td><td><kbd>Ctrl</kbd>+<kbd>PageDown</kbd></td></tr>
+                    <tr><td>Reset zoom to 100%</td><td><kbd>Ctrl</kbd>+<kbd>0</kbd></td></tr>
+                </tbody>
+            </table>
+            <p>Zoom ranges from 10% to 800%. The zoom level is independent of font size &mdash; both can be adjusted separately. The current zoom level is saved and restored between sessions.</p>
+
+            <h2>Theme</h2>
+            <p>DMEdit supports light, dark, and system themes. The theme can be changed in <a href="settings.html">Settings</a>. When set to "System", DMEdit follows your operating system's light/dark mode preference.</p>
+
+            <h2>Fast Text Layout</h2>
+            <p>By default, DMEdit uses a fast rendering path for monospace fonts. This is significantly faster and enables hanging indent, but disables font ligatures (where characters like <code>=&gt;</code> are displayed as a single combined glyph).</p>
+            <p>If you prefer ligatures, you can turn off Fast Text Layout in <a href="settings.html">Settings</a>. This falls back to standard text rendering, which is slower but supports full font shaping.</p>
+
+            <h2>Bright Selection</h2>
+            <p>If you find the default selection highlight hard to see on your monitor, enable <strong>Bright Selection</strong> in <a href="settings.html">Settings</a> for a higher-contrast highlight color.</p>
+        </main>
+    </div>
+    <script src="../js/layout.js"></script>
+    <script src="../js/search-data.js"></script>
+    <script src="../js/search.js"></script>
+</body>
+</html>

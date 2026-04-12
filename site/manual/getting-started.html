@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Getting Started - DMEdit Manual</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body data-page="getting-started">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <h1>Getting Started</h1>
+            <p class="page-subtitle">A quick tour of the DMEdit interface and basic operations.</p>
+
+            <h2>The Editor Window</h2>
+            <p>When you open DMEdit, you'll see these main areas:</p>
+            <ul>
+                <li><strong>Tab bar</strong> &mdash; across the top, showing one tab for each open document. Click a tab to switch to it.</li>
+                <li><strong>Line number gutter</strong> &mdash; on the left side, showing line numbers for the current document.</li>
+                <li><strong>Editor area</strong> &mdash; the main text area where you read and edit your document.</li>
+                <li><strong>Scroll bar</strong> &mdash; on the right edge. DMEdit uses a dual-zone scroll bar: the inner thumb jumps to a position proportionally, while the outer thumb scrolls at a fixed speed for scanning through large files.</li>
+                <li><strong>Status bar</strong> &mdash; along the bottom, showing your current line and column, encoding, line endings, and indent style. Many of these elements are clickable. See <a href="status-bar.html">Status Bar</a> for details.</li>
+            </ul>
+
+            <h2>Opening a File</h2>
+            <p>There are several ways to open a file:</p>
+            <ul>
+                <li>Press <kbd>Ctrl</kbd>+<kbd>O</kbd> or use <strong>File &gt; Open</strong> to browse for a file.</li>
+                <li>Drag a file from your file manager and drop it onto the editor.</li>
+                <li>Choose a recently opened file from <strong>File &gt; Recent Files</strong>.</li>
+                <li>Double-click a file in Windows Explorer if DMEdit is set as the default editor for that file type.</li>
+            </ul>
+            <p>Each file opens in its own tab. If you open a file that's already open, DMEdit switches to the existing tab rather than opening a duplicate.</p>
+
+            <h2>Basic Editing</h2>
+            <p>Editing works as you'd expect from any text editor:</p>
+            <ul>
+                <li>Click to place the caret, then type to insert text.</li>
+                <li>Press <kbd>Enter</kbd> to start a new line. DMEdit auto-indents the new line to match the current one.</li>
+                <li>Press <kbd>Backspace</kbd> to delete backward, <kbd>Delete</kbd> to delete forward.</li>
+                <li>Press <kbd>Tab</kbd> to indent. The indent width and style (spaces or tabs) are shown in the status bar and can be changed in <a href="settings.html">Settings</a>.</li>
+            </ul>
+
+            <h2>Undo and Redo</h2>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>Z</kbd> to undo and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> to redo. DMEdit groups consecutive keystrokes into a single undo entry, so undoing jumps back over a natural chunk of typing rather than one character at a time.</p>
+
+            <h2>Saving</h2>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to save. If the document hasn't been saved before, you'll be prompted to choose a file name. A dot appears in the tab when a document has unsaved changes, and disappears once you save.</p>
+
+            <h2>Finding Text</h2>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>F</kbd> to open the find bar at the top of the editor. Type your search term and press <kbd>F3</kbd> to find the next match or <kbd>Shift</kbd>+<kbd>F3</kbd> for the previous match. The total match count is displayed inside the search box. See <a href="search-replace.html">Search &amp; Replace</a> for full details.</p>
+
+            <h2>Navigating by Line Number</h2>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>G</kbd> to open the Go To Line dialog. Type a line number to jump directly to it. You can also type <code>line:column</code> to jump to a specific position (for example, <code>42:10</code> to go to line 42, column 10).</p>
+
+            <h2>Command Palette</h2>
+            <p>Press <kbd>F1</kbd> to open the command palette. This gives you quick access to every command in DMEdit by typing part of its name. It's the fastest way to find a command whose shortcut you don't remember.</p>
+
+            <h2>Next Steps</h2>
+            <p>Now that you know the basics, explore the rest of the manual to learn about:</p>
+            <ul>
+                <li><a href="file-operations.html">File Operations</a> &mdash; printing, reverting, read-only mode, and more.</li>
+                <li><a href="editing.html">Editing</a> &mdash; clipboard ring, line operations, case transforms.</li>
+                <li><a href="navigation-selection.html">Navigation &amp; Selection</a> &mdash; column selection, multi-cursor editing.</li>
+                <li><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a> &mdash; profiles and customization.</li>
+                <li><a href="settings.html">Settings</a> &mdash; all available preferences.</li>
+            </ul>
+        </main>
+    </div>
+    <script src="../js/layout.js"></script>
+    <script src="../js/search-data.js"></script>
+    <script src="../js/search.js"></script>
+</body>
+</html>

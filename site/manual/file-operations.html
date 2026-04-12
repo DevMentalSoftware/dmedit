@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Operations - DMEdit Manual</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body data-page="file-operations">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <h1>File Operations</h1>
+            <p class="page-subtitle">Creating, opening, saving, printing, and managing files.</p>
+
+            <h2>Creating a New File</h2>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>N</kbd> or choose <strong>File &gt; New</strong> to create a blank document. The new file opens in its own tab with the title "[New Document]" until you save it.</p>
+
+            <h2>Opening Files</h2>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>O</kbd> or choose <strong>File &gt; Open</strong> to open one or more files. You can select multiple files in the dialog to open them all at once. Each file opens in its own tab.</p>
+            <p>You can also drag and drop files from your file manager onto the editor window.</p>
+            <p>If you open a file that is already open in another tab, DMEdit switches to the existing tab instead of opening a duplicate.</p>
+
+            <h3>Recent Files</h3>
+            <p>The <strong>File</strong> menu shows a list of recently opened files at the bottom. Click a file to reopen it. You can clear this list from the menu if needed. The number of recent files shown is configurable in <a href="settings.html">Settings</a> (default: 10).</p>
+
+            <h2>Saving</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Save</td>
+                        <td><kbd>Ctrl</kbd>+<kbd>S</kbd></td>
+                        <td>Save the current file. If it's a new document, prompts for a file name.</td>
+                    </tr>
+                    <tr>
+                        <td>Save As</td>
+                        <td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>S</kbd></td>
+                        <td>Save the current file under a new name or location.</td>
+                    </tr>
+                    <tr>
+                        <td>Save All</td>
+                        <td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td>
+                        <td>Save all open files that have unsaved changes.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>A dot appears in the tab header when a document has unsaved changes. It disappears once you save. If you undo all changes back to the last saved state, the dot also disappears.</p>
+
+            <h3>Backup on Save</h3>
+            <p>When enabled in <a href="settings.html">Settings</a>, DMEdit keeps a <code>.bak</code> copy of the previous version each time you save. This gives you a safety net if you need to recover the last saved version.</p>
+
+            <h2>Reverting and Reloading</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Revert File</td>
+                        <td>Discards all unsaved changes and reloads the file from disk. Your undo history is cleared.</td>
+                    </tr>
+                    <tr>
+                        <td>Reload File</td>
+                        <td>Reloads the file from disk. Available when the file has been modified externally.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Auto-Reload External Changes</h3>
+            <p>When enabled in <a href="settings.html">Settings</a>, files that are modified by another program are automatically reloaded, as long as you don't have unsaved edits in that tab. If the tab has unsaved changes, a conflict icon appears in the tab instead, and you can decide whether to reload or keep your version.</p>
+
+            <h2>Read-Only Mode</h2>
+            <p>Use <strong>File &gt; Toggle Read Only</strong> to prevent accidental edits. When a file is read-only, a badge appears on its tab and all editing commands are disabled. Toggle it again to resume editing.</p>
+            <p>Files that are read-only on disk also open in read-only mode automatically.</p>
+
+            <h2>Closing Files</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Close</td>
+                        <td><kbd>Ctrl</kbd>+<kbd>F4</kbd></td>
+                        <td>Close the current tab. Prompts to save if there are unsaved changes.</td>
+                    </tr>
+                    <tr>
+                        <td>Close All</td>
+                        <td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F4</kbd></td>
+                        <td>Close all open tabs. Prompts to save any tabs with unsaved changes.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h2>Printing</h2>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>P</kbd> or choose <strong>File &gt; Print</strong> to print the current document. The print dialog lets you choose:</p>
+            <ul>
+                <li>Printer</li>
+                <li>Paper size</li>
+                <li>Orientation (portrait or landscape)</li>
+                <li>Margins</li>
+            </ul>
+            <p>For large documents, a progress dialog shows measurement and page rendering progress with an estimated time remaining. You can cancel printing at any time.</p>
+            <p>DMEdit remembers your print settings between sessions.</p>
+
+            <h3>Save as PDF</h3>
+            <p>Choose <strong>File &gt; Save as PDF</strong> to export the current document as a PDF file. This uses the same layout engine as printing, including hanging indent for wrapped lines.</p>
+
+            <h2>Exiting</h2>
+            <p>Press <kbd>Alt</kbd>+<kbd>F4</kbd> or choose <strong>File &gt; Exit</strong> to close DMEdit. If any tabs have unsaved changes, you'll be prompted to save them before closing.</p>
+        </main>
+    </div>
+    <script src="../js/layout.js"></script>
+    <script src="../js/search-data.js"></script>
+    <script src="../js/search.js"></script>
+</body>
+</html>

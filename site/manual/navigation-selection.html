@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Navigation &amp; Selection - DMEdit Manual</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body data-page="navigation-selection">
+    <div id="site-header"></div>
+    <div id="page-layout">
+        <nav id="sidebar"></nav>
+        <main id="content">
+            <h1>Navigation &amp; Selection</h1>
+            <p class="page-subtitle">Moving through your document and selecting text.</p>
+
+            <h2>Moving the Caret</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Move left / right</td><td><kbd>Left</kbd> / <kbd>Right</kbd></td></tr>
+                    <tr><td>Move up / down</td><td><kbd>Up</kbd> / <kbd>Down</kbd></td></tr>
+                    <tr><td>Move one word left</td><td><kbd>Ctrl</kbd>+<kbd>Left</kbd></td></tr>
+                    <tr><td>Move one word right</td><td><kbd>Ctrl</kbd>+<kbd>Right</kbd></td></tr>
+                    <tr><td>Move to line start</td><td><kbd>Home</kbd></td></tr>
+                    <tr><td>Move to line end</td><td><kbd>End</kbd></td></tr>
+                    <tr><td>Move to document start</td><td><kbd>Ctrl</kbd>+<kbd>Home</kbd></td></tr>
+                    <tr><td>Move to document end</td><td><kbd>Ctrl</kbd>+<kbd>End</kbd></td></tr>
+                    <tr><td>Page up</td><td><kbd>PageUp</kbd></td></tr>
+                    <tr><td>Page down</td><td><kbd>PageDown</kbd></td></tr>
+                </tbody>
+            </table>
+
+            <h3>Smart Home</h3>
+            <p>Pressing <kbd>Home</kbd> toggles between two positions:</p>
+            <ul>
+                <li>The first non-whitespace character on the line.</li>
+                <li>Column 1 (the very beginning of the line).</li>
+            </ul>
+            <p>If the caret is anywhere in the middle of the line, the first press of <kbd>Home</kbd> moves to the first non-whitespace character. Press <kbd>Home</kbd> again to jump to column 1, and again to jump back.</p>
+
+            <h2>Go To Line</h2>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>G</kbd> to open the Go To Line dialog. Enter a line number and press <kbd>Enter</kbd> to jump to that line. You can also enter <code>line:column</code> to jump to a specific position (for example, <code>150:20</code>).</p>
+            <p>You can also open this dialog by clicking the <strong>Ln / Ch</strong> indicator in the <a href="status-bar.html">Status Bar</a>.</p>
+
+            <h2>Command Palette</h2>
+            <p>Press <kbd>F1</kbd> to open the command palette. Start typing to filter the list of all available commands. Press <kbd>Enter</kbd> to run the highlighted command, or <kbd>Escape</kbd> to close the palette.</p>
+            <p>The command palette is the quickest way to access any command, especially those that don't have a keyboard shortcut assigned.</p>
+
+            <h2>Scrolling</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Method</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Scroll by a few lines</td><td>Mouse wheel</td></tr>
+                    <tr><td>Scroll one line up / down</td><td><kbd>Ctrl</kbd>+<kbd>Up</kbd> / <kbd>Down</kbd></td></tr>
+                    <tr><td>Scroll one page</td><td>Click above or below the scroll thumb</td></tr>
+                    <tr><td>Scroll to a position</td><td>Drag the scroll bar thumb</td></tr>
+                    <tr><td>Free-scroll in any direction</td><td>Middle mouse button + drag</td></tr>
+                </tbody>
+            </table>
+
+            <h2>Selecting Text</h2>
+            <p>Hold <kbd>Shift</kbd> while using any movement key to extend the selection. You can also:</p>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Method</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Select all</td><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td></tr>
+                    <tr><td>Select word at caret</td><td><kbd>Ctrl</kbd>+<kbd>W</kbd></td></tr>
+                    <tr><td>Expand selection progressively</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd></td></tr>
+                    <tr><td>Select a word</td><td>Double-click the word</td></tr>
+                    <tr><td>Select an entire line</td><td>Triple-click the line</td></tr>
+                    <tr><td>Select a range</td><td>Click at one end, <kbd>Shift</kbd>+click at the other</td></tr>
+                    <tr><td>Select by dragging</td><td>Click and drag across text</td></tr>
+                </tbody>
+            </table>
+
+            <h2>Column Selection</h2>
+            <p>Column selection (also called block selection) lets you select a rectangular block of text and edit multiple lines simultaneously.</p>
+
+            <h3>Starting a Column Selection</h3>
+            <p>Hold <kbd>Alt</kbd> and click to start a column selection, then drag to extend it. You can also use keyboard shortcuts:</p>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Shortcut</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Column select up</td><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Up</kbd></td></tr>
+                    <tr><td>Column select down</td><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Down</kbd></td></tr>
+                    <tr><td>Column select left</td><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Left</kbd></td></tr>
+                    <tr><td>Column select right</td><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Right</kbd></td></tr>
+                </tbody>
+            </table>
+
+            <h3>Editing with Column Selection</h3>
+            <p>When a column selection is active, you have a cursor on every selected line. Anything you type is inserted at all cursor positions simultaneously. This is useful for:</p>
+            <ul>
+                <li>Adding the same prefix or suffix to many lines at once.</li>
+                <li>Deleting a column of characters across multiple lines.</li>
+                <li>Replacing a rectangular block of text.</li>
+            </ul>
+
+            <h3>Pasting into a Column Selection</h3>
+            <p>When pasting into a column selection with multiple cursors:</p>
+            <ul>
+                <li><strong>Distribute mode</strong> (default) &mdash; if your clipboard has the same number of lines as cursors, each line is pasted at the corresponding cursor. Extra lines are dropped.</li>
+                <li><strong>Broadcast mode</strong> &mdash; the entire clipboard contents are pasted at every cursor position.</li>
+            </ul>
+            <p>You can switch between distribute and broadcast mode in <a href="settings.html">Settings</a>.</p>
+        </main>
+    </div>
+    <script src="../js/layout.js"></script>
+    <script src="../js/search-data.js"></script>
+    <script src="../js/search.js"></script>
+</body>
+</html>
