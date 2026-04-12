@@ -62,6 +62,7 @@ public partial class MainWindow {
             _recentFiles.Clear();
             _recentFiles.Save();
             RebuildRecentMenu();
+            JumpListDiscovery.Service?.Clear();
         });
 
         // -- View --

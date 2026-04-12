@@ -325,13 +325,30 @@ public partial class MainWindow {
         _recentFiles.Push(path);
         _recentFiles.Save();
         RebuildRecentMenu();
+        UpdateJumpList();
     }
 
     /// <summary>
     /// Prunes recent file entries for local files that no longer exist.
     /// Network paths are left alone (the server may just be offline).
     /// </summary>
-    private void PruneRecentFiles() => _recentFiles.PruneMissing();
+    private void PruneRecentFiles() {
+        _recentFiles.PruneMissing();
+        UpdateJumpList();
+    }
+
+    /// <summary>
+    /// Rebuilds the Windows taskbar jump list from the current recent files.
+    /// No-op on non-Windows or if DMEdit.Windows.dll is not present.
+    /// </summary>
+    private void UpdateJumpList() {
+        var svc = JumpListDiscovery.Service;
+        if (svc == null) return;
+        var exePath = Environment.ProcessPath
+            ?? Process.GetCurrentProcess().MainModule?.FileName;
+        if (exePath == null) return;
+        svc.UpdateRecentFiles(_recentFiles.Paths, exePath);
+    }
 
     // -------------------------------------------------------------------------
     // Save helpers
