@@ -548,8 +548,8 @@ public sealed partial class EditorControl {
         if (len > PieceTable.MaxGetTextLength) return 1; // too long, punt
 
         // Compute effective row widths for the mono path.
-        var (firstRowChars, contRowChars) = GetMonoRowWidths();
-        if (firstRowChars <= 0) return 1;
+        var (maxChars, hangingIndent) = GetMonoRowWidths();
+        if (maxChars <= 0) return 1;
 
         var text = table.GetText(lineStart, len);
 
@@ -565,10 +565,11 @@ public sealed partial class EditorControl {
             return SlowPathRowCount(text);
         }
 
+        var contChars = ContRowCharsForLine(text, maxChars, hangingIndent, _indentWidth);
         if (ContainsTabs(text)) {
-            return MonoRowBreaker.CountRowsTabAware(text, firstRowChars, contRowChars, _indentWidth);
+            return MonoRowBreaker.CountRowsTabAware(text, maxChars, contChars, _indentWidth);
         }
-        return MonoRowBreaker.CountRows(text, firstRowChars, contRowChars);
+        return MonoRowBreaker.CountRows(text, maxChars, contChars);
     }
 
     /// <summary>
@@ -594,8 +595,8 @@ public sealed partial class EditorControl {
         if (len <= 0) return 0;
         if (len > PieceTable.MaxGetTextLength) return 0;
 
-        var (firstRowChars, contRowChars) = GetMonoRowWidths();
-        if (firstRowChars <= 0) return 0;
+        var (maxChars, hangingIndent) = GetMonoRowWidths();
+        if (maxChars <= 0) return 0;
 
         var text = table.GetText(lineStart, len);
 
@@ -606,10 +607,13 @@ public sealed partial class EditorControl {
         int result;
         if (ShouldUseSlowPath(text)) {
             result = SlowPathRowOfChar(text, charInLine);
-        } else if (ContainsTabs(text)) {
-            result = MonoRowBreaker.RowOfCharTabAware(text, charInLine, firstRowChars, contRowChars, _indentWidth);
         } else {
-            result = MonoRowBreaker.RowOfChar(text, charInLine, firstRowChars, contRowChars);
+            var contChars = ContRowCharsForLine(text, maxChars, hangingIndent, _indentWidth);
+            if (ContainsTabs(text)) {
+                result = MonoRowBreaker.RowOfCharTabAware(text, charInLine, maxChars, contChars, _indentWidth);
+            } else {
+                result = MonoRowBreaker.RowOfChar(text, charInLine, maxChars, contChars);
+            }
         }
 
 #if DEBUG
@@ -683,22 +687,33 @@ public sealed partial class EditorControl {
     /// which measures <c>"0"</c> via <c>TextLayout</c>), rounding can
     /// produce a different char count and the row counts diverge.</para>
     /// </summary>
-    private (int firstRowChars, int contRowChars) GetMonoRowWidths() {
+    private (int maxCharsPerRow, int hangingIndentChars) GetMonoRowWidths() {
         var textW = GetEffectiveTextWidth();
-        if (!double.IsFinite(textW) || textW <= 0) return (int.MaxValue, int.MaxValue);
+        if (!double.IsFinite(textW) || textW <= 0) return (int.MaxValue, 0);
 
         // Derive char width from the glyph advance — same path as
         // MonoLayoutContext.  Falls back to GetCharWidth() (TextLayout
         // based) if the font isn't monospace or has no space glyph.
         var cw = GetMonoCharWidth();
-        if (cw <= 0) return (int.MaxValue, int.MaxValue);
+        if (cw <= 0) return (int.MaxValue, 0);
         var maxChars = Math.Max(1, (int)(textW / cw));
         var hangingIndentChars = _hangingIndent && _wrapLines && !_charWrapMode
             ? Math.Max(0, _indentWidth / 2)
             : 0;
-        var firstRowChars = maxChars;
-        var contRowChars = Math.Max(1, maxChars - hangingIndentChars);
-        return (firstRowChars, contRowChars);
+        return (maxChars, hangingIndentChars);
+    }
+
+    /// <summary>
+    /// Computes the continuation-row column width for a specific line,
+    /// accounting for the line's leading whitespace plus the hanging
+    /// indent (half-indent).  When hanging indent is zero, returns
+    /// <paramref name="maxCharsPerRow"/> unchanged.
+    /// </summary>
+    private static int ContRowCharsForLine(string text, int maxCharsPerRow,
+            int hangingIndentChars, int tabWidth) {
+        if (hangingIndentChars <= 0) return maxCharsPerRow;
+        var indent = MonoRowBreaker.LeadingIndentColumns(text, tabWidth);
+        return Math.Max(1, maxCharsPerRow - indent - hangingIndentChars);
     }
 
     /// <summary>

@@ -164,9 +164,6 @@ public sealed partial class EditorControl {
             return LineIndexTree.FromValues(ones);
         }
 
-        var firstRowChars = charsPerRow;
-        var contRowChars = Math.Max(1, charsPerRow - hangingIndent);
-
         // Always use MonoRowBreaker for the row index, even with
         // proportional fonts.  Rationale:
         //
@@ -197,8 +194,8 @@ public sealed partial class EditorControl {
 
         var counts = new int[lineCount];
         for (long i = 0; i < lineCount; i++) {
-            counts[i] = ComputeLineRowCountForBuild(table, i, firstRowChars,
-                contRowChars);
+            counts[i] = ComputeLineRowCountForBuild(table, i, charsPerRow,
+                hangingIndent);
         }
         return LineIndexTree.FromValues(counts);
     }
@@ -207,9 +204,12 @@ public sealed partial class EditorControl {
     /// Per-line row count computation used during row-index build.
     /// Always uses <see cref="MonoRowBreaker.CountRows"/> — see the
     /// comment in <see cref="BuildRowIndexFor"/> for rationale.
+    /// Continuation-row width is per-line: the line's leading indent
+    /// plus <paramref name="hangingIndent"/> is subtracted from
+    /// <paramref name="maxCharsPerRow"/>.
     /// </summary>
     private int ComputeLineRowCountForBuild(PieceTable table, long lineIdx,
-            int firstRowChars, int contRowChars) {
+            int maxCharsPerRow, int hangingIndent) {
         var lineStart = table.LineStartOfs(lineIdx);
         if (lineStart < 0) return 1; // streaming-load gap
         var len = table.LineContentLength((int)lineIdx);
@@ -217,11 +217,13 @@ public sealed partial class EditorControl {
         if (len > PieceTable.MaxGetTextLength) return 1; // too long, punt
 
         var text = table.GetText(lineStart, len);
+        var contChars = ContRowCharsForLine(text, maxCharsPerRow,
+            hangingIndent, _indentWidth);
         if (text.Contains('\t')) {
-            return MonoRowBreaker.CountRowsTabAware(text, firstRowChars,
-                contRowChars, _indentWidth);
+            return MonoRowBreaker.CountRowsTabAware(text, maxCharsPerRow,
+                contChars, _indentWidth);
         }
-        return MonoRowBreaker.CountRows(text, firstRowChars, contRowChars);
+        return MonoRowBreaker.CountRows(text, maxCharsPerRow, contChars);
     }
 
     // -------------------------------------------------------------------------

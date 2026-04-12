@@ -484,7 +484,19 @@ public sealed class AppSettings {
     // -----------------------------------------------------------------
 
     /// <summary>
+    /// True only for instances created by <see cref="Load"/> — i.e. the
+    /// singleton backed by the on-disk file.  Instances created via
+    /// <c>new AppSettings()</c> (including from tests) are transient and
+    /// must never write to <see cref="StorePath"/>.
+    /// </summary>
+    private bool _persistent;
+
+    /// <summary>
     /// Loads settings from disk. Returns defaults on any failure.
+    /// The returned instance is marked <see cref="_persistent"/> so
+    /// <see cref="Save"/> and <see cref="ScheduleSave"/> will write
+    /// back to disk.  Instances created with <c>new AppSettings()</c>
+    /// are <em>not</em> persistent and their Save/ScheduleSave are no-ops.
     /// </summary>
     public static AppSettings Load() {
         AppSettings settings;
@@ -500,6 +512,8 @@ public sealed class AppSettings {
             System.Diagnostics.Debug.WriteLine($"AppSettings.Load failed: {ex.Message}");
             settings = new AppSettings();
         }
+
+        settings._persistent = true;
 
         // DevMode is only allowed in Debug builds or when the DMEDIT_DEVMODE
         // env var is "true".  Otherwise the persisted value is forced off so
@@ -532,9 +546,14 @@ public sealed class AppSettings {
     }
 
     /// <summary>
-    /// Persists settings to disk. Failures are silently swallowed (best-effort).
+    /// Persists settings to disk. Only writes if this instance was created
+    /// by <see cref="Load"/> (i.e. is the disk-backed singleton).
+    /// Instances created via <c>new AppSettings()</c> silently skip I/O
+    /// so tests and transient objects never clobber the user's file.
+    /// Failures are silently swallowed (best-effort).
     /// </summary>
     public void Save() {
+        if (!_persistent) return;
         try {
             var dir = Path.GetDirectoryName(StorePath)!;
             Directory.CreateDirectory(dir);

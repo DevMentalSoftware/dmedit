@@ -91,4 +91,32 @@ public class SettingsRegistryTests {
             $"EnabledWhenKey references non-existent descriptor: " +
             $"{string.Join(", ", broken)}");
     }
+
+    /// <summary>
+    /// Instances created via <c>new AppSettings()</c> — as tests do — must
+    /// never write to the production settings file.  Only <see cref="AppSettings.Load"/>
+    /// creates a persistent instance whose Save/ScheduleSave actually write.
+    /// </summary>
+    [Fact]
+    public void TransientInstance_SaveIsNoOp() {
+        var path = System.IO.Path.Combine(
+            System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData),
+            "DMEdit", "settings.json");
+        var before = System.IO.File.Exists(path)
+            ? System.IO.File.GetLastWriteTimeUtc(path)
+            : (System.DateTime?)null;
+
+        var s = new AppSettings();
+        s.DevMode = true; // mutate something
+        s.Save();         // should be a no-op
+        s.ScheduleSave(); // should also be a no-op
+
+        // Give the debounced timer a chance to fire (if the guard failed).
+        System.Threading.Thread.Sleep(700);
+
+        var after = System.IO.File.Exists(path)
+            ? System.IO.File.GetLastWriteTimeUtc(path)
+            : (System.DateTime?)null;
+        Assert.Equal(before, after);
+    }
 }

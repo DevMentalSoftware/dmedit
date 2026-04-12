@@ -237,12 +237,12 @@ file sealed class PlainTextPaginator : DocumentPaginator {
     private readonly double _printableHeight;
     private readonly int _linesPerPage;
     private readonly int _safeCharCount; // lines shorter than this can't wrap
-    // Hanging indent applied to wrapped continuation rows so wrapped text is
-    // visually offset from the first row.  Half of one indent column,
-    // measured in characters and pixels (monospace assumption — see entry 19
-    // for the proportional-font follow-up).
+    // Hanging indent applied to wrapped continuation rows.  The actual
+    // continuation offset is the line's leading whitespace plus half an
+    // indent, so _hangingIndentChars is just the half-indent portion.
     private readonly int _hangingIndentChars;
-    private readonly double _hangingIndentPx;
+    private readonly double _charWidthPx;
+    private readonly int _indentWidth;
     private readonly List<PageBreak> _pageBreaks;
     private readonly IProgress<(string Message, double Percent)>? _progress;
     private readonly CancellationToken _cancellation;
@@ -305,16 +305,15 @@ file sealed class PlainTextPaginator : DocumentPaginator {
         var charWidth = MakeFormattedText("M").Width;
         _safeCharCount = charWidth > 0 ? (int)(_printableWidth / charWidth) : int.MaxValue;
 
-        // Hanging indent: half of one indent column.  Continuation rows of a
-        // wrapped line are offset right by this amount and have their
-        // available char count reduced accordingly so word-wrap stays inside
-        // the printable area.  Clamp so we always leave at least 1 char of
-        // wrap width even with very wide indents on narrow paper.
+        // Hanging indent: half of one indent column.  The actual per-line
+        // continuation offset also adds the line's leading whitespace
+        // columns.  Clamp so we always leave at least 1 char of wrap width.
         _hangingIndentChars = Math.Max(0, indentWidth / 2);
         if (_hangingIndentChars >= _safeCharCount) {
             _hangingIndentChars = Math.Max(0, _safeCharCount - 1);
         }
-        _hangingIndentPx = _hangingIndentChars * charWidth;
+        _charWidthPx = charWidth;
+        _indentWidth = Math.Max(1, indentWidth);
 
         _progress = progress;
         _cancellation = cancellation;
@@ -428,9 +427,16 @@ file sealed class PlainTextPaginator : DocumentPaginator {
             var wrapIdx = brk.FirstWrapLine;
 
             var charsPerRow = Math.Max(1, _safeCharCount);
-            var continuationCharsPerRow = Math.Max(1, charsPerRow - _hangingIndentChars);
             while (visualLineIdx < _linesPerPage && lineIdx < _doc.Table.LineCount) {
                 var line = _doc.Table.GetLine(lineIdx);
+
+                // Per-line continuation width: line's leading indent + half-indent.
+                var leadingIndent = _hangingIndentChars > 0
+                    ? MonoRowBreaker.LeadingIndentColumns(line, _indentWidth)
+                    : 0;
+                var totalContIndent = leadingIndent + _hangingIndentChars;
+                var continuationCharsPerRow = Math.Max(1, charsPerRow - totalContIndent);
+                var contIndentPx = totalContIndent * _charWidthPx;
 
                 // Word-break wrap.  Walk the line computing row boundaries
                 // via NextRow, which matches ComputePageBreaks so page
@@ -451,10 +457,9 @@ file sealed class PlainTextPaginator : DocumentPaginator {
                     if (skipped < wrapIdx) {
                         skipped++;
                     } else {
-                        // Continuation rows are offset right by the hanging
-                        // indent so wrapped text is visually distinct from
-                        // the first row of each logical line.
-                        var rowX = _marginLeft + (rowInLine == 0 ? 0 : _hangingIndentPx);
+                        // Continuation rows are offset right by the line's
+                        // indent plus the hanging indent half-indent.
+                        var rowX = _marginLeft + (rowInLine == 0 ? 0 : contIndentPx);
                         DrawRow(dc, line, rowStart, drawLen, rowX, y);
                         y += _lineHeight;
                         visualLineIdx++;
@@ -538,9 +543,13 @@ file sealed class PlainTextPaginator : DocumentPaginator {
             // stays consistent with rendering.  First row uses the full
             // charsPerRow; continuation rows use the hanging-indent reduction.
             var text = table.GetLine(i);
+            var leadingIndent = _hangingIndentChars > 0
+                ? MonoRowBreaker.LeadingIndentColumns(text, _indentWidth)
+                : 0;
+            var continuationCharsPerRow = Math.Max(1,
+                charsPerRow - leadingIndent - _hangingIndentChars);
             var pos = 0;
             var w = 0;
-            var continuationCharsPerRow = Math.Max(1, charsPerRow - _hangingIndentChars);
             while (pos < text.Length) {
                 var rowChars = w == 0 ? charsPerRow : continuationCharsPerRow;
                 var step = NextRow(text, pos, rowChars);

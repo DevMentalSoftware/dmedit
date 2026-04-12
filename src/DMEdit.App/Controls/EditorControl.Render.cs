@@ -243,7 +243,7 @@ public sealed partial class EditorControl {
 
                 const double pad = 2;
                 const double arrowSize = 3;
-                var midY = y + rh / 2;
+                var midY = y + hit.Y + rh / 2;
                 var left = x1 + pad;
                 var right = x2 - pad;
                 if (right - left < arrowSize + 1) continue;
@@ -268,7 +268,7 @@ public sealed partial class EditorControl {
                 var cw = GetCharWidth();
                 var dx = (cw - glyphW) / 2;
                 var dy = rh * 0.28; // vertically center the smaller text
-                tl.Draw(ctx, new Point(x + dx, y + dy));
+                tl.Draw(ctx, new Point(x + dx, y + hit.Y + dy));
             } else {
                 // Space → · (U+00B7), NBSP → ␣ (U+2423)
                 var glyph = ch == ' ' ? "\u00B7" : "\u2423";
@@ -278,7 +278,7 @@ public sealed partial class EditorControl {
                 var glyphW = tl.WidthIncludingTrailingWhitespace;
                 var cw = GetCharWidth();
                 var dx = (cw - glyphW) / 2;
-                tl.Draw(ctx, new Point(x + dx, y));
+                tl.Draw(ctx, new Point(x + dx, y + hit.Y));
             }
         }
     }
@@ -353,14 +353,66 @@ public sealed partial class EditorControl {
     }
 
     /// <summary>
-    /// Traces the outer contour of a contiguous list of rects as a single
-    /// filled path.  Rounded corners are applied only at the four outermost
-    /// corners (top of first rect, bottom of last rect).
+    /// Draws selection highlight for a list of rects.  Adjacent rects that
+    /// don't overlap horizontally are split into separate groups so the
+    /// path never self-intersects (which would leave unfilled holes under
+    /// the default EvenOdd fill rule).  Each group is drawn as a single
+    /// clockwise contour with rounded corners at both outer edges and
+    /// internal row-boundary steps.
     /// </summary>
     private static void FillSelectionPath(
         DrawingContext ctx, IBrush brush, List<Rect> rects, double r) {
-        var first = rects[0];
-        var last = rects[^1];
+        // Split into groups of horizontally overlapping rects.
+        var groupStart = 0;
+        for (var i = 1; i <= rects.Count; i++) {
+            var split = i == rects.Count
+                || rects[i - 1].Right <= rects[i].Left
+                || rects[i].Right <= rects[i - 1].Left;
+            if (!split) continue;
+            var count = i - groupStart;
+            if (count == 1) {
+                FillRoundedRect(ctx, brush, rects[groupStart], r, r, r, r);
+            } else {
+                FillSelectionGroup(ctx, brush, rects, groupStart, count, r);
+            }
+            groupStart = i;
+        }
+    }
+
+    /// <summary>
+    /// Traces the outer contour of a contiguous group of rects as a single
+    /// filled path.  Rounded corners at the four outermost corners and at
+    /// every internal step where adjacent rows have different Left or Right
+    /// edges.  The contour is traced clockwise; convex (outward) corners
+    /// use CW arcs and concave (inward) corners use CCW arcs.
+    /// </summary>
+    private static void FillSelectionGroup(
+        DrawingContext ctx, IBrush brush, List<Rect> rects,
+        int start, int count, double r) {
+        var g = BuildSelectionGroupGeometry(rects, start, count, r);
+        ctx.DrawGeometry(brush, null, g);
+    }
+
+    /// <summary>
+    /// One arc emitted by <see cref="BuildSelectionGroupGeometry"/>.
+    /// Recorded when an <c>arcLog</c> is supplied so tests can verify
+    /// that every arc has the correct sweep direction.
+    /// </summary>
+    internal record struct ArcRecord(string Label, SweepDirection Sweep);
+
+    /// <summary>
+    /// Builds the <see cref="StreamGeometry"/> for a contiguous group of
+    /// selection rects.  When <paramref name="arcLog"/> is non-null, each
+    /// <c>ArcTo</c> call also appends an <see cref="ArcRecord"/> so tests
+    /// can verify sweep directions without relying on <c>FillContains</c>
+    /// (which Avalonia headless doesn't support for arc geometries).
+    /// </summary>
+    internal static StreamGeometry BuildSelectionGroupGeometry(
+        List<Rect> rects, int start, int count, double r,
+        List<ArcRecord>? arcLog = null) {
+        var first = rects[start];
+        var last = rects[start + count - 1];
+        var end = start + count;
 
         var g = new StreamGeometry();
         using (var c = g.Open()) {
@@ -371,32 +423,35 @@ public sealed partial class EditorControl {
             c.LineTo(new Point(first.Right - r, first.Top));
             c.ArcTo(new Point(first.Right, first.Top + r),
                 new Size(r, r), 0, false, SweepDirection.Clockwise);
+            arcLog?.Add(new ArcRecord("outer-TR", SweepDirection.Clockwise));
 
             // ── Right edge (top → bottom) ──
-            for (var i = 0; i < rects.Count - 1; i++) {
+            for (var i = start; i < end - 1; i++) {
                 var cur = rects[i];
                 var next = rects[i + 1];
                 if (Math.Abs(cur.Right - next.Right) > 0.5) {
                     if (next.Right < cur.Right) {
                         // Step inward — selection narrows.
-                        // Outer corner at cur.Bottom-right (convex, CW),
-                        // inner corner at next.Top-right (concave, CCW).
+                        // DOWN→LEFT = CW (convex), LEFT→DOWN = CCW (concave).
                         c.LineTo(new Point(cur.Right, cur.Bottom - r));
                         c.ArcTo(new Point(cur.Right - r, cur.Bottom),
                             new Size(r, r), 0, false, SweepDirection.Clockwise);
+                        arcLog?.Add(new ArcRecord($"R-in[{i}]-convex", SweepDirection.Clockwise));
                         c.LineTo(new Point(next.Right + r, next.Top));
                         c.ArcTo(new Point(next.Right, next.Top + r),
                             new Size(r, r), 0, false, SweepDirection.CounterClockwise);
+                        arcLog?.Add(new ArcRecord($"R-in[{i}]-concave", SweepDirection.CounterClockwise));
                     } else {
                         // Step outward — selection widens.
-                        // Inner corner at cur.Bottom-right (concave, CCW),
-                        // outer corner at next.Top-right (convex, CW).
+                        // DOWN→RIGHT = CCW (concave), RIGHT→DOWN = CW (convex).
                         c.LineTo(new Point(cur.Right, cur.Bottom - r));
                         c.ArcTo(new Point(cur.Right + r, cur.Bottom),
                             new Size(r, r), 0, false, SweepDirection.CounterClockwise);
+                        arcLog?.Add(new ArcRecord($"R-out[{i}]-concave", SweepDirection.CounterClockwise));
                         c.LineTo(new Point(next.Right - r, next.Top));
                         c.ArcTo(new Point(next.Right, next.Top + r),
                             new Size(r, r), 0, false, SweepDirection.Clockwise);
+                        arcLog?.Add(new ArcRecord($"R-out[{i}]-convex", SweepDirection.Clockwise));
                     }
                 } else {
                     c.LineTo(new Point(cur.Right, cur.Bottom));
@@ -407,35 +462,39 @@ public sealed partial class EditorControl {
             c.LineTo(new Point(last.Right, last.Bottom - r));
             c.ArcTo(new Point(last.Right - r, last.Bottom),
                 new Size(r, r), 0, false, SweepDirection.Clockwise);
+            arcLog?.Add(new ArcRecord("outer-BR", SweepDirection.Clockwise));
             c.LineTo(new Point(last.Left + r, last.Bottom));
             c.ArcTo(new Point(last.Left, last.Bottom - r),
                 new Size(r, r), 0, false, SweepDirection.Clockwise);
+            arcLog?.Add(new ArcRecord("outer-BL", SweepDirection.Clockwise));
 
             // ── Left edge (bottom → top) ──
-            for (var i = rects.Count - 1; i > 0; i--) {
+            for (var i = end - 1; i > start; i--) {
                 var cur = rects[i];
                 var prev = rects[i - 1];
                 if (Math.Abs(cur.Left - prev.Left) > 0.5) {
                     if (prev.Left < cur.Left) {
                         // Step outward going up — selection widens.
-                        // Outer corner at cur.Top-left (convex, CW),
-                        // inner corner at prev.Left (concave, CCW).
+                        // UP→LEFT = CCW (concave), LEFT→UP = CW (convex).
                         c.LineTo(new Point(cur.Left, cur.Top + r));
                         c.ArcTo(new Point(cur.Left - r, cur.Top),
-                            new Size(r, r), 0, false, SweepDirection.Clockwise);
+                            new Size(r, r), 0, false, SweepDirection.CounterClockwise);
+                        arcLog?.Add(new ArcRecord($"L-out[{i}]-concave", SweepDirection.CounterClockwise));
                         c.LineTo(new Point(prev.Left + r, cur.Top));
                         c.ArcTo(new Point(prev.Left, cur.Top - r),
-                            new Size(r, r), 0, false, SweepDirection.CounterClockwise);
+                            new Size(r, r), 0, false, SweepDirection.Clockwise);
+                        arcLog?.Add(new ArcRecord($"L-out[{i}]-convex", SweepDirection.Clockwise));
                     } else {
                         // Step inward going up — selection narrows.
-                        // Outer corner at cur.Top-left (convex, CW),
-                        // inner corner at prev.Left (concave, CCW).
+                        // UP→RIGHT = CW (convex), RIGHT→UP = CCW (concave).
                         c.LineTo(new Point(cur.Left, cur.Top + r));
                         c.ArcTo(new Point(cur.Left + r, cur.Top),
                             new Size(r, r), 0, false, SweepDirection.Clockwise);
+                        arcLog?.Add(new ArcRecord($"L-in[{i}]-convex", SweepDirection.Clockwise));
                         c.LineTo(new Point(prev.Left - r, cur.Top));
                         c.ArcTo(new Point(prev.Left, cur.Top - r),
                             new Size(r, r), 0, false, SweepDirection.CounterClockwise);
+                        arcLog?.Add(new ArcRecord($"L-in[{i}]-concave", SweepDirection.CounterClockwise));
                     }
                 } else {
                     c.LineTo(new Point(cur.Left, cur.Top));
@@ -446,9 +505,10 @@ public sealed partial class EditorControl {
             c.LineTo(new Point(first.Left, first.Top + r));
             c.ArcTo(new Point(first.Left + r, first.Top),
                 new Size(r, r), 0, false, SweepDirection.Clockwise);
+            arcLog?.Add(new ArcRecord("outer-TL", SweepDirection.Clockwise));
             c.EndFigure(true);
         }
-        ctx.DrawGeometry(brush, null, g);
+        return g;
     }
 
     /// <summary>Fills a rectangle with individually rounded corners.</summary>

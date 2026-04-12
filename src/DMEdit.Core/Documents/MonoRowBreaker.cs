@@ -163,6 +163,26 @@ public static class MonoRowBreaker {
     }
 
     // -----------------------------------------------------------------
+    // Leading-indent helper — used for per-line hanging-indent offset
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Returns the number of leading whitespace columns in
+    /// <paramref name="text"/>, accounting for tab expansion at
+    /// <paramref name="tabWidth"/> boundaries.  Stops at the first
+    /// non-whitespace character.
+    /// </summary>
+    public static int LeadingIndentColumns(string text, int tabWidth) {
+        var col = 0;
+        for (var i = 0; i < text.Length; i++) {
+            if (text[i] == ' ') col++;
+            else if (text[i] == '\t') col = (col / tabWidth + 1) * tabWidth;
+            else break;
+        }
+        return col;
+    }
+
+    // -----------------------------------------------------------------
     // Original (non-tab) variants — used for lines without tabs
     // -----------------------------------------------------------------
 

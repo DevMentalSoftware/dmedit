@@ -467,7 +467,8 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
 
     // Wrap symbol
     private bool _showWrapSymbol = true;
-    private const double WrapSymbolPadRight = 12;
+    private const double WrapSymbolPadBase = 12;
+    private double WrapSymbolPadRight => WrapSymbolPadBase * _zoomPercent / 100.0;
     // Cached TextLayout for the wrap-symbol glyph.  Previously rebuilt on
     // every Render() call (i.e. every caret blink) which was a significant
     // per-frame allocation: TextLayout construction runs text shaping and

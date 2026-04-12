@@ -107,10 +107,17 @@ public sealed class MonoLineLayout : IDisposable {
             if (!ctx.TryGetGlyph(c, out _)) return null;
         }
 
-        // Effective row widths: first row uses the full column count,
-        // continuation rows lose HangingIndentChars columns to the indent.
+        // Effective row widths: first row uses the full column count.
+        // Continuation rows are indented by the line's own leading
+        // whitespace plus a half-indent (HangingIndentChars), so they
+        // lose that many columns.
         var firstRowCols = Math.Max(1, maxCharsPerRow);
-        var contRowCols = Math.Max(1, maxCharsPerRow - ctx.HangingIndentChars);
+        var leadingIndentCols = ctx.HangingIndentChars > 0
+            ? MonoRowBreaker.LeadingIndentColumns(text, ctx.TabWidth)
+            : 0;
+        var totalContIndent = leadingIndentCols + ctx.HangingIndentChars;
+        var contRowCols = Math.Max(1, maxCharsPerRow - totalContIndent);
+        var contIndentPx = totalContIndent * ctx.CharWidth;
 
         // Empty line is a single row with zero content.
         if (text.Length == 0) {
@@ -126,7 +133,7 @@ public sealed class MonoLineLayout : IDisposable {
                 var cols = rowIdx == 0 ? firstRowCols : contRowCols;
                 var (_, nextStart) = MonoRowBreaker.NextRowTabAware(
                     text, pos, cols, ctx.TabWidth);
-                var xOffset = rowIdx == 0 ? 0.0 : ctx.HangingIndentPx;
+                var xOffset = rowIdx == 0 ? 0.0 : contIndentPx;
                 rows.Add(new RowSpan(pos, nextStart - pos, xOffset));
                 pos = nextStart;
                 rowIdx++;
@@ -146,7 +153,7 @@ public sealed class MonoLineLayout : IDisposable {
         while (plainPos < text.Length) {
             var rowChars = plainRowIdx == 0 ? firstRowCols : contRowCols;
             var (_, nextStart) = MonoRowBreaker.NextRow(text, plainPos, rowChars);
-            var xOffset = plainRowIdx == 0 ? 0.0 : ctx.HangingIndentPx;
+            var xOffset = plainRowIdx == 0 ? 0.0 : contIndentPx;
             plainRows.Add(new RowSpan(plainPos, nextStart - plainPos, xOffset));
             plainPos = nextStart;
             plainRowIdx++;
@@ -379,5 +386,6 @@ public sealed class MonoLineLayout : IDisposable {
 /// <c>Rows[r].CharStart + Rows[r].CharLen == Rows[r+1].CharStart</c> —
 /// no gaps between rows.</param>
 /// <param name="XOffset">Pixel X offset from the line origin — 0 for the first
-/// row, <see cref="MonoLayoutContext.HangingIndentPx"/> for continuation rows.</param>
+/// row; for continuation rows, the line's leading whitespace columns plus
+/// <see cref="MonoLayoutContext.HangingIndentChars"/> converted to pixels.</param>
 public readonly record struct RowSpan(int CharStart, int CharLen, double XOffset);

@@ -5,6 +5,22 @@ All code should follow these rules consistently. When in doubt, match what's alr
 
 ---
 
+## Single line statements
+
+Prefer multiple line use to make debug easier and code more readable.
+```csharp
+void foo() { if (true) return; }
+```
+is less readable than:
+```csharp
+void foo() {
+    if (true) {
+        return;
+    }
+}
+```
+because we can discuss each line by its line number, and set breakpoints by line. 
+
 ## Brace Style
 
 Opening braces go on the **same line** (K&R / Java style). Closing braces are on their own line.
@@ -180,6 +196,6 @@ Expose collections as `IReadOnlyList<T>` or `IReadOnlyDictionary<K,V>` from publ
 
 - One primary type per file; filename matches the type name
 - No `#region` blocks
-- Keep lines to a reasonable length (120 characters is a soft limit)
+- Keep lines to a reasonable length (100 characters is a soft limit)
 - Prefer early returns over deeply nested `if` blocks
 - `IReadOnlyList` / `IReadOnlyDictionary` for public collection properties
