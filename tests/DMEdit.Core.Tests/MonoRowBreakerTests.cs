@@ -273,4 +273,178 @@ public class MonoRowBreakerTests {
         Assert.Equal(1, MonoRowBreaker.RowOfChar(line, 17, 10, 8));
         Assert.Equal(2, MonoRowBreaker.RowOfChar(line, 18, 10, 8));
     }
+
+    // ==================================================================
+    //  Tab-aware: CharColumns
+    // ==================================================================
+
+    [Theory]
+    [InlineData('a', 0, 4, 1)]   // normal char: 1 column
+    [InlineData('a', 5, 4, 1)]
+    [InlineData('\t', 0, 4, 4)]  // tab at col 0: expands to col 4 (4 columns)
+    [InlineData('\t', 1, 4, 3)]  // tab at col 1: expands to col 4 (3 columns)
+    [InlineData('\t', 3, 4, 1)]  // tab at col 3: expands to col 4 (1 column)
+    [InlineData('\t', 4, 4, 4)]  // tab at col 4: expands to col 8 (4 columns)
+    [InlineData('\t', 7, 4, 1)]  // tab at col 7: expands to col 8 (1 column)
+    [InlineData('\t', 0, 8, 8)]  // tab at col 0, tabWidth=8
+    [InlineData('\t', 5, 8, 3)]  // tab at col 5, tabWidth=8: → col 8
+    public void CharColumns_ReturnsCorrectWidth(char c, int col, int tabWidth,
+            int expected) {
+        Assert.Equal(expected, MonoRowBreaker.CharColumns(c, col, tabWidth));
+    }
+
+    // ==================================================================
+    //  Tab-aware: ColumnOfChar
+    // ==================================================================
+
+    [Fact]
+    public void ColumnOfChar_NoTabs_EqualsCharCount() {
+        Assert.Equal(5, MonoRowBreaker.ColumnOfChar("hello", 0, 5, 4));
+    }
+
+    [Fact]
+    public void ColumnOfChar_TabAtStart_ExpandsToTabWidth() {
+        // "\thello" — tab at col 0 expands to col 4, then 5 more chars.
+        Assert.Equal(4, MonoRowBreaker.ColumnOfChar("\thello", 0, 1, 4));  // after tab
+        Assert.Equal(9, MonoRowBreaker.ColumnOfChar("\thello", 0, 6, 4));  // end of string
+    }
+
+    [Fact]
+    public void ColumnOfChar_TabMidLine_ExpandsFromCurrentCol() {
+        // "ab\tcd" — a(1) b(2) tab→4 c(5) d(6)
+        Assert.Equal(2, MonoRowBreaker.ColumnOfChar("ab\tcd", 0, 2, 4));  // before tab
+        Assert.Equal(4, MonoRowBreaker.ColumnOfChar("ab\tcd", 0, 3, 4));  // after tab
+        Assert.Equal(6, MonoRowBreaker.ColumnOfChar("ab\tcd", 0, 5, 4));  // end
+    }
+
+    [Fact]
+    public void ColumnOfChar_MultipleTabs() {
+        // "\t\t" — tab→4, tab→8
+        Assert.Equal(4, MonoRowBreaker.ColumnOfChar("\t\t", 0, 1, 4));
+        Assert.Equal(8, MonoRowBreaker.ColumnOfChar("\t\t", 0, 2, 4));
+    }
+
+    [Fact]
+    public void ColumnOfChar_NonZeroStart() {
+        // Start counting from char 2 in "ab\tcd"
+        Assert.Equal(0, MonoRowBreaker.ColumnOfChar("ab\tcd", 2, 2, 4));  // nothing
+        Assert.Equal(4, MonoRowBreaker.ColumnOfChar("ab\tcd", 2, 3, 4));  // tab→4
+        Assert.Equal(6, MonoRowBreaker.ColumnOfChar("ab\tcd", 2, 5, 4));  // tab→4 + cd
+    }
+
+    // ==================================================================
+    //  Tab-aware: NextRowTabAware
+    // ==================================================================
+
+    [Fact]
+    public void NextRowTabAware_NoTabs_SameAsNextRow() {
+        var (drawLen, nextStart) = MonoRowBreaker.NextRowTabAware("hello world", 0, 11, 4);
+        Assert.Equal(11, drawLen);
+        Assert.Equal(11, nextStart);
+    }
+
+    [Fact]
+    public void NextRowTabAware_TabExpandsBeyondRowWidth_Wraps() {
+        // "\tabcdefgh" at colsPerRow=8, tab=4: tab→4 cols, then 8 chars.
+        // Total: 4+8=12 cols.  Row width 8: tab(4)+abcd(4)=8 → fits.
+        // "efgh" goes to next row.
+        var (drawLen, nextStart) = MonoRowBreaker.NextRowTabAware("\tabcdefgh", 0, 8, 4);
+        Assert.Equal(5, drawLen);   // \t + abcd
+        Assert.Equal(5, nextStart);
+    }
+
+    [Fact]
+    public void NextRowTabAware_TabAtEnd_FitsExactly() {
+        // "abc\t" at colsPerRow=8, tab=4: a(1)b(2)c(3)tab→4(1col)=4 cols.
+        var (drawLen, nextStart) = MonoRowBreaker.NextRowTabAware("abc\t", 0, 8, 4);
+        Assert.Equal(4, drawLen);
+        Assert.Equal(4, nextStart);
+    }
+
+    [Fact]
+    public void NextRowTabAware_ShortLine_FitsInOneRow() {
+        var (drawLen, nextStart) = MonoRowBreaker.NextRowTabAware("a\tb", 0, 20, 4);
+        Assert.Equal(3, drawLen);
+        Assert.Equal(3, nextStart);
+    }
+
+    // ==================================================================
+    //  Tab-aware: CountRowsTabAware
+    // ==================================================================
+
+    [Fact]
+    public void CountRowsTabAware_EmptyLine_ReturnsOne() {
+        Assert.Equal(1, MonoRowBreaker.CountRowsTabAware("", 10, 8, 4));
+    }
+
+    [Fact]
+    public void CountRowsTabAware_ShortTabLine_OneRow() {
+        // "a\tb" = 3 chars, cols: a(1)+tab→4(3)+b(1)=5 cols.
+        Assert.Equal(1, MonoRowBreaker.CountRowsTabAware("a\tb", 20, 18, 4));
+    }
+
+    [Fact]
+    public void CountRowsTabAware_TabCausesWrap() {
+        // Line: "\t" + 10 chars.  At colsPerRow=8, tab=4:
+        // Row 0: tab(4)+4chars=8 cols → full.
+        // Row 1: 6 remaining chars → fits.
+        Assert.Equal(2, MonoRowBreaker.CountRowsTabAware(
+            "\tabcdefghij", 8, 8, 4));
+    }
+
+    [Fact]
+    public void CountRowsTabAware_MultipleTabs_MultipleRows() {
+        // "\t\t\t\t" at colsPerRow=6, tab=4:
+        // Row 0: tab→4(4)+tab→8 would be 8>6 → only first tab fits (4 cols).
+        // Wait, tab at col 4 → col 8 = 4 more cols, total 8 > 6.
+        // So row 0: just "\t" (4 cols), row 1: "\t" (tab at col 0→4), etc.
+        var rows = MonoRowBreaker.CountRowsTabAware("\t\t\t\t", 6, 6, 4);
+        Assert.True(rows >= 2);
+    }
+
+    // ==================================================================
+    //  Tab-aware: RowOfCharTabAware
+    // ==================================================================
+
+    [Fact]
+    public void RowOfCharTabAware_CharZero_RowZero() {
+        Assert.Equal(0, MonoRowBreaker.RowOfCharTabAware("a\tb", 0, 20, 18, 4));
+    }
+
+    [Fact]
+    public void RowOfCharTabAware_AfterWrap_CorrectRow() {
+        // "\tabcdefghij" at cols=8, tab=4:
+        // Row 0: \t(4)+abcd(4)=8 → chars 0-4.
+        // Row 1: efghij → chars 5-10.
+        Assert.Equal(0, MonoRowBreaker.RowOfCharTabAware(
+            "\tabcdefghij", 3, 8, 8, 4));
+        Assert.Equal(1, MonoRowBreaker.RowOfCharTabAware(
+            "\tabcdefghij", 6, 8, 8, 4));
+    }
+
+    [Fact]
+    public void RowOfCharTabAware_PastEnd_ReturnsLastRow() {
+        Assert.Equal(0, MonoRowBreaker.RowOfCharTabAware(
+            "a\tb", 100, 20, 18, 4));
+    }
+
+    // ==================================================================
+    //  Tab-aware: consistency with CountRows
+    // ==================================================================
+
+    [Theory]
+    [InlineData("abc\tdef\tghij", 10, 8, 4)]
+    [InlineData("\t\t\tabcdef", 8, 6, 4)]
+    [InlineData("no tabs here at all", 10, 8, 4)]
+    [InlineData("\t", 4, 4, 4)]
+    [InlineData("a\tb\tc\td\te", 12, 10, 4)]
+    [InlineData("prefix\tsuffix that is quite long and will wrap", 20, 18, 4)]
+    public void TabAware_RowOfLastChar_LessThanCountRows(string line,
+            int firstCols, int contCols, int tabWidth) {
+        var rowCount = MonoRowBreaker.CountRowsTabAware(line, firstCols, contCols, tabWidth);
+        var lastCharRow = MonoRowBreaker.RowOfCharTabAware(
+            line, line.Length - 1, firstCols, contCols, tabWidth);
+        Assert.True(lastCharRow < rowCount,
+            $"RowOfChar({line.Length - 1})={lastCharRow} >= CountRows={rowCount}");
+    }
 }
