@@ -50,6 +50,7 @@ public partial class MainWindow : Window {
     private int _staticMenuItemCount;
     private readonly DispatcherTimer _statsTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private EditorTheme _theme = EditorTheme.Light;
+    private long _statusWarningExpiry;
     private bool _windowStateReady;
     private TabState? _settingsTab;
     private readonly FileWatcherService _watcher = new();

@@ -40,7 +40,6 @@ small one — it is the primary way a fresh session recovers context.
 
 ## Current State
 
-**Test baseline: 11,091** (1269 Core + 60 Rendering + 9762 App, 1 skipped)
 
 ### In progress
 
@@ -51,13 +50,14 @@ small one — it is the primary way a fresh session recovers context.
   mono/TextLayout decision.  `PerfStats.ScrollExactCalls` enables
   hidden-behavior assertions in tests.
 
-  **Progress:** 11,086 tests (was 1016 at session start).  Major waves:
+  
   ScrollMatrixTests (10 doc sizes × 2 wraps × 13 positions × 40+
   methods), FindStressTests (34 walk/wrap/dense tests), TabMatrixTests
   (4 sizes × 2 wraps × 7 positions × 13 methods), MonoRowBreaker
   parametric sweeps (600+ pure-function tests), ComputeTargetScrollY
   (615 sweep tests), RowCountConsistencyTests, EditScrollTests,
-  HScrollAndControlCharTests, InputSimulationTests, SlowPathMovementTests.
+  HScrollAndControlCharTests, InputSimulationTests, SlowPathMovementTests,
+  SelectionPathCornerTests, SettingsRegistryTests.
 
   **Remaining untested branches (for future sessions):**
   1. **Overwrite mode** — Insert key toggle, block caret, overwrite-
@@ -73,10 +73,6 @@ small one — it is the primary way a fresh session recovers context.
      convergence fails.  Known issue, skipped in GoTo_CaretOnScreen.
   7. **PageDown+PageUp round-trip near doc end** — page boundaries shift
      at the bottom.  Known issue, skipped in PageDownThenUp_NearOriginal.
-
-  **Avalonia 12 upgrade completed** (2026-04-11).  All API changes
-  applied, 11,091 tests passing, manual testing verified on Windows
-  and Linux.
 
 - **Surrogate-pair safety** — Backspace/Delete used to split a UTF-16
   surrogate pair and leave a stranded half in the buffer, which then
@@ -100,19 +96,6 @@ small one — it is the primary way a fresh session recovers context.
   `Render` for text/selection/caret.  Fixes Avalonia #12809.
   See [13-custom-textbox](design-journal/13-custom-textbox.md).
 
-- **Hanging indent + line indentation interaction** — the current hanging
-  indent is a fixed offset (`_indentWidth / 2` character cells) applied to
-  continuation rows.  It doesn't account for the logical line's own
-  indentation level (4, 8, 100+ chars of leading whitespace).  This means
-  a line indented 8 spaces with a 2-char hanging indent wraps continuation
-  rows at indent 2, visually disconnected from the line's own indent.
-  The correct behavior: continuation rows should indent relative to the
-  line's indentation level (`lineIndent + hangingIndent`).  This also
-  affects caret up/down movement at row boundaries — the X offset between
-  the first row and continuation rows differs, and `MoveCaretVertical`
-  must handle this correctly.  Retest all caret movement (up/down/Home/End)
-  after fixing the indentation model.
-
 - **Search Within Selection** — when OpenFindBar runs with a multi-line
   selection, scope dropdown should auto-pick "Current Selection" and all
   Find/Replace bound to that range.  No materialization, just integer
@@ -123,6 +106,47 @@ small one — it is the primary way a fresh session recovers context.
   See [12-utf8-add-buffer](design-journal/12-utf8-add-buffer.md).
 
 ### Recently completed
+
+- **Per-line hanging indent** (2026-04-12, GH #13) — Continuation rows
+  now indent relative to the line's own leading whitespace, not a fixed
+  global offset.  New `MonoRowBreaker.LeadingIndentColumns` computes
+  tab-aware leading columns.  `ContRowCharsForLine` derives per-line
+  continuation width (`maxCharsPerRow - lineIndent - hangingIndent`).
+  Threaded through `GetMonoRowWidths`, `BuildRowIndexFor`,
+  `MonoLineLayout.TryBuild`, and `PlainTextPaginator` (print path).
+  Previously a line indented 8 spaces wrapped continuation rows at
+  column 2 — now they wrap at `8 + halfIndent`, visually aligned with
+  the line's own structure.
+
+- **Selection path self-intersection fix** (2026-04-12, GH #14) —
+  `FillSelectionPath` drew all selection rects as a single clockwise
+  contour.  When adjacent rects didn't overlap horizontally (e.g.
+  selecting across lines of very different lengths), the path
+  self-intersected and EvenOdd fill left unfilled holes.  Fix: split
+  rects into groups of horizontally-overlapping rects; each group
+  gets its own contour.  Single-rect groups use `FillRoundedRect`.
+  `BuildSelectionGroupGeometry` extracted as `internal static` with
+  optional `arcLog` parameter so tests can verify sweep directions
+  without relying on `FillContains` (Avalonia headless doesn't support
+  arc geometries).  203 new tests in `SelectionPathCornerTests`.
+
+- **Whitespace indicator Y-offset fix** (2026-04-12) — Wrap arrows,
+  control-char replacement glyphs, and space/NBSP dots were drawn at
+  the line's Y origin, ignoring the row's Y offset within multi-row
+  layouts.  Added `hit.Y` to all three draw sites in
+  `DrawWhitespaceIndicators`.
+
+- **Settings overwrite protection** (2026-04-12) — `AppSettings` gains
+  a `_persistent` flag set only by `AppSettings.Load()`.  `Save()` and
+  `ScheduleSave()` are no-ops on non-persistent instances, so test
+  instances (created via `new AppSettings()`) never clobber the user's
+  on-disk settings file.  28 new tests in `SettingsRegistryTests`.
+
+- **Manual website** (2026-04-12) — Static HTML/CSS/JS manual site
+  under `site/`.  Sections: Getting Started, Display & View, Editing,
+  File Operations, Navigation & Selection, Search & Replace, Tabs &
+  Windows, Keyboard Shortcuts, Large Files, Settings, Status Bar.
+  Client-side search via `search-data.js`.  What's New page.
 
 - **Avalonia 12 upgrade** (2026-04-11) — Upgraded from Avalonia 11.3.12
   to 12.0.0, SkiaSharp 2.88.9 to 3.119.3, xunit v2 to v3.  API changes:
@@ -410,6 +434,21 @@ small one — it is the primary way a fresh session recovers context.
 
 ### Key deferred items
 
+- **Column editing while wrapping is enabled** — Currently column
+  (block) selection is disabled when any wrapping mode is on.  A user
+  expected it to work (other editors allow it).  Status bar message
+  added (2026-04-12) so the block is no longer silent.  Revisit
+  compatibility: the core obstacle is that visual row ↔ column math
+  assumes fixed-width rows, but wrapped rows vary in length.
+  `ColumnSelection` stores logical line+column — mapping those to
+  visual row/column pairs in the presence of wrapping requires
+  per-line wrap-break computation.  Key questions: (1) Should the
+  rectangle be defined in logical columns (current model) or visual
+  screen cells?  (2) How should the rectangle behave when lines wrap
+  at different points — clip to the shortest wrapped width, or extend
+  into continuation rows?  VS Code and Sublime both allow it with
+  logical-column semantics, clipping at line end.
+
 - **"Non-responsive after crash" report (byron, 2026-04-07)** — User hit
   the binary-file Avalonia split crash (entry 22), tried to relaunch
   dmedit.exe, and the relaunched process was non-responsive.  No
@@ -483,11 +522,6 @@ small one — it is the primary way a fresh session recovers context.
   not a real leak — each one points at an event subscription that didn't
   unsubscribe.  Worst offender `MainWindow+<>c__DisplayClass157_1` (472B);
   also two `DispatcherTimer+<>c__DisplayClass18_0` (caret blink + one other).
-
-- **Tab handling on the monospace fast path** — currently any tab line
-  falls back to `TextLayout`.  Implement column-aware advance in
-  `MonoLineLayout.NextRow`/`Draw` (`(col / indentWidth + 1) * indentWidth`).
-  Bootstraps the column-width accumulator that elastic tabstops will need.
 
 - **Per-frame `FormattedText` churn in ToolbarControl/TabBarControl** —
   ~1,312 `TextLineImpl`s allocated by `ToolbarControl.Render` over a 50s

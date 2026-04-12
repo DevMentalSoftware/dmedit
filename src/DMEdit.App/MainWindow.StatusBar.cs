@@ -60,6 +60,12 @@ public partial class MainWindow {
                 "Adjust in Settings > Advanced > Char Wrap Line Threshold.";
         };
 
+        Editor.StatusMessage += msg => {
+            StatusLeft.Text = msg;
+            StatusLeft.Foreground = _theme.StatusBarWarning;
+            _statusWarningExpiry = Environment.TickCount64 + 3000;
+        };
+
         Editor.StatusUpdated += () => {
             if (_settings.DevMode && _settings.ShowStatistics && !_statsTimer.IsEnabled) {
                 _statsTimer.Start();
@@ -207,6 +213,13 @@ public partial class MainWindow {
     }
 
     private void UpdateStatusBar() {
+        // Clear transient warning message after its expiry time.
+        if (_statusWarningExpiry > 0 && Environment.TickCount64 >= _statusWarningExpiry) {
+            _statusWarningExpiry = 0;
+            StatusLeft.Text = "";
+            StatusLeft.Foreground = _theme.StatusBarForeground;
+        }
+
         // -- Permanent status bar (always visible) --
         var doc = Editor.Document;
         if (doc == null) {
@@ -221,7 +234,10 @@ public partial class MainWindow {
             SetText(StatusLineEnding, "");
             StatusSep4.IsVisible = false;
             SetText(StatusIndent, "");
-            if (_chordFirst == null) SetText(StatusLeft, "");
+            if (_chordFirst == null) {
+                SetText(StatusLeft, "");
+                StatusLeft.Foreground = _theme.StatusBarForeground;
+            }
         } else {
             var table = doc.Table;
             var stillLoading = table.Buffer is { LengthIsKnown: false };
@@ -370,6 +386,7 @@ public partial class MainWindow {
         var tab = _activeTab;
         var active = tab is not null
             && !tab.IsDirty
+            && !tab.IsLoading
             && IsCaretOnLastLine(tab)
             && Editor.IsScrolledToEnd;
 

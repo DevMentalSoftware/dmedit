@@ -245,8 +245,14 @@ public sealed partial class EditorControl {
     // -------------------------------------------------------------------------
 
 
+    private const string ColumnBlockedByWrap =
+        "Column editing disabled by wrapping.";
+
     private void PerformColumnSelectVertical(Document doc, int delta) {
-        if (_wrapLines) return;
+        if (_wrapLines || _charWrapMode) {
+            StatusMessage?.Invoke(ColumnBlockedByWrap);
+            return;
+        }
         FlushCompound();
         var table = doc.Table;
         if (doc.ColumnSel is { } colSel) {
@@ -267,7 +273,10 @@ public sealed partial class EditorControl {
     }
 
     private void PerformColumnSelectHorizontal(Document doc, int delta) {
-        if (_wrapLines) return;
+        if (_wrapLines || _charWrapMode) {
+            StatusMessage?.Invoke(ColumnBlockedByWrap);
+            return;
+        }
         FlushCompound();
         if (doc.ColumnSel is { } colSel) {
             var newCol = ColumnSelection.NextCharCol(

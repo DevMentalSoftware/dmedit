@@ -569,6 +569,12 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     public event Action<LineTooLongException>? LineTooLongDetected;
 
     /// <summary>
+    /// Fires when the editor wants to show a transient message in the
+    /// status bar (e.g. "Column editing requires wrapping to be off").
+    /// </summary>
+    public event Action<string>? StatusMessage;
+
+    /// <summary>
     /// Fired when a document property (line ending, encoding, etc.) changes
     /// without a content edit. The tab should be marked dirty.
     /// </summary>

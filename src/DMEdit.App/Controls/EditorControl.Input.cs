@@ -103,6 +103,10 @@ public sealed partial class EditorControl {
                 // when dragging vertically with no horizontal extent.
                 _caretVisible = true;
                 _caretTimer.Stop();
+            } else if (alt && (_wrapLines || _charWrapMode)) {
+                // Alt+click while wrapping is on — notify user instead of
+                // silently falling through to normal click.
+                StatusMessage?.Invoke(ColumnBlockedByWrap);
             } else {
                 // Exit column mode on normal click.
                 if (doc.ColumnSel != null) {
