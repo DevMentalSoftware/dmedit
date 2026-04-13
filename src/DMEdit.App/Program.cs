@@ -54,6 +54,11 @@ class Program {
 
         SingleInstance = singleInstance;
 
+        // Register the WPF assembly resolver before anything touches WPF
+        // types (printing, jump lists).  WPF is not bundled — it comes
+        // from the installed Windows Desktop runtime.
+        WpfResolver.Register();
+
         // Force jump list discovery early so the AppUserModelID is set
         // before Avalonia creates the main window.
         _ = JumpListDiscovery.Service;

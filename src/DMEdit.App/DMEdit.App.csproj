@@ -1,7 +1,12 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- On Windows, target net10.0-windows so we can directly reference
+         DMEdit.Windows (WPF printing, jump lists, native clipboard) and
+         have the Windows Desktop framework on the default probing path.
+         Also defines the WINDOWS preprocessor symbol automatically. -->
+    <TargetFramework Condition="$([MSBuild]::IsOSPlatform('Windows'))">net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
@@ -49,6 +54,14 @@
     <ProjectReference Include="..\DMEdit.Rendering\DMEdit.Rendering.csproj" />
   </ItemGroup>
 
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <ProjectReference Include="..\DMEdit.Windows\DMEdit.Windows.csproj" />
+    <!-- Keep WPF for compilation but don't bundle it in self-contained
+         publish — the installed Windows Desktop runtime provides it at
+         runtime via WpfResolver.  Keeps the installer small. -->
+    <FrameworkReference Update="Microsoft.WindowsDesktop.App" ExcludeAssets="runtime" />
+  </ItemGroup>
+
   <ItemGroup>
     <Compile Update="Properties\Resources.Designer.cs">
       <DesignTime>True</DesignTime>
@@ -63,12 +76,4 @@
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
     </EmbeddedResource>
   </ItemGroup>
-
-  <!-- Copy the Windows-specific DLL beside the app after build (if present).
-       The solution builds DMEdit.Windows independently; this target just
-       copies the output so the App can discover it at runtime via reflection.
-       No ProjectReference: net10.0 cannot reference net10.0-windows at build time. -->
-  <Target Name="CopyWindowsDll" AfterTargets="Build" Condition="$([MSBuild]::IsOSPlatform('Windows')) And Exists('..\DMEdit.Windows\bin\$(Configuration)\net10.0-windows\DMEdit.Windows.dll')">
-    <Copy SourceFiles="..\DMEdit.Windows\bin\$(Configuration)\net10.0-windows\DMEdit.Windows.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
-  </Target>
 </Project>
