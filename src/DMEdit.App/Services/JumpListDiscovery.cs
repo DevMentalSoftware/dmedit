@@ -39,6 +39,12 @@ public static class JumpListDiscovery {
                 return null;
             }
 
+            // Set AppUserModelID before any window is shown — required
+            // for Windows to associate our jump list with our taskbar button.
+            var setIdMethod = type.GetMethod("SetAppUserModelId",
+                BindingFlags.Public | BindingFlags.Static);
+            setIdMethod?.Invoke(null, null);
+
             var instance = Activator.CreateInstance(type) as IJumpListService;
             if (instance != null) {
                 Debug.WriteLine("JumpList: Windows jump list service loaded.");

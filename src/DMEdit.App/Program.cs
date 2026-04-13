@@ -54,6 +54,10 @@ class Program {
 
         SingleInstance = singleInstance;
 
+        // Force jump list discovery early so the AppUserModelID is set
+        // before Avalonia creates the main window.
+        _ = JumpListDiscovery.Service;
+
         try {
             BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         } catch (Exception ex) {
