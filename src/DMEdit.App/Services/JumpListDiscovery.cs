@@ -5,8 +5,8 @@ using DMEdit.Core.JumpList;
 namespace DMEdit.App.Services;
 
 /// <summary>
-/// Provides the Windows jump list service, or null on non-Windows platforms
-/// or when the Windows Desktop runtime is not installed.
+/// Provides the Windows jump list service, or null on non-Windows platforms.
+/// WPF is available via the Windows Desktop runtime (declared in runtimeconfig.json).
 /// </summary>
 public static class JumpListDiscovery {
     private static readonly Lazy<IJumpListService?> _instance = new(Discover);
@@ -15,9 +15,6 @@ public static class JumpListDiscovery {
 
     private static IJumpListService? Discover() {
 #if WINDOWS
-        if (!WpfResolver.IsAvailable) {
-            return null;
-        }
         try {
             DMEdit.Windows.WindowsJumpListService.SetAppUserModelId();
             return new DMEdit.Windows.WindowsJumpListService();

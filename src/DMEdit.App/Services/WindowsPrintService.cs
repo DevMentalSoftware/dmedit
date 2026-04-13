@@ -6,7 +6,8 @@ namespace DMEdit.App.Services;
 
 /// <summary>
 /// Provides the WPF-based <see cref="ISystemPrintService"/> on Windows,
-/// or null when the Windows Desktop runtime is not installed.
+/// or null on other platforms.
+/// WPF is available via the Windows Desktop runtime (declared in runtimeconfig.json).
 /// </summary>
 public static class WindowsPrintService {
 
@@ -30,10 +31,6 @@ public static class WindowsPrintService {
 
     private static ISystemPrintService? Discover() {
 #if WINDOWS
-        if (!WpfResolver.IsAvailable) {
-            DiscoveryError = WpfResolver.UnavailableReason;
-            return null;
-        }
         try {
             return new DMEdit.Windows.WpfPrintService();
         } catch (Exception ex) {
