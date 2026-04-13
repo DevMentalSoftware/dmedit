@@ -37,10 +37,3 @@ dotnet test
 
 All tests must pass before and after any change. Current baseline: **11,124 tests**
 (1269 Core + 60 Rendering + 9795 App).
-
-## Dev mode
-
-Debug builds enable DevMode automatically. In Release builds, set
-`DevModeEnabled: true` in `%APPDATA%/DMEdit/settings.json`.
-DevMode shows: Dev menu, procedural sample documents in Recent menu, performance stats bar.
-The

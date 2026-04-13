@@ -63,12 +63,7 @@ public static class FileSaver {
         var tmpPath = path + ".tmp";
 
         try {
-            string sha1;
-            if (table.IsOriginalContent && table.Buffer is { LengthIsKnown: true } buf) {
-                sha1 = WriteToFile(buf, tmpPath, encInfo, nl, ct);
-            } else {
-                sha1 = WriteToFile(table, tmpPath, encInfo, nl, ct);
-            }
+            var sha1 = WriteToFile(table, tmpPath, encInfo, nl, ct);
 
             if (backupOnSave && File.Exists(path)) {
                 File.Copy(path, path + ".bak", overwrite: true);
@@ -89,15 +84,6 @@ public static class FileSaver {
     /// </summary>
     private static int NlBufSize(string nl) =>
         nl.Length > 1 ? WriteChunk * 2 : WriteChunk;
-
-    private static string WriteToFile(IBuffer buf, string path,
-            EncodingInfo encInfo, string nl, CancellationToken ct) {
-        return WriteToFileCore(buf.Length, path, encInfo, nl, ct,
-            (pos, charBuf, take) => {
-                buf.CopyTo(pos, charBuf.AsSpan(0, take), take);
-                return take;
-            });
-    }
 
     private static string WriteToFile(PieceTable table, string path,
             EncodingInfo encInfo, string nl, CancellationToken ct) {
