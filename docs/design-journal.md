@@ -99,10 +99,9 @@ small one — it is the primary way a fresh session recovers context.
     clear, overwrite-mode under block, navigation passthrough, overwrite
     toggle allowed.
 
-- **Column editing blocked-by-wrap notification** (2026-04-12) — Alt+Click,
-  Alt+Drag, and Alt+Shift+Arrow now show "Column editing disabled by
-  wrapping." in the status bar (warning color, 3s auto-clear) instead of
-  silently doing nothing.  New `StatusMessage` event on `EditorControl`.
+- **Column editing while wrapping** (2026-04-12) — Column editing now
+  works when wrapping is enabled.  Previously disabled with a status bar
+  warning; now uses logical-column rectangle semantics.
 
 - **Session-restore crash fix** (2026-04-12) — `UpdateTailButton` called
   `IsCaretOnLastLine` → `PieceTable.LineCount` → `Length` which iterates
@@ -156,11 +155,6 @@ small one — it is the primary way a fresh session recovers context.
 Older completed entries: [24-completed-log](design-journal/24-completed-log.md)
 
 ### Key deferred items
-
-- **Column editing while wrapping is enabled** — Currently disabled when
-  any wrapping mode is on.  Status bar message added (2026-04-12).
-  Key question: logical-column vs visual-cell rectangle semantics.
-  VS Code and Sublime use logical columns, clipping at line end.
 
 - **Search Within Selection** — OpenFindBar with multi-line selection
   should auto-scope to "Current Selection".  Integer range limiting;
