@@ -91,8 +91,8 @@ public partial class MainWindow {
         // -- Search --
         Cmd.SearchFind.Wire(() => OpenFindBar(replaceMode: false));
         Cmd.SearchReplace.Wire(() => OpenFindBar(replaceMode: true));
-        Cmd.SearchFindNext.Wire(() => Editor.FindNext());
-        Cmd.SearchFindPrevious.Wire(() => Editor.FindPrevious());
+        Cmd.SearchFindNext.Wire(() => Editor.FindNext(FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode));
+        Cmd.SearchFindPrevious.Wire(() => Editor.FindPrevious(FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode));
         Cmd.SearchFindNextSelection.Wire(() => Editor.FindNextSelection());
         Cmd.SearchFindPreviousSelection.Wire(() => Editor.FindPreviousSelection());
         Cmd.SearchIncrementalSearch.Wire(() => Editor.StartIncrementalSearch());

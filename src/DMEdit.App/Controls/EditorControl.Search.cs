@@ -512,7 +512,8 @@ public sealed partial class EditorControl {
             if (wholeWord) {
                 pattern = @"\b" + pattern + @"\b";
             }
-            var opts = RegexOptions.CultureInvariant | RegexOptions.Compiled;
+            var opts = RegexOptions.CultureInvariant | RegexOptions.Compiled
+                | RegexOptions.Multiline;
             if (!matchCase) {
                 opts |= RegexOptions.IgnoreCase;
             }

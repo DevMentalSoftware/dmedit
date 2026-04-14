@@ -240,17 +240,19 @@ public partial class MainWindow {
             }
         } else {
             var table = doc.Table;
-            var stillLoading = table.Buffer is { LengthIsKnown: false };
+            var stillLoading = _activeTab is { IsLoading: true }
+                || table.Buffer is { LengthIsKnown: false };
 
             long displayCount;
             string countLabel;
-            if (Editor.CharWrapMode && Editor.CharsPerRow > 0) {
+            if (stillLoading) {
+                displayCount = table.Buffer is { } buf ? buf.LineCount : -1;
+                countLabel = "lines";
+            } else if (Editor.CharWrapMode && Editor.CharsPerRow > 0) {
                 displayCount = (long)Math.Ceiling((double)table.Length / Editor.CharsPerRow);
                 countLabel = "rows";
             } else {
-                displayCount = stillLoading && table.Buffer is { } buf
-                    ? buf.LineCount
-                    : table.LineCount;
+                displayCount = table.LineCount;
                 countLabel = "lines";
             }
 

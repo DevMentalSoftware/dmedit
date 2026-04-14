@@ -106,6 +106,7 @@ public partial class MainWindow {
                         Editor.IsEditBlocked = tab.IsReadOnly;
                         Editor.ResetCaretBlink();
                         Editor.InvalidateLayout();
+                        UpdateStatusBar();
                         if (tab.CharWrapMode) Dispatcher.UIThread.Post(() => {
                         Editor.InvalidateLayout();
                         Editor.ScrollCaretIntoView();
