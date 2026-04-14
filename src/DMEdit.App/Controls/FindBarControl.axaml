@@ -94,11 +94,11 @@
                     <Button x:Name="ReplaceBtn"
                             Content="Replace" Height="24"
                             TabIndex="2" IsTabStop="False"
-                            ToolTip.Tip="Replace current match" />
+                            ToolTip.Tip="Replace current match (Alt+R)" />
                     <Button x:Name="ReplaceAllBtn"
                             Content="Replace All" Height="24"
                             TabIndex="3" IsTabStop="False"
-                            ToolTip.Tip="Replace all matches" />
+                            ToolTip.Tip="Replace all matches (Alt+A)" />
                 </StackPanel>
 
                 <!-- Col 5: Close (Row 0 only) -->
@@ -123,21 +123,21 @@
                                           Margin="0,2,4,0"
                                           IsVisible="False" />
 
-                <!-- Row 2: Options (spans Col 2–5) -->
-                <DockPanel Grid.Column="2" Grid.ColumnSpan="4" Grid.Row="2"
+                <!-- Row 2: Options (spans Col 2–3, stops before close) -->
+                <DockPanel Grid.Column="2" Grid.ColumnSpan="2" Grid.Row="2"
                            Margin="0,4,0,0">
                     <ToggleButton x:Name="MatchCaseBtn"
                                   DockPanel.Dock="Left"
                                   Content="Abc" Height="24"
                                   TabIndex="4"
-                                  ToolTip.Tip="Match Case" />
+                                  ToolTip.Tip="Match Case (Alt+C)" />
                     <ToggleButton x:Name="WholeWordBtn"
                                   DockPanel.Dock="Left"
                                   Content="w" Height="24"
                                   Width="24"
                                   Margin="4,0,0,0"
                                   TabIndex="5"
-                                  ToolTip.Tip="Match Whole Word" />
+                                  ToolTip.Tip="Match Whole Word (Alt+W)" />
                     <Border DockPanel.Dock="Left"
                             Width="1" Margin="8,2"
                             x:Name="OptionsSeparator" />
@@ -146,13 +146,13 @@
                                   Content="*" Height="24"
                                   Width="24"
                                   TabIndex="6"
-                                  ToolTip.Tip="Wildcard Search" />
+                                  ToolTip.Tip="Wildcard Search (Alt+E to cycle)" />
                     <ToggleButton x:Name="RegexBtn"
                                   DockPanel.Dock="Left"
                                   Content=".*" Height="24"
                                   Margin="4,0,0,0"
                                   TabIndex="7"
-                                  ToolTip.Tip="Regular Expression Search" />
+                                  ToolTip.Tip="Regular Expression Search (Alt+E to cycle)" />
                     <Border DockPanel.Dock="Left"
                             Width="1" Margin="8,2"
                             x:Name="OptionsSeparator2" />

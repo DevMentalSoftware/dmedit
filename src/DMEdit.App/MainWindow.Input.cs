@@ -36,8 +36,13 @@ public partial class MainWindow {
         if (e.Key is Key.LeftShift or Key.RightShift
             or Key.LeftCtrl or Key.RightCtrl
             or Key.LWin or Key.RWin) {
+            if (e.Key is Key.LeftCtrl or Key.RightCtrl && FindBar.IsVisible) {
+                _ctrlHoldTimer.Start();
+            }
             return;
         }
+        // Any non-modifier key cancels a pending Ctrl-hold transparency.
+        CancelCtrlHold();
 
         // Menu is open via access key — intercept letters (plain or
         // Alt+letter) to activate submenu items before command dispatch
@@ -199,10 +204,18 @@ public partial class MainWindow {
         }
 
         base.OnKeyUp(e);
-        // Releasing Ctrl confirms an active PasteMore clipboard-cycling session.
-        if (e.Key is Key.LeftCtrl or Key.RightCtrl && Editor.IsClipboardCycling) {
-            Editor.ConfirmClipboardCycle();
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl) {
+            CancelCtrlHold();
+            // Releasing Ctrl confirms an active PasteMore clipboard-cycling session.
+            if (Editor.IsClipboardCycling) {
+                Editor.ConfirmClipboardCycle();
+            }
         }
+    }
+
+    private void CancelCtrlHold() {
+        _ctrlHoldTimer.Stop();
+        FindBar.SetTransparent(false);
     }
 
     /// <summary>

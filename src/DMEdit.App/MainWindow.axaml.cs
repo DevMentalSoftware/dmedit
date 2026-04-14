@@ -77,6 +77,11 @@ public partial class MainWindow : Window {
     // subsequent Alt KeyUp doesn't immediately close it.
     private bool _menuAccessKeyActive;
 
+    // Ctrl-hold transparency: delay so Ctrl+key shortcuts don't flicker.
+    private readonly DispatcherTimer _ctrlHoldTimer = new() {
+        Interval = TimeSpan.FromMilliseconds(500),
+    };
+
     private string[]? _startupFiles;
 
     public MainWindow() : this(null) { }
@@ -96,6 +101,12 @@ public partial class MainWindow : Window {
             Interval = TimeSpan.FromMilliseconds(_settings.ChordTimeoutMs),
         };
         _chordTimer.Tick += (_, _) => CancelChord();
+        _ctrlHoldTimer.Tick += (_, _) => {
+            _ctrlHoldTimer.Stop();
+            if (FindBar.IsVisible) {
+                FindBar.SetTransparent(true);
+            }
+        };
 
         // On Linux the WM ignores ExtendClientAreaToDecorationsHint and draws
         // its own title bar. Remove it so we can draw custom chrome buttons
@@ -269,6 +280,7 @@ public partial class MainWindow : Window {
         Deactivated += (_, _) => {
             TabBar.IsWindowActive = false;
             CancelChord();
+            CancelCtrlHold();
         };
 
         // Give the editor initial focus once at startup.

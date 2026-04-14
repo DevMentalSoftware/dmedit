@@ -107,11 +107,15 @@ public partial class FindBarControl : UserControl {
         WildcardBtn.Click += (_, _) => {
             if (WildcardBtn.IsChecked == true) RegexBtn.IsChecked = false;
             SearchTermChanged?.Invoke();
+            RestoreFocus();
         };
         RegexBtn.Click += (_, _) => {
             if (RegexBtn.IsChecked == true) WildcardBtn.IsChecked = false;
             SearchTermChanged?.Invoke();
+            RestoreFocus();
         };
+        MatchCaseBtn.Click += (_, _) => RestoreFocus();
+        WholeWordBtn.Click += (_, _) => RestoreFocus();
 
         // Search text changed → raise event
         SearchBox.PropertyChanged += (_, e) => {
@@ -123,12 +127,16 @@ public partial class FindBarControl : UserControl {
         // Keyboard shortcuts within the text boxes — InnerTextBox is null
         // until OnApplyTemplate runs, so defer wiring.
         SearchBox.TemplateApplied += (_, _) => {
-            if (SearchBox.InnerTextBox != null)
+            if (SearchBox.InnerTextBox != null) {
                 SearchBox.InnerTextBox.KeyDown += OnSearchBoxKeyDown;
+                SearchBox.InnerTextBox.GotFocus += (_, _) => _lastFocusWasReplace = false;
+            }
         };
         ReplaceBox.TemplateApplied += (_, _) => {
-            if (ReplaceBox.InnerTextBox != null)
+            if (ReplaceBox.InnerTextBox != null) {
                 ReplaceBox.InnerTextBox.KeyDown += OnReplaceBoxKeyDown;
+                ReplaceBox.InnerTextBox.GotFocus += (_, _) => _lastFocusWasReplace = true;
+            }
         };
 
         // Left-edge resize grip drag
@@ -148,6 +156,22 @@ public partial class FindBarControl : UserControl {
         ReplaceBox.ClosePopup();
     }
 
+    // Track which textbox was last focused so we can restore after
+    // option button clicks steal focus.
+    private bool _lastFocusWasReplace;
+
+    /// <summary>
+    /// Returns focus to the search or replace textbox so Enter still
+    /// triggers FindNext/FindPrev after clicking an option toggle.
+    /// </summary>
+    private void RestoreFocus() {
+        if (_lastFocusWasReplace && ReplaceBox.InnerTextBox != null) {
+            ReplaceBox.InnerTextBox.Focus();
+        } else {
+            SearchBox.InnerTextBox?.Focus();
+        }
+    }
+
     public void FocusSearchBox() {
         if (SearchBox.InnerTextBox is { } tb) {
             tb.Focus();
@@ -161,6 +185,14 @@ public partial class FindBarControl : UserControl {
 
     public void SetReplaceTerm(string text) {
         ReplaceBox.Text = text;
+    }
+
+    public void SetTransparent(bool transparent) {
+        var opacity = transparent ? 0.15 : 1.0;
+        OuterBorder.Opacity = opacity;
+        EarLeft.Opacity = opacity;
+        EarRight.Opacity = opacity;
+        TopStrip.Opacity = opacity;
     }
 
     public void ApplyTheme(EditorTheme theme) {
@@ -214,10 +246,65 @@ public partial class FindBarControl : UserControl {
     // Keyboard handling
     // -----------------------------------------------------------------
 
+    /// <summary>
+    /// Handles Alt+key shortcuts shared by both textboxes.  Returns true
+    /// if the key was consumed so the caller can mark it handled and
+    /// prevent the Alt from bubbling up to activate top-level menus.
+    /// </summary>
+    private bool HandleAltShortcut(KeyEventArgs e) {
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Alt)) {
+            return false;
+        }
+        switch (e.Key) {
+            case Key.C:
+                MatchCaseBtn.IsChecked = !MatchCaseBtn.IsChecked;
+                SearchTermChanged?.Invoke();
+                RestoreFocus();
+                return true;
+            case Key.W:
+                WholeWordBtn.IsChecked = !WholeWordBtn.IsChecked;
+                SearchTermChanged?.Invoke();
+                RestoreFocus();
+                return true;
+            case Key.E:
+                // Cycle: off → wildcard → regex → off
+                if (WildcardBtn.IsChecked != true && RegexBtn.IsChecked != true) {
+                    WildcardBtn.IsChecked = true;
+                    RegexBtn.IsChecked = false;
+                } else if (WildcardBtn.IsChecked == true) {
+                    WildcardBtn.IsChecked = false;
+                    RegexBtn.IsChecked = true;
+                } else {
+                    RegexBtn.IsChecked = false;
+                }
+                SearchTermChanged?.Invoke();
+                RestoreFocus();
+                return true;
+            case Key.R:
+                if (_isReplaceMode) {
+                    ReplaceRequested?.Invoke(ReplaceTerm);
+                    RestoreFocus();
+                }
+                return true;
+            case Key.A:
+                if (_isReplaceMode) {
+                    ReplaceAllRequested?.Invoke();
+                    RestoreFocus();
+                }
+                return true;
+        }
+        return false;
+    }
+
     private void OnSearchBoxKeyDown(object? sender, KeyEventArgs e) {
         // DMEditableCombo handles popup arrow-key/Enter/Escape internally.
         // We only handle find-bar-specific keys here.
         if (SearchBox.IsPopupOpen) return;
+
+        if (HandleAltShortcut(e)) {
+            e.Handled = true;
+            return;
+        }
 
         switch (e.Key) {
             case Key.Return:
@@ -235,6 +322,11 @@ public partial class FindBarControl : UserControl {
 
     private void OnReplaceBoxKeyDown(object? sender, KeyEventArgs e) {
         if (ReplaceBox.IsPopupOpen) return;
+
+        if (HandleAltShortcut(e)) {
+            e.Handled = true;
+            return;
+        }
 
         switch (e.Key) {
             case Key.Return:
