@@ -30,6 +30,7 @@ public partial class FindBarControl : UserControl {
     public string ReplaceTerm => ReplaceBox.Text ?? "";
     public bool MatchCase => MatchCaseBtn.IsChecked == true;
     public bool WholeWord => WholeWordBtn.IsChecked == true;
+    public bool PreserveCase => PreserveCaseBtn.IsChecked == true;
 
     public SearchMode SearchMode {
         get => WildcardBtn.IsChecked == true ? SearchMode.Wildcard :
@@ -234,6 +235,7 @@ public partial class FindBarControl : UserControl {
         ReplaceButtons.IsVisible = _isReplaceMode;
         ReplaceBtn.IsTabStop = _isReplaceMode;
         ReplaceAllBtn.IsTabStop = _isReplaceMode;
+        PreserveCaseBtn.IsVisible = _isReplaceMode;
         UpdateExpandGlyph();
     }
 
@@ -279,6 +281,12 @@ public partial class FindBarControl : UserControl {
                 }
                 SearchTermChanged?.Invoke();
                 RestoreFocus();
+                return true;
+            case Key.V:
+                if (_isReplaceMode) {
+                    PreserveCaseBtn.IsChecked = !PreserveCaseBtn.IsChecked;
+                    RestoreFocus();
+                }
                 return true;
             case Key.R:
                 if (_isReplaceMode) {

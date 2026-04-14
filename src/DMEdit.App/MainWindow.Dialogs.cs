@@ -296,6 +296,7 @@ public partial class MainWindow {
         _settings.FindSearchMode = FindBar.SearchMode;
         _settings.FindMatchCase = FindBar.MatchCase;
         _settings.FindWholeWord = FindBar.WholeWord;
+        _settings.FindPreserveCase = FindBar.PreserveCase;
         _settings.ScheduleSave();
     }
 
@@ -314,6 +315,7 @@ public partial class MainWindow {
         FindBar.SearchMode = _settings.FindSearchMode;
         FindBar.MatchCaseBtn.IsChecked = _settings.FindMatchCase;
         FindBar.WholeWordBtn.IsChecked = _settings.FindWholeWord;
+        FindBar.PreserveCaseBtn.IsChecked = _settings.FindPreserveCase;
 
         // Persist toggle state changes.
         FindBar.SearchTermChanged += () => {
@@ -322,6 +324,7 @@ public partial class MainWindow {
         };
         FindBar.MatchCaseBtn.Click += (_, _) => { SaveFindBarToggles(); UpdateFindMatchInfo(); };
         FindBar.WholeWordBtn.Click += (_, _) => { SaveFindBarToggles(); UpdateFindMatchInfo(); };
+        FindBar.PreserveCaseBtn.Click += (_, _) => SaveFindBarToggles();
 
         // Find requested: Enter / Shift+Enter or direction button.
         FindBar.FindRequested += forward => {

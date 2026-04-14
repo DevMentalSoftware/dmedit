@@ -339,6 +339,9 @@ public sealed class AppSettings {
     /// <summary>Last state of the Whole Word toggle.</summary>
     public bool FindWholeWord { get; set; }
 
+    /// <summary>Last state of the Preserve Case toggle.</summary>
+    public bool FindPreserveCase { get; set; }
+
     /// <summary>
     /// Remembered width of the find bar in DIPs. Null = use default MinWidth.
     /// </summary>

@@ -128,7 +128,7 @@
                            Margin="0,4,0,0">
                     <ToggleButton x:Name="MatchCaseBtn"
                                   DockPanel.Dock="Left"
-                                  Content="Abc" Height="24"
+                                  Content="Ab" Height="24"
                                   TabIndex="4"
                                   ToolTip.Tip="Match Case (Alt+C)" />
                     <ToggleButton x:Name="WholeWordBtn"
@@ -138,6 +138,13 @@
                                   Margin="4,0,0,0"
                                   TabIndex="5"
                                   ToolTip.Tip="Match Whole Word (Alt+W)" />
+                    <ToggleButton x:Name="PreserveCaseBtn"
+                                  DockPanel.Dock="Left"
+                                  Content="AB"  Height="24"
+                                  Margin="4,0,0,0"
+                                  TabIndex="5"
+                                  IsVisible="False"
+                                  ToolTip.Tip="Preserve Case (Alt+V)" />
                     <Border DockPanel.Dock="Left"
                             Width="1" Margin="8,2"
                             x:Name="OptionsSeparator" />
