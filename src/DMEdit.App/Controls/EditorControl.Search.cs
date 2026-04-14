@@ -287,8 +287,10 @@ public sealed partial class EditorControl {
                 var dest = buf.AsSpan(0, readLen);
                 int idx;
                 if (opts.CompiledRegex != null) {
-                    var m = opts.CompiledRegex.Match(new string(dest));
-                    idx = m.Success ? m.Index : -1;
+                    var chunk = new string(dest);
+                    idx = opts.RegexWholeWord
+                        ? MatchInSegments(chunk, opts, 0, chunk.Length)
+                        : RegexFirstMatch(chunk, opts, 0);
                 } else {
                     idx = dest.IndexOf(opts.Needle.AsSpan(), opts.Comparison);
                 }
@@ -352,7 +354,8 @@ public sealed partial class EditorControl {
         try {
             CopyFromTable(table, pos, buf, remaining);
             var text = new string(buf, 0, remaining);
-            var m = opts.CompiledRegex!.Match(text);
+            var segLen = opts.RegexWholeWord ? SegmentLength(text, 0) : remaining;
+            var m = opts.CompiledRegex!.Match(text, 0, segLen);
             return m.Success && m.Index == 0 ? m.Length : 0;
         } finally {
             ArrayPool<char>.Shared.Return(buf);
@@ -365,7 +368,10 @@ public sealed partial class EditorControl {
     /// </summary>
     private static bool IsSelectionMatch(string text, SearchOptions opts) {
         if (opts.CompiledRegex != null) {
-            var m = opts.CompiledRegex.Match(text);
+            // For regex+WholeWord, constrain to the non-whitespace segment
+            // so the match can't span across words.
+            var segLen = opts.RegexWholeWord ? SegmentLength(text, 0) : text.Length;
+            var m = opts.CompiledRegex.Match(text, 0, segLen);
             return m.Success && m.Index == 0 && m.Length == text.Length;
         }
         return string.Equals(text, opts.Needle, opts.Comparison);
@@ -462,13 +468,20 @@ public sealed partial class EditorControl {
             Mode = mode;
             CompiledRegex = mode switch {
                 SearchMode.Regex => BuildRegex(needle, matchCase, wholeWord),
-                SearchMode.Wildcard => BuildRegex(WildcardToRegex(needle), matchCase, wholeWord),
+                SearchMode.Wildcard => BuildRegex(WildcardToRegex(needle, wholeWord), matchCase, wholeWord),
                 _ => wholeWord ? BuildRegex(Regex.Escape(needle), matchCase, wholeWord) : null,
             };
         }
 
         public StringComparison Comparison =>
             MatchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+
+        /// <summary>
+        /// True when the search uses regex mode with whole-word enabled.
+        /// This combination requires segment-by-segment matching so greedy
+        /// quantifiers can't span across words.
+        /// </summary>
+        public bool RegexWholeWord => WholeWord && Mode == SearchMode.Regex;
 
         /// <summary>Returns the length of the match at <paramref name="pos"/>.</summary>
         public int MatchLength(PieceTable table, long pos) {
@@ -485,7 +498,10 @@ public sealed partial class EditorControl {
                     written += span.Length;
                 });
                 var text = new string(buf, 0, remaining);
-                var m = CompiledRegex.Match(text);
+                // For regex+WholeWord, constrain to the non-whitespace
+                // segment at position 0 so greedy quantifiers can't span words.
+                var segLen = RegexWholeWord ? SegmentLength(text, 0) : remaining;
+                var m = CompiledRegex.Match(text, 0, segLen);
                 return m.Success && m.Index == 0 ? m.Length : Needle.Length;
             } finally {
                 ArrayPool<char>.Shared.Return(buf);
@@ -496,7 +512,7 @@ public sealed partial class EditorControl {
             if (wholeWord) {
                 pattern = @"\b" + pattern + @"\b";
             }
-            var opts = RegexOptions.CultureInvariant;
+            var opts = RegexOptions.CultureInvariant | RegexOptions.Compiled;
             if (!matchCase) {
                 opts |= RegexOptions.IgnoreCase;
             }
@@ -507,13 +523,15 @@ public sealed partial class EditorControl {
             }
         }
 
-        private static string WildcardToRegex(string wildcard) {
-            // * → .*, ? → ., everything else escaped
+        private static string WildcardToRegex(string wildcard, bool wholeWord) {
+            // When wholeWord is true, restrict wildcards to word characters
+            // so the match stays within a single word.
+            // * → \w* (or .*), ? → \w (or .), everything else escaped
             var sb = new System.Text.StringBuilder(wildcard.Length * 2);
             foreach (var ch in wildcard) {
                 sb.Append(ch switch {
-                    '*' => ".*",
-                    '?' => ".",
+                    '*' => wholeWord ? @"\w*" : ".*",
+                    '?' => wholeWord ? @"\w" : ".",
                     _ => Regex.Escape(ch.ToString()),
                 });
             }
@@ -627,11 +645,14 @@ public sealed partial class EditorControl {
                 long hit;
                 if (opts.CompiledRegex != null) {
                     var chunk = new string(dest);
-                    Match? last = null;
-                    foreach (Match m in opts.CompiledRegex.Matches(chunk)) {
-                        if (chunkStart + m.Index < end) last = m;
+                    var rangeEnd = (int)(end - chunkStart);
+                    int lastIdx;
+                    if (opts.RegexWholeWord) {
+                        lastIdx = LastMatchInSegments(chunk, opts, 0, rangeEnd);
+                    } else {
+                        lastIdx = RegexLastMatch(chunk, opts, 0, rangeEnd);
                     }
-                    hit = last != null ? chunkStart + last.Index : -1;
+                    hit = lastIdx >= 0 ? chunkStart + lastIdx : -1;
                 } else {
                     var idx = dest.LastIndexOf(opts.Needle.AsSpan(), opts.Comparison);
                     hit = idx >= 0 ? chunkStart + idx : -1;
@@ -651,5 +672,94 @@ public sealed partial class EditorControl {
             ArrayPool<char>.Shared.Return(buf);
         }
         return -1;
+    }
+
+    // -----------------------------------------------------------------
+    // Segment-based helpers for regex + WholeWord
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Returns the length of the non-whitespace segment starting at
+    /// <paramref name="pos"/> in <paramref name="text"/>.
+    /// </summary>
+    private static int SegmentLength(string text, int pos) {
+        var i = pos;
+        while (i < text.Length && !char.IsWhiteSpace(text[i])) {
+            i++;
+        }
+        return i - pos;
+    }
+
+    /// <summary>
+    /// Scans non-whitespace segments in <paramref name="chunk"/> and
+    /// returns the index of the first regex match, or -1.  The regex
+    /// is constrained to each segment via <c>Match(input, start, len)</c>
+    /// so greedy quantifiers can't span across words.
+    /// </summary>
+    private static int MatchInSegments(string chunk, SearchOptions opts,
+            int from, int limit) {
+        var i = from;
+        while (i < limit) {
+            if (char.IsWhiteSpace(chunk[i])) {
+                i++;
+                continue;
+            }
+            var segLen = SegmentLength(chunk, i);
+            var m = opts.CompiledRegex!.Match(chunk, i, Math.Min(segLen, limit - i));
+            if (m.Success) {
+                return m.Index;
+            }
+            i += segLen;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Scans non-whitespace segments in <paramref name="chunk"/> and
+    /// returns the index of the last regex match before
+    /// <paramref name="limit"/>, or -1.
+    /// </summary>
+    private static int LastMatchInSegments(string chunk, SearchOptions opts,
+            int from, int limit) {
+        var lastIdx = -1;
+        var i = from;
+        while (i < limit) {
+            if (char.IsWhiteSpace(chunk[i])) {
+                i++;
+                continue;
+            }
+            var segLen = SegmentLength(chunk, i);
+            var segEnd = Math.Min(i + segLen, limit);
+            // Find all non-overlapping matches within this segment.
+            var at = i;
+            while (at < segEnd) {
+                var m = opts.CompiledRegex!.Match(chunk, at, segEnd - at);
+                if (!m.Success) {
+                    break;
+                }
+                lastIdx = m.Index;
+                at = m.Index + Math.Max(m.Length, 1);
+            }
+            i += segLen;
+        }
+        return lastIdx;
+    }
+
+    /// <summary>Simple forward regex match (no segment restriction).</summary>
+    private static int RegexFirstMatch(string chunk, SearchOptions opts, int from) {
+        var m = opts.CompiledRegex!.Match(chunk, from);
+        return m.Success ? m.Index : -1;
+    }
+
+    /// <summary>Simple backward regex scan (no segment restriction).</summary>
+    private static int RegexLastMatch(string chunk, SearchOptions opts,
+            int from, int limit) {
+        var lastIdx = -1;
+        var m = opts.CompiledRegex!.Match(chunk, from);
+        while (m.Success && m.Index < limit) {
+            lastIdx = m.Index;
+            m = m.NextMatch();
+        }
+        return lastIdx;
     }
 }
