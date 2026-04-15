@@ -383,4 +383,120 @@ public class BulkReplaceTests {
         t.BulkReplace([], []);
         Assert.Equal("abcdef", t.GetText());
     }
+
+    // =====================================================================
+    // Length caching — invalidation after every mutation type
+    // =====================================================================
+
+    [Fact]
+    public void Length_CorrectAfterInsertDelete() {
+        var t = new PieceTable("hello");
+        Assert.Equal(5, t.Length);
+        t.Insert(5, " world");
+        Assert.Equal(11, t.Length);
+        t.Delete(5, 6);
+        Assert.Equal(5, t.Length);
+    }
+
+    [Fact]
+    public void Length_CorrectAfterBulkReplace_Shrink() {
+        var t = new PieceTable("aa bb aa bb aa");
+        t.BulkReplace([0, 6, 12], 2, "x");
+        Assert.Equal(11, t.Length);
+    }
+
+    [Fact]
+    public void Length_CorrectAfterBulkReplace_Grow() {
+        var t = new PieceTable("aa bb aa bb aa");
+        t.BulkReplace([0, 6, 12], 2, "xxxx");
+        Assert.Equal(20, t.Length);
+    }
+
+    [Fact]
+    public void Length_ConsistentAcrossRepeatedCalls() {
+        var t = new PieceTable("abcdef");
+        t.Insert(3, "XYZ");
+        Assert.Equal(t.Length, t.Length);
+        Assert.Equal(9, t.Length);
+    }
+
+    // =====================================================================
+    // FindPiece correctness — binary search on prefix sums
+    // =====================================================================
+
+    private static char CharAt(PieceTable t, long pos) => t.GetText(pos, 1)[0];
+
+    [Fact]
+    public void FindPiece_CorrectAfterManyInserts() {
+        var t = new PieceTable("0123456789");
+        t.Insert(5, "AAAAA");
+        t.Insert(10, "BBBBB");
+        t.Insert(0, "CCCCC");
+        Assert.Equal("CCCCC01234AAAAABBBBB56789", t.GetText());
+        Assert.Equal('C', CharAt(t, 0));
+        Assert.Equal('0', CharAt(t, 5));
+        Assert.Equal('A', CharAt(t, 10));
+        Assert.Equal('B', CharAt(t, 15));
+        Assert.Equal('5', CharAt(t, 20));
+        Assert.Equal('9', CharAt(t, 24));
+    }
+
+    [Fact]
+    public void FindPiece_BulkReplace_PieceBoundaries() {
+        var t = new PieceTable("aXb aXb aXb aXb");
+        t.BulkReplace([1, 5, 9, 13], 1, "YY");
+        Assert.Equal("aYYb aYYb aYYb aYYb", t.GetText());
+        Assert.Equal('a', CharAt(t, 0));
+        Assert.Equal('Y', CharAt(t, 1));
+        Assert.Equal('b', CharAt(t, 3));
+        Assert.Equal(' ', CharAt(t, 4));
+    }
+
+    [Fact]
+    public void FindPiece_ReverseAccess_AfterBulkReplace() {
+        var sb = new System.Text.StringBuilder();
+        for (var i = 0; i < 100; i++) sb.Append($"word{i} ");
+        var t = new PieceTable(sb.ToString());
+        var text = t.GetText();
+        var positions = new List<long>();
+        var idx = 0;
+        while ((idx = text.IndexOf("word", idx, StringComparison.Ordinal)) >= 0) {
+            positions.Add(idx);
+            idx += 4;
+        }
+        t.BulkReplace(positions.ToArray(), 4, "XXXX");
+        var newText = t.GetText();
+        for (var i = (int)t.Length - 1; i >= 0; i--) {
+            Assert.Equal(newText[i], CharAt(t, i));
+        }
+    }
+
+    // =====================================================================
+    // Deferred line tree + RebuildLineTree
+    // =====================================================================
+
+    [Fact]
+    public void DeferLineTree_ThenRebuild() {
+        var t = new PieceTable("aaa bbb aaa");
+        t.BulkReplace([0, 8], 3, "xx", deferLineTree: true);
+        t.RebuildLineTree();
+        Assert.Equal(1, t.LineCount);
+        Assert.Equal("xx bbb xx", t.GetText());
+    }
+
+    [Fact]
+    public void DeferLineTree_LengthStillCorrect() {
+        var t = new PieceTable("hello world");
+        t.BulkReplace([0], 5, "hi", deferLineTree: true);
+        Assert.Equal(8, t.Length);
+    }
+
+    [Fact]
+    public void DeferLineTree_MultilineThenRebuild() {
+        var t = new PieceTable("aaa\nbbb\naaa\n");
+        t.BulkReplace([0, 8], 3, "xx", deferLineTree: true);
+        t.RebuildLineTree();
+        Assert.Equal(4, t.LineCount);
+        Assert.Equal("xx\nbbb\nxx\n", t.GetText());
+    }
 }

@@ -8,14 +8,17 @@ namespace DMEdit.Core.Documents.History;
 public sealed class VaryingBulkReplaceEdit : BulkReplaceEditBase {
     private readonly (long Pos, int Len)[] _matches;
     private readonly string[] _replacements;
+    private readonly bool _deferLineTree;
 
     public VaryingBulkReplaceEdit(
         (long Pos, int Len)[] matches, string[] replacements,
         Piece[] savedPieces, int[] savedLineLengths,
-        long savedAddBufLen)
+        long savedAddBufLen,
+        bool deferLineTree = false)
         : base(savedPieces, savedLineLengths, savedAddBufLen) {
         _matches = matches;
         _replacements = replacements;
+        _deferLineTree = deferLineTree;
     }
 
     /// <summary>Match positions and lengths.</summary>
@@ -28,6 +31,6 @@ public sealed class VaryingBulkReplaceEdit : BulkReplaceEditBase {
     public int MatchCount => _matches.Length;
 
     public override void Apply(PieceTable table) {
-        table.BulkReplace(_matches, _replacements);
+        table.BulkReplace(_matches, _replacements, _deferLineTree);
     }
 }

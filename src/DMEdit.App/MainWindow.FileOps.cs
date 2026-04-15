@@ -482,6 +482,18 @@ public partial class MainWindow {
             var sw = Stopwatch.StartNew();
             var sha1 = await FileSaver.SaveAsync(Editor.Document, path,
                 _settings.BackupOnSave);
+
+            // Reload the active tab from the just-saved file so the piece
+            // table is compacted to a single piece backed by a fresh
+            // PagedFileBuffer.  Without this, pieces still reference the
+            // old (now-replaced) memory-mapped buffer and crash on access.
+            // The reload is invisible to the user — IsLoading is still
+            // true from above.  Only reload the active tab — non-active
+            // tabs aren't rendered and will reload when switched to.
+            if (tab != null && tab == _activeTab) {
+                await ReloadDocumentAfterSaveAsync(tab, path, sha1);
+            }
+
             sw.Stop();
             Editor.PerfStats.SaveTimeMs = sw.Elapsed.TotalMilliseconds;
             return sha1;
@@ -529,11 +541,12 @@ public partial class MainWindow {
             return null;
         } finally {
             // Clear the loading spinner and unblock editing.
+            // _activeTab may have been replaced by ReloadDocumentAfterSaveAsync,
+            // so unblock unconditionally if we blocked on entry.
             if (tab != null) {
                 tab.IsLoading = false;
-                if (_activeTab == tab) {
-                    Editor.IsEditBlocked = false;
-                }
+                _activeTab!.IsLoading = false;
+                Editor.IsEditBlocked = _activeTab.IsReadOnly;
                 UpdateTabBar();
             }
         }
@@ -931,6 +944,90 @@ public partial class MainWindow {
         SnapshotFileStats(newTab);
         _watcher.Watch(newTab);
         UpdateTabBar();
+    }
+
+    /// <summary>
+    /// After a successful Save, reload the document from the just-written
+    /// file so the piece table is compacted to a single piece backed by a
+    /// fresh <see cref="PagedFileBuffer"/>.  Preserves caret, selection,
+    /// and scroll state.  Runs within the caller's IsLoading window so the
+    /// user sees a single save operation.
+    /// </summary>
+    private async Task ReloadDocumentAfterSaveAsync(TabState tab, string path, string sha1) {
+        LoadResult result;
+        try {
+            result = await FileLoader.LoadAsync(path);
+        } catch {
+            return; // reload failed — leave the old document in place
+        }
+        try {
+            if (result.Loaded is not null) {
+                await result.Loaded;
+            }
+        } catch {
+            // Scan failed — proceed with whatever is available.
+        }
+
+        var idx = _tabs.IndexOf(tab);
+        if (idx < 0) {
+            return;
+        }
+
+        var newTab = new TabState(result.Document, path, result.DisplayName) {
+            LoadResult = result,
+        };
+        newTab.BaseSha1 = sha1;
+        newTab.Document.LineEndingInfo = result.Document.LineEndingInfo;
+        newTab.Document.IndentInfo = result.Document.IndentInfo;
+        newTab.Document.EncodingInfo = result.Document.EncodingInfo;
+        newTab.Document.MarkSavePoint();
+        if (result.Buffer is PagedFileBuffer paged) {
+            var lengths = paged.TakeLineLengths();
+            if (lengths is { Count: > 0 }) {
+                newTab.Document.Table.InstallLineTree(
+                    CollectionsMarshal.AsSpan(lengths));
+            }
+        }
+
+        // Transfer live editor state.
+        var newLen = newTab.Document.Table.Length;
+        var isActive = tab == _activeTab;
+
+        if (isActive) {
+            Editor.SaveScrollState(tab);
+        }
+
+        newTab.ScrollOffsetY = tab.ScrollOffsetY;
+        newTab.WinTopLine = tab.WinTopLine;
+        newTab.WinScrollOffset = tab.WinScrollOffset;
+        newTab.WinRenderOffsetY = tab.WinRenderOffsetY;
+        newTab.WinFirstLineHeight = tab.WinFirstLineHeight;
+
+        var oldSel = tab.Document.Selection;
+        newTab.Document.Selection = new Selection(
+            Math.Min(oldSel.Anchor, newLen),
+            Math.Min(oldSel.Active, newLen));
+
+        if (tab.Document.ColumnSel is { } colSel) {
+            var maxLine = (int)Math.Max(0, newTab.Document.Table.LineCount - 1);
+            newTab.Document.ColumnSel = colSel with {
+                AnchorLine = Math.Min(colSel.AnchorLine, maxLine),
+                ActiveLine = Math.Min(colSel.ActiveLine, maxLine),
+            };
+        }
+
+        // Swap — callers handle watcher and file stats.
+        _tabs[idx] = newTab;
+        if (isActive) {
+            newTab.CharWrapMode = ShouldCharWrap(newTab);
+            Editor.CharWrapMode = newTab.CharWrapMode;
+            _activeTab = newTab;
+            Editor.ReplaceDocument(newTab.Document, newTab);
+        }
+        newTab.Document.Changed += (_, _) => OnTabDocumentChanged(newTab);
+        if (_findBarTab == tab) {
+            _findBarTab = newTab;
+        }
     }
 
     /// <summary>

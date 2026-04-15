@@ -352,7 +352,7 @@ public partial class MainWindow {
             SyncFindBarHistory();
             _settings.ScheduleSave();
             Editor.LastSearchTerm = searchTerm;
-            Editor.ReplaceCurrent(replaceTerm, FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode);
+            Editor.ReplaceCurrent(replaceTerm, FindBar.MatchCase, FindBar.WholeWord, FindBar.SearchMode, FindBar.PreserveCase);
             UpdateFindMatchInfo();
         };
 
@@ -378,7 +378,8 @@ public partial class MainWindow {
             try {
                 count = await Editor.ReplaceAllAsync(
                     replaceTerm, FindBar.MatchCase, FindBar.WholeWord,
-                    FindBar.SearchMode, progress, dialog.CancellationToken);
+                    FindBar.SearchMode, FindBar.PreserveCase,
+                    progress, dialog.CancellationToken);
             } catch (OperationCanceledException) {
                 count = 0;
             } finally {

@@ -20,8 +20,8 @@ public class ProgressDialog : Window {
     /// <summary>Token that signals when the user clicks Cancel.</summary>
     public CancellationToken CancellationToken => _cts.Token;
 
-    /// <summary>True if the user cancelled the operation.</summary>
-    public bool WasCancelled => _cts.IsCancellationRequested;
+    /// <summary>True if the user explicitly cancelled (not just dialog closed).</summary>
+    public bool WasCancelled { get; private set; }
 
     public ProgressDialog(string title, string initialMessage, EditorTheme? theme = null,
         bool showCancelButton = true) {
@@ -59,6 +59,7 @@ public class ProgressDialog : Window {
                 HorizontalAlignment = HorizontalAlignment.Right,
             };
             cancelBtn.Click += (_, _) => {
+                WasCancelled = true;
                 _cts.Cancel();
                 _message.Text = "Cancelling\u2026";
                 cancelBtn.IsEnabled = false;

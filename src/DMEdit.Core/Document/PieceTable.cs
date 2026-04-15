@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -19,6 +20,22 @@ public sealed class PieceTable {
     private bool _initialPieceResolved;
 
     private readonly List<Piece> _pieces = new();
+
+    // Piece prefix-sum array for O(log n) FindPiece via binary search.
+    // _piecePrefixSums[i] = total length of pieces [0..i] (inclusive).
+    // Built lazily on first FindPiece after a mutation; null = stale.
+    private long[]? _piecePrefixSums;
+
+    // Cached document length — avoids O(pieces) iteration on every
+    // Length access.  -1 means not yet computed / invalidated.
+    private long _cachedLength = -1;
+
+    /// <summary>Invalidates piece-derived caches after piece-list
+    /// mutations.</summary>
+    private void InvalidatePieceCache() {
+        _piecePrefixSums = null;
+        _cachedLength = -1;
+    }
 
     // LineIndexTree-based line index: stores line lengths (including terminators).
     // Provides O(log L) prefix-sum queries for LineStartOfs/LineFromOfs and
@@ -120,11 +137,15 @@ public sealed class PieceTable {
     /// <summary>Total number of buffer characters in the document.</summary>
     public long Length {
         get {
+            if (_cachedLength >= 0) {
+                return _cachedLength;
+            }
             EnsureInitialPiece();
             var total = 0L;
             foreach (var p in _pieces) {
                 total += p.Len;
             }
+            _cachedLength = total;
             return total;
         }
     }
@@ -184,6 +205,7 @@ public sealed class PieceTable {
             _pieces.InsertRange(pieceIdx + 1, pieces);
             _pieces.Insert(pieceIdx + 1 + pieces.Length, right);
         }
+        InvalidatePieceCache();
     }
 
     /// <summary>
@@ -241,6 +263,8 @@ public sealed class PieceTable {
             _pieces.Insert(pieceIdx + 1, newPiece);
             _pieces.Insert(pieceIdx + 2, right);
         }
+
+        InvalidatePieceCache();
 
         // Post-mutation: update line tree.
         //
@@ -324,6 +348,7 @@ public sealed class PieceTable {
         if (leftRemainder is { IsEmpty: false } l) {
             _pieces.Insert(insertAt, l);
         }
+        InvalidatePieceCache();
 
         // Post-mutation: update line tree.
         if (startLine >= 0 && !hasNewline) {
@@ -570,17 +595,51 @@ public sealed class PieceTable {
     /// <summary>
     /// Finds the piece and within-piece offset for a given logical document offset.
     /// Returns (pieces.Count, 0) when ofs == Length (i.e., end-of-document).
+    /// Uses a lazily-built prefix-sum array for O(log n) binary search.
     /// </summary>
     private (int pieceIdx, long ofsInPiece) FindPiece(long ofs) {
         EnsureInitialPiece();
-        var remaining = ofs;
-        for (var i = 0; i < _pieces.Count; i++) {
-            if (remaining < _pieces[i].Len) {
-                return (i, remaining);
-            }
-            remaining -= _pieces[i].Len;
+        if (_pieces.Count == 0) {
+            return (0, 0L);
         }
-        return (_pieces.Count, 0L); // ofs == Length
+        var sums = EnsurePrefixSums();
+        var totalLen = sums[_pieces.Count - 1];
+        if (ofs >= totalLen) {
+            return (_pieces.Count, 0L); // ofs == Length
+        }
+        // Binary search: find smallest i where sums[i] > ofs.
+        var lo = 0;
+        var hi = _pieces.Count - 1;
+        while (lo < hi) {
+            var mid = lo + (hi - lo) / 2;
+            if (sums[mid] <= ofs) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        var pieceStart = lo == 0 ? 0L : sums[lo - 1];
+        return (lo, ofs - pieceStart);
+    }
+
+    /// <summary>
+    /// Lazily builds the piece prefix-sum array.
+    /// <c>_piecePrefixSums[i]</c> = total length of pieces [0..i] inclusive.
+    /// </summary>
+    private long[] EnsurePrefixSums() {
+        if (_piecePrefixSums != null) {
+            return _piecePrefixSums;
+        }
+        var sums = new long[_pieces.Count];
+        var running = 0L;
+        for (var i = 0; i < _pieces.Count; i++) {
+            running += _pieces[i].Len;
+            sums[i] = running;
+        }
+        _piecePrefixSums = sums;
+        // Also cache Length since we just computed it.
+        _cachedLength = running;
+        return sums;
     }
 
     /// <summary>
@@ -594,6 +653,7 @@ public sealed class PieceTable {
             var len = Buffer.Length;
             if (len > 0) {
                 _pieces.Add(new Piece(0, 0, len));
+                InvalidatePieceCache();
             }
         }
     }
@@ -613,10 +673,14 @@ public sealed class PieceTable {
         EnsureInitialPiece();
         var bufLen = Buffer.Length;
         if (_pieces.Count == 0) {
-            if (bufLen > 0) _pieces.Add(new Piece(0, 0, bufLen));
+            if (bufLen > 0) {
+                _pieces.Add(new Piece(0, 0, bufLen));
+                InvalidatePieceCache();
+            }
         } else if (_pieces.Count == 1 && _pieces[0].BufIdx == 0
                    && _pieces[0].Len != bufLen) {
             _pieces[0] = new Piece(0, 0, bufLen);
+            InvalidatePieceCache();
         }
     }
 
@@ -629,21 +693,29 @@ public sealed class PieceTable {
         }
         var (startPiece, startOfsInPiece) = FindPiece(start);
         var remaining = len;
-        for (var i = startPiece; i < _pieces.Count && remaining > 0; i++) {
-            var p = _pieces[i];
-            var pieceOfs = i == startPiece ? startOfsInPiece : 0L;
-            var buf = _buffers[p.BufIdx];
-            var avail = p.Len - pieceOfs;
-            var pieceRemaining = Math.Min(avail, remaining);
-            while (pieceRemaining > 0) {
-                var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
-                var chars = new char[take];
-                buf.CopyTo(p.Start + pieceOfs, chars, take);
-                visitor(chars);
-                pieceOfs += take;
-                pieceRemaining -= take;
-                remaining -= take;
+        var poolBuf = ArrayPool<char>.Shared.Rent(Math.Min((int)Math.Min(remaining, MaxVisitChunk), MaxVisitChunk));
+        try {
+            for (var i = startPiece; i < _pieces.Count && remaining > 0; i++) {
+                var p = _pieces[i];
+                var pieceOfs = i == startPiece ? startOfsInPiece : 0L;
+                var buf = _buffers[p.BufIdx];
+                var avail = p.Len - pieceOfs;
+                var pieceRemaining = Math.Min(avail, remaining);
+                while (pieceRemaining > 0) {
+                    var take = (int)Math.Min(pieceRemaining, MaxVisitChunk);
+                    if (take > poolBuf.Length) {
+                        ArrayPool<char>.Shared.Return(poolBuf);
+                        poolBuf = ArrayPool<char>.Shared.Rent(take);
+                    }
+                    buf.CopyTo(p.Start + pieceOfs, poolBuf, take);
+                    visitor(poolBuf.AsSpan(0, take));
+                    pieceOfs += take;
+                    pieceRemaining -= take;
+                    remaining -= take;
+                }
             }
+        } finally {
+            ArrayPool<char>.Shared.Return(poolBuf);
         }
     }
 
@@ -690,6 +762,15 @@ public sealed class PieceTable {
         _lineTree = scanner.BuildTree();
         CheckLongLine(_lineTree.MaxValue());
     }
+
+    /// <summary>
+    /// Rebuilds the line tree from the current piece list.  Safe to call
+    /// from a background thread when no concurrent mutations are possible
+    /// (e.g. after a deferred <c>BulkReplace</c> while the editor is
+    /// blocked).  Call <see cref="InstallLineTree"/> on the UI thread
+    /// if you need to install a separately-built tree instead.
+    /// </summary>
+    public void RebuildLineTree() => BuildLineTree();
 
 
     /// <summary>
@@ -1076,6 +1157,7 @@ public sealed class PieceTable {
             _pieces.Insert(pieceIdx + 1, newPiece);
             _pieces.Insert(pieceIdx + 2, right);
         }
+        InvalidatePieceCache();
 
         // Post-mutation: update line tree.
         if (affectedLine >= 0 && !hasNewlines) {
@@ -1104,9 +1186,9 @@ public sealed class PieceTable {
     /// Caller must also restore the line tree via <see cref="InstallLineTree"/>.
     /// </summary>
     public void RestorePieces(Piece[] pieces) {
-
         _pieces.Clear();
         _pieces.AddRange(pieces);
+        InvalidatePieceCache();
     }
 
     /// <summary>
@@ -1126,7 +1208,8 @@ public sealed class PieceTable {
     /// Thrown when <paramref name="matchPositions"/> is not sorted ascending,
     /// or when consecutive matches overlap given <paramref name="matchLen"/>.
     /// </exception>
-    public void BulkReplace(long[] matchPositions, int matchLen, string replacement) {
+    public void BulkReplace(long[] matchPositions, int matchLen, string replacement,
+            bool deferLineTree = false) {
         if (matchPositions.Length == 0) return;
         ValidateUniformMatches(matchPositions, matchLen);
 
@@ -1143,7 +1226,8 @@ public sealed class PieceTable {
         BulkReplaceCore(matchPositions.Length,
             i => matchPositions[i],
             _ => matchLen,
-            _ => replacementPiece);
+            _ => replacementPiece,
+            deferLineTree);
     }
 
     /// <summary>
@@ -1157,7 +1241,8 @@ public sealed class PieceTable {
     /// <paramref name="matches"/> and <paramref name="replacements"/> have
     /// mismatched lengths.
     /// </exception>
-    public void BulkReplace((long Pos, int Len)[] matches, string[] replacements) {
+    public void BulkReplace((long Pos, int Len)[] matches, string[] replacements,
+            bool deferLineTree = false) {
         if (matches.Length == 0) return;
         if (matches.Length != replacements.Length) {
             throw new ArgumentException(
@@ -1181,7 +1266,8 @@ public sealed class PieceTable {
             i => matches[i].Len,
             i => addSpans[i].Len > 0
                 ? new Piece(_addBufIdx, addSpans[i].Ofs, addSpans[i].Len)
-                : default);
+                : default,
+            deferLineTree);
     }
 
     /// <summary>
@@ -1233,7 +1319,8 @@ public sealed class PieceTable {
         int matchCount,
         Func<int, long> matchPos,
         Func<int, int> matchLenFunc,
-        Func<int, Piece> replacementPiece) {
+        Func<int, Piece> replacementPiece,
+        bool deferLineTree = false) {
 
         var newPieces = new List<Piece>(_pieces.Count + matchCount);
 
@@ -1262,9 +1349,14 @@ public sealed class PieceTable {
         // 4. Copy remaining pieces after the last match.
         CopyPiecesUpTo(long.MaxValue, newPieces, ref pieceIdx, ref ofsInPiece, ref docOfs);
 
+        InvalidatePieceCache();
         _pieces.Clear();
         _pieces.AddRange(newPieces);
-        BuildLineTree();
+        if (!deferLineTree) {
+            BuildLineTree();
+        } else {
+            _lineTree = null;
+        }
     }
 
     /// <summary>

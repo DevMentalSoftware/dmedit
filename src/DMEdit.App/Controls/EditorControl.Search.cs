@@ -143,7 +143,8 @@ public sealed partial class EditorControl {
     /// Returns true if a replacement was made.
     /// </summary>
     public bool ReplaceCurrent(string replacement, bool matchCase = false,
-                               bool wholeWord = false, SearchMode mode = SearchMode.Normal) {
+                               bool wholeWord = false, SearchMode mode = SearchMode.Normal,
+                               bool preserveCase = false) {
         var doc = Document;
         if (doc == null || _lastSearchTerm.Length == 0) {
             return false;
@@ -167,7 +168,8 @@ public sealed partial class EditorControl {
             return false;
         }
         FlushCompound();
-        doc.Insert(replacement);
+        var rep = preserveCase ? ApplyPreserveCase(selectedText, replacement) : replacement;
+        doc.Insert(rep);
         InvalidateVisual();
         // Advance to next match — FindNext handles the scroll to reveal the
         // new match, which is the only scroll the user cares about here.
@@ -185,6 +187,7 @@ public sealed partial class EditorControl {
     /// </summary>
     public async Task<int> ReplaceAllAsync(string replacement, bool matchCase = false,
                           bool wholeWord = false, SearchMode mode = SearchMode.Normal,
+                          bool preserveCase = false,
                           IProgress<(string Message, double Percent)>? progress = null,
                           CancellationToken ct = default) {
         var doc = Document;
@@ -229,12 +232,26 @@ public sealed partial class EditorControl {
 
         progress?.Report(($"Replacing {positions.Count:N0} matches\u2026", 99));
 
-        // Phase 2: single bulk PieceTable operation on the UI thread.
+        // Phase 2: piece-list swap on UI thread (fast), line tree
+        // rebuild on background thread (slow — full document scan).
         FlushCompound();
         int count;
-        if (matchLengths == null) {
+        if (preserveCase) {
+            // Each match may produce a different replacement string, so
+            // always use the varying path.
+            var uniformLen = matchLengths == null ? opts.Needle.Length : 0;
+            var matches = new (long Pos, int Len)[positions.Count];
+            var replacements = new string[positions.Count];
+            for (var i = 0; i < positions.Count; i++) {
+                var mLen = matchLengths != null ? matchLengths[i] : uniformLen;
+                matches[i] = (positions[i], mLen);
+                var matchText = table.GetText(positions[i], mLen);
+                replacements[i] = ApplyPreserveCase(matchText, replacement);
+            }
+            count = doc.BulkReplaceVarying(matches, replacements, deferLineTree: true);
+        } else if (matchLengths == null) {
             count = doc.BulkReplaceUniform(
-                positions.ToArray(), opts.Needle.Length, replacement);
+                positions.ToArray(), opts.Needle.Length, replacement, deferLineTree: true);
         } else {
             var matches = new (long Pos, int Len)[positions.Count];
             for (var i = 0; i < positions.Count; i++) {
@@ -242,9 +259,16 @@ public sealed partial class EditorControl {
             }
             var replacements = new string[matches.Length];
             Array.Fill(replacements, replacement);
-            count = doc.BulkReplaceVarying(matches, replacements);
+            count = doc.BulkReplaceVarying(matches, replacements, deferLineTree: true);
         }
 
+        progress?.Report(($"Building line index\u2026", 99));
+
+        // Heavy line-tree rebuild on background thread.
+        await Task.Run(() => table.RebuildLineTree(), ct);
+
+        // Back on UI thread — finalize.
+        doc.RaiseChanged();
         progress?.Report(("Done", 100));
 
         ScrollCaretIntoView();
@@ -570,6 +594,57 @@ public sealed partial class EditorControl {
         }
 
         return -1;
+    }
+
+    // -----------------------------------------------------------------
+    // Preserve-case replacement
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Transforms <paramref name="replacement"/> to match the casing
+    /// pattern of <paramref name="matched"/>:
+    /// <list type="bullet">
+    /// <item>All upper → replacement uppercased</item>
+    /// <item>All lower → replacement lowercased</item>
+    /// <item>Title case (first upper, rest lower) → replacement title-cased</item>
+    /// <item>Otherwise → replacement unchanged</item>
+    /// </list>
+    /// </summary>
+    internal static string ApplyPreserveCase(string matched, string replacement) {
+        if (matched.Length == 0 || replacement.Length == 0) {
+            return replacement;
+        }
+        // Classify the matched text's casing pattern.
+        bool hasUpper = false, hasLower = false;
+        foreach (var ch in matched) {
+            if (char.IsUpper(ch)) {
+                hasUpper = true;
+            }
+            if (char.IsLower(ch)) {
+                hasLower = true;
+            }
+        }
+        if (hasUpper && !hasLower) {
+            return replacement.ToUpperInvariant();
+        }
+        if (hasLower && !hasUpper) {
+            return replacement.ToLowerInvariant();
+        }
+        // Title case: first letter upper, all subsequent letters lower.
+        if (char.IsUpper(matched[0])) {
+            var titleCase = true;
+            for (var i = 1; i < matched.Length; i++) {
+                if (char.IsUpper(matched[i])) {
+                    titleCase = false;
+                    break;
+                }
+            }
+            if (titleCase) {
+                return char.ToUpperInvariant(replacement[0])
+                    + replacement.Substring(1).ToLowerInvariant();
+            }
+        }
+        return replacement;
     }
 
     // -----------------------------------------------------------------

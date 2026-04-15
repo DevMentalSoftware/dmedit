@@ -8,15 +8,18 @@ public sealed class UniformBulkReplaceEdit : BulkReplaceEditBase {
     private readonly long[] _matchPositions;
     private readonly int _matchLen;
     private readonly string _replacement;
+    private readonly bool _deferLineTree;
 
     public UniformBulkReplaceEdit(
         long[] matchPositions, int matchLen, string replacement,
         Piece[] savedPieces, int[] savedLineLengths,
-        long savedAddBufLen)
+        long savedAddBufLen,
+        bool deferLineTree = false)
         : base(savedPieces, savedLineLengths, savedAddBufLen) {
         _matchPositions = matchPositions;
         _matchLen = matchLen;
         _replacement = replacement;
+        _deferLineTree = deferLineTree;
     }
 
     /// <summary>Match positions (sorted ascending).</summary>
@@ -32,6 +35,6 @@ public sealed class UniformBulkReplaceEdit : BulkReplaceEditBase {
     public int MatchCount => _matchPositions.Length;
 
     public override void Apply(PieceTable table) {
-        table.BulkReplace(_matchPositions, _matchLen, _replacement);
+        table.BulkReplace(_matchPositions, _matchLen, _replacement, _deferLineTree);
     }
 }

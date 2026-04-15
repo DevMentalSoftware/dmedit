@@ -72,7 +72,8 @@ public sealed partial class Document {
     /// Uniform bulk replace: all matches have the same length and the same
     /// replacement string.  Single undo entry, one line tree rebuild.
     /// </summary>
-    public int BulkReplaceUniform(long[] matchPositions, int matchLen, string replacement) {
+    public int BulkReplaceUniform(long[] matchPositions, int matchLen, string replacement,
+            bool deferLineTree = false) {
         if (matchPositions.Length == 0) return 0;
 
         var savedPieces = _table.SnapshotPieces();
@@ -81,11 +82,14 @@ public sealed partial class Document {
 
         var edit = new UniformBulkReplaceEdit(
             matchPositions, matchLen, replacement,
-            savedPieces, savedLines, savedAddLen);
+            savedPieces, savedLines, savedAddLen,
+            deferLineTree);
         _history.Push(edit, _table, Selection);
 
         Selection = Selection.Collapsed(Math.Min(Selection.Caret, _table.Length));
-        RaiseChanged();
+        if (!deferLineTree) {
+            RaiseChanged();
+        }
         return matchPositions.Length;
     }
 
@@ -94,7 +98,8 @@ public sealed partial class Document {
     /// replacements (e.g. regex replace, indentation conversion).
     /// Single undo entry, one line tree rebuild.
     /// </summary>
-    public int BulkReplaceVarying((long Pos, int Len)[] matches, string[] replacements) {
+    public int BulkReplaceVarying((long Pos, int Len)[] matches, string[] replacements,
+            bool deferLineTree = false) {
         if (matches.Length == 0) return 0;
 
         var savedPieces = _table.SnapshotPieces();
@@ -103,11 +108,14 @@ public sealed partial class Document {
 
         var edit = new VaryingBulkReplaceEdit(
             matches, replacements,
-            savedPieces, savedLines, savedAddLen);
+            savedPieces, savedLines, savedAddLen,
+            deferLineTree);
         _history.Push(edit, _table, Selection);
 
         Selection = Selection.Collapsed(Math.Min(Selection.Caret, _table.Length));
-        RaiseChanged();
+        if (!deferLineTree) {
+            RaiseChanged();
+        }
         return matches.Length;
     }
 
