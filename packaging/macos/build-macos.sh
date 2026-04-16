@@ -76,7 +76,7 @@ build_arch() {
 generate_icns() {
     local output="$1"
     local iconset_dir="$DIST/dmedit.iconset"
-    local svg="$REPO_ROOT/resources/dev_mental_head.svg"
+    local svg="$REPO_ROOT/resources/text_editor.svg"
 
     if [ ! -f "$svg" ]; then
         echo "  Warning: $svg not found, skipping icon generation."

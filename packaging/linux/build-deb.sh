@@ -30,9 +30,9 @@ mkdir -p "$STAGING/opt/dmedit"
 cp -R "$DIST/publish-linux/"* "$STAGING/opt/dmedit/"
 chmod +x "$STAGING/opt/dmedit/dmedit"
 
-# Icon
-if [ -f "$REPO_ROOT/resources/dev_mental_head.svg" ]; then
-    cp "$REPO_ROOT/resources/dev_mental_head.svg" "$STAGING/opt/dmedit/"
+# Icons
+if [ -f "$REPO_ROOT/resources/text_editor.svg" ]; then
+    cp "$REPO_ROOT/resources/text_editor.svg" "$STAGING/opt/dmedit/"
 fi
 
 # Symlink in PATH
@@ -46,7 +46,7 @@ cat > "$STAGING/usr/share/applications/dmedit.desktop" << 'DESKTOP'
 [Desktop Entry]
 Name=DMEdit
 Exec=/opt/dmedit/dmedit %F
-Icon=/opt/dmedit/dev_mental_head.svg
+Icon=/opt/dmedit/text_editor.svg
 Type=Application
 Categories=TextEditor;Development;
 MimeType=text/plain;text/markdown;

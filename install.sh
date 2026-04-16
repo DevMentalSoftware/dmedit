@@ -17,7 +17,7 @@ cat > /usr/local/share/applications/dmedit.desktop << 'DESKTOP'
 [Desktop Entry]
 Name=DMEdit
 Exec=/opt/dmedit/dmedit %F
-Icon=/opt/dmedit/dev_mental_head.svg
+Icon=/opt/dmedit/text_editor.svg
 Type=Application
 Categories=TextEditor;Development;
 MimeType=text/plain;text/markdown;
