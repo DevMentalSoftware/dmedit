@@ -396,6 +396,14 @@ public sealed class AppSettings {
     /// </summary>
     public string? LastFileDialogDir { get; set; }
 
+    /// <summary>
+    /// Linux-only: which file picker backend to use for Open/Save/Export
+    /// dialogs.  <see cref="LinuxFilePickerMode.Auto"/> probes
+    /// xdg-desktop-portal at startup and falls back to zenity when it looks
+    /// broken.  Ignored on Windows and macOS.
+    /// </summary>
+    public LinuxFilePickerMode LinuxFilePicker { get; set; } = LinuxFilePickerMode.Auto;
+
     // -----------------------------------------------------------------
     // Keyboard shortcuts
     // -----------------------------------------------------------------

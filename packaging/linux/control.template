@@ -3,7 +3,7 @@ Version: __VERSION__
 Section: editors
 Priority: optional
 Architecture: amd64
-Depends: libgtk-3-0, libx11-6, libxcb1, libxcursor1, libxrandr2, libxi6, libfontconfig1, libfreetype6, libgl1
+Depends: libgtk-3-0, libx11-6, libxcb1, libxcursor1, libxrandr2, libxi6, libfontconfig1, libfreetype6, libgl1, xdg-desktop-portal, xdg-desktop-portal-gtk | xdg-desktop-portal-kde | xdg-desktop-portal-wlr, zenity
 Maintainer: Justin Chase <justin@devmental.com>
 Homepage: https://github.com/DevMentalSoftware/dmedit
 Description: A text editor for plain text and Markdown

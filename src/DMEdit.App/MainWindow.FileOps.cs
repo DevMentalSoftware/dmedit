@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -18,7 +19,6 @@ using DMEdit.Core.Buffers;
 using DMEdit.Core.Documents;
 using DMEdit.Core.IO;
 using DMEdit.Core.Printing;
-using System.Runtime.InteropServices;
 using DMEdit.App.Settings;
 
 namespace DMEdit.App;
@@ -85,7 +85,8 @@ public partial class MainWindow {
             }
             path = files[0].TryGetLocalPath();
         } else {
-            path = await LinuxFileDialog.OpenAsync("Open Markdown File", _settings.LastFileDialogDir);
+            path = await LinuxFileDialog.OpenAsync(FilePicker, "Open Markdown File",
+                _settings.LastFileDialogDir, isDark: _theme == EditorTheme.Dark);
         }
         if (path is null) {
             return;
@@ -412,7 +413,8 @@ public partial class MainWindow {
             }
             path = file.TryGetLocalPath();
         } else {
-            path = await LinuxFileDialog.SaveAsync(title, suggestedName, _settings.LastFileDialogDir);
+            path = await LinuxFileDialog.SaveAsync(FilePicker, title, suggestedName,
+                _settings.LastFileDialogDir, isDark: _theme == EditorTheme.Dark);
         }
         if (path is null) {
             return;
@@ -740,10 +742,7 @@ public partial class MainWindow {
             _activeTab.FilePath ?? "Untitled") + ".pdf";
 
         string? path;
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
-            path = await LinuxFileDialog.SaveAsync("Save As PDF", suggestedName,
-                _activeTab.FilePath is not null ? Path.GetDirectoryName(_activeTab.FilePath) : null);
-        } else {
+        if (UseNativePicker) {
             var sp = StorageProvider;
             var result = await sp.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions {
                 Title = "Save As PDF",
@@ -753,6 +752,10 @@ public partial class MainWindow {
                 ],
             });
             path = result?.TryGetLocalPath();
+        } else {
+            path = await LinuxFileDialog.SaveAsync(FilePicker, "Save As PDF", suggestedName,
+                _activeTab.FilePath is not null ? Path.GetDirectoryName(_activeTab.FilePath) : null,
+                isDark: _theme == EditorTheme.Dark);
         }
 
         if (path is null) return;

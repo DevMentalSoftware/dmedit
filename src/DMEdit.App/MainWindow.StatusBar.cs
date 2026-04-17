@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
@@ -423,11 +422,25 @@ public partial class MainWindow {
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// <c>true</c> when the platform provides a real file picker (Windows, macOS,
-    /// or Linux with a working DBus portal). <c>false</c> when Avalonia fell back
-    /// to its stub <c>FallbackStorageProvider</c> — in that case we use zenity.
+    /// The resolved file-picker choice for the current call.  Non-Linux
+    /// always returns <see cref="FilePickerChoice.XdgPortal"/> as a sentinel
+    /// meaning "use Avalonia's StorageProvider".  On Linux the decision
+    /// combines the user's <see cref="AppSettings.LinuxFilePicker"/>
+    /// preference, the <see cref="LinuxPortalProbe"/> health result, and
+    /// zenity/kdialog availability — see <see cref="LinuxFilePickerResolver"/>.
     /// </summary>
-    private bool UseNativePicker =>
-        !RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
-        || !StorageProvider.GetType().Name.Contains("Fallback", StringComparison.Ordinal);
+    private FilePickerChoice FilePicker {
+        get {
+            if (!OperatingSystem.IsLinux()) return FilePickerChoice.XdgPortal;
+            return LinuxFilePickerResolver.Resolve(_settings.LinuxFilePicker);
+        }
+    }
+
+    /// <summary>
+    /// <c>true</c> when this call should use Avalonia's <c>StorageProvider</c>
+    /// (Win32 common dialog on Windows, NSOpenPanel on macOS, xdg-desktop-portal
+    /// on Linux).  <c>false</c> when it should use a shell-out fallback —
+    /// check <see cref="FilePicker"/> for the specific tool.
+    /// </summary>
+    private bool UseNativePicker => FilePicker == FilePickerChoice.XdgPortal;
 }

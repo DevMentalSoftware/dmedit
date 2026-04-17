@@ -1,12 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <!-- IsWindowsTarget is "are we building FOR Windows", not "are we
+         running ON Windows".  When a RuntimeIdentifier is set (e.g.
+         `dotnet publish -r linux-x64`) use that; otherwise fall back
+         to the host OS so local `dotnet build` on Windows still picks
+         up DMEdit.Windows / WPF.  This matters because
+         `IsOSPlatform('Windows')` alone is a host check — it was
+         flipping cross-compiled linux-x64 publishes back to
+         net10.0-windows and dragging WPF into the Linux output. -->
+    <IsWindowsTarget Condition="'$(RuntimeIdentifier)' != ''">$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))</IsWindowsTarget>
+    <IsWindowsTarget Condition="'$(RuntimeIdentifier)' == ''">$([MSBuild]::IsOSPlatform('Windows'))</IsWindowsTarget>
     <TargetFramework>net10.0</TargetFramework>
-    <!-- On Windows, target net10.0-windows so we can directly reference
-         DMEdit.Windows (WPF printing, jump lists, native clipboard) and
-         have the Windows Desktop framework on the default probing path.
-         Also defines the WINDOWS preprocessor symbol automatically. -->
-    <TargetFramework Condition="$([MSBuild]::IsOSPlatform('Windows'))">net10.0-windows</TargetFramework>
+    <!-- On Windows targets, use net10.0-windows so we can directly
+         reference DMEdit.Windows (WPF printing, jump lists, native
+         clipboard) and have the Windows Desktop framework on the
+         default probing path.  Also defines the WINDOWS preprocessor
+         symbol automatically. -->
+    <TargetFramework Condition="'$(IsWindowsTarget)' == 'true'">net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
@@ -54,7 +65,7 @@
     <ProjectReference Include="..\DMEdit.Rendering\DMEdit.Rendering.csproj" />
   </ItemGroup>
 
-  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+  <ItemGroup Condition="'$(IsWindowsTarget)' == 'true'">
     <ProjectReference Include="..\DMEdit.Windows\DMEdit.Windows.csproj" />
     <!-- Keep WPF for compilation but don't bundle it in self-contained
          publish — the installed Windows Desktop runtime provides it at

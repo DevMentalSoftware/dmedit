@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using DMEdit.App.Services;
 using DMEdit.Core.Documents;
@@ -107,6 +108,18 @@ public static class SettingsRegistry {
             "in the status bar. When off, updates are still detected but require " +
             "a manual download from Settings.",
             "Advanced", true),
+
+        new SettingDescriptor<LinuxFilePickerMode>("LinuxFilePicker", "File Picker (Linux)",
+            "Which file-dialog backend to use on Linux. " +
+            "Auto probes xdg-desktop-portal at startup and falls back to zenity when the portal is unreachable. " +
+            "XdgPortal forces the portal-based picker (even if the probe thinks it's broken). " +
+            "Zenity forces the zenity fallback (GTK-based) — useful when the portal is up but misbehaves. " +
+            "KDialog forces kdialog (Qt/KDE-based); requires the `kdialog` package, falls back to XdgPortal if not installed. " +
+            "If Open/Save appears to do nothing on your distro, your xdg-desktop-portal is likely broken; " +
+            "other GTK/Qt apps still work because they bypass the portal and call their toolkit directly, " +
+            "while Avalonia routes through it. Fix: install a portal backend such as " +
+            "xdg-desktop-portal-gtk (GNOME), -kde (KDE), or -wlr (sway/Hyprland), then restart your session.",
+            "Advanced", LinuxFilePickerMode.Auto, Hidden: !OperatingSystem.IsLinux()),
 
         new SettingDescriptor<bool>("DevMode", "Developer Mode",
             "Enable developer-mode features (performance stats, detailed errors).",
