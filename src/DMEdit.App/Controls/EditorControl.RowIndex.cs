@@ -247,10 +247,13 @@ public sealed partial class EditorControl {
 
             var rowIdx = EnsureRowIndex();
             if (rowIdx != null) {
-                // MonoRowBreaker is exact for monospace fonts but
-                // approximate for proportional fonts (see comment in
-                // BuildRowIndexFor).
-                var exact = IsFontMonospace();
+                // MonoRowBreaker is exact for monospace fonts *and* the
+                // fast text layout path (which uses the same breaker).
+                // When the user turns Fast Text Layout off the renderer
+                // falls through to Avalonia TextLayout, whose wrap
+                // points don't match the mono breaker — so the cached
+                // sum is no longer ground truth.
+                var exact = IsFontMonospace() && _useFastTextLayout;
                 return (rowIdx.TotalSum(), exact);
             }
             // Estimate for large docs.

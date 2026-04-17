@@ -115,9 +115,15 @@ public sealed class AppSettings {
 
     /// <summary>
     /// Show a wrap indicator glyph at the wrap column for lines that wrap.
-    /// Only visible when <see cref="WrapLines"/> is true. 
+    /// Only visible when <see cref="WrapLines"/> is true.
     /// </summary>
     public bool ShowWrapSymbol { get; set; } = true;
+
+    /// <summary>
+    /// Highlight the row containing the caret with a translucent band that
+    /// spans the full editor width (gutter + text).  Off by default.
+    /// </summary>
+    public bool HighlightCurrentLine { get; set; }
 
     /// <summary>
     /// Indent wrapped continuation rows by half of one indent level so wrapped

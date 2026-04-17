@@ -199,6 +199,21 @@ public partial class SettingsControl : UserControl {
         var enabled = prop?.GetValue(_settings) is true;
         row.IsEnabled = enabled;
         row.Opacity = enabled ? 1.0 : 0.4;
+
+        // For bool settings, also force the check glyph to appear
+        // unchecked when the row is gated off.  Stored value is left
+        // untouched, so re-enabling the dependency restores the
+        // previous visual state.  Non-bool rows have no glyph tagged
+        // "checkGlyph"; FindByTag returns null and this is a no-op.
+        if (row.Tag is ISettingDescriptor desc && desc.Kind == SettingKind.Bool
+                && SettingRowFactory.FindByTag(row, "checkGlyph") is TextBlock glyph) {
+            if (!enabled) {
+                glyph.Opacity = 0.0;
+            } else if (typeof(AppSettings).GetProperty(desc.Key)?.GetValue(_settings)
+                    is bool storedValue) {
+                glyph.Opacity = storedValue ? 1.0 : 0.0;
+            }
+        }
     }
 
     private void WireSearch() {

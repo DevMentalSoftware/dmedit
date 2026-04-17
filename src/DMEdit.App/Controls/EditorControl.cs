@@ -368,6 +368,16 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
         }
     }
 
+    /// <summary>Whether the caret's row is highlighted with a translucent band.</summary>
+    public bool HighlightCurrentLine {
+        get => _highlightCurrentLine;
+        set {
+            if (_highlightCurrentLine == value) return;
+            _highlightCurrentLine = value;
+            InvalidateVisual();
+        }
+    }
+
     /// <summary>
     /// Whether wrapped continuation rows are indented by half of one indent
     /// level (the "hanging indent" effect).  Currently only honored on the
@@ -467,6 +477,7 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
 
     // Wrap symbol
     private bool _showWrapSymbol = true;
+    private bool _highlightCurrentLine;
     private const double WrapSymbolPadBase = 12;
     private double WrapSymbolPadRight => WrapSymbolPadBase * _zoomPercent / 100.0;
     // Cached TextLayout for the wrap-symbol glyph.  Previously rebuilt on

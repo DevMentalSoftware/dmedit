@@ -27,10 +27,26 @@ public sealed class TabState {
     public bool IsSettings { get; init; }
 
     /// <summary>
-    /// When true, the tab is pinned: it shows a pin icon, groups left
-    /// after the Settings tab, and is exempt from "Close Unpinned" commands.
+    /// Global lookup delegate installed by <c>MainWindow</c> to answer
+    /// "is this file path pinned?" from the authoritative
+    /// <c>RecentFilesStore</c>.  <see cref="IsPinned"/> reads through
+    /// this so pin state can never go stale relative to the store — no
+    /// sync step, no copy to keep up to date.  Null when no MainWindow
+    /// has run (e.g. in some unit tests), which makes everything
+    /// report unpinned.
     /// </summary>
-    public bool IsPinned { get; set; }
+    public static Func<string, bool>? PinLookup { get; set; }
+
+    /// <summary>
+    /// When true, the tab is pinned: it shows a pin icon, groups left
+    /// after the Settings tab, and is exempt from multi-tab close
+    /// commands.  Computed from the global <see cref="PinLookup"/> so
+    /// it always matches the authoritative pin store; no local copy
+    /// to sync.
+    /// </summary>
+    public bool IsPinned => FilePath is { } p
+        && PinLookup is { } lookup
+        && lookup(p);
 
     /// <summary>
     /// SHA-1 hash of the file's raw bytes at load time (lowercase hex).

@@ -111,6 +111,7 @@ public partial class MainWindow {
         _activeTab.IsDirty = false;
         PushRecentFile(_activeTab.FilePath);
         UpdateTabBar();
+        Toolbar.Refresh();
     }
 
     private async void OnSaveAs(object? sender, RoutedEventArgs e) => await SaveAsAsync();
@@ -449,6 +450,7 @@ public partial class MainWindow {
         _watcher.Watch(_activeTab); // Watch the new path.
         PushRecentFile(path);
         UpdateTabBar();
+        Toolbar.Refresh();
     }
 
     /// <summary>
@@ -947,6 +949,7 @@ public partial class MainWindow {
         SnapshotFileStats(newTab);
         _watcher.Watch(newTab);
         UpdateTabBar();
+        Toolbar.Refresh();
     }
 
     /// <summary>

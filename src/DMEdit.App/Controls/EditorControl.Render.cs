@@ -39,6 +39,14 @@ public sealed partial class EditorControl {
         // Gutter (line numbers)
         DrawGutter(context, layout);
 
+        // Current-line highlight — drawn after the gutter so it overlays
+        // line numbers, but before text/selection so those paint on top.
+        // Skipped during column selection where "the current row" is
+        // ambiguous (there are multiple cursors).
+        if (_highlightCurrentLine && doc is not null && doc.ColumnSel is null) {
+            DrawCurrentLineHighlight(context, layout, doc);
+        }
+
         // Clip text area so horizontally-scrolled content doesn't paint over the gutter.
         using var _ = _scrollOffset.X > 0
             ? context.PushClip(new Rect(_gutterWidth, 0, Bounds.Width - _gutterWidth, Bounds.Height))
@@ -285,6 +293,27 @@ public sealed partial class EditorControl {
 
     private const double SelCornerRadiusBase = 3.0;
     private double SelCornerRadius => SelCornerRadiusBase * _zoomPercent / 100.0;
+
+    /// <summary>
+    /// Draws a translucent rounded-rect band across the editor's full width
+    /// at the row containing the primary caret.  Caller ensures the
+    /// highlight setting is on and no column selection is active.
+    /// </summary>
+    private void DrawCurrentLineHighlight(DrawingContext context, LayoutResult layout, Document doc) {
+        var localCaret = (int)(doc.Selection.Caret - layout.ViewportBase);
+        var totalChars = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
+        if (localCaret < 0 || localCaret > totalChars) return;
+
+        var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout, _caretIsAtEnd);
+        var y = caretRect.Y + RenderOffsetY;
+        var h = caretRect.Height;
+        if (y + h < 0 || y > Bounds.Height) return;
+
+        context.DrawRectangle(
+            _theme.CurrentLineHighlight,
+            pen: null,
+            new Rect(0, y, Bounds.Width, h));
+    }
 
     private void DrawSelection(DrawingContext context, LayoutResult layout, Selection sel) {
         var localStart = (int)(sel.Start - layout.ViewportBase);

@@ -807,13 +807,16 @@ public sealed partial class EditorControl {
 
     /// <summary>
     /// Single decision point: should this line use the TextLayout slow
-    /// path instead of the MonoRowBreaker fast path?  Now only triggers
-    /// for proportional fonts — all characters (including control chars
-    /// and tabs) are handled by the mono fast path, with control chars
-    /// rendering as the fallback glyph.
+    /// path instead of the MonoRowBreaker fast path?  Triggers when the
+    /// font is proportional OR when the user has disabled the fast text
+    /// layout in Settings (e.g. to keep ligatures).  Must stay in sync
+    /// with <see cref="TextLayoutEngine.LayoutLines"/>'s mono-context
+    /// probe — if ComputeLineRowCount picks the mono path while the
+    /// actual layout went slow, the rendered-vs-computed row counts
+    /// diverge and the Debug invariant fires.
     /// </summary>
     private bool ShouldUseSlowPath(string text) =>
-        !IsFontMonospace();
+        !_useFastTextLayout || !IsFontMonospace();
 
     /// <summary>
     /// Counts rows via an Avalonia <c>TextLayout</c>.  Used only as a

@@ -412,7 +412,6 @@ public partial class MainWindow {
         _theme = theme;
 
         // Custom-drawn controls
-        EditorPadding.Background = theme.EditorBackground;
         Editor.ApplyTheme(theme);
         ApplySelectionBrushes();
         ScrollBar.ApplyTheme(theme);
@@ -430,10 +429,9 @@ public partial class MainWindow {
         }
 
         // Menu / toolbar bar — background on the outer border so the
-        // entire bar (menus, toolbar buttons, gear icon) is uniform.
+        // entire bar (menus, toolbar buttons) is uniform.
         MenuBarBorder.Background = theme.TabActiveBackground;
         MenuBarBorder.BorderBrush = theme.TabActiveBackground;
-        GearGlyph.Foreground = theme.TabToolButtonForeground;
 
         // Status bar
         StatusBar.Background = theme.StatusBarBackground;
@@ -634,11 +632,12 @@ public partial class MainWindow {
         _wrapLinesGlyph = CreateMenuCheckGlyph(_settings.WrapLines);
         MenuWrapLines.Icon = _wrapLinesGlyph;
 
-        // Show Whitespace + Wrap Symbol + Hanging Indent
+        // Show Whitespace + Wrap Symbol + Hanging Indent + Current Line
         Editor.ShowWhitespace = _settings.ShowWhitespace;
         Editor.ShowWrapSymbol = _settings.ShowWrapSymbol;
         Editor.HangingIndent = _settings.HangingIndent;
         Editor.UseFastTextLayout = _settings.UseFastTextLayout;
+        Editor.HighlightCurrentLine = _settings.HighlightCurrentLine;
         _whitespaceGlyph = CreateMenuCheckGlyph(_settings.ShowWhitespace);
         MenuWhitespace.Icon = _whitespaceGlyph;
 

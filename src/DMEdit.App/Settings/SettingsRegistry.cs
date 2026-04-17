@@ -31,6 +31,11 @@ public static class SettingsRegistry {
             "Show a wrap indicator glyph at the wrap column for lines that word-wrap to the next row.",
             "Display", true),
 
+        new SettingDescriptor<bool>("HighlightCurrentLine", "Highlight Current Line",
+            "Draw a translucent band across the editor's full width at the row containing the caret. " +
+            "Intended to be subtle \u2014 stays visible behind the text and selection without dominating the view.",
+            "Display", false),
+
         new SettingDescriptor<bool>("HangingIndent", "Hanging Indent",
             "Indent wrapped continuation rows by half of one indent level so wrapped text " +
             "is visually offset from the first row.  Currently applies only to monospace fonts.",

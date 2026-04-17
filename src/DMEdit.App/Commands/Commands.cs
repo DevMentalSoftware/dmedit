@@ -285,7 +285,8 @@ public static class Commands {
     public static readonly Command WindowNextTab = new("Window", "NextTab", "Next Tab");
     public static readonly Command WindowPrevTab = new("Window", "PrevTab", "Previous Tab");
     public static readonly Command WindowSettings = new("Window", "Settings") {
-        DefaultInToolbar = true, ToolbarFixed = true,
+        // The Settings tab (icon-only, unclosable) is the primary entry
+        // point; a dedicated toolbar button would be redundant.
         ToolbarGlyph = IconGlyphs.Settings, ToolbarTooltip = "Settings",
     };
 

@@ -168,6 +168,10 @@ public static class SettingRowFactory {
             HorizontalAlignment = HorizontalAlignment.Center,
             Opacity = isChecked ? 1.0 : 0.0,
             Margin = new Thickness(0, 1, 0, 0),
+            // Tag so SettingsControl.UpdateRowEnabled can force the glyph
+            // to appear unchecked when the row is gated off by
+            // EnabledWhenKey, without mutating the stored value.
+            Tag = "checkGlyph",
         };
 
         var contentStack = new StackPanel { Spacing = 1 };
@@ -372,7 +376,7 @@ public static class SettingRowFactory {
     /// Walks the visual tree under <paramref name="parent"/> looking for a
     /// control whose <see cref="Control.Tag"/> matches <paramref name="tag"/>.
     /// </summary>
-    private static Control? FindByTag(Control parent, string tag) {
+    internal static Control? FindByTag(Control parent, string tag) {
         if (parent is Panel panel) {
             foreach (var child in panel.Children) {
                 if (child is Control c && Equals(c.Tag, tag)) return c;

@@ -31,8 +31,6 @@ public partial class MainWindow {
             InitializeTabToolbar();
             RebuildRecentMenu();
         };
-        GearButton.Click += (_, _) => OpenSettings();
-
         SettingsPanel.SettingChanged += key => {
             // Push setting changes to the editor and menu state.
             switch (key) {
@@ -65,6 +63,9 @@ public partial class MainWindow {
                     break;
                 case "ShowWrapSymbol":
                     Editor.ShowWrapSymbol = _settings.ShowWrapSymbol;
+                    break;
+                case "HighlightCurrentLine":
+                    Editor.HighlightCurrentLine = _settings.HighlightCurrentLine;
                     break;
                 case "HangingIndent":
                     Editor.HangingIndent = _settings.HangingIndent;
@@ -139,16 +140,25 @@ public partial class MainWindow {
 
     }
 
-    private void OpenSettings() {
-        if (_settingsTab != null && _tabs.Contains(_settingsTab)) {
-            SwitchToTab(_settingsTab);
-            return;
-        }
+    /// <summary>
+    /// Ensures the persistent Settings tab exists in the tab bar.  Called
+    /// at startup so the tab is always visible; <see cref="OpenSettings"/>
+    /// relies on this to avoid re-creating the tab every time the user
+    /// clicks the menu item.
+    /// </summary>
+    private void EnsureSettingsTab() {
+        if (_settingsTab != null && _tabs.Contains(_settingsTab)) return;
         _settingsTab = TabState.CreateSettings();
+        // Position in _tabs is irrelevant — the tab bar renders Settings
+        // at a fixed right-aligned slot regardless of its logical index.
         _tabs.Insert(0, _settingsTab);
         _settingsTab.Document.Changed += (_, _) => OnTabDocumentChanged(_settingsTab);
         UpdateTabBar();
-        SwitchToTab(_settingsTab);
+    }
+
+    private void OpenSettings() {
+        EnsureSettingsTab();
+        SwitchToTab(_settingsTab!);
     }
 
     private async void OpenCommandPalette() {

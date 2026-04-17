@@ -105,6 +105,7 @@ public partial class MainWindow {
         if (_chordFirst != null) {
             _chordTimer.Stop();
             var chordCmd = _keyBindings.ResolveChord(_chordFirst, e.Key, e.KeyModifiers);
+            var firstGesture = _chordFirst;
             _chordFirst = null;
             StatusLeft.Text = "";
             if (chordCmd != null) {
@@ -113,8 +114,14 @@ public partial class MainWindow {
                 }
                 return;
             }
-            // Second key didn't complete a chord — fall through to process
-            // it as a normal single-key gesture below.
+            // Second key didn't complete a chord — tell the user the combo
+            // is unbound and swallow the event so the second key doesn't
+            // accidentally fire a different single-key gesture (e.g.
+            // Ctrl+K followed by plain `z` shouldn't type "z").
+            var secondGesture = new KeyGesture(e.Key, e.KeyModifiers);
+            StatusLeft.Text = $"{firstGesture}, {secondGesture} is not bound to any command.";
+            e.Handled = true;
+            return;
         }
 
         // Check if this key is the first key of a chord.
@@ -133,6 +140,14 @@ public partial class MainWindow {
             // Alt+letter with no bound command → try menu access keys.
             if (e.KeyModifiers == KeyModifiers.Alt) {
                 TryOpenMenuAccessKey(e);
+                return;
+            }
+            // Only report unbound combos that look like intentional shortcuts
+            // (Ctrl/Meta held).  Plain keys and Shift+letter are normal
+            // typing — no message for those.
+            if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0) {
+                var g = new KeyGesture(e.Key, e.KeyModifiers);
+                StatusLeft.Text = $"{g} is not bound to any command.";
             }
             return;
         }

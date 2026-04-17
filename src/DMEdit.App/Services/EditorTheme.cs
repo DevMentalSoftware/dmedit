@@ -27,6 +27,13 @@ public sealed class EditorTheme {
     public IPen GuideLinePen { get; init; } = new Pen(
         new SolidColorBrush(Color.FromArgb(0x10, 0x00, 0x00, 0x00)), 1);
 
+    // -- Current-line highlight --
+    // Translucent gray.  Painted on top of gutter + text (so it overlays
+    // line numbers and the column guide) but under the caret.  Dark
+    // variant is overridden below.
+    public IBrush CurrentLineHighlight { get; init; } =
+        new SolidColorBrush(Color.FromArgb(0x04, 0x00, 0x00, 0x00));
+
     // -- Whitespace glyphs --
     private static readonly Color WhitespaceGlyphLight = Color.FromArgb(0xFF, 0x80, 0x80, 0x80);
     public IBrush WhitespaceGlyphBrush { get; init; } = new SolidColorBrush(WhitespaceGlyphLight);
@@ -146,6 +153,9 @@ public sealed class EditorTheme {
         // Column guide
         GuideLinePen = new Pen(
             new SolidColorBrush(Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)), 1),
+
+        // Current-line highlight — translucent white on dark backgrounds.
+        CurrentLineHighlight = new SolidColorBrush(Color.FromArgb(0x03, 0xFF, 0xFF, 0xFF)),
 
         // Whitespace glyphs
         WhitespaceGlyphBrush = new SolidColorBrush(WhitespaceGlyphDark),

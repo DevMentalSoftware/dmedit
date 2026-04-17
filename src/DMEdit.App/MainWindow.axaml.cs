@@ -96,6 +96,9 @@ public partial class MainWindow : Window {
         // through a per-setting cached property + push from the SettingChanged
         // switch.  Set BEFORE any user input handler can fire.
         Editor.Settings = _settings;
+        // Install the pin lookup so TabState.IsPinned reads through to
+        // the authoritative RecentFilesStore instead of a cached flag.
+        TabState.PinLookup = _recentFiles.IsPinned;
         _keyBindings = new KeyBindingService(_settings);
         _chordTimer = new DispatcherTimer {
             Interval = TimeSpan.FromMilliseconds(_settings.ChordTimeoutMs),

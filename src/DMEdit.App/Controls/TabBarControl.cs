@@ -299,26 +299,56 @@ public sealed class TabBarControl : Control {
             if (_tabs[i] == _activeTab) { activeIdx = i; break; }
         }
 
+        // Settings tab (if any) is pinned to the right edge, outside the
+        // overflow pool.  Reserve space for it so document tabs flowing
+        // left-to-right can't push into the Settings area, and exclude
+        // its width from the overflow accounting.
+        var settingsIdx = -1;
+        double settingsReservedWidth = 0;
+        for (var i = 0; i < _tabs.Count; i++) {
+            if (_tabs[i].IsSettings) {
+                settingsIdx = i;
+                settingsReservedWidth =
+                    TabPaddingLeft + IconButtonFontSize + TabPaddingRight + 4;
+                break;
+            }
+        }
+
         // 1. Measure two widths per tab.  Always use the bold typeface so
         //    that widths stay stable when the active tab changes.
         var naturalWidths = new double[_tabs.Count];
         var comfortWidths = new double[_tabs.Count];
         for (var i = 0; i < _tabs.Count; i++) {
-            var text = GetTabLabel(i);
-            var ft = new FormattedText(text, System.Globalization.CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight, TabFontBold, TabFontSize, Brushes.Black);
-            var w = ft.Width + TabPaddingLeft + CloseButtonSize + TabPaddingRight + 8;
-            if (_tabs[i].IsSettings) {
-                w += IconButtonFontSize + TabIconGap; // gear icon before label
+            double w;
+            if (i == settingsIdx) {
+                // Settings is handled separately at the right edge; zero
+                // it out of the overflow-pool totals so doc tabs don't
+                // shrink to make room for it twice.
+                naturalWidths[i] = 0;
+                comfortWidths[i] = 0;
+            } else if (_tabs[i].IsSettings) {
+                // Icon-only tab (not the persistent settings tab above —
+                // here for completeness).  Smaller than a normal tab so
+                // it doesn't dominate the bar.
+                w = TabPaddingLeft + IconButtonFontSize + TabPaddingRight + 4;
+                naturalWidths[i] = w;
+                comfortWidths[i] = w;
+            } else {
+                var text = GetTabLabel(i);
+                var ft = new FormattedText(text, System.Globalization.CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight, TabFontBold, TabFontSize, Brushes.Black);
+                w = ft.Width + TabPaddingLeft + CloseButtonSize + TabPaddingRight + 8;
+                naturalWidths[i] = w;
+                comfortWidths[i] = Math.Max(w, TabComfortWidth);
             }
-            naturalWidths[i] = w;
-            comfortWidths[i] = Math.Max(w, TabComfortWidth);
         }
 
-        // 2. Available space
+        // 2. Available space — reserve room on the right for the Settings
+        //    tab plus a gap before it.
         var toolbarReserved = _toolbarItems.Count > 0 ? ToolbarTotalWidth : ToolButtonWidth;
         var availableWidth = Bounds.Width - _contentStartX - toolbarReserved - 16
-                             - CaptionButtonsReserved;
+                             - CaptionButtonsReserved
+                             - (settingsIdx >= 0 ? settingsReservedWidth + TabGap : 0);
         if (availableWidth < 1) availableWidth = 1;
 
         // 3. Try fitting ALL tabs
@@ -414,16 +444,27 @@ public sealed class TabBarControl : Control {
             }
         }
 
-        // 5. Compute x positions for visible tabs only
+        // 5. Compute x positions for visible tabs only (skip Settings —
+        //    it's pinned to the right edge below).
         var x = _contentStartX;
         for (var i = 0; i < _tabs.Count; i++) {
+            if (i == settingsIdx) continue;
             if (!_isVisible[i]) continue;
             _tabXPositions[i] = x;
             x += _tabWidths[i] + TabGap;
         }
 
-        // 6. Overflow button position
+        // 6. Overflow button position — sits right after the last doc tab.
         _overflowButtonX = x + 4;
+
+        // 7. Settings tab: always visible, pinned to the right edge just
+        //    before the caption buttons.
+        if (settingsIdx >= 0) {
+            _tabWidths[settingsIdx] = settingsReservedWidth;
+            _isVisible[settingsIdx] = true;
+            _tabXPositions[settingsIdx] =
+                Bounds.Width - CaptionButtonsReserved - settingsReservedWidth;
+        }
     }
 
     /// <summary>Sum of natural widths + gaps for currently visible tabs.</summary>
@@ -525,6 +566,10 @@ public sealed class TabBarControl : Control {
             var tabX = _tabXPositions[i];
             var tabW = _tabWidths[i];
             if (x >= tabX && x < tabX + tabW && y >= TabTopMargin) {
+                // Settings tab has no close button — whole tab is just Tab.
+                if (_tabs[i].IsSettings) {
+                    return (HitZone.Tab, i);
+                }
                 // Check close/error/spinner area (right side of tab)
                 var closeX = tabX + tabW - CloseButtonSize - TabPaddingRight;
                 var closeY = TabTopMargin + (TabHeight - CloseButtonSize) / 2;
@@ -658,6 +703,10 @@ public sealed class TabBarControl : Control {
             if (_tabs[next] == _activeTab) continue;
             if (_hoverTabIndex == next
                 && _hoverZone is HitZone.Tab or HitZone.CloseButton) continue;
+            // Suppress the separator on either side of the Settings tab —
+            // the gear icon is visually distinct enough that a divider
+            // just adds noise.
+            if (_tabs[i].IsSettings || _tabs[next].IsSettings) continue;
 
             var sepX = _tabXPositions[i] + _tabWidths[i] + TabGap / 2;
             var sepPen = new Pen(_theme.TabBorder, 1);
@@ -704,12 +753,14 @@ public sealed class TabBarControl : Control {
             ctx.DrawLine(borderPen, new Point(x, bottom), new Point(x + tabW, bottom));
         }
 
-        // Tab icon (settings gear) + label
-        var labelX = x + TabPaddingLeft;
+        // Settings tab: icon only, centered, no label, no close button.
         if (_tabs[index].IsSettings) {
-            labelX += DrawTabIcon(ctx, IconGlyphs.Settings, x + TabPaddingLeft,
-                _theme.TabForeground);
+            DrawSettingsTabIcon(ctx, x, tabW);
+            return;
         }
+
+        // Tab icon (none for regular tabs) + label
+        var labelX = x + TabPaddingLeft;
         var label = GetTabLabel(index);
         var maxTextW = tabW - (labelX - x) - CloseButtonSize - TabPaddingRight - 4;
         var ft = new FormattedText(label, System.Globalization.CultureInfo.CurrentCulture,
@@ -776,12 +827,14 @@ public sealed class TabBarControl : Control {
         }
         ctx.DrawGeometry(_theme.TabActiveBackground, null, geo);
 
-        // Tab icon (settings gear) + label (bold for active tab)
-        var labelX = x + TabPaddingLeft;
+        // Settings tab: icon only, centered, no label, no close button.
         if (_tabs[index].IsSettings) {
-            labelX += DrawTabIcon(ctx, IconGlyphs.Settings, x + TabPaddingLeft,
-                _theme.TabForeground);
+            DrawSettingsTabIcon(ctx, x, tabW);
+            return;
         }
+
+        // Tab icon (none for regular tabs) + label (bold for active tab)
+        var labelX = x + TabPaddingLeft;
         var label = GetTabLabel(index);
         var maxTextW = tabW - (labelX - x) - CloseButtonSize - TabPaddingRight - 4;
         var ft = new FormattedText(label, System.Globalization.CultureInfo.CurrentCulture,
@@ -795,6 +848,19 @@ public sealed class TabBarControl : Control {
 
         // Close button (always visible on active tab)
         DrawCloseButton(ctx, index);
+    }
+
+    /// <summary>
+    /// Draws the gear glyph centered inside a Settings tab.  No label, no
+    /// close button — the tab is deliberately minimal and unclosable.
+    /// </summary>
+    private void DrawSettingsTabIcon(DrawingContext ctx, double x, double tabW) {
+        var ft = new FormattedText(IconGlyphs.Settings,
+            System.Globalization.CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight, IconFont, TabIconFontSize, _theme.TabForeground);
+        var iconX = x + (tabW - ft.Width) / 2;
+        var iconY = TabTopMargin + (TabHeight - ft.Height) / 2;
+        ctx.DrawText(ft, new Point(iconX, iconY));
     }
 
     /// <summary>
@@ -1198,19 +1264,22 @@ public sealed class TabBarControl : Control {
             ContextMenu.Close();
         }
 
-        // Right-click context menu on tabs
+        // Right-click context menu on tabs (but not on the Settings tab —
+        // it's persistent, unclosable, and has no per-tab commands).
         if (props.IsRightButtonPressed
             && zone is HitZone.Tab or HitZone.CloseButton or HitZone.ErrorIcon
-            && idx >= 0 && idx < _tabs.Count) {
+            && idx >= 0 && idx < _tabs.Count
+            && !_tabs[idx].IsSettings) {
             ShowTabContextMenu(idx, pt);
             e.Handled = true;
             return;
         }
 
-        // Middle-click closes a tab.
+        // Middle-click closes a tab (not Settings).
         if (props.IsMiddleButtonPressed
             && zone is HitZone.Tab or HitZone.CloseButton or HitZone.ErrorIcon
-            && idx >= 0 && idx < _tabs.Count) {
+            && idx >= 0 && idx < _tabs.Count
+            && !_tabs[idx].IsSettings) {
             TabCloseClicked?.Invoke(idx);
             e.Handled = true;
             return;

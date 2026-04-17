@@ -23,7 +23,7 @@
                                 IsHitTestVisible="True" />
 
 		<Border DockPanel.Dock="Top" x:Name="MenuBarBorder" BorderThickness="0,0,0,1">
-			<Grid ColumnDefinitions="Auto,*,Auto">
+			<Grid ColumnDefinitions="Auto,*">
 				<Menu x:Name="MenuBar" Grid.Column="0" FontSize="12" Background="Transparent">
 					<MenuItem Header="_File" x:Name="MenuFile">
 						<MenuItem Header="_New" x:Name="MenuNew" />
@@ -118,18 +118,6 @@
 					HorizontalAlignment="Stretch"
 					VerticalAlignment="Stretch"
 					IsHitTestVisible="True" />
-			<Button x:Name="GearButton" Grid.Column="2"
-					   Width="36" Height="26"
-					   VerticalAlignment="Center"
-					   Margin="2,0,6,0"
-					   ToolTip.Tip="Settings">
-					<TextBlock x:Name="GearGlyph"
-							   Text="&#xF6A9;"
-							   FontFamily="avares://dmedit/Resources/FluentSystemIcons-Regular.ttf#FluentSystemIcons-Regular"
-							   FontSize="18"
-							   HorizontalAlignment="Center"
-							   VerticalAlignment="Center" />
-				</Button>
 			</Grid>
 		</Border>
 
@@ -251,12 +239,9 @@
 			<settings:SettingsControl x:Name="SettingsPanel"
 			                          IsVisible="False" />
 			<Grid RowDefinitions="*,Auto" ColumnDefinitions="*,Auto" x:Name="EditorGrid">
-				<Border x:Name="EditorPadding"
-				        Grid.Row="0" Grid.Column="0"
-				        Padding="0,3,0,0">
-					<controls:EditorControl x:Name="Editor"
-					                        HorizontalAlignment="Stretch" />
-				</Border>
+				<controls:EditorControl x:Name="Editor"
+				                        Grid.Row="0" Grid.Column="0"
+				                        HorizontalAlignment="Stretch" />
 				<controls:FindBarControl x:Name="FindBar"
 				                         Grid.Row="0" Grid.Column="0"
 				                         HorizontalAlignment="Right"

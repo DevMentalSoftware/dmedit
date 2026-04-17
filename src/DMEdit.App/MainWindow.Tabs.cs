@@ -28,6 +28,7 @@ public partial class MainWindow {
             var tab = AddTab(TabState.CreateUntitled(_tabs));
             SwitchToTab(tab);
         }
+        EnsureSettingsTab();
         SyncTabPinStates();
 
         // Open any files passed on the command line (e.g. Explorer context
@@ -177,9 +178,10 @@ public partial class MainWindow {
     /// then closes it. Returns false if the user cancelled.
     /// </summary>
     private async Task<bool> PromptAndCloseTabAsync(TabState tab) {
+        // Settings tab is persistent — cannot be closed.  Any close
+        // attempt (keyboard shortcut, menu, multi-tab close) is a no-op.
         if (tab.IsSettings) {
-            CloseTabDirect(tab);
-            return true;
+            return false;
         }
         if (tab.IsDirty) {
             var dialog = new SaveChangesDialog(tab.DisplayName, _theme);
@@ -216,15 +218,34 @@ public partial class MainWindow {
         }
 
         if (dirtyTabs.Count == 1) {
-            // Single dirty tab — use the simple dialog.
-            return await PromptAndCloseTabAsync(dirtyTabs[0]);
+            // Single dirty tab — use the simple Save-Changes dialog for
+            // *that* tab, then close the entire requested set (clean tabs
+            // included).  Earlier this just delegated to
+            // PromptAndCloseTabAsync, which closed only the one dirty tab
+            // and left clean siblings behind.
+            var dirtyTab = dirtyTabs[0];
+            var dialog = new SaveChangesDialog(dirtyTab.DisplayName, _theme);
+            await dialog.ShowDialog(this);
+            switch (dialog.Result.Choice) {
+                case SaveChoice.Save:
+                    if (!await SaveTabAsync(dirtyTab)) return false;
+                    break;
+                case SaveChoice.DontSave:
+                    break;
+                case SaveChoice.Cancel:
+                    return false;
+            }
+            foreach (var tab in tabsToClose.ToList()) {
+                CloseTabDirect(tab);
+            }
+            return true;
         }
 
         // Multiple dirty tabs — use the multi-tab dialog.
         // Saves happen immediately when per-row [Save] is clicked.
-        var dialog = new MultiSaveChangesDialog(dirtyTabs, SaveTabAsync, _theme);
-        await dialog.ShowDialog(this);
-        var result = dialog.Result;
+        var multiDialog = new MultiSaveChangesDialog(dirtyTabs, SaveTabAsync, _theme);
+        await multiDialog.ShowDialog(this);
+        var result = multiDialog.Result;
         if (result.Cancelled) {
             return false;
         }
@@ -271,35 +292,88 @@ public partial class MainWindow {
         return true;
     }
 
+    /// <summary>
+    /// Picks which tabs to close from a candidate set for a multi-tab
+    /// close operation (Close All, Close Others, Close To Right).  Pinned
+    /// and Settings tabs are always excluded — users can still close
+    /// pinned tabs individually (unpin first or use single-tab close),
+    /// but never via a bulk operation.
+    /// </summary>
+    private static List<TabState> FilterCloseable(IEnumerable<TabState> candidates) =>
+        candidates.Where(t => !t.IsSettings && !t.IsPinned).ToList();
+
     private void CloseAllTabsDirect() {
-        // Pinned tabs survive "Close All".
-        var pinned = _tabs.Where(t => t.IsPinned).ToList();
+        // Settings and pinned tabs are always kept.  After closing the
+        // unpinned docs, ensure at least one document tab exists (Settings
+        // doesn't count) — preferring to keep any existing pristine
+        // untitled rather than churning it for a brand-new one.
+        var settingsTabs = _tabs.Where(t => t.IsSettings).ToList();
+        var pinnedSurvivors = _tabs.Where(t => !t.IsSettings && t.IsPinned).ToList();
+        // If no pinned survive, keep a pristine untitled (if any) rather
+        // than closing + recreating an identical new one.
+        TabState? pristineSurvivor = pinnedSurvivors.Count == 0
+            ? _tabs.FirstOrDefault(IsPristineUntitled)
+            : null;
         _tabs.Clear();
-        _tabs.AddRange(pinned);
+        _tabs.AddRange(settingsTabs);
+        if (pristineSurvivor != null) _tabs.Add(pristineSurvivor);
+        _tabs.AddRange(pinnedSurvivors);
         _activeTab = null;
-        if (_tabs.Count > 0) {
-            SwitchToTab(_tabs[0]);
-        } else {
-            var tab = AddTab(TabState.CreateUntitled(_tabs));
-            SwitchToTab(tab);
-        }
+        EnsureAtLeastOneDocumentTab();
+        // Activate the rightmost remaining document tab — when multiple
+        // pinned survivors exist the user most likely wants the last
+        // one in the bar (closest to where Settings sits on the right),
+        // not an arbitrary leftmost pick.
+        SwitchToTab(_tabs.LastOrDefault(t => !t.IsSettings) ?? _tabs[0]);
     }
 
+    /// <summary>
+    /// Guarantees there is at least one non-settings tab open — adds an
+    /// untitled document tab if the tab bar would otherwise contain only
+    /// the persistent Settings tab (or be empty).
+    /// </summary>
+    private void EnsureAtLeastOneDocumentTab() {
+        if (_tabs.Any(t => !t.IsSettings)) return;
+        AddTab(TabState.CreateUntitled(_tabs));
+    }
+
+    /// <summary>
+    /// A tab that's a brand-new untitled document with no edits — i.e.
+    /// the kind of tab we'd create as a placeholder if the tab bar
+    /// otherwise had no documents.  Close-all skips one of these if
+    /// present, to avoid the redundant "close pristine untitled, then
+    /// recreate identical untitled" churn.
+    /// </summary>
+    private static bool IsPristineUntitled(TabState t) =>
+        !t.IsSettings && t.FilePath is null && !t.IsDirty && !t.IsLoading;
+
     private async Task CloseAllTabsAsync() {
-        // Pinned tabs survive "Close All".
-        var toClose = _tabs.Where(t => !t.IsPinned).ToList();
+        var toClose = FilterCloseable(_tabs);
         if (toClose.Count == 0) return;
         var dirtyTabs = toClose.Where(t => t.IsDirty && !t.IsSettings).ToList();
         if (dirtyTabs.Count == 0) {
             CloseAllTabsDirect();
             return;
         }
+        // If the "needs at least one document tab" post-condition would
+        // otherwise force us to recreate an untitled, and a pristine
+        // untitled already exists in the close set, exclude it — keep
+        // it untouched rather than close-and-recreate.
+        var wouldLeaveNoDocumentTabs = !_tabs.Any(t =>
+            !t.IsSettings && !toClose.Contains(t));
+        if (wouldLeaveNoDocumentTabs) {
+            var survivor = toClose.FirstOrDefault(IsPristineUntitled);
+            if (survivor is not null) {
+                toClose = toClose.Where(t => t != survivor).ToList();
+            }
+        }
         if (!await PromptAndCloseMultipleTabsAsync(toClose)) {
             return; // Cancelled
         }
-        // Ensure we have at least one tab.
-        if (_tabs.Count == 0) {
-            var tab = AddTab(TabState.CreateUntitled(_tabs));
+        // Ensure at least one document tab remains (Settings doesn't count).
+        EnsureAtLeastOneDocumentTab();
+        if (_activeTab is null || !_tabs.Contains(_activeTab)) {
+            var tab = _tabs.LastOrDefault(t => !t.IsSettings) ?? _tabs[0];
             SwitchToTab(tab);
         }
     }
@@ -444,7 +518,7 @@ public partial class MainWindow {
 
     private async Task CloseTabsToRightAsync(int tabIndex) {
         if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
-        var toClose = _tabs.Skip(tabIndex + 1).Where(t => !t.IsPinned).ToList();
+        var toClose = FilterCloseable(_tabs.Skip(tabIndex + 1));
         if (toClose.Count == 0) return;
         if (!await PromptAndCloseMultipleTabsAsync(toClose)) {
             return;
@@ -460,7 +534,8 @@ public partial class MainWindow {
     private async Task CloseOtherTabsAsync(int tabIndex) {
         if (tabIndex < 0 || tabIndex >= _tabs.Count) return;
         var keep = _tabs[tabIndex];
-        var toClose = _tabs.Where(t => t != keep && !t.IsPinned).ToList();
+        var toClose = FilterCloseable(_tabs.Where(t => t != keep));
+        if (toClose.Count == 0) return;
         if (!await PromptAndCloseMultipleTabsAsync(toClose)) {
             return;
         }
@@ -485,14 +560,13 @@ public partial class MainWindow {
     }
 
     /// <summary>
-    /// Sets each tab's <see cref="TabState.IsPinned"/> from the recent
-    /// files store (the single source of truth for pin state).
+    /// Triggers a tab-bar repaint after pin state changes.  The actual
+    /// pin status lives entirely in <c>RecentFilesStore</c> — each
+    /// <see cref="TabState.IsPinned"/> read goes through
+    /// <see cref="TabState.PinLookup"/>, so there's nothing to copy
+    /// here, just a redraw to pick up the new pin-icon glyphs.
     /// </summary>
     private void SyncTabPinStates() {
-        foreach (var tab in _tabs) {
-            tab.IsPinned = tab.FilePath is not null
-                && _recentFiles.IsPinned(tab.FilePath);
-        }
         UpdateTabBar();
     }
 
