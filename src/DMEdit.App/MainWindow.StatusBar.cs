@@ -233,6 +233,8 @@ public partial class MainWindow {
             SetText(StatusLineEnding, "");
             StatusSep4.IsVisible = false;
             SetText(StatusIndent, "");
+            BtnCodepoint.IsVisible = false;
+            StatusSep7.IsVisible = false;
             if (_chordFirst == null) {
                 SetText(StatusLeft, "");
                 StatusLeft.Foreground = _theme.StatusBarForeground;
@@ -311,6 +313,7 @@ public partial class MainWindow {
                 BtnLineEnding.IsVisible = false;
                 StatusSep4.IsVisible = false;
                 BtnIndent.IsVisible = false;
+                UpdateCodepointSegment();
             } else {
                 StatusSep1b.IsVisible = true;
                 var rowSuffix = "";
@@ -357,11 +360,33 @@ public partial class MainWindow {
                 } else {
                     ToolTip.SetTip(BtnIndent, null);
                 }
+
+                UpdateCodepointSegment();
             }
 
         }
 
         UpdateTailButton();
+    }
+
+    /// <summary>
+    /// Shows <c>U+XXXX</c> (optionally with a Unicode name) in the
+    /// codepoint status-bar segment whenever the caret is on a character
+    /// that renders as the fallback glyph.  Hides the segment otherwise.
+    /// </summary>
+    private void UpdateCodepointSegment() {
+        var cp = Editor.GetUnrepresentableCodepointAtCaret();
+        if (cp is null) {
+            BtnCodepoint.IsVisible = false;
+            StatusSep7.IsVisible = false;
+            return;
+        }
+        BtnCodepoint.IsVisible = true;
+        StatusSep7.IsVisible = true;
+        // Codepoints need at least 4 hex digits (standard U+XXXX), and up
+        // to 6 for supplementary planes (emoji).
+        var digits = cp.Value > 0xFFFF ? 6 : 4;
+        SetText(StatusCodepoint, $"U+{cp.Value.ToString($"X{digits}")}");
     }
 
     /// <summary>

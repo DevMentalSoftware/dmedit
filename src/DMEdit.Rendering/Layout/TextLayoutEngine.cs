@@ -200,7 +200,14 @@ public sealed class TextLayoutEngine {
     // Internal helpers
     // -------------------------------------------------------------------------
 
-    private static MonoLayoutContext? TryBuildMonoContext(
+    /// <summary>
+    /// Builds a <see cref="MonoLayoutContext"/> for the given typeface if
+    /// it resolves to a single monospace glyph typeface.  Returns null
+    /// when the typeface is proportional, missing, or multi-face — in
+    /// which case callers use the TextLayout slow path.  Public so
+    /// specialized layouts (CharWrap) can reuse the mono fast path.
+    /// </summary>
+    public static MonoLayoutContext? TryBuildMonoContext(
         Typeface typeface, double fontSize, double rowHeight,
         int hangingIndentChars, IBrush foreground, int tabWidth = 4) {
         var gtf = typeface.GlyphTypeface;

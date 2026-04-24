@@ -72,7 +72,19 @@ public sealed class MonoLayoutContext {
         var cmap = glyphTypeface.CharacterToGlyphMap;
         ushort spaceGlyph = 0;
         cmap.TryGetGlyph(' ', out spaceGlyph);
-        _fallbackGlyph = spaceGlyph;
+        // Pick a visible fallback glyph — chars without native coverage
+        // render as this, so it needs to look like "unknown character",
+        // not whitespace.  U+FFFD (REPLACEMENT CHARACTER) is Unicode's
+        // own sentinel; if the font has no glyph for it, fall through
+        // to U+2022 (BULLET) and finally '?' / space.  Space is the
+        // last resort so CharWidth math below always has an advance.
+        ushort fallback;
+        if (!(cmap.TryGetGlyph('\uFFFD', out fallback) && fallback != 0)
+                && !(cmap.TryGetGlyph('\u2022', out fallback) && fallback != 0)
+                && !(cmap.TryGetGlyph('?', out fallback) && fallback != 0)) {
+            fallback = spaceGlyph;
+        }
+        _fallbackGlyph = fallback;
         glyphTypeface.TryGetHorizontalGlyphAdvance(spaceGlyph, out var advanceRaw);
         CharWidth = advanceRaw / emHeight * fontSize;
 
@@ -82,16 +94,21 @@ public sealed class MonoLayoutContext {
 
         // Pre-populate ASCII printable range so the inner draw/hit-test loop
         // hits a flat array indexed by char rather than a dictionary lookup.
+        // Missing ASCII chars use the fallback (unknown) glyph so the reader
+        // sees something distinct rather than silent whitespace.
         for (var i = 32; i < 128; i++) {
-            _asciiGlyphs[i] = cmap.TryGetGlyph(i, out var g) ? g : spaceGlyph;
+            _asciiGlyphs[i] = cmap.TryGetGlyph(i, out var g) ? g : _fallbackGlyph;
         }
     }
 
     /// <summary>
-    /// Tries to look up the glyph index for <paramref name="c"/>.  ASCII
-    /// printable chars hit the cached table; everything else goes through
+    /// Looks up the glyph index for <paramref name="c"/>, always
+    /// returning <c>true</c>.  ASCII printable chars hit the cached
+    /// table; everything else goes through
     /// <see cref="GlyphTypeface.TryGetGlyph"/> with a per-context dictionary
-    /// cache so we only ask once per session per char.
+    /// cache so we only ask once per session per char.  Chars the
+    /// typeface has no glyph for resolve to the fallback (space) glyph
+    /// — the mono path never refuses a line for coverage reasons, which
     /// </summary>
     public bool TryGetGlyph(char c, out ushort glyph) {
         if (c == '\t') { glyph = _asciiGlyphs[' ']; return true; }
@@ -102,7 +119,11 @@ public sealed class MonoLayoutContext {
             _extraGlyphs[c] = glyph;
             return true;
         }
-        return false;
+        // Missing glyph — substitute the fallback and cache so we never
+        // re-probe the char.
+        glyph = _fallbackGlyph;
+        _extraGlyphs[c] = glyph;
+        return true;
     }
 
     /// <summary>

@@ -62,6 +62,66 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     // CLR wrappers
     // -------------------------------------------------------------------------
 
+    /// <summary>
+    /// Returns the Unicode codepoint at the caret when it has no glyph in
+    /// the current editor font (i.e. renders as the fallback glyph).
+    /// Returns <c>null</c> when the character renders natively, when the
+    /// caret is past end-of-document, when it's sitting on whitespace
+    /// (tab / LF / CR), or on the low half of a surrogate pair.  The
+    /// status bar uses this to surface "U+XXXX" for characters that
+    /// otherwise display as an anonymous replacement mark.
+    /// </summary>
+    public int? GetUnrepresentableCodepointAtCaret() {
+        var doc = Document;
+        if (doc is null) return null;
+        // Our fallback glyph is only substituted by the mono fast path.
+        // When it's not available (proportional font or fast text layout
+        // off), rendering goes through Avalonia's TextLayout, which uses
+        // the OS font-fallback chain — so the character isn't really
+        // "unrepresentable" from the user's perspective.
+        if (!_useFastTextLayout || !IsFontMonospace()) return null;
+
+        var caret = doc.Selection.Caret;
+        var table = doc.Table;
+        if (caret < 0 || caret >= table.Length) return null;
+
+        // Read 1–2 chars so we can assemble a surrogate pair into a codepoint.
+        var len = (int)Math.Min(2, table.Length - caret);
+        var text = table.GetText(caret, len);
+        if (text.Length == 0) return null;
+
+        var c = text[0];
+        // If the caret sits on the low half of a surrogate pair, there's
+        // nothing to report — the pair was already handled at the high-half
+        // position.
+        if (char.IsLowSurrogate(c)) return null;
+
+        int codepoint;
+        if (char.IsHighSurrogate(c) && text.Length >= 2 && char.IsLowSurrogate(text[1])) {
+            codepoint = char.ConvertToUtf32(c, text[1]);
+        } else {
+            codepoint = c;
+        }
+
+        // Whitespace / line-ending chars have clear meaning — don't clutter
+        // the status bar with their codepoints.
+        if (codepoint == '\t' || codepoint == '\n' || codepoint == '\r') return null;
+
+        var typeface = new Typeface(FontFamily);
+        var gtf = typeface.GlyphTypeface;
+        if (gtf is null) return null;
+        var cmap = gtf.CharacterToGlyphMap;
+
+        // Non-BMP chars (above U+FFFF) need surrogate-pair lookup; Avalonia's
+        // CharacterToGlyphMap only takes a single char, so report them as
+        // unrepresentable unconditionally (most monospace fonts don't cover
+        // emoji / extended planes anyway, and when they do the fallback
+        // glyph still renders the full pair).
+        if (codepoint > 0xFFFF) return codepoint;
+
+        return cmap.TryGetGlyph((char)codepoint, out var g) && g != 0 ? null : codepoint;
+    }
+
     public Document? Document {
         get => GetValue(DocumentProperty);
         set => SetValue(DocumentProperty, value);

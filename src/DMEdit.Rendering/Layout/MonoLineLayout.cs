@@ -89,22 +89,19 @@ public sealed class MonoLineLayout : IDisposable {
     /// walking the line and producing word-break row spans up to
     /// <paramref name="maxCharsPerRow"/> per row, with continuation rows
     /// shrunk by <see cref="MonoLayoutContext.HangingIndentChars"/>.
-    /// Returns null if the line contains a tab or any character that the
-    /// typeface has no glyph for — those lines must use the slow path.
+    /// Never returns null — <see cref="MonoLayoutContext.TryGetGlyph"/>
+    /// substitutes the fallback glyph for any character the typeface
+    /// lacks coverage for, so the mono path handles every line.  The
+    /// nullable return is retained for API compatibility and in case a
+    /// future rejection condition (e.g. bidi, right-to-left) is added.
     /// </summary>
     public static MonoLineLayout? TryBuild(MonoLayoutContext ctx, string text, int maxCharsPerRow) {
-        // Reject control characters other than tab.  Tab is handled via
-        // column-aware advance in the tab-aware row breaker.
-        // Accept all characters — control chars render as the fallback
-        // glyph at one column width.  Only reject characters that the
-        // typeface truly can't handle (TryGetGlyph returns false for
-        // non-BMP chars without coverage).
+        // Single pass to detect tabs (which need the column-aware breaker).
+        // Non-tab characters always render; missing glyphs resolve to the
+        // fallback through MonoLayoutContext.
         var hasTabs = false;
         for (var i = 0; i < text.Length; i++) {
-            var c = text[i];
-            if (c == '\t') { hasTabs = true; continue; }
-            if (c < 32) continue; // control chars → fallback glyph
-            if (!ctx.TryGetGlyph(c, out _)) return null;
+            if (text[i] == '\t') { hasTabs = true; break; }
         }
 
         // Effective row widths: first row uses the full column count.

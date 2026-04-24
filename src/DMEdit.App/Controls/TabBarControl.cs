@@ -1363,9 +1363,17 @@ public sealed class TabBarControl : Control {
         closeRight.Click += (_, _) => CloseTabsToRightClicked?.Invoke(tabIndex);
         menu.Items.Add(closeRight);
 
+        // "Close Other Tabs" only makes sense when there's more than one
+        // closable (non-Settings) document tab.
+        var otherClosableCount = 0;
+        for (var i = 0; i < _tabs.Count; i++) {
+            if (i == tabIndex || _tabs[i].IsSettings) continue;
+            otherClosableCount++;
+        }
+
         var closeOthers = new MenuItem {
             Header = "Close _Other Tabs",
-            IsEnabled = _tabs.Count > 1,
+            IsEnabled = otherClosableCount > 0,
         };
         closeOthers.Click += (_, _) => CloseOtherTabsClicked?.Invoke(tabIndex);
         menu.Items.Add(closeOthers);

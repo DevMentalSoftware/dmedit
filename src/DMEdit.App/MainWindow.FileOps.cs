@@ -335,16 +335,27 @@ public partial class MainWindow {
     }
 
     /// <summary>
-    /// If the only other tab is an empty, unmodified untitled document,
-    /// close it silently. Called after opening a file or help document
-    /// so the startup placeholder tab doesn't linger.
+    /// If the only other document tab is an empty, unmodified untitled
+    /// document, close it silently.  Called after opening a file or help
+    /// document so the startup placeholder tab doesn't linger.  The
+    /// persistent Settings tab and any other non-document tabs are
+    /// ignored when counting — earlier versions used a raw
+    /// <c>_tabs.Count == 2</c> check which broke once Settings became
+    /// an always-open tab.
     /// </summary>
     private void TryCloseEmptyUntitled(TabState exclude) {
-        if (_tabs.Count != 2) return;
-        var other = _tabs[0] == exclude ? _tabs[1] : _tabs[0];
-        if (other.FilePath == null && !other.IsDirty && !other.IsSettings
-            && other.Document.Table.Length == 0) {
-            CloseTabDirect(other);
+        TabState? placeholder = null;
+        foreach (var t in _tabs) {
+            if (t == exclude || t.IsSettings) continue;
+            // More than one other document tab means the user has real
+            // work open — the placeholder heuristic doesn't apply.
+            if (placeholder is not null) return;
+            placeholder = t;
+        }
+        if (placeholder is null) return;
+        if (placeholder.FilePath == null && !placeholder.IsDirty
+                && placeholder.Document.Table.Length == 0) {
+            CloseTabDirect(placeholder);
         }
     }
 

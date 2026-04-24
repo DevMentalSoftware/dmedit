@@ -832,6 +832,18 @@ public sealed partial class EditorControl {
         // ViewportBase = offset of first visible character.
         var startOfs = topRow * cpr;
 
+        // Prefer the mono fast path: build a MonoLayoutContext once and
+        // render each visible row via a MonoLineLayout.  This is the
+        // whole point of CharWrap (huge files need speed) — using
+        // Avalonia's TextLayout here would undo the performance win.
+        // Falls back to TextLayout when the font isn't monospace or
+        // fast text layout is disabled.
+        var monoCtx = _useFastTextLayout
+            ? TextLayoutEngine.TryBuildMonoContext(
+                typeface, EffectiveFontSize, rh,
+                hangingIndentChars: 0, ForegroundBrush, _indentWidth)
+            : null;
+
         var lines = new List<LayoutLine>();
         var foreground = ForegroundBrush;
         for (var i = 0; i < visibleRows; i++) {
@@ -843,13 +855,36 @@ public sealed partial class EditorControl {
             var rawText = doc.Table.GetText(rowStart, len);
             var text = SanitizeCharWrapText(rawText);
             var rowCharStart = (int)(rowStart - startOfs);
-            var layout = MakeCharWrapLayout(text, typeface, EffectiveFontSize, foreground);
-            lines.Add(new LayoutLine(rowCharStart, len, i, 1, layout));
+            LayoutLine line;
+            if (monoCtx is not null) {
+                // Each CharWrap row is already bounded to cpr chars, so
+                // MonoLineLayout.TryBuild with int.MaxValue max width
+                // produces a single-row layout — no further wrapping.
+                var mono = MonoLineLayout.TryBuild(monoCtx, text, int.MaxValue);
+                line = mono is not null
+                    ? new LayoutLine(rowCharStart, len, i, 1, mono)
+                    : new LayoutLine(rowCharStart, len, i, 1,
+                        MakeCharWrapLayout(text, typeface, EffectiveFontSize, foreground));
+            } else {
+                line = new LayoutLine(rowCharStart, len, i, 1,
+                    MakeCharWrapLayout(text, typeface, EffectiveFontSize, foreground));
+            }
+            lines.Add(line);
         }
 
         if (lines.Count == 0) {
-            var layout = MakeCharWrapLayout("", typeface, EffectiveFontSize, foreground);
-            lines.Add(new LayoutLine(0, 0, 0, 1, layout));
+            LayoutLine empty;
+            if (monoCtx is not null) {
+                var mono = MonoLineLayout.TryBuild(monoCtx, "", int.MaxValue);
+                empty = mono is not null
+                    ? new LayoutLine(0, 0, 0, 1, mono)
+                    : new LayoutLine(0, 0, 0, 1,
+                        MakeCharWrapLayout("", typeface, EffectiveFontSize, foreground));
+            } else {
+                empty = new LayoutLine(0, 0, 0, 1,
+                    MakeCharWrapLayout("", typeface, EffectiveFontSize, foreground));
+            }
+            lines.Add(empty);
         }
 
         _layout = new LayoutResult(lines, rh, startOfs);

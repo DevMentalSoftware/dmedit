@@ -118,10 +118,14 @@ public partial class MainWindow {
     }
 
     private void CycleTab(int direction) {
-        if (_tabs.Count <= 1) return;
-        var idx = _activeTab != null ? _tabs.IndexOf(_activeTab) : 0;
-        idx = (idx + direction + _tabs.Count) % _tabs.Count;
-        SwitchToTab(_tabs[idx]);
+        // Ctrl+Tab / Ctrl+Shift+Tab cycles document tabs only — Settings
+        // is always open and belongs off to the side.
+        var docs = _tabs.Where(t => !t.IsSettings).ToList();
+        if (docs.Count <= 1) return;
+        var idx = _activeTab is not null ? docs.IndexOf(_activeTab) : 0;
+        if (idx < 0) idx = 0; // active tab is Settings — start from first doc
+        idx = (idx + direction + docs.Count) % docs.Count;
+        SwitchToTab(docs[idx]);
     }
 
     private void ApplyZoom(int percent) {
@@ -451,6 +455,8 @@ public partial class MainWindow {
         StatusSep4.Background = theme.StatusBarForeground;
         StatusIndent.Foreground = theme.StatusBarForeground;
         StatusSep5.Background = theme.StatusBarForeground;
+        StatusCodepoint.Foreground = theme.StatusBarForeground;
+        StatusSep7.Background = theme.StatusBarForeground;
         // StatusTailGlyph foreground is set dynamically in UpdateStatusBar
         // based on active/inactive state.
         StatusUpdateGlyph.Foreground = theme.StatusBarWarning;

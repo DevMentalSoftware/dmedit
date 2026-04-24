@@ -807,13 +807,18 @@ public sealed partial class EditorControl {
 
     /// <summary>
     /// Single decision point: should this line use the TextLayout slow
-    /// path instead of the MonoRowBreaker fast path?  Triggers when the
-    /// font is proportional OR when the user has disabled the fast text
-    /// layout in Settings (e.g. to keep ligatures).  Must stay in sync
-    /// with <see cref="TextLayoutEngine.LayoutLines"/>'s mono-context
-    /// probe — if ComputeLineRowCount picks the mono path while the
-    /// actual layout went slow, the rendered-vs-computed row counts
-    /// diverge and the Debug invariant fires.
+    /// path instead of the MonoRowBreaker fast path?  Triggers when:
+    /// <list type="bullet">
+    ///   <item>the user disabled Fast Text Layout;</item>
+    ///   <item>the font is proportional;</item>
+    ///   <item>the line contains any character the monospace glyph
+    ///     typeface has no glyph for — <see cref="MonoLineLayout.TryBuild"/>
+    ///     rejects such lines and the renderer falls back to
+    ///     <see cref="TextLayout"/>, whose fallback-font metrics differ
+    ///     from the mono grid.  Without this check, wide-font JSON /
+    ///     Unicode content produces different row counts from the
+    ///     renderer vs the mono breaker and the scroll invariant fires.</item>
+    /// </list>
     /// </summary>
     private bool ShouldUseSlowPath(string text) =>
         !_useFastTextLayout || !IsFontMonospace();
