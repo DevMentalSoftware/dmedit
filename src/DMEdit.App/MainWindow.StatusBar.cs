@@ -278,15 +278,27 @@ public partial class MainWindow {
                     var lineIdx = table.LineFromOfs(caret);
                     var lineStart = table.LineStartOfs(lineIdx);
                     var contentLen = table.LineContentLength((int)lineIdx);
-                    var col = Math.Min(caret - lineStart, contentLen) + 1;
+                    var ch = Math.Min(caret - lineStart, contentLen) + 1;
                     var line = lineIdx + 1;
 
                     var lnText = $"{line:N0}".PadLeft(lcWidth);
                     var maxLineLen = table.MaxLineLength;
                     var chWidth = maxLineLen > 0 ? $"{maxLineLen:N0}".Length : lcWidth;
-                    var chText = $"{col:N0}".PadLeft(chWidth);
+                    var chText = $"{ch:N0}".PadLeft(chWidth);
                     var endMark = Editor.CaretIsAtEnd ? "\u2082" : "";
-                    lineCol = $"Ln {lnText} Ch {chText}{endMark}";
+
+                    // Visual column within the caret's wrapped row (1-based).
+                    // Whenever wrap is enabled, show Col alongside Ch —
+                    // even when they agree — so the display doesn't
+                    // shift format as the caret moves in and out of
+                    // continuation rows.  Wrap off: just "Ln N Ch M".
+                    if (Editor.WrapLines) {
+                        var visualCol = Editor.CaretPosition is { } cp ? cp.Col + 1 : ch;
+                        var colText = $"{visualCol:N0}".PadLeft(chWidth);
+                        lineCol = $"Ln {lnText} Col {colText} Ch {chText}{endMark}";
+                    } else {
+                        lineCol = $"Ln {lnText} Ch {chText}{endMark}";
+                    }
                 }
             }
 

@@ -606,13 +606,61 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     // the previous frame happened to end at the same topLine.
     private bool _winExactPinActive;
 
-    // Caret "is at end of row" flag.  When true, a caret sitting at a
-    // soft line break boundary renders at the END of the current row
-    // instead of the START of the next row (the default).  Set by End
-    // key and mouse click on the right edge of a wrapped row.  Reset
-    // to false by Home key, arrow keys, edits, and most other caret
-    // movements.
-    private bool _caretIsAtEnd;
+    // Cache backing the CaretPosition property.  May be stale relative
+    // to Selection.Caret if a legacy writer changed Selection after
+    // invalidating this cache; the property getter resolves staleness
+    // on read.  Selection.Active is NOT auto-synced from writes to this
+    // field — each caret command (arrow, click, Home/End, etc.) is
+    // responsible for writing both, because the command knows whether
+    // it's extending the existing selection or replacing it.
+    private TextPosition? _caretPosition;
+
+    // Fallback affinity intent used when layout can't produce a
+    // TextPosition (pre-first-layout / slow path).
+    private bool _legacyCaretAtEndBit;
+
+    /// <summary>
+    /// The caret's current visual position.  Carries the document offset
+    /// and, when layout is available, the (row, col) visual placement
+    /// needed to disambiguate the two positions that share a single
+    /// offset at a wrap boundary.  Null when no layout data is available;
+    /// in that case <see cref="CaretIsAtEnd"/> reads a fallback bit.
+    /// </summary>
+    /// <remarks>
+    /// Resolves staleness on read: if the cached value's
+    /// <see cref="TextPosition.CharOffset"/> no longer matches
+    /// <c>Selection.Caret</c> (legacy writers that assign
+    /// <c>_caretIsAtEnd</c> before updating Selection null the cache,
+    /// but can't rebuild it without knowing the new offset), the getter
+    /// rebuilds from the current Selection and the legacy affinity bit.
+    /// </remarks>
+    public TextPosition? CaretPosition {
+        get {
+            if (Document is not { } doc) return _caretPosition;
+            var caret = doc.Selection.Caret;
+            if (_caretPosition is { } cached && cached.CharOffset == caret) {
+                return cached;
+            }
+            _caretPosition = TryBuildCaretPos(caret, preferEndOfRow: _legacyCaretAtEndBit);
+            return _caretPosition;
+        }
+    }
+
+    // Property wrapper over caret affinity.  Migrated writers set
+    // _caretPosition directly (via CommitCaretPos).  Legacy writers
+    // still assign this property — the setter records the fallback bit
+    // and invalidates _caretPosition; the next CaretPosition read will
+    // rebuild against whatever Selection.Caret is at that moment.  This
+    // tolerates legacy call sites that assign "_caretIsAtEnd = x" before
+    // updating Selection (we can't yet resolve the new offset, so we
+    // defer the rebuild).
+    private bool _caretIsAtEnd {
+        get => CaretPosition is { } p ? DeriveIsAtEndFromPos(p) : _legacyCaretAtEndBit;
+        set {
+            _legacyCaretAtEndBit = value;
+            _caretPosition = null;
+        }
+    }
 
     /// <summary>Whether the caret is at the end-of-row position (for status bar display).</summary>
     public bool CaretIsAtEnd => _caretIsAtEnd;

@@ -723,77 +723,332 @@ public sealed partial class EditorControl {
     // -------------------------------------------------------------------------
 
     private void MoveCaretHorizontal(Document doc, int delta, bool byWord, bool extend) {
-        var caret = doc.Selection.Caret;
         var table = doc.Table;
         var len = table.Length;
 
-        // At a soft-break boundary, two visual positions share one offset:
-        //   isAtEnd=true  → end of current row (right edge)
-        //   isAtEnd=false → start of next row (left edge)
-        //
-        // Arrow keys visit BOTH positions when crossing a boundary:
-        //
-        //   Right: ...lastChar → endOfRow(isAtEnd) → startOfNextRow → nextChar...
-        //   Left:  ...secondChar → startOfRow → endOfPrevRow(isAtEnd) → prevChar...
-        //
-        // When the caret is already at one of these two positions, the
-        // next arrow press in the same direction just flips isAtEnd
-        // without changing the offset.
-        if (!byWord && (_wrapLines || _charWrapMode)) {
-            // Right from isAtEnd at any boundary: flip to !isAtEnd.
-            // This handles End-then-right (word-wrap) and arrow traversal
-            // through hard breaks (CharWrap / forced mid-word breaks).
-            if (delta > 0 && _caretIsAtEnd && IsAtSoftRowBoundary(caret)) {
-                _caretIsAtEnd = false;
-                if (!extend) doc.Selection = Selection.Collapsed(caret);
-                InvalidateVisual();
-                ResetCaretBlink();
-                return;
+        // Primary caret state: CaretPosition (the public property).  It
+        // resolves against Selection.Caret on read, so a stale cache
+        // from an out-of-order legacy write doesn't matter.  Null means
+        // no visual data (slow path / off-viewport); callers fall
+        // through to plain-offset stepping against Selection.Caret.
+        var current = CaretPosition;
+
+        // By-word movement crosses wrap boundaries transparently (a word
+        // spans its wrapped rows).  No visual-row stepping; caret lands
+        // on a logical word boundary.
+        if (byWord) {
+            var fromOfs = current?.CharOffset ?? doc.Selection.Caret;
+            var wordDst = delta < 0
+                ? FindWordBoundaryLeft(doc, fromOfs)
+                : FindWordBoundaryRight(doc, fromOfs);
+            wordDst = Math.Clamp(wordDst, 0L, len);
+            if (!_charWrapMode) {
+                wordDst = SnapOutOfDeadZone(table, wordDst, delta > 0);
             }
-            // Left from !isAtEnd at a hard break: flip to isAtEnd.
-            // Only for hard breaks — at space-breaks, left arrow advances
-            // through the space character naturally.
-            if (delta < 0 && !_caretIsAtEnd && IsAtHardBreakBoundary(caret, table)) {
-                _caretIsAtEnd = true;
-                if (!extend) doc.Selection = Selection.Collapsed(caret);
-                InvalidateVisual();
-                ResetCaretBlink();
-                return;
-            }
+            CommitPlainCaret(wordDst, extend);
+            return;
         }
 
-        long newCaret;
-        if (!byWord) {
-            newCaret = delta < 0
-                ? CodepointBoundary.StepLeft(table, caret)
-                : CodepointBoundary.StepRight(table, caret);
-            newCaret = Math.Clamp(newCaret, 0L, len);
-        } else {
-            newCaret = delta < 0
-                ? FindWordBoundaryLeft(doc, caret)
-                : FindWordBoundaryRight(doc, caret);
+        // Visual stepping in TextPosition space (wrap on).  Every wrap
+        // boundary exposes two distinct visual positions for one offset
+        // (end of row r  vs  start of row r+1); arrow keys traverse both.
+        if ((_wrapLines || _charWrapMode) && current is { } cur) {
+            var next = StepCaretPosHorizontal(cur, delta);
+            var nextOfs = next.CharOffset;
+            if (!_charWrapMode) {
+                var snapped = SnapOutOfDeadZone(table, nextOfs, delta > 0);
+                if (snapped != nextOfs) {
+                    next = BuildCaretPos(snapped, preferEndOfRow: false);
+                }
+            }
+            CommitCaretPos(next, extend);
+            return;
         }
 
-        // Skip over dead zones (line terminators) — but not in char-wrap
-        // mode where CR/LF are visible characters.
+        // Fallback: wrap off, off-viewport, or slow-path line.
+        var fallbackFrom = current?.CharOffset ?? doc.Selection.Caret;
+        var newCaret = delta < 0
+            ? CodepointBoundary.StepLeft(table, fallbackFrom)
+            : CodepointBoundary.StepRight(table, fallbackFrom);
+        newCaret = Math.Clamp(newCaret, 0L, len);
         if (!_charWrapMode) {
             newCaret = SnapOutOfDeadZone(table, newCaret, delta > 0);
         }
+        CommitPlainCaret(newCaret, extend);
+    }
 
-        // Right arrow landing at a hard-break boundary → isAtEnd.
-        if (delta > 0 && (_wrapLines || _charWrapMode)
-                && IsAtHardBreakBoundary(newCaret, table)) {
-            _caretIsAtEnd = true;
-        } else {
-            _caretIsAtEnd = false;
+    // ------------------------------------------------------------------
+    //  TextPosition caret helpers
+    //
+    //  Migrated code paths (currently: horizontal arrows) read _caretPosition
+    //  directly and write via CommitCaretPos.  The _caretIsAtEnd
+    //  property setter in EditorControl.cs keeps _caretPosition fresh when
+    //  unmigrated code assigns the legacy affinity flag — no stale-
+    //  cache reconciliation needed at read sites.
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Builds a <see cref="TextPosition"/> for <paramref name="ofs"/>,
+    /// resolving the at-boundary ambiguity by <paramref name="preferEndOfRow"/>.
+    /// Returns <c>null</c> when the layout cannot produce row data for
+    /// this offset (slow path or off-viewport).
+    /// </summary>
+    private TextPosition? TryBuildCaretPos(long ofs, bool preferEndOfRow) {
+        var doc = Document!;
+        var table = doc.Table;
+        var lineIdx = table.LineFromOfs(ofs);
+
+        if (_charWrapMode && _charWrapCharsPerRow > 0) {
+            var cpr = _charWrapCharsPerRow;
+            var atBoundary = ofs > 0 && ofs < table.Length && ofs % cpr == 0;
+            int cwRow, cwCol;
+            if (atBoundary && preferEndOfRow) {
+                cwRow = (int)(ofs / cpr) - 1;
+                cwCol = cpr;
+            } else {
+                cwRow = (int)(ofs / cpr);
+                cwCol = (int)(ofs - (long)cwRow * cpr);
+            }
+            return new TextPosition(lineIdx, cwRow, cwCol, ofs);
         }
 
+        var layout = EnsureLayout();
+        if (layout.Lines.Count == 0) {
+            return null;
+        }
+        var localOfs = ofs - layout.ViewportBase;
+        Rendering.Layout.LayoutLine? ll = null;
+        for (var i = layout.Lines.Count - 1; i >= 0; i--) {
+            if (layout.Lines[i].CharStart <= localOfs) {
+                ll = layout.Lines[i];
+                break;
+            }
+        }
+        if (ll == null || ll.Mono is not { } mono) {
+            return null;
+        }
+        var charInLine = (int)(localOfs - ll.CharStart);
+        if (charInLine < 0 || charInLine > ll.CharLen) {
+            return null;
+        }
+        var (row, col) = mono.OffsetToPos(charInLine);
+        if (!preferEndOfRow
+                && row + 1 < mono.Rows.Length
+                && col == mono.Rows[row].CharLen) {
+            row++;
+            col = 0;
+        }
+        return new TextPosition(lineIdx, row, col, ofs);
+    }
+
+    /// <summary>
+    /// Builds a <see cref="TextPosition"/> for <paramref name="ofs"/>,
+    /// returning a degenerate (row 0, col 0) value when layout data isn't
+    /// available.  Used when a caller has already committed to an offset
+    /// and just needs a struct to hand to <see cref="CommitCaretPos"/>.
+    /// </summary>
+    private TextPosition BuildCaretPos(long ofs, bool preferEndOfRow) {
+        return TryBuildCaretPos(ofs, preferEndOfRow)
+            ?? new TextPosition(Document!.Table.LineFromOfs(ofs), 0, 0, ofs);
+    }
+
+    /// <summary>
+    /// One horizontal visual step from <paramref name="current"/>.
+    /// Pure <see cref="TextPosition"/> in, <see cref="TextPosition"/> out
+    /// — the legacy affinity bit never appears in the signature.
+    /// </summary>
+    private TextPosition StepCaretPosHorizontal(TextPosition current, int delta) {
+        var table = Document!.Table;
+
+        if (_charWrapMode && _charWrapCharsPerRow > 0) {
+            return StepCaretPosCharWrap(current, delta);
+        }
+
+        var layout = EnsureLayout();
+        var localOfs = current.CharOffset - layout.ViewportBase;
+        Rendering.Layout.LayoutLine? ll = null;
+        for (var i = layout.Lines.Count - 1; i >= 0; i--) {
+            if (layout.Lines[i].CharStart <= localOfs) {
+                ll = layout.Lines[i];
+                break;
+            }
+        }
+        if (ll == null || ll.Mono is not { } mono
+                || current.RowInLine < 0
+                || current.RowInLine >= mono.Rows.Length) {
+            // Layout state drift — rebuild from offset after a plain step.
+            var fallbackOfs = Math.Clamp(
+                delta < 0 ? CodepointBoundary.StepLeft(table, current.CharOffset)
+                          : CodepointBoundary.StepRight(table, current.CharOffset),
+                0L, table.Length);
+            return BuildCaretPos(fallbackOfs, preferEndOfRow: false);
+        }
+
+        var row = current.RowInLine;
+        var col = current.Col;
+        var rowLen = mono.Rows[row].CharLen;
+        var isLastRow = row == mono.Rows.Length - 1;
+        var isFirstRow = row == 0;
+        var rowStart = ll.CharStart + mono.Rows[row].CharStart;
+
+        if (delta > 0) {
+            if (col < rowLen) {
+                var newOfs = Math.Clamp(
+                    CodepointBoundary.StepRight(table, current.CharOffset),
+                    0L, table.Length);
+                var newCol = (int)(newOfs - layout.ViewportBase - rowStart);
+                if (newCol < 0 || newCol > rowLen) {
+                    return BuildCaretPos(newOfs, preferEndOfRow: false);
+                }
+                return new TextPosition(current.LineIdx, row, newCol, newOfs);
+            }
+            if (!isLastRow) {
+                // In-line flip: end of row r → start of row r+1, same offset.
+                return new TextPosition(
+                    current.LineIdx, row + 1, 0, current.CharOffset);
+            }
+            // End of last row → advance into next logical line.
+            var crossOfs = Math.Clamp(
+                CodepointBoundary.StepRight(table, current.CharOffset),
+                0L, table.Length);
+            return BuildCaretPos(crossOfs, preferEndOfRow: false);
+        } else {
+            if (col > 0) {
+                var newOfs = Math.Clamp(
+                    CodepointBoundary.StepLeft(table, current.CharOffset),
+                    0L, table.Length);
+                var newCol = (int)(newOfs - layout.ViewportBase - rowStart);
+                if (newCol < 0) {
+                    return BuildCaretPos(newOfs, preferEndOfRow: false);
+                }
+                return new TextPosition(current.LineIdx, row, newCol, newOfs);
+            }
+            if (!isFirstRow) {
+                // In-line flip: start of row r → end of row r-1, same offset.
+                var prevLen = mono.Rows[row - 1].CharLen;
+                return new TextPosition(
+                    current.LineIdx, row - 1, prevLen, current.CharOffset);
+            }
+            // Start of first row → retreat into previous logical line.
+            var crossOfs = Math.Clamp(
+                CodepointBoundary.StepLeft(table, current.CharOffset),
+                0L, table.Length);
+            return BuildCaretPos(crossOfs, preferEndOfRow: false);
+        }
+    }
+
+    /// <summary>
+    /// CharWrap visual step.  CharWrap treats the whole document as a
+    /// single conceptual line with <c>_charWrapCharsPerRow</c> rows —
+    /// <see cref="TextPosition.LineIdx"/> is the logical line idx (for
+    /// status display) but row/col math is against the flat grid.
+    /// </summary>
+    private TextPosition StepCaretPosCharWrap(TextPosition current, int delta) {
+        var table = Document!.Table;
+        var cpr = _charWrapCharsPerRow;
+        var row = current.RowInLine;
+        var col = current.Col;
+
+        if (delta > 0) {
+            if (col < cpr) {
+                var newOfs = Math.Clamp(
+                    CodepointBoundary.StepRight(table, current.CharOffset),
+                    0L, table.Length);
+                var newRowStart = (long)row * cpr;
+                var newCol = (int)(newOfs - newRowStart);
+                if (newCol < 0 || newCol > cpr) {
+                    return BuildCaretPos(newOfs, preferEndOfRow: false);
+                }
+                return new TextPosition(current.LineIdx, row, newCol, newOfs);
+            }
+            // col == cpr: end-of-row; flip to start-of-next-row, same offset.
+            return new TextPosition(
+                current.LineIdx, row + 1, 0, current.CharOffset);
+        } else {
+            if (col > 0) {
+                var newOfs = Math.Clamp(
+                    CodepointBoundary.StepLeft(table, current.CharOffset),
+                    0L, table.Length);
+                var rowStart = (long)row * cpr;
+                var newCol = (int)(newOfs - rowStart);
+                if (newCol < 0) {
+                    return BuildCaretPos(newOfs, preferEndOfRow: false);
+                }
+                return new TextPosition(current.LineIdx, row, newCol, newOfs);
+            }
+            if (row > 0) {
+                // col == 0, row > 0: flip to end of prev row, same offset.
+                return new TextPosition(
+                    current.LineIdx, row - 1, cpr, current.CharOffset);
+            }
+            // Start of doc — no movement.
+            return current;
+        }
+    }
+
+    /// <summary>
+    /// Commits a new <see cref="TextPosition"/> as the caret.  Writes
+    /// <c>_caretPosition</c> (canonical) and <see cref="Selection"/>; the
+    /// derived <c>_caretIsAtEnd</c> property automatically reflects the
+    /// new position.  No legacy-flag write needed.
+    /// </summary>
+    private void CommitCaretPos(TextPosition pos, bool extend) {
+        var doc = Document!;
+        _caretPosition = pos;
         doc.Selection = extend
-            ? doc.Selection.ExtendTo(newCaret)
-            : Selection.Collapsed(newCaret);
+            ? doc.Selection.ExtendTo(pos.CharOffset)
+            : Selection.Collapsed(pos.CharOffset);
         ScrollCaretIntoView();
         InvalidateVisual();
         ResetCaretBlink();
+    }
+
+    /// <summary>
+    /// Commits a plain document offset as the caret.  Used by paths that
+    /// don't reason visually (by-word movement, off-viewport fallback).
+    /// Clears the cached visual position; legacy atEnd bit defaults off.
+    /// </summary>
+    private void CommitPlainCaret(long ofs, bool extend) {
+        var doc = Document!;
+        _caretPosition = null;
+        _legacyCaretAtEndBit = false;
+        doc.Selection = extend
+            ? doc.Selection.ExtendTo(ofs)
+            : Selection.Collapsed(ofs);
+        ScrollCaretIntoView();
+        InvalidateVisual();
+        ResetCaretBlink();
+    }
+
+    /// <summary>
+    /// Derives the legacy <c>_caretIsAtEnd</c> bit from a cached
+    /// <see cref="TextPosition"/> for consumers that still read the
+    /// flag (rendering, scroll-into-view, status bar).  True when the
+    /// position sits at the end of a non-final row — the only visual
+    /// configuration where the flag would disambiguate rendering.
+    /// </summary>
+    private bool DeriveIsAtEndFromPos(TextPosition pos) {
+        if (_charWrapMode && _charWrapCharsPerRow > 0) {
+            return pos.Col == _charWrapCharsPerRow;
+        }
+        var layout = _layout;
+        if (layout == null) {
+            return false;
+        }
+        var localOfs = pos.CharOffset - layout.ViewportBase;
+        for (var i = layout.Lines.Count - 1; i >= 0; i--) {
+            if (layout.Lines[i].CharStart <= localOfs) {
+                var ll = layout.Lines[i];
+                if (ll.Mono is not { } mono
+                        || pos.RowInLine < 0
+                        || pos.RowInLine >= mono.Rows.Length) {
+                    return false;
+                }
+                return pos.RowInLine + 1 < mono.Rows.Length
+                    && pos.Col == mono.Rows[pos.RowInLine].CharLen;
+            }
+        }
+        return false;
     }
 
     /// <summary>

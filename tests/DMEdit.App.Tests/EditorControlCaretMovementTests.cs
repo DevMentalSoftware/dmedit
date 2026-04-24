@@ -446,47 +446,14 @@ public class EditorControlCaretMovementTests {
     }
 
     // ================================================================
-    //  SPACE BREAK WRAP — right/left arrows (no flip step)
+    //  SPACE BREAK WRAP — right/left arrows (uniform flip step)
+    //
+    //  Space-break boundaries behave like hard breaks under the
+    //  TextPosition model: arrow keys visit end-of-row-r (CaretIsAtEnd=true)
+    //  and start-of-row-r+1 (CaretIsAtEnd=false) as two distinct visual
+    //  positions sharing the same offset.  Tests that encoded the older
+    //  "no flip at space breaks" asymmetry have been removed.
     // ================================================================
-
-    [AvaloniaFact]
-    public void SpaceBreak_Right_ThroughSpace_NoIsAtEnd() {
-        var (editor, row0Len, row1Start, rh) = CreateSpaceBreakEditor();
-        if (row0Len <= 2) return;
-
-        // Last non-space char is at row0Len - 2, space is at row0Len - 1.
-        editor.GoToPosition(row0Len - 2);
-        Relayout(editor);
-        Assert.Equal(0, CaretRow(editor, rh));
-
-        // Right → space (still row 0).
-        editor.MoveCaretHorizontalForTest(+1, false, false);
-        Relayout(editor);
-        Assert.Equal(0, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
-
-        // Right → row1Start (row 1, no flip).
-        editor.MoveCaretHorizontalForTest(+1, false, false);
-        Relayout(editor);
-        Assert.Equal(1, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
-    }
-
-    [AvaloniaFact]
-    public void SpaceBreak_Left_FromRow1Start_GoesToSpace() {
-        var (editor, row0Len, row1Start, rh) = CreateSpaceBreakEditor();
-        if (row0Len <= 2) return;
-
-        editor.GoToPosition(row1Start);
-        Relayout(editor);
-        Assert.Equal(1, CaretRow(editor, rh));
-
-        // Left → goes to space (row 0), no flip.
-        editor.MoveCaretHorizontalForTest(-1, false, false);
-        Relayout(editor);
-        Assert.Equal(0, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
-    }
 
     [AvaloniaFact]
     public void SpaceBreak_End_SetsIsAtEnd() {

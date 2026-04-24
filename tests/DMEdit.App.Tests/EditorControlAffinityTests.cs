@@ -295,14 +295,16 @@ public class EditorControlAffinityTests {
 
     // ================================================================
     //  WORD-WRAP boundary (consumed space between rows)
+    //
+    //  Previously, arrow keys at a space-break passed through in one
+    //  keystroke (the consumed space was the visual traversal step).
+    //  Hard breaks had a two-visual-position dance that space-breaks
+    //  didn't.  The TextPosition refactor unifies both: every wrap
+    //  boundary offers end-of-prev-row and start-of-next-row as distinct
+    //  visual positions, and arrow keys visit both in sequence.
     // ================================================================
 
-    /// <summary>
-    /// Creates an editor with word-wrap text that breaks at spaces.
-    /// </summary>
     private static (EditorControl editor, int row0Len, double rh) CreateWordWrapEditor() {
-        // "aaaa bbbb cccc" with narrow viewport forces word-wrap.
-        // We need lines long enough to wrap. Use repeated "abcdef " blocks.
         var sb = new StringBuilder();
         for (var i = 0; i < 30; i++) sb.Append("abcdef ");
         sb.Append('\n');
@@ -331,36 +333,11 @@ public class EditorControlAffinityTests {
         if (layout?.Lines.Count > 0) {
             var ll = layout.Lines[0];
             if (ll.Mono is { } mono && mono.Rows.Length > 1) {
-                row0Len = mono.Rows[0].CharLen; // drawn chars (excl consumed space)
+                row0Len = mono.Rows[0].CharLen;
             }
         }
 
         return (editor, row0Len, rh);
-    }
-
-    [AvaloniaFact]
-    public void WordWrap_Right_ThroughSpace_NoIsAtEnd() {
-        var (editor, row0Len, rh) = CreateWordWrapEditor();
-        if (row0Len <= 1) return;
-
-        // row0Len includes the break-space.  Last non-space char is at
-        // row0Len - 2, space is at row0Len - 1.
-        editor.GoToPosition(row0Len - 2);
-        Relayout(editor);
-        Assert.Equal(0, CaretRow(editor, rh));
-
-        // Right → advances to the space, which is on row 0.
-        editor.MoveCaretHorizontalForTest(delta: +1, byWord: false, extend: false);
-        Relayout(editor);
-        Assert.Equal(0, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
-
-        // Right → advances past the space to row1Start.  Arrow keys at
-        // space-breaks don't set isAtEnd — that's only for hard breaks.
-        editor.MoveCaretHorizontalForTest(delta: +1, byWord: false, extend: false);
-        Relayout(editor);
-        Assert.Equal(1, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
     }
 
     [AvaloniaFact]
@@ -371,85 +348,17 @@ public class EditorControlAffinityTests {
         editor.GoToPosition(5);
         Relayout(editor);
 
-        // End → boundary with isAtEnd=true, caret at end of row 0.
+        // End → caret at end of row 0 (CaretIsAtEnd=true).
         editor.MoveCaretToLineEdgeForTest(toStart: false, extend: false);
         Relayout(editor);
         Assert.Equal(0, CaretRow(editor, rh));
         Assert.True(editor.CaretIsAtEnd);
 
-        // Right → flips to start of next row (same offset, !isAtEnd).
+        // Right → flips to start of next row (same offset, !CaretIsAtEnd).
         editor.MoveCaretHorizontalForTest(delta: +1, byWord: false, extend: false);
         Relayout(editor);
         Assert.Equal(1, CaretRow(editor, rh));
         Assert.False(editor.CaretIsAtEnd);
-    }
-
-    [AvaloniaFact]
-    public void WordWrap_FullStepThrough_Row0Boundary() {
-        var (editor, row0Len, rh) = CreateWordWrapEditor();
-        if (row0Len <= 2) return; // skip if no wrap
-
-        // Get actual row 1 start from layout.
-        var layout = editor.GetType()
-            .GetMethod("EnsureLayout", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
-            .Invoke(editor, null) as DMEdit.Rendering.Layout.LayoutResult;
-        var mono = layout!.Lines[0].Mono!;
-        var row1Start = mono.Rows[1].CharStart;
-
-        // Step through from row0Len-2 to row1Start+1.
-        editor.GoToPosition(row0Len - 2);
-        Relayout(editor);
-
-        var steps = new List<(long ofs, int row, bool atEnd)>();
-        steps.Add((Caret(editor), CaretRow(editor, rh), editor.CaretIsAtEnd));
-
-        for (var i = 0; i < 6; i++) {
-            editor.MoveCaretHorizontalForTest(delta: +1, byWord: false, extend: false);
-            Relayout(editor);
-            steps.Add((Caret(editor), CaretRow(editor, rh), editor.CaretIsAtEnd));
-        }
-
-        // Expected sequence:
-        // (row0Len-2, row0, false) → start
-        // (row0Len-1, row0, false) → last drawn char of row 0
-        // (row0Len,   row0, true)  → end of row 0 (past last drawn char or consumed space)
-        //   ...or maybe (row1Start, row0, true) if consumed space is skipped
-        // (row1Start, row1, false) → flip to start of row 1
-        // (row1Start+1, row1, false) → normal advance
-        //
-        // The exact values depend on whether the consumed space is visited.
-        // Key invariant: every step either advances the offset or flips
-        // isAtEnd (changing the row), and no offset appears with isAtEnd
-        // at a non-boundary position.
-
-        // Verify no stuck positions (same offset, same row, same atEnd).
-        for (var i = 1; i < steps.Count; i++) {
-            Assert.False(
-                steps[i].ofs == steps[i - 1].ofs
-                    && steps[i].row == steps[i - 1].row
-                    && steps[i].atEnd == steps[i - 1].atEnd,
-                $"Stuck at step {i}: {steps[i]}. " +
-                $"Full sequence: [{string.Join(", ", steps)}]");
-        }
-
-        // With space included in row 0's CharLen, row0Len == row1Start.
-        // Word-wrap arrow keys don't use isAtEnd — the space is a normal
-        // character, so the transition is a simple offset advance.
-        Assert.Equal(row0Len, row1Start);
-
-        var transitions = 0;
-        for (var i = 1; i < steps.Count; i++) {
-            if (steps[i - 1].row == 0 && steps[i].row == 1) transitions++;
-        }
-        Assert.True(transitions == 1,
-            $"Expected 1 row transition, got {transitions}. " +
-            $"row0Len={row0Len}, row1Start={row1Start}. " +
-            $"Steps: [{string.Join(", ", steps.Select(s => $"({s.ofs},r{s.row},{(s.atEnd ? "E" : "-")})") )}]");
-
-        // No isAtEnd should be set during arrow traversal in word-wrap.
-        Assert.True(steps.All(s => !s.atEnd),
-            $"Word-wrap arrow keys should never set isAtEnd. " +
-            $"Steps: [{string.Join(", ", steps.Select(s => $"({s.ofs},r{s.row},{(s.atEnd ? "E" : "-")})") )}]");
     }
 
     // ================================================================
