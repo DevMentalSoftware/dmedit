@@ -254,6 +254,59 @@ public sealed class MonoLineLayout : IDisposable {
     }
 
     /// <summary>
+    /// Converts a character offset (relative to the start of this line) into
+    /// an unambiguous (row, col-in-row) pair.  At a wrap boundary where the
+    /// same offset is the end of row <c>r-1</c> AND the start of row <c>r</c>,
+    /// this returns the <em>upstream</em> position: end of row <c>r-1</c>.
+    /// That default matches the common End-key / right-edge-click / typing-
+    /// to-row-end cases.  The <em>downstream</em> position (start of row
+    /// <c>r</c>) is reached by visual stepping, not by this converter.
+    /// </summary>
+    /// <remarks>
+    /// Because the row spans built by <see cref="TryBuild"/> are always
+    /// contiguous (<c>rows[r].CharStart + rows[r].CharLen == rows[r+1].CharStart</c>),
+    /// every inter-row boundary is a shared offset.  The upstream rule
+    /// applies uniformly whether the break is a hard char-limit break or a
+    /// space-break (where the space is part of the previous row's drawn
+    /// content and stays walkable there).
+    /// </remarks>
+    public (int RowInLine, int Col) OffsetToPos(int charInLine) {
+        if (Rows.Length == 0) {
+            return (0, 0);
+        }
+        var clamped = Math.Clamp(charInLine, 0, Text.Length);
+
+        for (var r = Rows.Length - 1; r >= 0; r--) {
+            var row = Rows[r];
+            if (clamped >= row.CharStart) {
+                var charInRow = clamped - row.CharStart;
+                // Upstream default: offset at the start of a non-first row
+                // represents the end of the previous row instead.
+                if (charInRow == 0 && r > 0) {
+                    var prev = Rows[r - 1];
+                    return (r - 1, prev.CharLen);
+                }
+                return (r, charInRow);
+            }
+        }
+        return (0, 0);
+    }
+
+    /// <summary>
+    /// Converts an unambiguous (row, col-in-row) pair into a character offset
+    /// (relative to the start of this line).  Clamps out-of-range values.
+    /// </summary>
+    public int PosToOffset(int rowInLine, int col) {
+        if (Rows.Length == 0) {
+            return 0;
+        }
+        rowInLine = Math.Clamp(rowInLine, 0, Rows.Length - 1);
+        var row = Rows[rowInLine];
+        col = Math.Clamp(col, 0, row.CharLen);
+        return row.CharStart + col;
+    }
+
+    /// <summary>
     /// Returns the bounding rectangle of the caret immediately before
     /// <paramref name="charInLine"/>, in line-local coordinates.
     /// </summary>
