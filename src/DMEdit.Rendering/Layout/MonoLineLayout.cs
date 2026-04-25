@@ -114,7 +114,6 @@ public sealed class MonoLineLayout : IDisposable {
             : 0;
         var totalContIndent = leadingIndentCols + ctx.HangingIndentChars;
         var contRowCols = Math.Max(1, maxCharsPerRow - totalContIndent);
-        var contIndentPx = totalContIndent * ctx.CharWidth;
 
         // Empty line is a single row with zero content.
         if (text.Length == 0) {
@@ -130,8 +129,8 @@ public sealed class MonoLineLayout : IDisposable {
                 var cols = rowIdx == 0 ? firstRowCols : contRowCols;
                 var (_, nextStart) = MonoRowBreaker.NextRowTabAware(
                     text, pos, cols, ctx.TabWidth);
-                var xOffset = rowIdx == 0 ? 0.0 : contIndentPx;
-                rows.Add(new RowSpan(pos, nextStart - pos, xOffset));
+                var indentCols = rowIdx == 0 ? 0 : totalContIndent;
+                rows.Add(new RowSpan(pos, nextStart - pos, indentCols));
                 pos = nextStart;
                 rowIdx++;
             }
@@ -150,8 +149,8 @@ public sealed class MonoLineLayout : IDisposable {
         while (plainPos < text.Length) {
             var rowChars = plainRowIdx == 0 ? firstRowCols : contRowCols;
             var (_, nextStart) = MonoRowBreaker.NextRow(text, plainPos, rowChars);
-            var xOffset = plainRowIdx == 0 ? 0.0 : contIndentPx;
-            plainRows.Add(new RowSpan(plainPos, nextStart - plainPos, xOffset));
+            var indentCols = plainRowIdx == 0 ? 0 : totalContIndent;
+            plainRows.Add(new RowSpan(plainPos, nextStart - plainPos, indentCols));
             plainPos = nextStart;
             plainRowIdx++;
         }
@@ -174,7 +173,7 @@ public sealed class MonoLineLayout : IDisposable {
         for (var r = 0; r < Rows.Length; r++) {
             var span = Rows[r];
             if (span.CharLen == 0) continue;
-            var rowX = origin.X + span.XOffset;
+            var rowX = origin.X + span.IndentCols * Context.CharWidth;
             var rowY = origin.Y + r * Context.RowHeight;
 
             if (!_hasTabs) {
@@ -337,6 +336,25 @@ public sealed class MonoLineLayout : IDisposable {
             span.CharStart + span.CharLen, Context.TabWidth);
     }
 
+    /// <summary>
+    /// Row-explicit caret bounds: no ambiguity-resolution parameter
+    /// because the row is named directly.  Clamps out-of-range inputs.
+    /// Returns a rect in line-local coordinates (Y relative to row 0
+    /// of this line).
+    /// </summary>
+    public Rect GetCaretBoundsAt(int rowInLine, int col) {
+        if (Rows.Length == 0) {
+            return new Rect(0, 0, 0, Context.RowHeight);
+        }
+        var r = Math.Clamp(rowInLine, 0, Rows.Length - 1);
+        var span = Rows[r];
+        var clampedCol = Math.Clamp(col, 0, span.CharLen);
+        var displayCol = ColumnInRow(span.CharStart + clampedCol, span);
+        var x = span.IndentCols * Context.CharWidth + displayCol * Context.CharWidth;
+        var y = r * Context.RowHeight;
+        return new Rect(x, y, 0, Context.RowHeight);
+    }
+
     public Rect GetCaretBounds(int charInLine, bool isAtEnd = false) {
         if (Rows.Length == 0) return new Rect(0, 0, 0, Context.RowHeight);
         var clamped = Math.Clamp(charInLine, 0, Text.Length);
@@ -348,15 +366,53 @@ public sealed class MonoLineLayout : IDisposable {
         if (isAtEnd && r > 0 && clamped <= span.CharStart) {
             var prev = Rows[r - 1];
             var prevCols = RowColumnWidth(prev);
-            var x = prev.XOffset + prevCols * Context.CharWidth;
+            var x = (prev.IndentCols + prevCols) * Context.CharWidth;
             var y = (r - 1) * Context.RowHeight;
             return new Rect(x, y, 0, Context.RowHeight);
         }
 
         var col = ColumnInRow(clamped, span);
-        var x2 = span.XOffset + col * Context.CharWidth;
+        var x2 = span.IndentCols * Context.CharWidth + col * Context.CharWidth;
         var y2 = r * Context.RowHeight;
         return new Rect(x2, y2, 0, Context.RowHeight);
+    }
+
+    /// <summary>
+    /// Hit-test that returns the visual row index and the character
+    /// position within that row directly.  Used by clients that want
+    /// the row picked from <paramref name="local"/>'s Y unambiguously
+    /// (no boundary affinity to resolve).
+    /// </summary>
+    public (int RowInLine, int Col) HitTestPos(Point local) {
+        if (Rows.Length == 0) {
+            return (0, 0);
+        }
+        var rIdx = Math.Clamp((int)(local.Y / Context.RowHeight), 0, Rows.Length - 1);
+        var span = Rows[rIdx];
+        var localX = local.X - span.IndentCols * Context.CharWidth;
+        if (localX < 0) {
+            localX = 0;
+        }
+        var targetCol = (int)Math.Round(localX / Context.CharWidth);
+
+        if (!_hasTabs) {
+            var col = Math.Clamp(targetCol, 0, span.CharLen);
+            return (rIdx, col);
+        }
+
+        // Tab-aware: walk characters accumulating columns until we
+        // reach or pass the target column.
+        var cumCol = 0;
+        for (var i = 0; i < span.CharLen; i++) {
+            var c = Text[span.CharStart + i];
+            var cw = MonoRowBreaker.CharColumns(c, cumCol, Context.TabWidth);
+            var mid = cumCol + cw / 2.0;
+            if (targetCol <= mid) {
+                return (rIdx, i);
+            }
+            cumCol += cw;
+        }
+        return (rIdx, span.CharLen);
     }
 
     /// <summary>
@@ -369,7 +425,7 @@ public sealed class MonoLineLayout : IDisposable {
         if (rIdx < 0) rIdx = 0;
         if (rIdx >= Rows.Length) rIdx = Rows.Length - 1;
         var span = Rows[rIdx];
-        var localX = local.X - span.XOffset;
+        var localX = local.X - span.IndentCols * Context.CharWidth;
         if (localX < 0) localX = 0;
         var targetCol = (int)Math.Round(localX / Context.CharWidth);
 
@@ -415,10 +471,10 @@ public sealed class MonoLineLayout : IDisposable {
             if (_hasTabs) {
                 var loCol = MonoRowBreaker.ColumnOfChar(Text, rowStart, lo, Context.TabWidth);
                 var hiCol = MonoRowBreaker.ColumnOfChar(Text, rowStart, hi, Context.TabWidth);
-                x = span.XOffset + loCol * Context.CharWidth;
+                x = span.IndentCols * Context.CharWidth + loCol * Context.CharWidth;
                 w = (hiCol - loCol) * Context.CharWidth;
             } else {
-                x = span.XOffset + (lo - rowStart) * Context.CharWidth;
+                x = span.IndentCols * Context.CharWidth + (lo - rowStart) * Context.CharWidth;
                 w = (hi - lo) * Context.CharWidth;
             }
             var y = r * Context.RowHeight;
@@ -435,7 +491,9 @@ public sealed class MonoLineLayout : IDisposable {
 /// break-space at a word-wrap boundary.  For any two adjacent rows,
 /// <c>Rows[r].CharStart + Rows[r].CharLen == Rows[r+1].CharStart</c> —
 /// no gaps between rows.</param>
-/// <param name="XOffset">Pixel X offset from the line origin — 0 for the first
-/// row; for continuation rows, the line's leading whitespace columns plus
-/// <see cref="MonoLayoutContext.HangingIndentChars"/> converted to pixels.</param>
-public readonly record struct RowSpan(int CharStart, int CharLen, double XOffset);
+/// <param name="IndentCols">Indent in character columns: 0 for the first
+/// row, <c>leadingWhitespaceCols + HangingIndentChars</c> for continuation
+/// rows.  Pixel X is derived as <c>IndentCols * CharWidth</c> at the call
+/// site (every consumer in <see cref="MonoLineLayout"/> has the context's
+/// <c>CharWidth</c> on hand) — no separate stored XOffset to keep in sync.</param>
+public readonly record struct RowSpan(int CharStart, int CharLen, int IndentCols);

@@ -189,6 +189,7 @@ public sealed partial class EditorControl {
             return;
         }
         _preferredCaretX = -1;
+        _preferredCaretCol = -1;
 
         if (doc.ColumnSel != null) {
             Coalesce("col-char");
@@ -395,7 +396,10 @@ public sealed partial class EditorControl {
                 var doc = Document;
                 if (doc == null) return;
                 if (_isClipboardCycling && cmd != Cmd.EditPasteMore) ConfirmClipboardCycle();
-                if (!isVerticalNav) _preferredCaretX = -1;
+                if (!isVerticalNav) {
+                    _preferredCaretX = -1;
+                    _preferredCaretCol = -1;
+                }
 
                 if (cmd == Cmd.NavColumnSelectUp || cmd == Cmd.NavColumnSelectDown) {
                     var delta = cmd == Cmd.NavColumnSelectUp ? -1 : +1;
@@ -758,7 +762,7 @@ public sealed partial class EditorControl {
             if (!_charWrapMode) {
                 var snapped = SnapOutOfDeadZone(table, nextOfs, delta > 0);
                 if (snapped != nextOfs) {
-                    next = BuildCaretPos(snapped, preferEndOfRow: false);
+                    next = BuildCaretPos(snapped);
                 }
             }
             CommitCaretPos(next, extend);
@@ -788,28 +792,26 @@ public sealed partial class EditorControl {
     // ------------------------------------------------------------------
 
     /// <summary>
-    /// Builds a <see cref="TextPosition"/> for <paramref name="ofs"/>,
-    /// resolving the at-boundary ambiguity by <paramref name="preferEndOfRow"/>.
+    /// Builds a <see cref="TextPosition"/> for <paramref name="ofs"/>.
+    /// At a wrap boundary always returns the downstream interpretation
+    /// (start of the next row); upstream parking is captured directly
+    /// in <c>_caretPosition</c> by <see cref="CommitCaretPos"/>.
     /// Returns <c>null</c> when the layout cannot produce row data for
     /// this offset (slow path or off-viewport).
     /// </summary>
-    private TextPosition? TryBuildCaretPos(long ofs, bool preferEndOfRow) {
+    private TextPosition? TryBuildCaretPos(long ofs) {
         var doc = Document!;
         var table = doc.Table;
         var lineIdx = table.LineFromOfs(ofs);
 
         if (_charWrapMode && _charWrapCharsPerRow > 0) {
+            // CharWrap convention: TextPosition.LineIdx is the absolute
+            // visual row (matches LayoutLine.LineIdx for CharWrap), and
+            // RowInLine is always 0 (each LayoutLine is one visual row).
             var cpr = _charWrapCharsPerRow;
-            var atBoundary = ofs > 0 && ofs < table.Length && ofs % cpr == 0;
-            int cwRow, cwCol;
-            if (atBoundary && preferEndOfRow) {
-                cwRow = (int)(ofs / cpr) - 1;
-                cwCol = cpr;
-            } else {
-                cwRow = (int)(ofs / cpr);
-                cwCol = (int)(ofs - (long)cwRow * cpr);
-            }
-            return new TextPosition(lineIdx, cwRow, cwCol, ofs);
+            var cwLineIdx = ofs / cpr;
+            var cwCol = (int)(ofs - cwLineIdx * cpr);
+            return new TextPosition(cwLineIdx, 0, cwCol, ofs);
         }
 
         var layout = EnsureLayout();
@@ -832,9 +834,10 @@ public sealed partial class EditorControl {
             return null;
         }
         var (row, col) = mono.OffsetToPos(charInLine);
-        if (!preferEndOfRow
-                && row + 1 < mono.Rows.Length
-                && col == mono.Rows[row].CharLen) {
+        // OffsetToPos returns the upstream view at a boundary; flip to
+        // downstream so a fresh build (no captured affinity) lands at
+        // the start of the next row by default.
+        if (row + 1 < mono.Rows.Length && col == mono.Rows[row].CharLen) {
             row++;
             col = 0;
         }
@@ -847,8 +850,8 @@ public sealed partial class EditorControl {
     /// available.  Used when a caller has already committed to an offset
     /// and just needs a struct to hand to <see cref="CommitCaretPos"/>.
     /// </summary>
-    private TextPosition BuildCaretPos(long ofs, bool preferEndOfRow) {
-        return TryBuildCaretPos(ofs, preferEndOfRow)
+    private TextPosition BuildCaretPos(long ofs) {
+        return TryBuildCaretPos(ofs)
             ?? new TextPosition(Document!.Table.LineFromOfs(ofs), 0, 0, ofs);
     }
 
@@ -881,7 +884,7 @@ public sealed partial class EditorControl {
                 delta < 0 ? CodepointBoundary.StepLeft(table, current.CharOffset)
                           : CodepointBoundary.StepRight(table, current.CharOffset),
                 0L, table.Length);
-            return BuildCaretPos(fallbackOfs, preferEndOfRow: false);
+            return BuildCaretPos(fallbackOfs);
         }
 
         var row = current.RowInLine;
@@ -898,7 +901,7 @@ public sealed partial class EditorControl {
                     0L, table.Length);
                 var newCol = (int)(newOfs - layout.ViewportBase - rowStart);
                 if (newCol < 0 || newCol > rowLen) {
-                    return BuildCaretPos(newOfs, preferEndOfRow: false);
+                    return BuildCaretPos(newOfs);
                 }
                 return new TextPosition(current.LineIdx, row, newCol, newOfs);
             }
@@ -911,7 +914,7 @@ public sealed partial class EditorControl {
             var crossOfs = Math.Clamp(
                 CodepointBoundary.StepRight(table, current.CharOffset),
                 0L, table.Length);
-            return BuildCaretPos(crossOfs, preferEndOfRow: false);
+            return BuildCaretPos(crossOfs);
         } else {
             if (col > 0) {
                 var newOfs = Math.Clamp(
@@ -919,7 +922,7 @@ public sealed partial class EditorControl {
                     0L, table.Length);
                 var newCol = (int)(newOfs - layout.ViewportBase - rowStart);
                 if (newCol < 0) {
-                    return BuildCaretPos(newOfs, preferEndOfRow: false);
+                    return BuildCaretPos(newOfs);
                 }
                 return new TextPosition(current.LineIdx, row, newCol, newOfs);
             }
@@ -933,20 +936,20 @@ public sealed partial class EditorControl {
             var crossOfs = Math.Clamp(
                 CodepointBoundary.StepLeft(table, current.CharOffset),
                 0L, table.Length);
-            return BuildCaretPos(crossOfs, preferEndOfRow: false);
+            return BuildCaretPos(crossOfs);
         }
     }
 
     /// <summary>
-    /// CharWrap visual step.  CharWrap treats the whole document as a
-    /// single conceptual line with <c>_charWrapCharsPerRow</c> rows —
-    /// <see cref="TextPosition.LineIdx"/> is the logical line idx (for
-    /// status display) but row/col math is against the flat grid.
+    /// CharWrap visual step.  In CharWrap, <see cref="TextPosition.LineIdx"/>
+    /// is the absolute visual row (cwRow), and <see cref="TextPosition.RowInLine"/>
+    /// is always 0 — each <see cref="Rendering.Layout.LayoutLine"/> represents
+    /// exactly one visual row.
     /// </summary>
     private TextPosition StepCaretPosCharWrap(TextPosition current, int delta) {
         var table = Document!.Table;
         var cpr = _charWrapCharsPerRow;
-        var row = current.RowInLine;
+        var absRow = current.LineIdx;
         var col = current.Col;
 
         if (delta > 0) {
@@ -954,32 +957,30 @@ public sealed partial class EditorControl {
                 var newOfs = Math.Clamp(
                     CodepointBoundary.StepRight(table, current.CharOffset),
                     0L, table.Length);
-                var newRowStart = (long)row * cpr;
-                var newCol = (int)(newOfs - newRowStart);
+                var rowStart = absRow * cpr;
+                var newCol = (int)(newOfs - rowStart);
                 if (newCol < 0 || newCol > cpr) {
-                    return BuildCaretPos(newOfs, preferEndOfRow: false);
+                    return BuildCaretPos(newOfs);
                 }
-                return new TextPosition(current.LineIdx, row, newCol, newOfs);
+                return new TextPosition(absRow, 0, newCol, newOfs);
             }
             // col == cpr: end-of-row; flip to start-of-next-row, same offset.
-            return new TextPosition(
-                current.LineIdx, row + 1, 0, current.CharOffset);
+            return new TextPosition(absRow + 1, 0, 0, current.CharOffset);
         } else {
             if (col > 0) {
                 var newOfs = Math.Clamp(
                     CodepointBoundary.StepLeft(table, current.CharOffset),
                     0L, table.Length);
-                var rowStart = (long)row * cpr;
+                var rowStart = absRow * cpr;
                 var newCol = (int)(newOfs - rowStart);
                 if (newCol < 0) {
-                    return BuildCaretPos(newOfs, preferEndOfRow: false);
+                    return BuildCaretPos(newOfs);
                 }
-                return new TextPosition(current.LineIdx, row, newCol, newOfs);
+                return new TextPosition(absRow, 0, newCol, newOfs);
             }
-            if (row > 0) {
-                // col == 0, row > 0: flip to end of prev row, same offset.
-                return new TextPosition(
-                    current.LineIdx, row - 1, cpr, current.CharOffset);
+            if (absRow > 0) {
+                // col == 0, prev row exists: flip to end of prev row, same offset.
+                return new TextPosition(absRow - 1, 0, cpr, current.CharOffset);
             }
             // Start of doc — no movement.
             return current;
@@ -1006,12 +1007,12 @@ public sealed partial class EditorControl {
     /// <summary>
     /// Commits a plain document offset as the caret.  Used by paths that
     /// don't reason visually (by-word movement, off-viewport fallback).
-    /// Clears the cached visual position; legacy atEnd bit defaults off.
+    /// Clears the cached visual position; the next CaretPosition read
+    /// rebuilds from Selection.Active with downstream affinity.
     /// </summary>
     private void CommitPlainCaret(long ofs, bool extend) {
         var doc = Document!;
         _caretPosition = null;
-        _legacyCaretAtEndBit = false;
         doc.Selection = extend
             ? doc.Selection.ExtendTo(ofs)
             : Selection.Collapsed(ofs);
@@ -1020,145 +1021,20 @@ public sealed partial class EditorControl {
         ResetCaretBlink();
     }
 
-    /// <summary>
-    /// Derives the legacy <c>_caretIsAtEnd</c> bit from a cached
-    /// <see cref="TextPosition"/> for consumers that still read the
-    /// flag (rendering, scroll-into-view, status bar).  True when the
-    /// position sits at the end of a non-final row — the only visual
-    /// configuration where the flag would disambiguate rendering.
+/// <summary>
+    /// Caret pixel rect for offset <paramref name="caretOfs"/> in
+    /// <paramref name="layout"/> coordinates.  Prefers the
+    /// <see cref="TextPosition"/>-native engine path (no offset-walk,
+    /// no affinity flag) when <see cref="CaretPosition"/> represents
+    /// the same offset; falls back to the offset overload for column-
+    /// mode multi-carets and other off-main-caret arrangements.
     /// </summary>
-    private bool DeriveIsAtEndFromPos(TextPosition pos) {
-        if (_charWrapMode && _charWrapCharsPerRow > 0) {
-            return pos.Col == _charWrapCharsPerRow;
+    private Rect GetCaretRect(Rendering.Layout.LayoutResult layout, long caretOfs) {
+        if (CaretPosition is { } pos && pos.CharOffset == caretOfs) {
+            return _layoutEngine.GetCaretBounds(pos, layout);
         }
-        var layout = _layout;
-        if (layout == null) {
-            return false;
-        }
-        var localOfs = pos.CharOffset - layout.ViewportBase;
-        for (var i = layout.Lines.Count - 1; i >= 0; i--) {
-            if (layout.Lines[i].CharStart <= localOfs) {
-                var ll = layout.Lines[i];
-                if (ll.Mono is not { } mono
-                        || pos.RowInLine < 0
-                        || pos.RowInLine >= mono.Rows.Length) {
-                    return false;
-                }
-                return pos.RowInLine + 1 < mono.Rows.Length
-                    && pos.Col == mono.Rows[pos.RowInLine].CharLen;
-            }
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// <summary>
-    /// Returns true if <paramref name="ofs"/> is at a hard row boundary —
-    /// a break with no consumed space (prevEnd == curStart).  CharWrap
-    /// boundaries are always hard.  Word-wrap breaks that consumed a
-    /// space are NOT hard boundaries.
-    /// </summary>
-    private bool IsAtHardRowBoundary(long ofs) {
-        if (ofs <= 0) return false;
-
-        // CharWrap: every cpr boundary is a hard break.
-        if (_charWrapMode && _charWrapCharsPerRow > 0) {
-            return ofs % _charWrapCharsPerRow == 0 && ofs < Document!.Table.Length;
-        }
-
-        if (!_wrapLines) return false;
-        var layout = EnsureLayout();
-        if (layout.Lines.Count == 0) return false;
-        var localOfs = (int)(ofs - layout.ViewportBase);
-        if (localOfs < 0 || localOfs > layout.Lines[^1].CharEnd) return false;
-
-        for (var i = layout.Lines.Count - 1; i >= 0; i--) {
-            if (layout.Lines[i].CharStart <= localOfs) {
-                var ll = layout.Lines[i];
-                if (ll.Mono is not { } mono || mono.Rows.Length <= 1) return false;
-                var posInLine = localOfs - ll.CharStart;
-                var r = mono.RowForChar(posInLine);
-                if (r == 0) return false;
-                var prevEnd = mono.Rows[r - 1].CharStart + mono.Rows[r - 1].CharLen;
-                var curStart = mono.Rows[r].CharStart;
-                // Hard break: no gap between previous row's drawn content
-                // and next row's start.
-                return prevEnd == curStart && posInLine == curStart;
-            }
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// Returns true if <paramref name="ofs"/> is at a hard row boundary —
-    /// a break between two non-space characters (or a CharWrap break).
-    /// Space-break boundaries are NOT hard: the space is a navigable
-    /// character on the current row, so arrow keys cross the boundary
-    /// by advancing through the space naturally.
-    /// </summary>
-    private bool IsAtHardBreakBoundary(long ofs, PieceTable table) {
-        if (ofs <= 0) return false;
-
-        // CharWrap: every cpr boundary is a hard break.
-        if (_charWrapMode && _charWrapCharsPerRow > 0) {
-            return ofs % _charWrapCharsPerRow == 0 && ofs < table.Length;
-        }
-
-        if (!_wrapLines) return false;
-
-        // Check IsAtSoftRowBoundary first (is this even a boundary?).
-        if (!IsAtSoftRowBoundary(ofs)) return false;
-
-        // It's a boundary. Check if the character just before it is a
-        // space — if so, it's a space-break, not a hard break.
-        var charBefore = ofs - 1;
-        if (charBefore >= 0 && charBefore < table.Length) {
-            var text = table.GetText(charBefore, 1);
-            if (text.Length > 0 && text[0] == ' ') return false;
-        }
-        return true;
-    }
-
-    /// Returns true if the caret at <paramref name="ofs"/> is at a soft
-    /// row boundary — a position where <c>isAtEnd</c> makes a visual
-    /// difference (end of previous row vs start of next row).
-    ///
-    /// Covers both hard breaks (offset == Rows[r].CharStart) and word-
-    /// wrap breaks where the consumed space sits before CharStart
-    /// (offset &lt; Rows[r].CharStart but RowForChar still returns r).
-    ///
-    /// Used by both left-arrow (flip to isAtEnd) and right-arrow (set
-    /// isAtEnd on arrival).
-    /// </summary>
-    private bool IsAtSoftRowBoundary(long ofs) {
-        if (ofs <= 0) return false;
-
-        if (_charWrapMode && _charWrapCharsPerRow > 0) {
-            return ofs % _charWrapCharsPerRow == 0 && ofs < Document!.Table.Length;
-        }
-
-        if (!_wrapLines) return false;
-        var layout = EnsureLayout();
-        if (layout.Lines.Count == 0) return false;
-        var localOfs = (int)(ofs - layout.ViewportBase);
-        if (localOfs < 0 || localOfs > layout.Lines[^1].CharEnd) return false;
-
-        for (var i = layout.Lines.Count - 1; i >= 0; i--) {
-            if (layout.Lines[i].CharStart <= localOfs) {
-                var ll = layout.Lines[i];
-                if (ll.Mono is not { } mono || mono.Rows.Length <= 1) return false;
-                var posInLine = localOfs - ll.CharStart;
-                var r = mono.RowForChar(posInLine);
-                if (r == 0) return false;
-                // A position is at a soft boundary when RowForChar
-                // assigns it to row r but it's at or before that row's
-                // first drawn char.  This covers both hard breaks
-                // (pos == CharStart) and consumed word-break spaces
-                // (pos < CharStart).
-                return posInLine <= mono.Rows[r].CharStart;
-            }
-        }
-        return false;
+        var localCaret = (int)(caretOfs - layout.ViewportBase);
+        return _layoutEngine.GetCaretBounds(localCaret, layout, isAtEnd: false);
     }
 
     /// <summary>
@@ -1193,265 +1069,246 @@ public sealed partial class EditorControl {
     /// the document scrolls by one row while the caret stays at the same
     /// screen position — matching the page-up/down pattern but at row scale.
     /// </summary>
+    /// <remarks>
+    /// Column preservation is the line-absolute visual column —
+    /// row's leading indent (in chars) plus the in-row character
+    /// position.  Continuation rows under hanging indent shift right,
+    /// so preserving "visual col" (not raw <see cref="TextPosition.Col"/>)
+    /// keeps the caret at the same X across rows with different indents.
+    /// </remarks>
     private void MoveCaretVertical(Document doc, int lineDelta, bool extend) {
         var layout = EnsureLayout();
-        var localCaret = (int)(doc.Selection.Caret - layout.ViewportBase);
-        var totalChars = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
+        if (CaretPosition is null) return;
+        var pos = CaretPosition.Value;
 
-        // If the caret is outside the visible window, skip the movement.
-        if (localCaret < 0 || localCaret > totalChars) {
+        // Single search: find source LayoutLine index by LineIdx.  All
+        // subsequent navigation (target, edge re-find) walks ±1 in
+        // layout.Lines from this index — no second search.
+        var sourceIdx = FindLayoutLineIdx(layout, pos.LineIdx);
+        if (sourceIdx < 0) return;
+        var sourceLL = layout.Lines[sourceIdx];
+        if (sourceLL.Mono is not { } sourceMono
+                || pos.RowInLine < 0
+                || pos.RowInLine >= sourceMono.Rows.Length) {
             return;
         }
+        var sourceRowSpan = sourceMono.Rows[pos.RowInLine];
 
         var rh = layout.RowHeight;
-        var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout, _caretIsAtEnd);
+        var sourceVisualRow = sourceLL.Row + pos.RowInLine;
 
-        // On the first vertical move, capture the caret's current VISUAL
-        // X as the "preferred" column.  Subsequent vertical moves reuse
-        // this so the caret returns to the original column after
-        // traversing short lines.  When isAtEnd, the visual X is at the
-        // right edge of the row — use that so "End → Down" lands at
-        // the end of the next row (or as far right as it goes).
-        if (_preferredCaretX < 0) {
-            _preferredCaretX = caretRect.X;
+        // Capture preferred line-absolute visual column on the first
+        // vertical move (= row indent in chars + char-in-row).  This is
+        // what gets preserved across rows of different indent depths.
+        if (_preferredCaretCol < 0) {
+            _preferredCaretCol = sourceRowSpan.IndentCols + pos.Col;
         }
 
-        // Pixel-based edge detection: check whether the next row would be
-        // fully visible.  This avoids rounding-dependent off-by-ones that
-        // the integer screen-row check was susceptible to.
-        var caretScreenY = caretRect.Y + RenderOffsetY;
-        var atTopEdge = lineDelta < 0 && caretScreenY < rh;
-        var atBottomEdge = lineDelta > 0 && caretScreenY + 2 * rh > _viewport.Height;
+        // Pixel-based edge detection (the only pixel math left).
+        var sourceScreenY = sourceVisualRow * rh + RenderOffsetY;
+        var atTopEdge = lineDelta < 0 && sourceScreenY < rh;
+        var atBottomEdge = lineDelta > 0 && sourceScreenY + 2 * rh > _viewport.Height;
 
         if (atTopEdge || atBottomEdge) {
-            // Capture the scroll before mutation so we can compute the
-            // precise delta for smooth scrollbar tracking.
+            // Scroll by one row, then re-find source by LineIdx in the
+            // rebuilt layout — same LineIdx, possibly different index
+            // in layout.Lines.  Navigation below proceeds identically.
             var scrollBefore = _scrollOffset.Y;
-
-            // Find the target caret position via the proven hit-test
-            // approach: scroll by rh to bring the target row into the
-            // layout window, then hit-test at the same screen row.
-            var caretScreenRow = GetCaretScreenRow(caretRect, rh);
             ScrollValue += lineDelta * rh;
             _layout?.Dispose();
             _layout = null;
-            var tempLayout = EnsureLayout();
-            var newCaret = HitTestAtScreenRow(caretScreenRow, rh, tempLayout);
-            doc.Selection = extend
-                ? doc.Selection.ExtendTo(newCaret)
-                : Selection.Collapsed(newCaret);
+            layout = EnsureLayout();
+            sourceIdx = FindLayoutLineIdx(layout, pos.LineIdx);
+            if (sourceIdx < 0) return;
+            sourceLL = layout.Lines[sourceIdx];
 
-            // Correct the scroll to the precise minimum delta.  The first
-            // ScrollValue += rh was needed for the hit-test; now set the
-            // scroll to the exact target via the setter so the incremental
-            // cache (_winScrollOffset, _winRenderOffsetY) stays consistent.
-            // Writing to _scrollOffset directly left _winRenderOffsetY
-            // stale (from the full-rh temporary layout), causing the
-            // content to snap to a row boundary instead of showing a
-            // partial top row.
+            // Apply scroll correction to land the caret at the precise
+            // screen Y (avoids row-boundary snap).
             var scrollDelta = atBottomEdge
-                ? caretScreenY + 2 * rh - _viewport.Height
-                : caretScreenY - rh;
+                ? sourceScreenY + 2 * rh - _viewport.Height
+                : sourceScreenY - rh;
             ScrollValue = Math.Max(0, scrollBefore + scrollDelta);
-        } else {
-            // Normal movement within the viewport — move the caret one
-            // visual row.  Use rh (not caretRect.Height) as the step so
-            // wrapped lines advance one visual row at a time.
-            var targetY = caretRect.Y + rh / 2 + lineDelta * rh;
-            var localNewCaret = _layoutEngine.HitTest(
-                new Point(_preferredCaretX >= 0 ? _preferredCaretX : 0, targetY), layout);
-            var newCaret = layout.ViewportBase + localNewCaret;
-            doc.Selection = extend
-                ? doc.Selection.ExtendTo(newCaret)
-                : Selection.Collapsed(newCaret);
         }
 
-        // If vertical movement landed at a row boundary, set isAtEnd
-        // only if HitTest clamped the position because the target row
-        // was too short.  We detect this by checking whether the landed
-        // position is at the END of its row (col == CharLen) as opposed
-        // to a real character position within the row.
-        // CharWrapMode: all rows are the same length, so vertical movement
-        // simply preserves the current isAtEnd state.
-        //
-        // Word-wrap mode: rows have variable lengths.  If the target row
-        // is shorter than the preferred X, HitTest clamps to the row
-        // boundary and we need isAtEnd=true so the caret renders at the
-        // end of that shorter row.  If the target row is long enough,
-        // isAtEnd=false.
-        var landedCaret = doc.Selection.Caret;
-        if (_charWrapMode) {
-            // Preserve current isAtEnd — all rows are the same width.
-        } else if (_wrapLines && IsAtSoftRowBoundary(landedCaret)) {
-            var landedLocal = (int)(landedCaret - layout.ViewportBase);
-            var llIdx2 = layout.Lines.Count - 1;
-            for (var i = layout.Lines.Count - 1; i >= 0; i--) {
-                if (layout.Lines[i].CharStart <= landedLocal) {
-                    llIdx2 = i; break;
-                }
-            }
-            var ll2 = layout.Lines[llIdx2];
-            if (ll2.Mono is { } mono2) {
-                var posInLine = landedLocal - ll2.CharStart;
-                var r = mono2.RowForChar(posInLine);
-                if (r > 0) {
-                    var prevSpan = mono2.Rows[r - 1];
-                    var prevRowEndX = prevSpan.XOffset + prevSpan.CharLen * GetCharWidth();
-                    _caretIsAtEnd = _preferredCaretX >= prevRowEndX - GetCharWidth() / 2;
-                } else {
-                    _caretIsAtEnd = false;
-                }
+        // Direct ±1 navigation: target is either an in-line neighbor row
+        // (same LayoutLine, RowInLine ± 1) or the next/previous
+        // LayoutLine's first/last row.  No second search.
+        Rendering.Layout.LayoutLine targetLL;
+        int targetRowInLine;
+        if (lineDelta > 0) {
+            if (pos.RowInLine + 1 < sourceLL.HeightInRows) {
+                targetLL = sourceLL;
+                targetRowInLine = pos.RowInLine + 1;
+            } else if (sourceIdx + 1 < layout.Lines.Count) {
+                targetLL = layout.Lines[sourceIdx + 1];
+                targetRowInLine = 0;
             } else {
-                _caretIsAtEnd = false;
+                return; // already at last visible row
             }
         } else {
-            _caretIsAtEnd = false;
+            if (pos.RowInLine > 0) {
+                targetLL = sourceLL;
+                targetRowInLine = pos.RowInLine - 1;
+            } else if (sourceIdx > 0) {
+                targetLL = layout.Lines[sourceIdx - 1];
+                targetRowInLine = targetLL.HeightInRows - 1;
+            } else {
+                return; // already at first visible row
+            }
         }
 
-        // Do NOT call ScrollCaretIntoView here — both branches above already
-        // handle visibility correctly at row granularity (the top/bottom-edge
-        // branch slides by exactly one row, the in-viewport branch doesn't
-        // need to scroll at all).  Adding a generic ScrollCaretIntoView call
-        // on top of that is what caused "click top row, arrow down, scroll
-        // jumps up by one row" — the generic path can't tell that the move
-        // is intentionally to the edge and treats the caret as needing to
-        // be scrolled *further* into view.
+        if (targetLL.Mono is not { } targetMono
+                || targetRowInLine < 0
+                || targetRowInLine >= targetMono.Rows.Length) {
+            return;
+        }
+        var targetRowSpan = targetMono.Rows[targetRowInLine];
+
+        // Decompose preserved visual col into target row's char position:
+        // visualCol - targetRowIndent, clamped to the target row's width.
+        var targetCol = Math.Max(0, _preferredCaretCol - targetRowSpan.IndentCols);
+        targetCol = Math.Min(targetCol, targetRowSpan.CharLen);
+
+        var targetOffset = layout.ViewportBase
+            + targetLL.CharStart + targetRowSpan.CharStart + targetCol;
+        var targetLineIdx = doc.Table.LineFromOfs(targetOffset);
+        var targetPos = new TextPosition(
+            targetLineIdx, targetRowInLine, targetCol, targetOffset);
+
+        // Commit.  Do NOT call ScrollCaretIntoView — the edge branch
+        // already scrolled to keep the caret at the same screen Y.
+        _caretPosition = targetPos;
+        doc.Selection = extend
+            ? doc.Selection.ExtendTo(targetOffset)
+            : Selection.Collapsed(targetOffset);
         InvalidateVisual();
         ResetCaretBlink();
     }
 
+    /// <summary>
+    /// Returns the index in <paramref name="layout"/>.Lines of the
+    /// <see cref="Rendering.Layout.LayoutLine"/> whose
+    /// <see cref="Rendering.Layout.LayoutLine.LineIdx"/> matches
+    /// <paramref name="lineIdx"/>, or -1 if none.
+    /// </summary>
+    private static int FindLayoutLineIdx(
+            Rendering.Layout.LayoutResult layout, long lineIdx) {
+        for (var i = 0; i < layout.Lines.Count; i++) {
+            if (layout.Lines[i].LineIdx == lineIdx) return i;
+        }
+        return -1;
+    }
+
     private void MoveCaretToLineEdge(Document doc, bool toStart, bool extend) {
-        if (_charWrapMode && _charWrapCharsPerRow > 0) {
-            // Compute row start/end from buf-space character offset.
-            var caretOfs = doc.Selection.Caret;
+        var table = doc.Table;
+        var caret = doc.Selection.Caret;
+        var pos = CaretPosition;
+
+        // CharWrap mode: row from pos.LineIdx (absolute visual row), no cascading.
+        if (_charWrapMode && _charWrapCharsPerRow > 0 && pos is { } cwPos) {
             var cpr = _charWrapCharsPerRow;
-            var docLen = doc.Table.Length;
-            var currentRow = caretOfs / cpr;
-            // Left affinity: caret visually sits on the previous row.
-            if (_caretIsAtEnd && caretOfs > 0 && caretOfs % cpr == 0) {
-                currentRow--;
+            var docLen = table.Length;
+            var cwAbsRow = cwPos.LineIdx;
+            var rowStartOfs = cwAbsRow * cpr;
+            var rowEndOfs = Math.Min(rowStartOfs + cpr, docLen);
+            long targetOfs;
+            int targetCol;
+            if (toStart) {
+                targetOfs = rowStartOfs;
+                targetCol = 0;
+            } else {
+                targetOfs = rowEndOfs;
+                targetCol = (int)(rowEndOfs - rowStartOfs);
             }
-            var rowStart = currentRow * cpr;
-            // End = position after the last char of this row.
-            var rowEnd = Math.Min(rowStart + cpr, docLen);
-            var target = toStart ? rowStart : rowEnd;
-            // End → left affinity (park at right edge of row).
-            // Home → right affinity (park at left edge of row).
-            _caretIsAtEnd = !toStart;
-            doc.Selection = extend
-                ? doc.Selection.ExtendTo(target)
-                : Selection.Collapsed(target);
-            ScrollCaretIntoView();
-            InvalidateVisual();
-            ResetCaretBlink();
+            var targetPos = new TextPosition(cwAbsRow, 0, targetCol, targetOfs);
+            CommitCaretPos(targetPos, extend);
             return;
         }
 
-        var table = doc.Table;
-        var caret = doc.Selection.Caret;
         var lineIdx = (int)table.LineFromOfs(Math.Min(caret, table.Length));
         var lineStart = table.LineStartOfs(lineIdx);
-        if (lineStart < 0) return;
+        if (lineStart < 0) {
+            return;
+        }
         var lineContentLen = table.LineContentLength(lineIdx);
         var lineEnd = lineStart + lineContentLen;
 
-        // Row-aware navigation: when wrap is on and the caret's line is
-        // in the current layout, use the actual row break positions from
-        // the layout engine.  Cascading behaviour:
-        //
-        // Home: row start → line start → smart-home (first-non-ws ↔ col 0)
-        // End:  row end   → line end
-        //
-        // When wrap is off, or the line uses proportional layout, or the
-        // caret isn't in the current layout, fall through to the logical-
-        // line path below.
-        if (_wrapLines && !_charWrapMode) {
+        // Word-wrap path: row-aware via TextPosition.RowInLine.
+        // Cascading:
+        //   Home: row start → line start → smart-home (first-non-ws ↔ col 0)
+        //   End:  row end   → line end
+        if (_wrapLines && pos is { } wwPos) {
             var layout = EnsureLayout();
-            var localCaret = (int)(caret - layout.ViewportBase);
-            if (layout.Lines.Count > 0
-                    && localCaret >= 0
-                    && localCaret <= layout.Lines[^1].CharEnd) {
-                // Find the LayoutLine containing the caret.
-                var llIdx = layout.Lines.Count - 1;
-                for (var i = layout.Lines.Count - 1; i >= 0; i--) {
-                    if (layout.Lines[i].CharStart <= localCaret) {
-                        llIdx = i;
-                        break;
-                    }
-                }
+            var llIdx = FindLayoutLineIdx(layout, wwPos.LineIdx);
+            if (llIdx >= 0
+                    && layout.Lines[llIdx].Mono is { } mono
+                    && wwPos.RowInLine >= 0
+                    && wwPos.RowInLine < mono.Rows.Length) {
                 var ll = layout.Lines[llIdx];
+                var span = mono.Rows[wwPos.RowInLine];
+                var rowStartOfs = layout.ViewportBase + ll.CharStart + span.CharStart;
+                var rowEndOfs = rowStartOfs + span.CharLen;
 
-                if (ll.IsMono && ll.Mono is { } mono) {
-                    var posInLine = Math.Max(0, localCaret - ll.CharStart);
-                    var rowIdx = mono.RowForChar(posInLine);
-                    // Left affinity: the caret visually sits on the
-                    // previous row (at its right edge).  Adjust the row
-                    // index so Home/End operate on the visual row.
-                    if (_caretIsAtEnd && rowIdx > 0
-                            && posInLine <= mono.Rows[rowIdx].CharStart) {
-                        rowIdx--;
-                    }
-                    var span = mono.Rows[rowIdx];
-
-                    var absLineStart = layout.ViewportBase + ll.CharStart;
-                    var absRowStart = absLineStart + span.CharStart;
-                    // The position between this row and the next — both
-                    // the end of this row (isAtEnd=true) and the start
-                    // of the next row (isAtEnd=false).
-                    var rowBoundary = absLineStart + span.CharStart + span.CharLen;
-
+                TextPosition newPos;
+                if (toStart) {
                     long newCaret;
-                    if (toStart) {
-                        _caretIsAtEnd = false;
-                        if (caret != absRowStart) {
-                            newCaret = absRowStart;
-                        } else if (caret != lineStart) {
-                            newCaret = lineStart;
-                        } else {
-                            // Smart home: toggle first-non-ws ↔ line start.
-                            var wsLen = LeadingWhitespaceLength(table.GetLine(lineIdx));
-                            var firstNonWs = lineStart + wsLen;
-                            newCaret = caret == firstNonWs ? lineStart : firstNonWs;
-                        }
+                    int newRow;
+                    int newCol;
+                    if (caret != rowStartOfs) {
+                        // Cascade 1: row start.
+                        newCaret = rowStartOfs;
+                        newRow = wwPos.RowInLine;
+                        newCol = 0;
+                    } else if (caret != lineStart) {
+                        // Cascade 2: line start.
+                        newCaret = lineStart;
+                        newRow = 0;
+                        newCol = 0;
                     } else {
-                        if (caret != rowBoundary) {
-                            _caretIsAtEnd = true;
-                            newCaret = rowBoundary;
-                        } else {
-                            _caretIsAtEnd = false;
-                            newCaret = lineEnd;
-                        }
+                        // Cascade 3: smart-home toggle.
+                        var wsLen = LeadingWhitespaceLength(table.GetLine(lineIdx));
+                        var firstNonWs = lineStart + wsLen;
+                        newCaret = caret == firstNonWs ? lineStart : firstNonWs;
+                        newRow = 0;
+                        newCol = (int)(newCaret - lineStart);
                     }
-
-                    doc.Selection = extend
-                        ? doc.Selection.ExtendTo(newCaret)
-                        : Selection.Collapsed(newCaret);
-                    ScrollCaretIntoView();
-                    InvalidateVisual();
-                    ResetCaretBlink();
-                    return;
+                    newPos = new TextPosition(wwPos.LineIdx, newRow, newCol, newCaret);
+                } else {
+                    long newCaret;
+                    int newRow;
+                    int newCol;
+                    if (caret != rowEndOfs) {
+                        // Cascade 1: row end (upstream / end-of-row position).
+                        newCaret = rowEndOfs;
+                        newRow = wwPos.RowInLine;
+                        newCol = span.CharLen;
+                    } else {
+                        // Cascade 2: line end (end of last row).
+                        newCaret = lineEnd;
+                        newRow = mono.Rows.Length - 1;
+                        var lastSpan = mono.Rows[newRow];
+                        newCol = (int)(lineEnd - layout.ViewportBase
+                            - ll.CharStart - lastSpan.CharStart);
+                    }
+                    newPos = new TextPosition(wwPos.LineIdx, newRow, newCol, newCaret);
                 }
+                CommitCaretPos(newPos, extend);
+                return;
             }
         }
 
-        // Fallback: logical line (wrap off, proportional font, or caret
-        // not in current layout window).
-        _caretIsAtEnd = false; // logical-line Home/End: no soft break
-        long fallbackCaret;
+        // Fallback: logical-line Home/End (wrap off, slow path, or caret
+        // not in current layout window).  No row info available, so
+        // commit as a plain offset (clears _caretPosition).
+        long fallback;
         if (toStart) {
-            // Smart Home: toggle between first non-whitespace and column 0.
             var wsLen = LeadingWhitespaceLength(table.GetLine(lineIdx));
             var firstNonWs = lineStart + wsLen;
-            fallbackCaret = caret == firstNonWs ? lineStart : firstNonWs;
+            fallback = caret == firstNonWs ? lineStart : firstNonWs;
         } else {
-            fallbackCaret = lineEnd;
+            fallback = lineEnd;
         }
-        doc.Selection = extend
-            ? doc.Selection.ExtendTo(fallbackCaret)
-            : Selection.Collapsed(fallbackCaret);
-        ScrollCaretIntoView();
-        InvalidateVisual();
-        ResetCaretBlink();
+        CommitPlainCaret(fallback, extend);
     }
 
     private static long FindWordBoundaryLeft(Document doc, long caret) {

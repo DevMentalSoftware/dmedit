@@ -23,6 +23,7 @@ public sealed partial class EditorControl {
 
 
         _preferredCaretX = -1;
+        _preferredCaretCol = -1;
         FlushCompound();
 
         // Hide caret and pause blinking while processing the press.
@@ -46,22 +47,12 @@ public sealed partial class EditorControl {
         var layout = EnsureLayout();
         var pt = e.GetPosition(this);
         var layoutPt = new Point(pt.X - _gutterWidth + _scrollOffset.X, pt.Y - RenderOffsetY);
-        var localOfs = _layoutEngine.HitTest(layoutPt, layout);
-        var ofs = layout.ViewportBase + localOfs;
-
-        // Determine caret affinity from click position.  If the hit-test
-        // offset lands at a soft-break boundary, the click Y tells us
-        // which visual row the user intended: if the default rendering
-        // (right affinity) would place the caret on a DIFFERENT row than
-        // the one clicked, use left affinity to park the caret at the end
-        // of the clicked row instead.
-        _caretIsAtEnd = false;
-        var defaultRect = _layoutEngine.GetCaretBounds(localOfs, layout);
-        var clickRow = (int)(layoutPt.Y / layout.RowHeight);
-        var defaultRow = (int)((defaultRect.Y) / layout.RowHeight);
-        if (defaultRow > clickRow) {
-            _caretIsAtEnd = true;
-        }
+        // TextPosition-native hit-test: the click Y picks the visual row
+        // directly, so the caret lands on the row clicked — no boundary-
+        // affinity heuristic needed.
+        var clickedPos = _layoutEngine.HitTestPos(layoutPt, layout);
+        var ofs = clickedPos.CharOffset;
+        _caretPosition = clickedPos;
 
         var isLeft = props.IsLeftButtonPressed;
         // Left-click: place caret or extend selection (with Shift).
@@ -150,8 +141,8 @@ public sealed partial class EditorControl {
         var layout = EnsureLayout();
         var pt = e.GetPosition(this);
         var layoutPt = new Point(pt.X - _gutterWidth + _scrollOffset.X, pt.Y - RenderOffsetY);
-        var localOfs = _layoutEngine.HitTest(layoutPt, layout);
-        var ofs = layout.ViewportBase + localOfs;
+        var dragPos = _layoutEngine.HitTestPos(layoutPt, layout);
+        var ofs = dragPos.CharOffset;
         if (_columnDrag && doc.ColumnSel is { } colSel) {
             var table = doc.Table;
             var line = (int)table.LineFromOfs(ofs);
@@ -159,6 +150,7 @@ public sealed partial class EditorControl {
             doc.ColumnSel = colSel.ExtendTo(line, col);
         } else {
             doc.Selection = doc.Selection.ExtendTo(ofs);
+            _caretPosition = dragPos;
         }
         InvalidateVisual();
         InvalidateArrange();

@@ -1,6 +1,8 @@
 # DMEdit — Claude Session Context
 
-Important! Never chain Bash commands together with &&, because this essentially bypasses the settings rules we've configured. 
+Important! Never chain Bash commands together with &&, because this essentially bypasses the settings rules we've configured.
+
+If I mention what sounds like a particular line of code, then ask me for clarification if it's not obvious from context about which file and line I'm talking about. Do the same for me, but just assume in my case that I don't know which file and line you're talking about, because usually the file you are reading is hidden from me.
 
 ## First steps for every session
 

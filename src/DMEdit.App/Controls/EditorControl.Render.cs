@@ -304,7 +304,7 @@ public sealed partial class EditorControl {
         var totalChars = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
         if (localCaret < 0 || localCaret > totalChars) return;
 
-        var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout, _caretIsAtEnd);
+        var caretRect = GetCaretRect(layout, doc.Selection.Caret);
         var y = caretRect.Y + RenderOffsetY;
         var h = caretRect.Height;
         if (y + h < 0 || y > Bounds.Height) return;

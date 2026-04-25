@@ -424,22 +424,7 @@ public sealed partial class EditorControl {
             layer.Arrange(new Rect(0, 0, 0, 0));
             return;
         }
-        var rect = _layoutEngine.GetCaretBounds(localCaret, layout, _caretIsAtEnd);
-
-        // CharWrapMode: the layout uses Avalonia TextLayout (not
-        // MonoLineLayout), which doesn't handle isAtEnd.  When isAtEnd
-        // is set at a row boundary, manually move the caret rect to the
-        // end of the previous row.
-        if (_charWrapMode && _caretIsAtEnd && _charWrapCharsPerRow > 0) {
-            var docOfs = layout.ViewportBase + localCaret;
-            if (docOfs > 0 && docOfs % _charWrapCharsPerRow == 0) {
-                var rh = GetRowHeight();
-                var cw = GetCharWidth();
-                var prevRowEndX = _charWrapCharsPerRow * cw;
-                rect = new Rect(prevRowEndX, rect.Y - rh, rect.Width, rect.Height);
-            }
-        }
-
+        var rect = GetCaretRect(layout, caretOfs);
         var y = rect.Y + RenderOffsetY;
         if (y + rect.Height < 0 || y > Bounds.Height) {
             layer.Arrange(new Rect(0, 0, 0, 0));
@@ -862,12 +847,14 @@ public sealed partial class EditorControl {
                 // produces a single-row layout — no further wrapping.
                 var mono = MonoLineLayout.TryBuild(monoCtx, text, int.MaxValue);
                 line = mono is not null
-                    ? new LayoutLine(rowCharStart, len, i, 1, mono)
+                    ? new LayoutLine(rowCharStart, len, i, 1, mono, rowIdx)
                     : new LayoutLine(rowCharStart, len, i, 1,
-                        MakeCharWrapLayout(text, typeface, EffectiveFontSize, foreground));
+                        MakeCharWrapLayout(text, typeface, EffectiveFontSize, foreground),
+                        rowIdx);
             } else {
                 line = new LayoutLine(rowCharStart, len, i, 1,
-                    MakeCharWrapLayout(text, typeface, EffectiveFontSize, foreground));
+                    MakeCharWrapLayout(text, typeface, EffectiveFontSize, foreground),
+                    rowIdx);
             }
             lines.Add(line);
         }

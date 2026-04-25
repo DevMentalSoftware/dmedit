@@ -33,6 +33,14 @@ public sealed class LayoutLine : IDisposable {
     /// <summary>Height of this line in visual rows (≥ 1; &gt; 1 when word-wrap is active).</summary>
     public int HeightInRows { get; }
 
+    /// <summary>
+    /// Logical line index (0-based) in the full document.  Lets callers
+    /// look up a <see cref="LayoutLine"/> directly from a
+    /// <see cref="DMEdit.Core.Documents.TextPosition.LineIdx"/> without
+    /// walking the viewport by offset.
+    /// </summary>
+    public long LineIdx { get; }
+
     /// <summary>Exclusive end offset: CharStart + CharLen.</summary>
     public int CharEnd => CharStart + CharLen;
 
@@ -52,19 +60,21 @@ public sealed class LayoutLine : IDisposable {
     /// <summary>True when this line uses the monospace fast path.</summary>
     public bool IsMono => Mono is not null;
 
-    public LayoutLine(int charStart, int charLen, int row, int heightInRows, TextLayout layout) {
+    public LayoutLine(int charStart, int charLen, int row, int heightInRows, TextLayout layout, long lineIdx = 0) {
         CharStart = charStart;
         CharLen = charLen;
         Row = row;
         HeightInRows = heightInRows;
+        LineIdx = lineIdx;
         Layout = layout;
     }
 
-    public LayoutLine(int charStart, int charLen, int row, int heightInRows, MonoLineLayout mono) {
+    public LayoutLine(int charStart, int charLen, int row, int heightInRows, MonoLineLayout mono, long lineIdx = 0) {
         CharStart = charStart;
         CharLen = charLen;
         Row = row;
         HeightInRows = heightInRows;
+        LineIdx = lineIdx;
         Mono = mono;
     }
 
@@ -120,6 +130,20 @@ public sealed class LayoutLine : IDisposable {
             return mono.HitTestPoint(local);
         }
         return Layout!.HitTestPoint(local).TextPosition;
+    }
+
+    /// <summary>
+    /// Hit-test that returns the visual row index within this line and
+    /// the character position within that row.  On the slow path no row
+    /// structure is available, so <c>RowInLine</c> is always 0 and
+    /// <c>Col</c> is the char-in-line position.
+    /// </summary>
+    public (int RowInLine, int Col) HitTestPos(Point local) {
+        if (Mono is { } mono) {
+            return mono.HitTestPos(local);
+        }
+        var posInLine = Layout!.HitTestPoint(local).TextPosition;
+        return (0, Math.Clamp(posInLine, 0, CharLen));
     }
 
     public void Dispose() {

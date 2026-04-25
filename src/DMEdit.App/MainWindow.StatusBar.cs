@@ -285,7 +285,6 @@ public partial class MainWindow {
                     var maxLineLen = table.MaxLineLength;
                     var chWidth = maxLineLen > 0 ? $"{maxLineLen:N0}".Length : lcWidth;
                     var chText = $"{ch:N0}".PadLeft(chWidth);
-                    var endMark = Editor.CaretIsAtEnd ? "\u2082" : "";
 
                     // Visual column within the caret's wrapped row (1-based).
                     // Whenever wrap is enabled, show Col alongside Ch —
@@ -295,9 +294,9 @@ public partial class MainWindow {
                     if (Editor.WrapLines) {
                         var visualCol = Editor.CaretPosition is { } cp ? cp.Col + 1 : ch;
                         var colText = $"{visualCol:N0}".PadLeft(chWidth);
-                        lineCol = $"Ln {lnText} Col {colText} Ch {chText}{endMark}";
+                        lineCol = $"Ln {lnText} Col {colText} Ch {chText}";
                     } else {
-                        lineCol = $"Ln {lnText} Ch {chText}{endMark}";
+                        lineCol = $"Ln {lnText} Ch {chText}";
                     }
                 }
             }

@@ -107,6 +107,7 @@ public sealed partial class EditorControl {
         if (doc == null) return;
         FlushCompound();
         _preferredCaretX = -1;
+        _preferredCaretCol = -1;
         _editSw.Restart();
 
         // Column mode paste always needs the full string (for line splitting).
@@ -282,6 +283,7 @@ public sealed partial class EditorControl {
         var text = _clipboardRing.Get(_clipboardCycleIndex);
         if (text == null) return;
         _preferredCaretX = -1;
+        _preferredCaretCol = -1;
         _editSw.Restart();
         doc.Insert(text);
         ScrollCaretIntoView();
@@ -316,6 +318,7 @@ public sealed partial class EditorControl {
         if (text == null) return;
         FlushCompound();
         _preferredCaretX = -1;
+        _preferredCaretCol = -1;
         _editSw.Restart();
         doc.Insert(text);
         ScrollCaretIntoView();

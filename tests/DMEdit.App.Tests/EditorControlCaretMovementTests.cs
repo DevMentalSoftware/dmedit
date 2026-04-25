@@ -139,7 +139,7 @@ public class EditorControlCaretMovementTests {
         editor.MoveCaretHorizontalForTest(+1, false, false);
         Relayout(editor);
         Assert.Equal(6, Caret(editor));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -150,7 +150,7 @@ public class EditorControlCaretMovementTests {
         editor.MoveCaretHorizontalForTest(-1, false, false);
         Relayout(editor);
         Assert.Equal(4, Caret(editor));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -161,7 +161,7 @@ public class EditorControlCaretMovementTests {
         editor.MoveCaretToLineEdgeForTest(true, false);
         Relayout(editor);
         Assert.Equal(0, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -172,7 +172,7 @@ public class EditorControlCaretMovementTests {
         editor.MoveCaretToLineEdgeForTest(false, false);
         Relayout(editor);
         Assert.Equal(28, Caret(editor)); // "hello world this is line one" = 28 chars
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -232,7 +232,7 @@ public class EditorControlCaretMovementTests {
         Relayout(editor);
         Assert.Equal(4, Caret(editor));
         Assert.Equal(0, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -244,7 +244,7 @@ public class EditorControlCaretMovementTests {
         Relayout(editor);
         Assert.Equal(cpr - 1, Caret(editor));
         Assert.Equal(0, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -256,7 +256,7 @@ public class EditorControlCaretMovementTests {
         Relayout(editor);
         Assert.Equal(cpr, Caret(editor));
         Assert.Equal(0, CaretRow(editor, rh));
-        Assert.True(editor.CaretIsAtEnd);
+        Assert.True(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -267,14 +267,14 @@ public class EditorControlCaretMovementTests {
         Relayout(editor);
         editor.MoveCaretHorizontalForTest(+1, false, false);
         Relayout(editor);
-        Assert.True(editor.CaretIsAtEnd);
+        Assert.True(editor.CaretIsAtEnd());
 
         // Next right: flip.
         editor.MoveCaretHorizontalForTest(+1, false, false);
         Relayout(editor);
         Assert.Equal(cpr, Caret(editor));
         Assert.Equal(1, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -286,7 +286,7 @@ public class EditorControlCaretMovementTests {
         Relayout(editor);
         Assert.Equal(cpr, Caret(editor));
         Assert.Equal(1, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -299,7 +299,7 @@ public class EditorControlCaretMovementTests {
         Relayout(editor);
         Assert.Equal(cpr, Caret(editor));
         Assert.Equal(0, CaretRow(editor, rh));
-        Assert.True(editor.CaretIsAtEnd);
+        Assert.True(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -310,14 +310,14 @@ public class EditorControlCaretMovementTests {
         Relayout(editor);
         editor.MoveCaretHorizontalForTest(-1, false, false);
         Relayout(editor);
-        Assert.True(editor.CaretIsAtEnd);
+        Assert.True(editor.CaretIsAtEnd());
 
         // Next left: to last char.
         editor.MoveCaretHorizontalForTest(-1, false, false);
         Relayout(editor);
         Assert.Equal(cpr - 1, Caret(editor));
         Assert.Equal(0, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     // ================================================================
@@ -333,7 +333,7 @@ public class EditorControlCaretMovementTests {
         editor.MoveCaretVerticalForTest(+1, false);
         Relayout(editor);
         Assert.Equal(1, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -345,7 +345,7 @@ public class EditorControlCaretMovementTests {
         editor.MoveCaretVerticalForTest(+1, false);
         Relayout(editor);
         Assert.Equal(2, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -357,7 +357,7 @@ public class EditorControlCaretMovementTests {
         editor.MoveCaretVerticalForTest(-1, false);
         Relayout(editor);
         Assert.Equal(0, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -368,7 +368,7 @@ public class EditorControlCaretMovementTests {
         Relayout(editor);
         editor.MoveCaretToLineEdgeForTest(false, false);
         Relayout(editor);
-        Assert.True(editor.CaretIsAtEnd);
+        Assert.True(editor.CaretIsAtEnd());
         var endRow = CaretRow(editor, rh);
 
         // Down preserves isAtEnd (same-length rows).
@@ -391,7 +391,7 @@ public class EditorControlCaretMovementTests {
         editor.MoveCaretToLineEdgeForTest(false, false);
         Relayout(editor);
         Assert.Equal(0, CaretRow(editor, rh));
-        Assert.True(editor.CaretIsAtEnd);
+        Assert.True(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -415,7 +415,7 @@ public class EditorControlCaretMovementTests {
         Relayout(editor);
         Assert.Equal(cpr, Caret(editor));
         Assert.Equal(1, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -466,7 +466,7 @@ public class EditorControlCaretMovementTests {
         Relayout(editor);
 
         Assert.Equal(0, CaretRow(editor, rh));
-        Assert.True(editor.CaretIsAtEnd);
+        Assert.True(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -478,12 +478,12 @@ public class EditorControlCaretMovementTests {
         Relayout(editor);
         editor.MoveCaretToLineEdgeForTest(false, false);
         Relayout(editor);
-        Assert.True(editor.CaretIsAtEnd);
+        Assert.True(editor.CaretIsAtEnd());
 
         editor.MoveCaretHorizontalForTest(+1, false, false);
         Relayout(editor);
         Assert.Equal(1, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     // ================================================================
@@ -528,12 +528,12 @@ public class EditorControlCaretMovementTests {
 
         // Step through the first 2*cpr+3 positions.  Verify no stuck
         // positions (same offset + same row + same isAtEnd).
-        var prev = (ofs: Caret(editor), row: CaretRow(editor, rh), atEnd: editor.CaretIsAtEnd);
+        var prev = (ofs: Caret(editor), row: CaretRow(editor, rh), atEnd: editor.CaretIsAtEnd());
         var stuckCount = 0;
         for (var i = 0; i < 2 * cpr + 3; i++) {
             editor.MoveCaretHorizontalForTest(+1, false, false);
             Relayout(editor);
-            var cur = (ofs: Caret(editor), row: CaretRow(editor, rh), atEnd: editor.CaretIsAtEnd);
+            var cur = (ofs: Caret(editor), row: CaretRow(editor, rh), atEnd: editor.CaretIsAtEnd());
             if (cur == prev) stuckCount++;
             Assert.True(stuckCount == 0,
                 $"Stuck at step {i}: offset={cur.ofs}, row={cur.row}, isAtEnd={cur.atEnd}");
@@ -547,12 +547,12 @@ public class EditorControlCaretMovementTests {
         editor.GoToPosition(2 * cpr + 3);
         Relayout(editor);
 
-        var prev = (ofs: Caret(editor), row: CaretRow(editor, rh), atEnd: editor.CaretIsAtEnd);
+        var prev = (ofs: Caret(editor), row: CaretRow(editor, rh), atEnd: editor.CaretIsAtEnd());
         var stuckCount = 0;
         for (var i = 0; i < 2 * cpr + 3; i++) {
             editor.MoveCaretHorizontalForTest(-1, false, false);
             Relayout(editor);
-            var cur = (ofs: Caret(editor), row: CaretRow(editor, rh), atEnd: editor.CaretIsAtEnd);
+            var cur = (ofs: Caret(editor), row: CaretRow(editor, rh), atEnd: editor.CaretIsAtEnd());
             if (cur == prev) stuckCount++;
             Assert.True(stuckCount == 0,
                 $"Stuck at step {i}: offset={cur.ofs}, row={cur.row}, isAtEnd={cur.atEnd}");
@@ -649,7 +649,7 @@ public class EditorControlCaretMovementTests {
         // Should be on the next row (line 1 "short").
         Assert.True(startRow + 1 == CaretRow(editor, rh),
             $"Expected row {startRow + 1}, got {CaretRow(editor, rh)}. " +
-            $"caret={Caret(editor)}, isAtEnd={editor.CaretIsAtEnd}, " +
+            $"caret={Caret(editor)}, isAtEnd={editor.CaretIsAtEnd()}, " +
             $"cpr={cpr}, startPos={startPos}");
     }
 }

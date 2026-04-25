@@ -115,7 +115,8 @@ public sealed class TextLayoutEngine {
                 var mono = MonoLineLayout.TryBuild(monoCtx, lineText, maxCharsPerRow);
                 if (mono is not null) {
                     var heightInRows = Math.Max(1, mono.RowCount);
-                    layoutLine = new LayoutLine((int)charOfs, contentLen, row, heightInRows, mono);
+                    layoutLine = new LayoutLine(
+                        (int)charOfs, contentLen, row, heightInRows, mono, lineIdx);
                     lines.Add(layoutLine);
                     row += heightInRows;
                     charOfs += fullLen;
@@ -133,7 +134,8 @@ public sealed class TextLayoutEngine {
             var slowLayout = MakeTextLayoutSafe(safeText, typeface, fontSize, foreground, maxWidth);
             var h = slowLayout.Height > 0 ? slowLayout.Height : rowHeight;
             var slowHeightInRows = Math.Max(1, (int)Math.Round(h / rowHeight));
-            lines.Add(new LayoutLine((int)charOfs, contentLen, row, slowHeightInRows, slowLayout));
+            lines.Add(new LayoutLine(
+                (int)charOfs, contentLen, row, slowHeightInRows, slowLayout, lineIdx));
             row += slowHeightInRows;
             charOfs += fullLen;
         }
@@ -161,6 +163,36 @@ public sealed class TextLayoutEngine {
         var localPt = new Point(Math.Max(0, pt.X), pt.Y - line.Row * rh);
         var posInLine = Math.Clamp(line.HitTestPoint(localPt), 0, line.CharLen);
         return line.CharStart + posInLine;
+    }
+
+    /// <summary>
+    /// <see cref="DMEdit.Core.Documents.TextPosition"/>-native hit-test:
+    /// returns row + col directly from the click point, no boundary
+    /// affinity flag.  The visual row is determined by the click Y, so
+    /// at a soft-break boundary the click row picks the side
+    /// unambiguously.
+    /// </summary>
+    public DMEdit.Core.Documents.TextPosition HitTestPos(Point pt, LayoutResult result) {
+        var lines = result.Lines;
+        if (lines.Count == 0) {
+            return default;
+        }
+
+        var rh = result.RowHeight;
+        var line = FindLineAt(pt.Y, lines, rh);
+        var localPt = new Point(Math.Max(0, pt.X), pt.Y - line.Row * rh);
+        var (rowInLine, col) = line.HitTestPos(localPt);
+        long ofs;
+        if (line.Mono is { } mono
+                && rowInLine >= 0
+                && rowInLine < mono.Rows.Length) {
+            ofs = result.ViewportBase + line.CharStart
+                + mono.Rows[rowInLine].CharStart + col;
+        } else {
+            // Slow path: col is char-in-line, no per-row offset.
+            ofs = result.ViewportBase + line.CharStart + col;
+        }
+        return new DMEdit.Core.Documents.TextPosition(line.LineIdx, rowInLine, col, ofs);
     }
 
     /// <summary>
@@ -194,6 +226,63 @@ public sealed class TextLayoutEngine {
             line.Row * rh + relRect.Y,
             1,
             relRect.Height > 0 ? relRect.Height : rh);
+    }
+
+    /// <summary>
+    /// <see cref="TextPosition"/>-native caret bounds.  Looks up the
+    /// <see cref="LayoutLine"/> by <see cref="TextPosition.LineIdx"/>
+    /// (no offset walk) and uses <see cref="TextPosition.RowInLine"/>
+    /// and <see cref="TextPosition.Col"/> directly — the row is explicit
+    /// so there's no boundary-ambiguity / affinity parameter.
+    /// </summary>
+    /// <remarks>
+    /// Mono fast path only.  Falls back to the offset/isAtEnd overload
+    /// when the target <see cref="LayoutLine"/> uses the Avalonia
+    /// <c>TextLayout</c> slow path (which has no row-structured API).
+    /// </remarks>
+    public Rect GetCaretBounds(DMEdit.Core.Documents.TextPosition pos, LayoutResult result) {
+        var lines = result.Lines;
+        if (lines.Count == 0) {
+            return new Rect(0, 0, 1, 16);
+        }
+
+        var rh = result.RowHeight;
+        // Find the LayoutLine for this TextPosition's LineIdx.
+        LayoutLine? line = null;
+        foreach (var ll in lines) {
+            if (ll.LineIdx == pos.LineIdx) {
+                line = ll;
+                break;
+            }
+        }
+        if (line is null) {
+            // Line is out of the current viewport — fall back to offset path.
+            var localOfs = (int)(pos.CharOffset - result.ViewportBase);
+            return GetCaretBounds(localOfs, result, isAtEnd: false);
+        }
+
+        if (line.Mono is { } mono
+                && pos.RowInLine >= 0
+                && pos.RowInLine < mono.Rows.Length) {
+            var relRect = mono.GetCaretBoundsAt(pos.RowInLine, pos.Col);
+            return new Rect(
+                relRect.X,
+                line.Row * rh + relRect.Y,
+                1,
+                relRect.Height > 0 ? relRect.Height : rh);
+        }
+
+        // Slow-path line: no row-structured API — use the legacy offset
+        // overload (isAtEnd=false; slow path doesn't support affinity).
+        var posInLine = Math.Clamp(
+            (int)(pos.CharOffset - result.ViewportBase) - line.CharStart,
+            0, line.CharLen);
+        var slowRect = line.HitTestTextPosition(posInLine);
+        return new Rect(
+            slowRect.X,
+            line.Row * rh + slowRect.Y,
+            1,
+            slowRect.Height > 0 ? slowRect.Height : rh);
     }
 
     // -------------------------------------------------------------------------

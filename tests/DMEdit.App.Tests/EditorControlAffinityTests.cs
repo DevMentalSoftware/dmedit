@@ -352,13 +352,13 @@ public class EditorControlAffinityTests {
         editor.MoveCaretToLineEdgeForTest(toStart: false, extend: false);
         Relayout(editor);
         Assert.Equal(0, CaretRow(editor, rh));
-        Assert.True(editor.CaretIsAtEnd);
+        Assert.True(editor.CaretIsAtEnd());
 
         // Right → flips to start of next row (same offset, !CaretIsAtEnd).
         editor.MoveCaretHorizontalForTest(delta: +1, byWord: false, extend: false);
         Relayout(editor);
         Assert.Equal(1, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     // ================================================================
@@ -377,7 +377,7 @@ public class EditorControlAffinityTests {
         Relayout(editor);
         Assert.Equal(1, CaretRow(editor, rh));
         Assert.Equal(cpr, Caret(editor));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
 
         editor.MoveCaretVerticalForTest(lineDelta: +1, extend: false);
         Relayout(editor);
@@ -385,10 +385,10 @@ public class EditorControlAffinityTests {
         // Should be at start of row 2, not end of row 1.
         Assert.True(2 == CaretRow(editor, rh),
             $"Down from row start: expected row 2, got row {CaretRow(editor, rh)}. " +
-            $"caret={Caret(editor)}, cpr={cpr}, isAtEnd={editor.CaretIsAtEnd}, " +
+            $"caret={Caret(editor)}, cpr={cpr}, isAtEnd={editor.CaretIsAtEnd()}, " +
             $"2*cpr={2 * cpr}, prefX={editor.PreferredCaretXForTest}, " +
             $"cw={editor.CharWidth}");
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -399,14 +399,14 @@ public class EditorControlAffinityTests {
         Relayout(editor);
         Assert.Equal(2, CaretRow(editor, rh));
         Assert.Equal(2 * cpr, Caret(editor));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
 
         editor.MoveCaretVerticalForTest(lineDelta: -1, extend: false);
         Relayout(editor);
 
         // Should be at start of row 1, not end of row 0.
         Assert.Equal(1, CaretRow(editor, rh));
-        Assert.False(editor.CaretIsAtEnd);
+        Assert.False(editor.CaretIsAtEnd());
     }
 
     [AvaloniaFact]
@@ -550,7 +550,7 @@ public class EditorControlAffinityTests {
             Relayout(editor);
             var ofs = Caret(editor);
             var row = CaretRow(editor, rh);
-            var atEnd = editor.CaretIsAtEnd;
+            var atEnd = editor.CaretIsAtEnd();
 
             if (i < cpr) {
                 // Mid-row: isAtEnd must be false, row must be 0.

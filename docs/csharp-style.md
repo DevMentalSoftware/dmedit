@@ -5,21 +5,79 @@ All code should follow these rules consistently. When in doubt, match what's alr
 
 ---
 
-## Single line statements
+## One statement per line — always
 
-Prefer multiple line use to make debug easier and code more readable.
+**Every statement gets its own line, including the body of a single-statement
+control-flow block.** This rule has no exceptions for "small" or "obvious"
+cases — guard returns, `if (cond) continue;`, `if (cond) break;`, `if
+(cond) throw ...;`, and short `if`/`else` chains all expand to multi-line
+form with braces.
+
+The two reasons (both important):
+
+1. **Breakpoints.** A debugger can only stop at line granularity.
+   `if (x is null) return;` on one line means I can't break on the
+   `return` without also breaking on every evaluation of the condition.
+2. **Unambiguous references.** "Line 1216" should identify exactly one
+   statement — so we can talk about behavior or correctness without
+   pointing at "the second statement on line 1216."
+
+Wasting a line on a closing brace is fine — readability and debuggability
+beat line count.
+
 ```csharp
-void foo() { if (true) return; }
-```
-is less readable than:
-```csharp
-void foo() {
-    if (true) {
-        return;
-    }
+// ❌ Don't — two statements share a line.
+if (CaretPosition is null) return;
+if (sourceIdx < 0) return;
+while (i < n) i++;
+
+// ✅ Do — every statement on its own line, every body braced.
+if (CaretPosition is null) {
+    return;
+}
+if (sourceIdx < 0) {
+    return;
+}
+while (i < n) {
+    i++;
 }
 ```
-because we can discuss each line by its line number, and set breakpoints by line. 
+
+This applies to **new code we write together.** Existing code that doesn't
+follow this rule will be migrated opportunistically (e.g. when touching a
+function for unrelated reasons) — don't do bulk style-only edits.
+
+The only carve-out is the one already noted in the *Brace Style* section:
+expression-bodied members (`=>`) for single-expression properties and
+methods. Those are not control flow and stay one-liners.
+
+## Avoid chained dotted access in most cases
+
+A common pattern is to check a nullable reference for null, then to use that variable many times
+in a method body, but I prefer to assign to a non-nullable temporary if used more than once.
+
+Don't use this:
+```
+   void someMethod(A? p1) {
+       var a = p1;
+       if (p1 is null) {
+          return;
+       }
+       a.Value.x();
+       a.Value.y();
+```
+Instead use this:
+```
+   void someMethod(A? p1) {
+       if (p1 is null) {
+          return;
+       }
+       var a = p1.Value;
+       a.x();
+       a.y();
+```
+
+There are other common places where chaining together multiple dots or question marks in a single statement are common, but whenever that would be reused multiple times I'd prefer assigning a local variable.
 
 ## Brace Style
 

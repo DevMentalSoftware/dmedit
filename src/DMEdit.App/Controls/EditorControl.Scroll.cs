@@ -111,12 +111,18 @@ public sealed partial class EditorControl {
 
     /// <summary>
     /// Hit-tests the layout at a given screen row, returning the absolute
-    /// document offset closest to (<see cref="_preferredCaretX"/>, screenRow).
+    /// document offset closest to (<paramref name="hitX"/>, screenRow).
+    /// When <paramref name="hitX"/> is negative, falls back to
+    /// <see cref="_preferredCaretX"/> (the legacy column-preservation
+    /// pixel) for callers that haven't migrated.
     /// </summary>
-    private long HitTestAtScreenRow(int screenRow, double rh, LayoutResult layout) {
+    private long HitTestAtScreenRow(int screenRow, double rh, LayoutResult layout,
+            double hitX = -1) {
         var targetY = screenRow * rh + rh / 2 - RenderOffsetY;
         targetY = Math.Clamp(targetY, 0, Math.Max(0, layout.TotalHeight - 1));
-        var hitX = _preferredCaretX >= 0 ? _preferredCaretX : 0;
+        if (hitX < 0) {
+            hitX = _preferredCaretX >= 0 ? _preferredCaretX : 0;
+        }
         var localNew = _layoutEngine.HitTest(new Point(hitX, targetY), layout);
         return layout.ViewportBase + localNew;
     }
@@ -240,7 +246,7 @@ public sealed partial class EditorControl {
                     continue;
                 }
 
-                var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout, _caretIsAtEnd);
+                var caretRect = GetCaretRect(layout, caret);
                 var caretScreenY = caretRect.Y + RenderOffsetY;
                 var caretH = Math.Ceiling(Math.Max(caretRect.Height, rh));
                 // Convert screen-Y back to doc-Y for the policy computation.
@@ -1146,7 +1152,7 @@ public sealed partial class EditorControl {
         var totalChars = layout.Lines[^1].CharEnd;
         if (localCaret < 0 || localCaret > totalChars) return null;
 
-        var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout, _caretIsAtEnd);
+        var caretRect = GetCaretRect(layout, doc.Selection.Caret);
         var screenY = caretRect.Y + RenderOffsetY;
         // Only preserve when the caret was actually visible in the viewport
         // — preserving a caret that was off-screen is worse than just
@@ -1167,7 +1173,7 @@ public sealed partial class EditorControl {
         var totalChars = layout.Lines[^1].CharEnd;
         if (localCaret < 0 || localCaret > totalChars) return null;
 
-        var caretRect = _layoutEngine.GetCaretBounds(localCaret, layout, _caretIsAtEnd);
+        var caretRect = GetCaretRect(layout, doc.Selection.Caret);
         return caretRect.Y + RenderOffsetY;
     }
 
@@ -1252,7 +1258,7 @@ public sealed partial class EditorControl {
             var localCaret = (int)(doc.Selection.Caret - curLayout.ViewportBase);
             var totalChars = curLayout.Lines[^1].CharEnd;
             if (localCaret >= 0 && localCaret <= totalChars) {
-                var caretRect = _layoutEngine.GetCaretBounds(localCaret, curLayout, _caretIsAtEnd);
+                var caretRect = GetCaretRect(curLayout, doc.Selection.Caret);
                 caretRow = GetCaretScreenRow(caretRect, rh);
                 if (_preferredCaretX < 0) {
                     _preferredCaretX = caretRect.X;
@@ -1293,7 +1299,9 @@ public sealed partial class EditorControl {
 
     private void OnDocumentChanged(object? sender, EventArgs e) {
         InvalidateRowIndex(); // content changed — row counts are stale
-        _caretIsAtEnd = false; // edit invalidates boundary context
+        // Edit invalidates the cached caret position; CaretPosition will
+        // rebuild from the post-edit Selection.Active on next read.
+        _caretPosition = null;
         InvalidateLayout();
     }
 
