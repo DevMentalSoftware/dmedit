@@ -106,7 +106,7 @@ public readonly record struct ColumnSelection(int AnchorLine, int AnchorCol, int
     /// <remarks>
     /// Hot path for column-mode editing: this is called per cursor for every
     /// call to <see cref="MaterializeCarets"/>, which itself runs many times
-    /// per insert via <see cref="DMEdit.Core.Documents.Document.InsertAtCursors"/>.
+    /// per insert via <see cref="DMEdit.Core.Documents.TextDocument.InsertAtCursors"/>.
     /// Tab-free lines (the overwhelming common case) take a fast path that
     /// scans the line for a tab character via SIMD-friendly span IndexOf,
     /// then returns immediately when none is found — col equals char index

@@ -20,7 +20,7 @@ public class SlowPathMovementTests {
     private const double VpW = 600;
     private const double VpH = 400;
 
-    private static EditorControl CreateEditor(Document doc, bool wrap) {
+    private static EditorControl CreateEditor(TextDocument doc, bool wrap) {
         var editor = new EditorControl {
             Document = doc,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
@@ -44,7 +44,7 @@ public class SlowPathMovementTests {
     /// path), but every <paramref name="tabEvery"/>-th line contains a tab
     /// (TextLayout slow path).
     /// </summary>
-    private static Document MakeMixedDoc(int lineCount, int lineLen,
+    private static TextDocument MakeMixedDoc(int lineCount, int lineLen,
             int tabEvery) {
         var sb = new StringBuilder();
         for (var i = 0; i < lineCount; i++) {
@@ -62,14 +62,14 @@ public class SlowPathMovementTests {
             }
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         return doc;
     }
 
     /// <summary>Creates a document where ALL lines contain tabs.</summary>
-    private static Document MakeAllTabDoc(int lineCount, int lineLen) {
+    private static TextDocument MakeAllTabDoc(int lineCount, int lineLen) {
         var sb = new StringBuilder();
         for (var i = 0; i < lineCount; i++) {
             var prefix = $"L{i:D4}\t";
@@ -78,7 +78,7 @@ public class SlowPathMovementTests {
             sb.Append('a', pad);
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         return doc;

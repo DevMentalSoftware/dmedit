@@ -15,7 +15,7 @@ public class OverwriteModeTests {
     private const double VpH = 400;
 
     private static EditorControl CreateEditor(string content) {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(content);
         doc.Selection = Selection.Collapsed(0);
         var editor = new EditorControl {

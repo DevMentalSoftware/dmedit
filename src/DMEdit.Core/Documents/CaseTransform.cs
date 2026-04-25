@@ -1,6 +1,6 @@
 namespace DMEdit.Core.Documents;
 
-/// <summary>Text case transformations for <see cref="Document.TransformCase"/>.</summary>
+/// <summary>Text case transformations for <see cref="TextDocument.TransformCase"/>.</summary>
 public enum CaseTransform {
     Upper,
     Lower,

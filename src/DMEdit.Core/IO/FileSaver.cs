@@ -7,7 +7,7 @@ using EncodingInfo = DMEdit.Core.Documents.EncodingInfo;
 namespace DMEdit.Core.IO;
 
 /// <summary>
-/// Saves a <see cref="Document"/> to a file using the document's
+/// Saves a <see cref="TextDocument"/> to a file using the document's
 /// <see cref="EncodingInfo"/>. Returns the SHA-1 hash (lowercase hex)
 /// of the written bytes so the caller can update <c>BaseSha1</c>
 /// without a second read pass.
@@ -31,7 +31,7 @@ namespace DMEdit.Core.IO;
 /// <para>
 /// Line ending normalization is applied during the write — the document
 /// content in memory may contain mixed endings, but the output file will
-/// use the style specified by <see cref="Document.LineEndingInfo"/>.
+/// use the style specified by <see cref="TextDocument.LineEndingInfo"/>.
 /// </para>
 /// </remarks>
 public static class FileSaver {
@@ -42,7 +42,7 @@ public static class FileSaver {
     /// Returns the SHA-1 hash (lowercase hex) of the written file.
     /// </summary>
     public static async Task<string> SaveAsync(
-            Document doc, string path,
+            TextDocument doc, string path,
             bool backupOnSave = false,
             CancellationToken ct = default) {
         return await Task.Run(() => Save(doc, path, backupOnSave, ct), ct);
@@ -54,7 +54,7 @@ public static class FileSaver {
     /// Returns the SHA-1 hash (lowercase hex) of the written file.
     /// </summary>
     public static string Save(
-            Document doc, string path,
+            TextDocument doc, string path,
             bool backupOnSave = false,
             CancellationToken ct = default) {
         var table = doc.Table;

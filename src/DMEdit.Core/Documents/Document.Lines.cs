@@ -3,10 +3,10 @@ using DMEdit.Core.Documents.History;
 
 namespace DMEdit.Core.Documents;
 
-// Line operations partial of Document.  Owns DeleteLine, MoveLineUp,
+// Line operations partial of TextDocument.  Owns DeleteLine, MoveLineUp,
 // MoveLineDown, and their private helpers GetSelectedLineRange and
 // SwapLines.
-public sealed partial class Document {
+public sealed partial class TextDocument {
 
     // -------------------------------------------------------------------------
     // Line operations

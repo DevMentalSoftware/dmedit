@@ -1,7 +1,7 @@
 namespace DMEdit.Core.Documents;
 
 /// <summary>
-/// Controls the hierarchy of levels used by <see cref="Document.ExpandSelection"/>.
+/// Controls the hierarchy of levels used by <see cref="TextDocument.ExpandSelection"/>.
 /// </summary>
 public enum ExpandSelectionMode {
     /// <summary>Whitespace boundaries → line → document.</summary>

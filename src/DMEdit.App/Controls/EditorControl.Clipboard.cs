@@ -77,7 +77,7 @@ public sealed partial class EditorControl {
     /// Uses the native clipboard service when available (zero managed allocation);
     /// falls back to Avalonia's <c>SetTextAsync</c> with <c>string.Create</c>.
     /// </summary>
-    private async Task<bool> CopySelectionToClipboard(Document doc) {
+    private async Task<bool> CopySelectionToClipboard(TextDocument doc) {
         var sel = doc.Selection;
         var nativeClip = NativeClipboardDiscovery.Service;
         if (nativeClip != null) {
@@ -168,7 +168,7 @@ public sealed partial class EditorControl {
     }
 
     /// <summary>Small paste: clipboard → in-memory add buffer → insert.</summary>
-    private void PasteSmall(Document doc, INativeClipboardService nativeClip) {
+    private void PasteSmall(TextDocument doc, INativeClipboardService nativeClip) {
         var ofs = doc.Selection.Start;
         var replacing = !doc.Selection.IsEmpty;
         if (replacing) {
@@ -198,7 +198,7 @@ public sealed partial class EditorControl {
     /// Large paste: clipboard → file on disk → PagedFileBuffer → piece insert.
     /// The file stays on disk and is paged into memory on demand (~16 MB).
     /// </summary>
-    private async Task PasteLargeAsync(Document doc, INativeClipboardService nativeClip,
+    private async Task PasteLargeAsync(TextDocument doc, INativeClipboardService nativeClip,
         long clipCharCount) {
 
         var ofs = doc.Selection.Start;
@@ -339,7 +339,7 @@ public sealed partial class EditorControl {
 
     /// <summary>
     /// Raised when a Copy or Cut falls back to the Avalonia clipboard and
-    /// the selection exceeds <see cref="Document.MaxCopyLength"/>.
+    /// the selection exceeds <see cref="TextDocument.MaxCopyLength"/>.
     /// The argument is the selection length in characters.
     /// </summary>
     public event Action<long>? CopyTooLarge;

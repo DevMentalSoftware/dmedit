@@ -265,7 +265,7 @@ public partial class MainWindow {
         Editor.FlushCompound();
         if (tab.FilePath is null) {
             // Untitled — need Save As.
-            // Temporarily switch to this tab so SaveToAsync works with Editor.Document.
+            // Temporarily switch to this tab so SaveToAsync works with Editor.TextDocument.
             var previousTab = _activeTab;
             if (_activeTab != tab) {
                 SwitchToTab(tab);

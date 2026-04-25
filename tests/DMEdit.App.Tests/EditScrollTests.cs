@@ -17,7 +17,7 @@ public class EditScrollTests {
     private const double VpW = 600;
     private const double VpH = 400;
 
-    private static EditorControl CreateEditor(Document doc, bool wrap) {
+    private static EditorControl CreateEditor(TextDocument doc, bool wrap) {
         var editor = new EditorControl {
             Document = doc,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
@@ -43,7 +43,7 @@ public class EditScrollTests {
         editor.Arrange(new Rect(0, 0, w, h));
     }
 
-    private static Document MakeDoc(int lineCount, int lineLen = 20) {
+    private static TextDocument MakeDoc(int lineCount, int lineLen = 20) {
         var sb = new StringBuilder(lineCount * (lineLen + 1));
         for (var i = 0; i < lineCount; i++) {
             var prefix = $"L{i:D5} ";
@@ -52,7 +52,7 @@ public class EditScrollTests {
             sb.Append('a', padLen);
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         return doc;
@@ -196,7 +196,7 @@ public class EditScrollTests {
 
     [AvaloniaFact]
     public void VeryLongLine_WrapOn_DownWalk_CaretOnScreen() {
-        var doc = new Document();
+        var doc = new TextDocument();
         // One line of 5000 chars — wraps to ~75 visual rows at 65 cpr.
         doc.Insert(new string('a', 5000) + "\nshort\n");
         doc.Selection = Selection.Collapsed(0);
@@ -213,7 +213,7 @@ public class EditScrollTests {
 
     [AvaloniaFact]
     public void VeryLongLine_WrapOn_FindInLongLine_CaretOnScreen() {
-        var doc = new Document();
+        var doc = new TextDocument();
         // Plant a needle deep in a 5000-char line.
         var line = new string('x', 2000) + "NEEDLE" + new string('x', 2994);
         doc.Insert(line + "\nshort\n");
@@ -230,7 +230,7 @@ public class EditScrollTests {
 
     [AvaloniaFact]
     public void VeryLongLine_WrapOn_HomeEnd_CaretOnScreen() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(new string('a', 5000) + "\nshort\n");
         doc.Selection = Selection.Collapsed(2000); // mid-long-line
         var editor = CreateEditor(doc, true);
@@ -261,7 +261,7 @@ public class EditScrollTests {
             var ending = (i % 3) switch { 0 => "\n", 1 => "\r\n", _ => "\r" };
             sb.Append(ending);
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, wrap);
@@ -283,7 +283,7 @@ public class EditScrollTests {
         for (var i = 0; i < 100; i++) {
             sb.Append($"L{i:D4} NEEDLE padding text here\r\n");
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, wrap);

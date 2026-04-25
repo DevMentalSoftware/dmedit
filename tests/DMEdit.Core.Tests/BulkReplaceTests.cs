@@ -142,12 +142,12 @@ public class BulkReplaceTests {
     }
 
     // =====================================================================
-    // Document-level — Undo/Redo
+    // TextDocument-level — Undo/Redo
     // =====================================================================
 
     [Fact]
     public void Document_UniformBulkReplace_Undo() {
-        var doc = new Document("hello world hello world");
+        var doc = new TextDocument("hello world hello world");
         doc.BulkReplaceUniform([0, 12], 5, "hi");
         Assert.Equal("hi world hi world", doc.Table.GetText());
         doc.Undo();
@@ -156,7 +156,7 @@ public class BulkReplaceTests {
 
     [Fact]
     public void Document_UniformBulkReplace_Redo() {
-        var doc = new Document("hello world hello world");
+        var doc = new TextDocument("hello world hello world");
         doc.BulkReplaceUniform([0, 12], 5, "hi");
         doc.Undo();
         doc.Redo();
@@ -165,7 +165,7 @@ public class BulkReplaceTests {
 
     [Fact]
     public void Document_VaryingBulkReplace_Undo() {
-        var doc = new Document("aXXbYc");
+        var doc = new TextDocument("aXXbYc");
         doc.BulkReplaceVarying(
             [(1, 2), (4, 1)],
             ["--", "+"]);
@@ -176,7 +176,7 @@ public class BulkReplaceTests {
 
     [Fact]
     public void Document_VaryingBulkReplace_Redo() {
-        var doc = new Document("aXXbYc");
+        var doc = new TextDocument("aXXbYc");
         doc.BulkReplaceVarying(
             [(1, 2), (4, 1)],
             ["--", "+"]);
@@ -187,7 +187,7 @@ public class BulkReplaceTests {
 
     [Fact]
     public void Document_BulkReplace_MultipleUndoRedo() {
-        var doc = new Document("abc");
+        var doc = new TextDocument("abc");
         doc.BulkReplaceUniform([0, 1, 2], 1, "X");
         Assert.Equal("XXX", doc.Table.GetText());
         doc.Undo();
@@ -200,7 +200,7 @@ public class BulkReplaceTests {
 
     [Fact]
     public void Document_BulkReplace_ThenNormalEdit_Undo() {
-        var doc = new Document("aXbXc");
+        var doc = new TextDocument("aXbXc");
         doc.BulkReplaceUniform([1, 3], 1, "Y");
         Assert.Equal("aYbYc", doc.Table.GetText());
         doc.Selection = new Selection(5, 5);
@@ -213,26 +213,26 @@ public class BulkReplaceTests {
     }
 
     // =====================================================================
-    // Document-level — ConvertIndentation via BulkReplace
+    // TextDocument-level — ConvertIndentation via BulkReplace
     // =====================================================================
 
     [Fact]
     public void ConvertIndentation_TabsToSpaces_ViaBulk() {
-        var doc = new Document("\tfoo\n\t\tbar\nbaz\n");
+        var doc = new TextDocument("\tfoo\n\t\tbar\nbaz\n");
         doc.ConvertIndentation(IndentStyle.Spaces, tabSize: 4);
         Assert.Equal("    foo\n        bar\nbaz\n", doc.Table.GetText());
     }
 
     [Fact]
     public void ConvertIndentation_SpacesToTabs_ViaBulk() {
-        var doc = new Document("    foo\n        bar\nbaz\n");
+        var doc = new TextDocument("    foo\n        bar\nbaz\n");
         doc.ConvertIndentation(IndentStyle.Tabs, tabSize: 4);
         Assert.Equal("\tfoo\n\t\tbar\nbaz\n", doc.Table.GetText());
     }
 
     [Fact]
     public void ConvertIndentation_Undo_ViaBulk() {
-        var doc = new Document("\tfoo\n");
+        var doc = new TextDocument("\tfoo\n");
         doc.ConvertIndentation(IndentStyle.Spaces, tabSize: 4);
         Assert.Equal("    foo\n", doc.Table.GetText());
         doc.Undo();
@@ -241,7 +241,7 @@ public class BulkReplaceTests {
 
     [Fact]
     public void ConvertIndentation_Redo_ViaBulk() {
-        var doc = new Document("\tfoo\n");
+        var doc = new TextDocument("\tfoo\n");
         doc.ConvertIndentation(IndentStyle.Spaces, tabSize: 4);
         doc.Undo();
         doc.Redo();
@@ -299,7 +299,7 @@ public class BulkReplaceTests {
         var t = new PieceTable("abcdefghij");
         var ex = Assert.Throws<ArgumentException>(
             () => t.BulkReplace([5, 1, 8], 1, "X"));
-        // Document must be untouched after the rejected call.
+        // TextDocument must be untouched after the rejected call.
         Assert.Equal("abcdefghij", t.GetText());
         Assert.Contains("sorted", ex.Message);
     }

@@ -17,7 +17,7 @@ public sealed class TabState {
     /// </summary>
     public string Id { get; init; } = Guid.NewGuid().ToString("N")[..12];
 
-    public Document Document { get; }
+    public TextDocument Document { get; }
     public string? FilePath { get; set; }
     public string DisplayName { get; set; }
     public LoadResult? LoadResult { get; set; }
@@ -133,7 +133,7 @@ public sealed class TabState {
         LoadCompleted?.Invoke();
     }
 
-    public TabState(Document document, string? filePath, string displayName) {
+    public TabState(TextDocument document, string? filePath, string displayName) {
         Document = document;
         FilePath = filePath;
         DisplayName = displayName;
@@ -156,12 +156,12 @@ public sealed class TabState {
         var num = 1;
         while (used.Contains(num)) num++;
         var name = num == 1 ? "Untitled" : $"Untitled {num}";
-        return new TabState(new Document(), null, name);
+        return new TabState(new TextDocument(), null, name);
     }
 
     /// <summary>
     /// Creates the singleton Settings tab.
     /// </summary>
     public static TabState CreateSettings() =>
-        new(new Document(), null, "Settings") { IsSettings = true };
+        new(new TextDocument(), null, "Settings") { IsSettings = true };
 }

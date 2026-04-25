@@ -133,7 +133,7 @@ public class FileSaverTests {
     public void Save_AsAscii_SilentlyReplacesNonAscii() {
         var path = Path.Combine(Path.GetTempPath(), $"dmedit_fs_{Guid.NewGuid():N}.txt");
         try {
-            var doc = new Document("héllo");
+            var doc = new TextDocument("héllo");
             doc.EncodingInfo = new EncodingInfo(FileEncoding.Ascii);
             FileSaver.Save(doc, path);
 

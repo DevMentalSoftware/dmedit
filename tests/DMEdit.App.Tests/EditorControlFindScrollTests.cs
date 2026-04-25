@@ -41,7 +41,7 @@ public class EditorControlFindScrollTests {
     //  Helpers
     // ------------------------------------------------------------------
 
-    private static Document BuildDoc(int lineCount, int needleLine, string needle,
+    private static TextDocument BuildDoc(int lineCount, int needleLine, string needle,
             int baseLineChars = 20) {
         var sb = new StringBuilder();
         for (var i = 0; i < lineCount; i++) {
@@ -65,13 +65,13 @@ public class EditorControlFindScrollTests {
             sb.Append(text);
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         return doc;
     }
 
-    private static EditorControl CreateEditor(Document doc, bool wrapLines) {
+    private static EditorControl CreateEditor(TextDocument doc, bool wrapLines) {
         var editor = new EditorControl {
             Document = doc,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
@@ -228,7 +228,7 @@ public class EditorControlFindScrollTests {
                 sb.Append($"line {i:D3} filler\n");
             }
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
 
@@ -271,7 +271,7 @@ public class EditorControlFindScrollTests {
                 sb.Append('\n');
             }
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
 
@@ -316,7 +316,7 @@ public class EditorControlFindScrollTests {
                 sb.Append($"line {i:D5} filler\n");
             }
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
 
@@ -352,7 +352,7 @@ public class EditorControlFindScrollTests {
                 sb.Append($"line {i:D3} filler\n");
             }
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
 
@@ -414,7 +414,7 @@ public class EditorControlFindScrollTests {
                 sb.Append($"line {i:D3} filler\n");
             }
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
 

@@ -299,7 +299,7 @@ public sealed partial class EditorControl {
     /// at the row containing the primary caret.  Caller ensures the
     /// highlight setting is on and no column selection is active.
     /// </summary>
-    private void DrawCurrentLineHighlight(DrawingContext context, LayoutResult layout, Document doc) {
+    private void DrawCurrentLineHighlight(DrawingContext context, LayoutResult layout, TextDocument doc) {
         var localCaret = (int)(doc.Selection.Caret - layout.ViewportBase);
         var totalChars = layout.Lines.Count > 0 ? layout.Lines[^1].CharEnd : 0;
         if (localCaret < 0 || localCaret > totalChars) return;

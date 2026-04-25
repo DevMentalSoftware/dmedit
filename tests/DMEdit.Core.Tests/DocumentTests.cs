@@ -3,11 +3,11 @@ using DMEdit.Core.Documents;
 namespace DMEdit.Core.Tests;
 
 /// <summary>
-/// Tests for <see cref="Document"/>-level operations: DeleteLine, SelectWord,
+/// Tests for <see cref="TextDocument"/>-level operations: DeleteLine, SelectWord,
 /// TransformCase, MoveLineUp/Down.
 /// </summary>
 public class DocumentTests {
-    private static Document MakeDoc(string content) => new(content);
+    private static TextDocument MakeDoc(string content) => new(content);
 
     // =====================================================================
     // DeleteLine
@@ -374,22 +374,22 @@ public class DocumentTests {
 
     [Fact]
     public void SanitizeSurrogates_PassesValidPairThrough() {
-        Assert.Same(Emoji, Document.SanitizeSurrogates(Emoji));
+        Assert.Same(Emoji, TextDocument.SanitizeSurrogates(Emoji));
     }
 
     [Fact]
     public void SanitizeSurrogates_ReplacesLoneHighSurrogate() {
-        Assert.Equal("a\uFFFDb", Document.SanitizeSurrogates("a\uD83Db"));
+        Assert.Equal("a\uFFFDb", TextDocument.SanitizeSurrogates("a\uD83Db"));
     }
 
     [Fact]
     public void SanitizeSurrogates_ReplacesLoneLowSurrogate() {
-        Assert.Equal("a\uFFFDb", Document.SanitizeSurrogates("a\uDE00b"));
+        Assert.Equal("a\uFFFDb", TextDocument.SanitizeSurrogates("a\uDE00b"));
     }
 
     [Fact]
     public void SanitizeSurrogates_ReplacesTrailingLoneHighSurrogate() {
-        Assert.Equal("ab\uFFFD", Document.SanitizeSurrogates("ab\uD83D"));
+        Assert.Equal("ab\uFFFD", TextDocument.SanitizeSurrogates("ab\uD83D"));
     }
 
     [Fact]
@@ -512,7 +512,7 @@ public class DocumentTests {
     // ------------------------------------------------------------------
     // CodepointBoundary span overloads (TRIAGE Priority 2 gap)
     //
-    // The span-based overloads are used by Document.SelectWord's bounded
+    // The span-based overloads are used by TextDocument.SelectWord's bounded
     // windowing (and any other caller that has materialised a slice of
     // text and wants to walk it by code points without re-querying the
     // buffer).  They share logic with the PieceTable overloads but have

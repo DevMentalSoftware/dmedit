@@ -44,7 +44,7 @@ public interface ISystemPrintService {
     /// thread requirements internally.  Returns a <see cref="PrintResult"/>
     /// describing success, cancellation, or failure details.
     /// </summary>
-    PrintResult Print(Document doc, PrintJobTicket ticket,
+    PrintResult Print(TextDocument doc, PrintJobTicket ticket,
         IProgress<(string Message, double Percent)>? progress = null,
         CancellationToken cancellation = default);
 }

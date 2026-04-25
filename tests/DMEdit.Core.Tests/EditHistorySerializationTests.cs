@@ -6,7 +6,7 @@ namespace DMEdit.Core.Tests;
 public class EditHistorySerializationTests {
     [Fact]
     public void GetUndoEntries_ReturnsBottomToTop() {
-        var doc = new Document("abc");
+        var doc = new TextDocument("abc");
         doc.Selection = Selection.Collapsed(3);
         doc.Insert("d"); // undo[0]
         doc.Insert("e"); // undo[1]
@@ -22,7 +22,7 @@ public class EditHistorySerializationTests {
 
     [Fact]
     public void GetRedoEntries_ReturnsBottomToTop() {
-        var doc = new Document("abc");
+        var doc = new TextDocument("abc");
         doc.Selection = Selection.Collapsed(3);
         doc.Insert("d");
         doc.Insert("e");
@@ -42,7 +42,7 @@ public class EditHistorySerializationTests {
     public void RestoreEntries_ReplaysUndoOntoTable() {
         // Build entries: insert "X" at 0, insert "Y" at 1.
         // Pre-populate the add buffer so SpanInsertEdit references resolve.
-        var doc = new Document("abc");
+        var doc = new TextDocument("abc");
         var bufStart0 = doc.Table.AppendToAddBuffer("X");
         var bufStart1 = doc.Table.AppendToAddBuffer("Y");
         var undoEntries = new List<EditHistory.HistoryEntry> {
@@ -59,7 +59,7 @@ public class EditHistorySerializationTests {
 
     [Fact]
     public void RestoreEntries_UndoRevertsCorrectly() {
-        var doc = new Document("abc");
+        var doc = new TextDocument("abc");
         var bufStart = doc.Table.AppendToAddBuffer("X");
         var undoEntries = new List<EditHistory.HistoryEntry> {
             new(new SpanInsertEdit(0, bufStart, 1), Selection.Collapsed(0)),
@@ -75,7 +75,7 @@ public class EditHistorySerializationTests {
 
     [Fact]
     public void RestoreEntries_RedoAppliesCorrectly() {
-        var doc = new Document("abc");
+        var doc = new TextDocument("abc");
         var bufStart = doc.Table.AppendToAddBuffer("Z");
         var redoEntries = new List<EditHistory.HistoryEntry> {
             new(new SpanInsertEdit(0, bufStart, 1), Selection.Collapsed(0)),
@@ -91,7 +91,7 @@ public class EditHistorySerializationTests {
 
     [Fact]
     public void RestoreEntries_PreservesSavePointDepth() {
-        var doc = new Document("x");
+        var doc = new TextDocument("x");
         var bufStart0 = doc.Table.AppendToAddBuffer("A");
         var bufStart1 = doc.Table.AppendToAddBuffer("B");
         var undoEntries = new List<EditHistory.HistoryEntry> {
@@ -113,7 +113,7 @@ public class EditHistorySerializationTests {
     [Fact]
     public void FullRoundTrip_EditUndoRedoPreserved() {
         // Create a document, make edits, undo some.
-        var original = new Document("hello");
+        var original = new TextDocument("hello");
         original.Selection = Selection.Collapsed(5);
         original.Insert(" world");  // "hello world"
         original.Insert("!");       // "hello world!"
@@ -128,7 +128,7 @@ public class EditHistorySerializationTests {
 
         // Restore onto a fresh document with the same base content,
         // carrying the add buffer so SpanInsertEdit references resolve.
-        var restored = new Document("hello");
+        var restored = new TextDocument("hello");
         restored.Table.SetAddBuffer(original.Table.AddBuffer);
         restored.History.RestoreEntries(restored.Table, undoEntries, redoEntries, savePointDepth);
 
@@ -155,7 +155,7 @@ public class EditHistorySerializationTests {
     [Fact]
     public void IsAtSavePoint_ReturnsFalse_DuringOpenCompoundEdit() {
         // Simulates the coalescing path: BeginCompound → Insert → check dirty.
-        var doc = new Document("hello");
+        var doc = new TextDocument("hello");
         doc.MarkSavePoint();
         Assert.True(doc.IsAtSavePoint);
 
@@ -176,7 +176,7 @@ public class EditHistorySerializationTests {
 
     [Fact]
     public void IsAtSavePoint_ReturnsTrue_AfterCompoundUndone() {
-        var doc = new Document("hello");
+        var doc = new TextDocument("hello");
         doc.MarkSavePoint();
 
         doc.BeginCompound();
@@ -195,7 +195,7 @@ public class EditHistorySerializationTests {
     public void IsAtSavePoint_ReturnsTrue_WhenEmptyCompoundOpened() {
         // Opening a compound without pushing any edits should not
         // change the save-point status.
-        var doc = new Document("hello");
+        var doc = new TextDocument("hello");
         doc.MarkSavePoint();
 
         doc.BeginCompound();
@@ -207,10 +207,10 @@ public class EditHistorySerializationTests {
 
     [Fact]
     public void ChangedEvent_FiresDuringCompound_AllowsDirtyTracking() {
-        // Verifies that Document.Changed fires inside an open compound,
+        // Verifies that TextDocument.Changed fires inside an open compound,
         // and that IsAtSavePoint is false at that point — this is the
         // exact pattern the UI uses to track dirty state.
-        var doc = new Document("hello");
+        var doc = new TextDocument("hello");
         doc.MarkSavePoint();
 
         bool changedFired = false;
@@ -241,7 +241,7 @@ public class EditHistorySerializationTests {
         // (e.g. a coalescing path that rewinds on timeout) need to see the
         // uncommitted work.  Returning false here would make those callers
         // skip the rewind and leak edits.
-        var doc = new Document("hello");
+        var doc = new TextDocument("hello");
         Assert.False(doc.CanUndo);
 
         doc.BeginCompound();
@@ -262,7 +262,7 @@ public class EditHistorySerializationTests {
     public void CanUndo_DuringOpenCompound_OnTopOfExistingUndoStack() {
         // Mixed state: an edit already on the undo stack plus an open
         // compound with no edits.  CanUndo must reflect the stack entry.
-        var doc = new Document("hello");
+        var doc = new TextDocument("hello");
         doc.Selection = Selection.Collapsed(5);
         doc.Insert("A");
         Assert.True(doc.CanUndo);
@@ -281,7 +281,7 @@ public class EditHistorySerializationTests {
         // Calling EndCompound without a matching BeginCompound must be a
         // no-op, NOT an exception — the coalescing path may race with a
         // BeginCompound that hasn't happened yet in certain teardown flows.
-        var doc = new Document("hello");
+        var doc = new TextDocument("hello");
 
         // This used to be silent — now we pin it as the documented contract.
         doc.EndCompound();
@@ -304,7 +304,7 @@ public class EditHistorySerializationTests {
         // Sharper variant: Begin → push → End → End (extra).  The first End
         // commits the compound; the second End must NOT pop or corrupt the
         // stack.  Undo must then restore the pre-compound state in one step.
-        var doc = new Document("hello");
+        var doc = new TextDocument("hello");
         doc.BeginCompound();
         doc.Selection = Selection.Collapsed(5);
         doc.Insert("!");
@@ -323,7 +323,7 @@ public class EditHistorySerializationTests {
         // EditHistory supports nested Begin/End pairs via _compoundDepth.
         // Only the outermost End commits the compound as a single undo step.
         // Inner Begin/End pairs must NOT create intermediate stack entries.
-        var doc = new Document("hello");
+        var doc = new TextDocument("hello");
         doc.BeginCompound();                       // depth 1
         doc.Selection = Selection.Collapsed(5);
         doc.Insert(" a");                          // edit 1

@@ -27,7 +27,7 @@ public class FindStressTests {
     //  Helpers
     // ------------------------------------------------------------------
 
-    private static EditorControl CreateEditor(Document doc, bool wrap) {
+    private static EditorControl CreateEditor(TextDocument doc, bool wrap) {
         var editor = new EditorControl {
             Document = doc,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
@@ -52,7 +52,7 @@ public class FindStressTests {
     /// on every <paramref name="needleEvery"/>-th line at
     /// <paramref name="needleCol"/> chars into the line.
     /// </summary>
-    private static (Document doc, int matchCount) MakeNeedleDoc(
+    private static (TextDocument doc, int matchCount) MakeNeedleDoc(
             int lineCount, int lineLen, int needleEvery, int needleCol) {
         var sb = new StringBuilder();
         var matchCount = 0;
@@ -68,7 +68,7 @@ public class FindStressTests {
             sb.Append(line);
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         return (doc, matchCount);
@@ -360,7 +360,7 @@ public class FindStressTests {
             }
             sb.Append(prefix + pad + '\n');
         }
-        doc = new Document();
+        doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
 
@@ -507,7 +507,7 @@ public class FindStressTests {
             }
             sb.Append(prefix + pad + '\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, wrap);

@@ -8,7 +8,7 @@ namespace DMEdit.Core.Documents;
 /// High-level document model: wraps a <see cref="PieceTable"/> with undo/redo history
 /// and selection state. This is the primary type the editor UI interacts with.
 /// </summary>
-public sealed partial class Document {
+public sealed partial class TextDocument {
     private readonly PieceTable _table;
     private readonly EditHistory _history = new();
 
@@ -17,15 +17,15 @@ public sealed partial class Document {
     // -------------------------------------------------------------------------
 
     /// <summary>Creates an empty document (for untitled/new documents).</summary>
-    public Document() {
+    public TextDocument() {
         _table = new PieceTable();
     }
 
     /// <summary>
     /// Creates a document from a string.  Used by tests; production code
-    /// uses the parameterless constructor or <see cref="Document(PieceTable)"/>.
+    /// uses the parameterless constructor or <see cref="TextDocument(PieceTable)"/>.
     /// </summary>
-    internal Document(string initialContent) {
+    internal TextDocument(string initialContent) {
         _table = new PieceTable(initialContent);
         if (initialContent.Length > 0) {
             LineEndingInfo = LineEndingInfo.Detect(initialContent);
@@ -36,7 +36,7 @@ public sealed partial class Document {
     /// Constructs a document wrapping an existing <see cref="PieceTable"/>.
     /// Used by <c>FileLoader</c> when loading from an <see cref="Buffers.IBuffer"/>.
     /// </summary>
-    public Document(PieceTable table) {
+    public TextDocument(PieceTable table) {
         _table = table;
     }
 
@@ -147,7 +147,7 @@ public sealed partial class Document {
         if (_suppressChanged == 0) Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    private sealed class ChangedScope(Document doc) : IDisposable {
+    private sealed class ChangedScope(TextDocument doc) : IDisposable {
         private bool _disposed;
         public void Dispose() {
             if (_disposed) return;

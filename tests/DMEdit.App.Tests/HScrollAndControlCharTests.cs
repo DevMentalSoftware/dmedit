@@ -16,7 +16,7 @@ public class HScrollAndControlCharTests {
     private const double VpW = 600;
     private const double VpH = 400;
 
-    private static EditorControl CreateEditor(Document doc, bool wrap) {
+    private static EditorControl CreateEditor(TextDocument doc, bool wrap) {
         var editor = new EditorControl {
             Document = doc,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
@@ -49,7 +49,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void HScroll_LongLine_RightArrow_ScrollsRight() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(new string('a', 200) + '\n');
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);
@@ -69,7 +69,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void HScroll_GoToEnd_ThenHome_ScrollsBack() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(new string('a', 200) + '\n');
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);
@@ -90,7 +90,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void HScroll_GoToPosition_MidLongLine_ScrollsHorizontally() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(new string('x', 300) + '\n' + "short\n");
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);
@@ -109,7 +109,7 @@ public class HScrollAndControlCharTests {
     [InlineData(200)]
     [InlineData(299)]
     public void HScroll_CaretAtVariousPositions_OnScreen(int pos) {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(new string('x', 300) + '\n');
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);
@@ -122,7 +122,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void HScroll_WrapOn_NoHorizontalScroll() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(new string('x', 300) + '\n');
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, true); // wrap ON
@@ -136,7 +136,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void HScroll_Find_MidLongLine_ScrollsToMatch() {
-        var doc = new Document();
+        var doc = new TextDocument();
         // "NEEDLE" at position 150 in a 300-char line.
         doc.Insert(new string('x', 150) + "NEEDLE" + new string('x', 144) + '\n');
         doc.Selection = Selection.Collapsed(0);
@@ -154,7 +154,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void HScroll_ShiftEnd_ExtendsSelection_ScrollsRight() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(new string('a', 200) + '\n');
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);
@@ -173,7 +173,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void ControlChars_NoCrash_WrapOff() {
-        var doc = new Document();
+        var doc = new TextDocument();
         // Avoid VT/FF which may be line terminators. Use NUL, SOH, BEL, ESC.
         doc.Insert("normal\x00text\x07with\x01control\x02chars\x1B end\n");
         doc.Selection = Selection.Collapsed(0);
@@ -186,7 +186,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void ControlChars_NoCrash_WrapOn() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert("normal\x00text\x07with\x01control\x02chars\x1B end\n");
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, true);
@@ -203,7 +203,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void ControlChars_MoveRight_NeverStuck() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert("a\x00b\x07c\x08d\n");
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);
@@ -221,7 +221,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void ControlChars_Find_WorksAcross() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert("before\x00NEEDLE\x07after\n");
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);
@@ -234,7 +234,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void ControlChars_LongLineWithControlChars_WrapsCorrectly() {
-        var doc = new Document();
+        var doc = new TextDocument();
         // 200 chars with control chars interspersed every 20.
         var sb = new StringBuilder();
         for (var i = 0; i < 200; i++) {
@@ -257,7 +257,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void BinaryContent_FullOfNulls_NoCrash() {
-        var doc = new Document();
+        var doc = new TextDocument();
         // Simulated binary file: mostly NULs with some printable chars.
         var sb = new StringBuilder();
         for (var i = 0; i < 100; i++) {
@@ -286,7 +286,7 @@ public class HScrollAndControlCharTests {
 
     [AvaloniaFact]
     public void TabLine_WrapOff_HScroll_CaretAtEnd() {
-        var doc = new Document();
+        var doc = new TextDocument();
         // Tab-heavy long line.
         doc.Insert("\t\t\t\t\t" + new string('a', 200) + '\n');
         doc.Selection = Selection.Collapsed(0);

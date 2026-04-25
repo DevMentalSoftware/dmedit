@@ -18,7 +18,7 @@ public class TabMatrixTests {
     private const double VpW = 600;
     private const double VpH = 400;
 
-    private static EditorControl CreateEditor(Document doc, bool wrap) {
+    private static EditorControl CreateEditor(TextDocument doc, bool wrap) {
         var editor = new EditorControl {
             Document = doc,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
@@ -41,7 +41,7 @@ public class TabMatrixTests {
     /// Creates a document where every line has a tab at a varying column.
     /// Line format: "L0000\t" + padding (total ~lineLen visible cols).
     /// </summary>
-    private static Document MakeTabDoc(int lineCount, int lineLen = 80) {
+    private static TextDocument MakeTabDoc(int lineCount, int lineLen = 80) {
         var sb = new StringBuilder();
         for (var i = 0; i < lineCount; i++) {
             var prefix = $"L{i:D4}\t";
@@ -50,14 +50,14 @@ public class TabMatrixTests {
             sb.Append('a', padLen);
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         return doc;
     }
 
     /// <summary>Mixed: every 3rd line has a tab, others don't.</summary>
-    private static Document MakeMixedTabDoc(int lineCount, int lineLen = 80) {
+    private static TextDocument MakeMixedTabDoc(int lineCount, int lineLen = 80) {
         var sb = new StringBuilder();
         for (var i = 0; i < lineCount; i++) {
             var prefix = $"L{i:D4} ";
@@ -68,7 +68,7 @@ public class TabMatrixTests {
             }
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         return doc;
@@ -83,7 +83,7 @@ public class TabMatrixTests {
         Assert.InRange(y!.Value, -1, VpH + 1);
     }
 
-    private static EditorControl SetupAtLine(Document doc, bool wrap, int line) {
+    private static EditorControl SetupAtLine(TextDocument doc, bool wrap, int line) {
         var editor = CreateEditor(doc, wrap);
         doc.Selection = Selection.Collapsed(doc.Table.LineStartOfs(line));
         editor.ScrollCaretIntoView();
@@ -373,7 +373,7 @@ public class TabMatrixTests {
         for (var i = 0; i < lines; i++) {
             sb.Append($"L{i:D4} " + new string('a', Math.Max(0, len - 6)) + '\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         var editor = new EditorControl {

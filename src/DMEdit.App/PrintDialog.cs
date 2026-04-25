@@ -42,7 +42,7 @@ public class PrintDialog : Window {
 
     /// <param name="printers">Available system printers.</param>
     /// <param name="paperSizes">Paper sizes for the initially selected printer.</param>
-    /// <param name="initial">Page layout defaults (from Document or AppSettings).</param>
+    /// <param name="initial">Page layout defaults (from TextDocument or AppSettings).</param>
     /// <param name="savedPrinterName">
     /// Last-used printer name from settings. If it still exists in
     /// <paramref name="printers"/>, it will be pre-selected; otherwise the

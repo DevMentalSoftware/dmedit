@@ -35,8 +35,8 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     // Avalonia properties
     // -------------------------------------------------------------------------
 
-    public static readonly StyledProperty<Document?> DocumentProperty =
-        AvaloniaProperty.Register<EditorControl, Document?>(nameof(Document));
+    public static readonly StyledProperty<TextDocument?> DocumentProperty =
+        AvaloniaProperty.Register<EditorControl, TextDocument?>(nameof(Document));
 
     public static readonly StyledProperty<FontFamily> FontFamilyProperty =
         AvaloniaProperty.Register<EditorControl, FontFamily>(
@@ -122,7 +122,7 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
         return cmap.TryGetGlyph((char)codepoint, out var g) && g != 0 ? null : codepoint;
     }
 
-    public Document? Document {
+    public TextDocument? Document {
         get => GetValue(DocumentProperty);
         set => SetValue(DocumentProperty, value);
     }
@@ -899,10 +899,10 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs e) {
         base.OnPropertyChanged(e);
         if (e.Property == DocumentProperty) {
-            if (e.OldValue is Document old) {
+            if (e.OldValue is TextDocument old) {
                 old.Changed -= OnDocumentChanged;
             }
-            if (e.NewValue is Document doc) {
+            if (e.NewValue is TextDocument doc) {
                 doc.Changed += OnDocumentChanged;
             }
             if (_keepScrollOnSwap) {

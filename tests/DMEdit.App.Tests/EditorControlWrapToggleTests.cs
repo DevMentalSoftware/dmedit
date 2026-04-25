@@ -22,13 +22,13 @@ public class EditorControlWrapToggleTests {
     private const double Tolerance = 2.0; // 2-pixel slack for rounding / snapping
 
     /// <summary>
-    /// Builds a <see cref="Document"/> whose lines are long enough to wrap
+    /// Builds a <see cref="TextDocument"/> whose lines are long enough to wrap
     /// in the test viewport.  The line count is tuned so the document is
     /// several viewports tall — we need enough content to scroll into and
     /// put the caret somewhere in the middle of the viewport, not at the
     /// top or bottom edge.
     /// </summary>
-    private static Document MakeWrappingDoc(int lineCount = 120, int charsPerLine = 150) {
+    private static TextDocument MakeWrappingDoc(int lineCount = 120, int charsPerLine = 150) {
         var sb = new System.Text.StringBuilder();
         for (var i = 0; i < lineCount; i++) {
             // Alternate two long lines so each has plenty of spaces for the
@@ -37,8 +37,8 @@ public class EditorControlWrapToggleTests {
             sb.Append('x', charsPerLine - 10);
             sb.Append('\n');
         }
-        // Document(string) is internal to Core; use the public ctor + Insert.
-        var doc = new Document();
+        // TextDocument(string) is internal to Core; use the public ctor + Insert.
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         // Insert moves the caret to the end; reset it to 0 so test setup can
         // position the caret explicitly.
@@ -52,7 +52,7 @@ public class EditorControlWrapToggleTests {
     /// internal layout state (<c>_viewport</c>, <c>_extent</c>) is valid,
     /// and leaves wrap toggles at their defaults (<c>WrapLines = false</c>).
     /// </summary>
-    private static EditorControl CreateEditor(Document doc) {
+    private static EditorControl CreateEditor(TextDocument doc) {
         // A concrete monospace font keeps row height stable across environments.
         var editor = new EditorControl {
             Document = doc,
@@ -222,7 +222,7 @@ public class EditorControlWrapToggleTests {
     public void ScrollCaretIntoView_WrapOn_CaretAlreadyVisible_NoScrollChange() {
         // Build a document with one very long line that will wrap into
         // many rows at the test viewport width + wrap column.
-        var doc = new Document();
+        var doc = new TextDocument();
         // Short preamble so line 0 is short and lines 1+ are long.
         doc.Insert("preamble\n");
         // ~20 rows' worth of content at 80 chars/row.  Uses space-separated

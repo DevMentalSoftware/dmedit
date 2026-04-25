@@ -47,7 +47,7 @@ public class EditorControlCaretMovementTests {
         sb.Append(new string('a', 200));
         sb.Append('\n');
         sb.Append("short\n");
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
 
@@ -79,7 +79,7 @@ public class EditorControlCaretMovementTests {
         for (var i = 0; i < 30; i++) sb.Append("abcdef ");
         sb.Append('\n');
         sb.Append("short\n");
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
 
@@ -110,7 +110,7 @@ public class EditorControlCaretMovementTests {
 
     /// <summary>Wrap off: two lines, no wrapping.</summary>
     private static (EditorControl editor, double rh) CreateWrapOffEditor() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert("hello world this is line one\nsecond line\n");
         doc.Selection = Selection.Collapsed(0);
 

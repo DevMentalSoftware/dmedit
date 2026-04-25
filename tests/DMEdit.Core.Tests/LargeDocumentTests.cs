@@ -146,7 +146,7 @@ public class LargeDocumentTests {
     }
 
     // -------------------------------------------------------------------------
-    // Document + ProceduralBuffer (1000 reads memory-bounded)
+    // TextDocument + ProceduralBuffer (1000 reads memory-bounded)
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -158,7 +158,7 @@ public class LargeDocumentTests {
 
         using var buf = MakeBuffer(10_000L);
         var table = new PieceTable(buf);
-        var doc = new Document(table);
+        var doc = new TextDocument(table);
 
         // Warmup: absorb JIT compilation + one-time runtime costs so they
         // don't contaminate the measured allocation delta.
@@ -262,7 +262,7 @@ public class LargeDocumentTests {
         var path = Path.Combine(Path.GetTempPath(), $"dmedit_test_{Guid.NewGuid():N}.md");
         try {
             var original = "# Saved document\n\nContent here.\n";
-            var doc = new Document(original);
+            var doc = new TextDocument(original);
             FileSaver.Save(doc, path);
 
             var read = File.ReadAllText(path, Encoding.UTF8);
@@ -302,7 +302,7 @@ public class LargeDocumentTests {
         try {
             using var buf = new ProceduralBuffer(lineCount, Generator, stride: 100);
             var table = new PieceTable(buf);
-            var doc = new Document(table);
+            var doc = new TextDocument(table);
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             FileSaver.Save(doc, path);
@@ -332,7 +332,7 @@ public class LargeDocumentTests {
         try {
             using var buf = new ProceduralBuffer(lineCount, i => $"Line number {i:D6}", stride: 100);
             var table = new PieceTable(buf);
-            var doc = new Document(table);
+            var doc = new TextDocument(table);
 
             var allocBytes = MeasureAlloc(() => FileSaver.Save(doc, path));
 
@@ -360,7 +360,7 @@ public class LargeDocumentTests {
             var table = new PieceTable(buf);
             table.EnsureLineTree();
             table.Insert(0, "# Edited\n");
-            var doc = new Document(table);
+            var doc = new TextDocument(table);
 
             Assert.False(table.IsOriginalContent, "Insert should break IsOriginalContent");
 

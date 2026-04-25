@@ -21,7 +21,7 @@ public static class CrashReport {
     /// Returns the full path to the report file, or null if writing failed.
     /// </summary>
     public static async Task<string?> WriteAsync(
-        Exception ex, string operation, string? filePath = null, Document? doc = null) {
+        Exception ex, string operation, string? filePath = null, TextDocument? doc = null) {
         try {
             Directory.CreateDirectory(SessionDir);
             var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff");
@@ -55,7 +55,7 @@ public static class CrashReport {
 
     private static string FormatReport(
         Exception ex, string operation,
-        string? filePath = null, Document? doc = null) {
+        string? filePath = null, TextDocument? doc = null) {
 
         var version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "unknown";
         var sb = new StringBuilder();

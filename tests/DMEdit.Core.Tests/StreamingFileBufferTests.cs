@@ -203,7 +203,7 @@ public class StreamingFileBufferTests : IDisposable {
     /// <summary>
     /// <see cref="LoadResult.Buffer"/> must be set for zip-loaded files so
     /// downstream code (e.g. <c>ShouldCharWrap</c>) can inspect the buffer
-    /// without reaching through <c>Document.Table.Buffer</c>.
+    /// without reaching through <c>TextDocument.Table.Buffer</c>.
     /// </summary>
     [Fact]
     public async Task LoadResult_Buffer_IsSetForZipLoad() {

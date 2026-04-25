@@ -30,7 +30,7 @@ public class ScrollCoverageTests {
     //  Helpers
     // ------------------------------------------------------------------
 
-    private static EditorControl CreateEditor(Document doc, bool wrap) {
+    private static EditorControl CreateEditor(TextDocument doc, bool wrap) {
         var editor = new EditorControl {
             Document = doc,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
@@ -49,7 +49,7 @@ public class ScrollCoverageTests {
         editor.Arrange(new Rect(0, 0, VpW, VpH));
     }
 
-    private static Document MakeDoc(int lineCount, int lineLen = 20) {
+    private static TextDocument MakeDoc(int lineCount, int lineLen = 20) {
         var sb = new StringBuilder(lineCount * (lineLen + 1));
         for (var i = 0; i < lineCount; i++) {
             var prefix = $"L{i:D5} ";
@@ -58,7 +58,7 @@ public class ScrollCoverageTests {
             sb.Append('a', padLen);
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         return doc;

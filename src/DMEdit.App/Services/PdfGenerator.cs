@@ -6,7 +6,7 @@ using SkiaSharp;
 namespace DMEdit.App.Services;
 
 /// <summary>
-/// Generates a PDF from a plain-text <see cref="Document"/> using SkiaSharp's
+/// Generates a PDF from a plain-text <see cref="TextDocument"/> using SkiaSharp's
 /// <c>SKDocument</c> streaming API. Pages are rendered one at a time — the
 /// entire document is never held in memory as layout objects.
 /// </summary>
@@ -18,7 +18,7 @@ public static class PdfGenerator {
     /// <summary>
     /// Renders the document to a PDF file at <paramref name="outputPath"/>.
     /// </summary>
-    public static void RenderToPdf(Document doc, PrintSettings settings, string outputPath) {
+    public static void RenderToPdf(TextDocument doc, PrintSettings settings, string outputPath) {
         var (pageW, pageH) = settings.GetPageSize();
         var (printW, printH) = settings.GetPrintableArea();
 
@@ -58,7 +58,7 @@ public static class PdfGenerator {
     // -----------------------------------------------------------------
 
     private static void RenderPage(
-        SKCanvas canvas, Document doc, PageBreak brk,
+        SKCanvas canvas, TextDocument doc, PageBreak brk,
         int linesPerPage, SKFont font, SKPaint paint,
         float marginLeft, float marginTop,
         float printWidth, float lineHeight) {
@@ -88,7 +88,7 @@ public static class PdfGenerator {
     // -----------------------------------------------------------------
 
     private static List<PageBreak> ComputePageBreaks(
-        Document doc, SKFont font, float printWidth, int linesPerPage) {
+        TextDocument doc, SKFont font, float printWidth, int linesPerPage) {
 
         var breaks = new List<PageBreak> { new(0, 0) };
         var lineCount = doc.Table.LineCount;

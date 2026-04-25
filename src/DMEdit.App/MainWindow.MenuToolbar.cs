@@ -479,7 +479,7 @@ public partial class MainWindow {
         // state changes (value, extent, viewport).
         Editor.ScrollChanged += (_, _) => ScrollBar.InvalidateVisual();
 
-        // Document metadata (line ending, encoding) changed without a content edit.
+        // TextDocument metadata (line ending, encoding) changed without a content edit.
         Editor.MetadataChanged += () => {
             if (_activeTab is { } tab) {
                 tab.IsDirty = true;
@@ -520,7 +520,7 @@ public partial class MainWindow {
         // Copy/Cut too large for Avalonia fallback → status bar warning
         Editor.CopyTooLarge += len => {
             var mb = len / (1024 * 1024);
-            var limitMb = Document.MaxCopyLength / (1024 * 1024);
+            var limitMb = TextDocument.MaxCopyLength / (1024 * 1024);
             StatusLeft.Text = $"Selection too large to copy ({mb:N0} MB, limit {limitMb} MB). Native clipboard unavailable.";
         };
 

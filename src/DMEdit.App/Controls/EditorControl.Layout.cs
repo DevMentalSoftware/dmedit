@@ -478,7 +478,7 @@ public sealed partial class EditorControl {
     /// visual-row units. For monospace fonts this is exact; for proportional fonts it's a
     /// close approximation.
     /// </remarks>
-    private void LayoutWindowed(Document doc, long lineCount, Typeface typeface, double maxWidth, double extentWidth) {
+    private void LayoutWindowed(TextDocument doc, long lineCount, Typeface typeface, double maxWidth, double extentWidth) {
         var rh = GetRowHeight();
 
         // Compute total visual rows and map scroll offset → top line.
@@ -775,7 +775,7 @@ public sealed partial class EditorControl {
     /// Character-wrapping layout: row N starts at char <c>N * charsPerRow</c>.
     /// All scroll math is O(1) — no tree lookups, no estimation.
     /// </summary>
-    private void LayoutCharWrap(Document doc, Typeface typeface, double extentWidth) {
+    private void LayoutCharWrap(TextDocument doc, Typeface typeface, double extentWidth) {
         var cw = GetCharWidth();
         var rh = GetRowHeight();
         UpdateGutterWidth();

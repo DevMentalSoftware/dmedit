@@ -17,7 +17,7 @@ public class ReplaceAllPerfTests {
     private const double H = 400;
 
     private static EditorControl CreateEditor(string text) {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(text);
         doc.Selection = Selection.Collapsed(0);
         var editor = new EditorControl {

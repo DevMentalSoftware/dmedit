@@ -253,10 +253,10 @@ public static class Commands {
     public static readonly Command NavSelectEnd = new("Nav", "SelectEnd", "Select to Line End") { RequiresEditor = true };
 
     // Nav: document start/end
-    public static readonly Command NavMoveDocStart = new("Nav", "MoveDocStart", "Move to Document Start") { RequiresEditor = true };
-    public static readonly Command NavSelectDocStart = new("Nav", "SelectDocStart", "Select to Document Start") { RequiresEditor = true };
-    public static readonly Command NavMoveDocEnd = new("Nav", "MoveDocEnd", "Move to Document End") { RequiresEditor = true };
-    public static readonly Command NavSelectDocEnd = new("Nav", "SelectDocEnd", "Select to Document End") { RequiresEditor = true };
+    public static readonly Command NavMoveDocStart = new("Nav", "MoveDocStart", "Move to TextDocument Start") { RequiresEditor = true };
+    public static readonly Command NavSelectDocStart = new("Nav", "SelectDocStart", "Select to TextDocument Start") { RequiresEditor = true };
+    public static readonly Command NavMoveDocEnd = new("Nav", "MoveDocEnd", "Move to TextDocument End") { RequiresEditor = true };
+    public static readonly Command NavSelectDocEnd = new("Nav", "SelectDocEnd", "Select to TextDocument End") { RequiresEditor = true };
 
     // Nav: page up/down
     public static readonly Command NavPageUp = new("Nav", "PageUp", "Page Up") { RequiresEditor = true };

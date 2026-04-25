@@ -4,10 +4,10 @@ namespace DMEdit.Core.Tests;
 
 /// <summary>
 /// Tests for <see cref="ColumnSelection"/> materialization, column math,
-/// and <see cref="Document"/> multi-cursor edit operations.
+/// and <see cref="TextDocument"/> multi-cursor edit operations.
 /// </summary>
 public class ColumnSelectionTests {
-    private static Document MakeDoc(string content) => new(content);
+    private static TextDocument MakeDoc(string content) => new(content);
     private const int Tab = 4;
 
     // =====================================================================
@@ -309,7 +309,7 @@ public class ColumnSelectionTests {
     // PasteAtCursors is lenient: extra lines are dropped, extra carets are
     // left untouched.  The decision about whether to call PasteAtCursors at
     // all (vs broadcasting via InsertAtCursors) lives in the editor's
-    // clipboard dispatch — Document just processes whatever it gets.
+    // clipboard dispatch — TextDocument just processes whatever it gets.
 
     [Fact]
     public void PasteAtCursors_FewerLinesThanCarets_LeavesExtraCaretsUntouched() {
@@ -427,7 +427,7 @@ public class ColumnSelectionTests {
 
         var text = doc.GetColumnSelectedText(Tab);
         // Lines joined by the document's line ending (LF default for content with \n).
-        // Document created from string with \n → dominant ending is LF.
+        // TextDocument created from string with \n → dominant ending is LF.
         Assert.Contains("cd", text);
         Assert.Contains("ij", text);
         Assert.Contains("op", text);

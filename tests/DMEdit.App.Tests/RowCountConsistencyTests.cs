@@ -23,7 +23,7 @@ public class RowCountConsistencyTests {
     private const double VpW = 600;
     private const double VpH = 400;
 
-    private static EditorControl CreateEditor(Document doc) {
+    private static EditorControl CreateEditor(TextDocument doc) {
         var editor = new EditorControl {
             Document = doc,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
@@ -48,7 +48,7 @@ public class RowCountConsistencyTests {
     /// disagrees with ComputeLineRowCount, the Debug invariant in
     /// LayoutWindowed fires as a DebugAssertException.
     /// </summary>
-    private static void WalkEntireDoc(Document doc) {
+    private static void WalkEntireDoc(TextDocument doc) {
         var editor = CreateEditor(doc);
         var lineCount = doc.Table.LineCount;
         var rh = editor.RowHeightValue;
@@ -77,7 +77,7 @@ public class RowCountConsistencyTests {
             sb.Append(new string('a', len));
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         WalkEntireDoc(doc);
     }
@@ -88,7 +88,7 @@ public class RowCountConsistencyTests {
 
     [AvaloniaFact]
     public void ExactWrapBoundary_NoRowCountMismatch() {
-        var editor = CreateEditor(new Document());
+        var editor = CreateEditor(new TextDocument());
         // Determine chars per row from a throwaway layout.
         var cpr = (int)(VpW / editor.RowHeightValue); // rough approximation
         // Use actual GetCharsPerRow for accuracy — but it's private.
@@ -98,7 +98,7 @@ public class RowCountConsistencyTests {
             sb.Append(new string('b', len));
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         WalkEntireDoc(doc);
     }
@@ -118,7 +118,7 @@ public class RowCountConsistencyTests {
             sb.Append(new string('b', 60));
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         WalkEntireDoc(doc);
     }
@@ -130,7 +130,7 @@ public class RowCountConsistencyTests {
             // Multiple tabs creating wide gaps.
             sb.Append("col1\tcol2\tcol3\tcol4\tpadding text here\n");
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         WalkEntireDoc(doc);
     }
@@ -147,7 +147,7 @@ public class RowCountConsistencyTests {
             var spaces = new string(' ', i % 20 + 1);
             sb.Append(text + spaces + '\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         WalkEntireDoc(doc);
     }
@@ -167,7 +167,7 @@ public class RowCountConsistencyTests {
                 sb.Append('\n');
             }
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         WalkEntireDoc(doc);
     }
@@ -188,7 +188,7 @@ public class RowCountConsistencyTests {
             }
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         WalkEntireDoc(doc);
     }
@@ -204,7 +204,7 @@ public class RowCountConsistencyTests {
             sb.Append(new string('f', 1000 + i * 500));
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         WalkEntireDoc(doc);
     }
@@ -227,7 +227,7 @@ public class RowCountConsistencyTests {
         for (var i = 0; i < 30; i++) {
             sb.Append($"line {i:D3} with some content\n");
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         WalkEntireDoc(doc);
     }
@@ -252,7 +252,7 @@ public class RowCountConsistencyTests {
                 sb.Append($"MARKER{i:D2} normal length line\n");
             }
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc);
@@ -287,7 +287,7 @@ public class RowCountConsistencyTests {
             }
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         WalkEntireDoc(doc);
     }

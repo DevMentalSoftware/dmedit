@@ -8,7 +8,7 @@ namespace DMEdit.Core.IO;
 /// Result of loading a file. Contains the <see cref="Document"/>, a display name
 /// for the title bar, and whether the source was a zip archive.
 /// </summary>
-public sealed record LoadResult(Document Document, string DisplayName, bool WasZipped, IBuffer? Buffer = null) {
+public sealed record LoadResult(TextDocument Document, string DisplayName, bool WasZipped, IBuffer? Buffer = null) {
     /// <summary>
     /// For zip files, the name of the inner entry (e.g., "model.xml").
     /// <c>null</c> for non-zip files.
@@ -33,7 +33,7 @@ public sealed record LoadResult(Document Document, string DisplayName, bool WasZ
 }
 
 /// <summary>
-/// Loads a file into a <see cref="Document"/>.
+/// Loads a file into a <see cref="TextDocument"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -52,7 +52,7 @@ public static class FileLoader {
     /// <summary>
     /// Asynchronously loads the file at <paramref name="path"/> into a new <see cref="LoadResult"/>.
     /// SHA-1 and line-ending detection happen during the background scan; the
-    /// <see cref="LoadResult.BaseSha1"/> and <see cref="Document.LineEndingInfo"/>
+    /// <see cref="LoadResult.BaseSha1"/> and <see cref="TextDocument.LineEndingInfo"/>
     /// are populated when loading completes.
     /// </summary>
     /// <param name="path">Absolute file path.</param>
@@ -69,7 +69,7 @@ public static class FileLoader {
     // -----------------------------------------------------------------
 
     /// <summary>
-    /// Wraps <paramref name="buf"/> in a <see cref="Document"/>, builds a
+    /// Wraps <paramref name="buf"/> in a <see cref="TextDocument"/>, builds a
     /// <see cref="LoadResult"/> with a <see cref="LoadResult.Loaded"/> task,
     /// and registers the standard <c>LoadComplete</c> handler that:
     /// <list type="bullet">
@@ -90,7 +90,7 @@ public static class FileLoader {
         string? innerEntryName,
         CancellationToken ct) {
 
-        var doc = new Document(new PieceTable(buf));
+        var doc = new TextDocument(new PieceTable(buf));
         doc.EncodingInfo = new EncodingInfo(FileEncoding.Unknown);
 
         var tcs = new TaskCompletionSource();

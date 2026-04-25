@@ -4,10 +4,10 @@ using DMEdit.Core.Documents.History;
 namespace DMEdit.Core.Documents;
 
 // Case transformation, bulk replace, and line ending / indentation
-// conversion partial of Document.  Owns TransformCase, ToProperCase,
+// conversion partial of TextDocument.  Owns TransformCase, ToProperCase,
 // BulkReplaceUniform, BulkReplaceVarying, ConvertLineEndings, and
 // ConvertIndentation.
-public sealed partial class Document {
+public sealed partial class TextDocument {
 
     // -------------------------------------------------------------------------
     // Case transformation

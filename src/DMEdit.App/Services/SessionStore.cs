@@ -187,7 +187,7 @@ public static class SessionStore {
     /// <see cref="FinishLoadAsync"/> completes.
     /// </summary>
     public static TabState CreateTabFromEntry(TabEntry entry) {
-        Document doc;
+        TextDocument doc;
         FileConflict? conflict = null;
         var isLoading = false;
         LoadResult? loadResult = null;
@@ -199,7 +199,7 @@ public static class SessionStore {
                     FilePath = entry.FilePath,
                     ExpectedSha1 = entry.BaseSha1,
                 };
-                doc = new Document();
+                doc = new TextDocument();
             } else {
                 // Start loading — returns immediately, scan runs on background thread.
                 try {
@@ -213,12 +213,12 @@ public static class SessionStore {
                         FilePath = entry.FilePath,
                         ExpectedSha1 = entry.BaseSha1,
                     };
-                    doc = new Document();
+                    doc = new TextDocument();
                 }
             }
         } else {
             // Untitled tab — replay edits from empty, no loading needed.
-            doc = new Document();
+            doc = new TextDocument();
             conflict = ReplayEdits(doc, entry);
             RestoreSelection(doc, entry);
         }
@@ -302,7 +302,7 @@ public static class SessionStore {
         tab.FinishLoading();
     }
 
-    private static void RestoreSelection(Document doc, TabEntry entry) {
+    private static void RestoreSelection(TextDocument doc, TabEntry entry) {
         var docLen = doc.Table.Length;
         doc.Selection = new Selection(
             Math.Clamp(entry.CaretAnchor, 0, docLen),
@@ -313,7 +313,7 @@ public static class SessionStore {
     /// Replays serialized edits onto the document.  Returns a <see cref="FileConflict"/>
     /// if replay fails (so the caller can surface it to the user), or null on success.
     /// </summary>
-    private static FileConflict? ReplayEdits(Document doc, TabEntry entry) {
+    private static FileConflict? ReplayEdits(TextDocument doc, TabEntry entry) {
         var editsPath = Path.Combine(SessionDir, $"{entry.Id}.edits.json");
         if (!File.Exists(editsPath)) {
             return null;
@@ -369,7 +369,7 @@ public static class SessionStore {
     /// Loads a file as a PagedFileBuffer and registers it in the table's buffer list.
     /// Returns the buffer index, or -1 if the file is empty.
     /// </summary>
-    private static int LoadPagedBuffer(Document doc, string path) {
+    private static int LoadPagedBuffer(TextDocument doc, string path) {
         var byteLen = new FileInfo(path).Length;
         if (byteLen <= 0) return -1;
         var paged = new PagedFileBuffer(path, byteLen);

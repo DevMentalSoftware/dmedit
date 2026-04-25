@@ -4,7 +4,7 @@ namespace DMEdit.Core.Buffers;
 
 /// <summary>
 /// An <see cref="IBuffer"/> backed by a CLR <see langword="string"/>.
-/// Used by tests via <c>PieceTable(string)</c> and <c>Document(string)</c>.
+/// Used by tests via <c>PieceTable(string)</c> and <c>TextDocument(string)</c>.
 /// Not part of the public API — production code uses <see cref="PagedFileBuffer"/>
 /// or <see cref="PieceTable()"/> (empty document).
 /// </summary>

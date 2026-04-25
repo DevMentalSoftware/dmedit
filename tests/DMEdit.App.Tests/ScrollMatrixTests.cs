@@ -26,7 +26,7 @@ public class ScrollMatrixTests {
     //  Helpers
     // ------------------------------------------------------------------
 
-    private static EditorControl CreateEditor(Document doc, bool wrap) {
+    private static EditorControl CreateEditor(TextDocument doc, bool wrap) {
         var editor = new EditorControl {
             Document = doc,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
@@ -45,7 +45,7 @@ public class ScrollMatrixTests {
         editor.Arrange(new Rect(0, 0, VpW, VpH));
     }
 
-    private static Document MakeDoc(int lineCount, int lineLen = 20) {
+    private static TextDocument MakeDoc(int lineCount, int lineLen = 20) {
         var sb = new StringBuilder(lineCount * (lineLen + 1));
         for (var i = 0; i < lineCount; i++) {
             var prefix = $"L{i:D5} ";
@@ -54,7 +54,7 @@ public class ScrollMatrixTests {
             sb.Append('a', padLen);
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         return doc;
@@ -1108,7 +1108,7 @@ public class ScrollMatrixTests {
 
     [AvaloniaFact]
     public void EmptyDoc_Down_NoChange() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);
         editor.MoveCaretVerticalForTest(+1, false);
@@ -1118,7 +1118,7 @@ public class ScrollMatrixTests {
 
     [AvaloniaFact]
     public void EmptyDoc_Up_NoChange() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);
         editor.MoveCaretVerticalForTest(-1, false);
@@ -1128,7 +1128,7 @@ public class ScrollMatrixTests {
 
     [AvaloniaFact]
     public void EmptyDoc_Right_NoChange() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);
         editor.MoveCaretHorizontalForTest(+1, false, false);
@@ -1138,7 +1138,7 @@ public class ScrollMatrixTests {
 
     [AvaloniaFact]
     public void EmptyDoc_Home_NoChange() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);
         editor.MoveCaretToLineEdgeForTest(true, false);
@@ -1148,7 +1148,7 @@ public class ScrollMatrixTests {
 
     [AvaloniaFact]
     public void EmptyDoc_End_NoChange() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);
         editor.MoveCaretToLineEdgeForTest(false, false);
@@ -1158,7 +1158,7 @@ public class ScrollMatrixTests {
 
     [AvaloniaFact]
     public void SingleLine_Down_NoChange() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert("hello world");
         doc.Selection = Selection.Collapsed(5);
         var editor = CreateEditor(doc, false);
@@ -1170,7 +1170,7 @@ public class ScrollMatrixTests {
 
     [AvaloniaFact]
     public void SingleLine_Up_NoChange() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert("hello world");
         doc.Selection = Selection.Collapsed(5);
         var editor = CreateEditor(doc, false);
@@ -1182,7 +1182,7 @@ public class ScrollMatrixTests {
 
     [AvaloniaFact]
     public void SingleChar_RightThenLeft_RoundTrip() {
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert("x");
         doc.Selection = Selection.Collapsed(0);
         var editor = CreateEditor(doc, false);

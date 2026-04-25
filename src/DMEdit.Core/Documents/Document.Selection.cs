@@ -3,10 +3,10 @@ using System.Text;
 
 namespace DMEdit.Core.Documents;
 
-// Word and selection expansion partial of Document.  Owns SelectWord,
+// Word and selection expansion partial of TextDocument.  Owns SelectWord,
 // SelectLine, ExpandSelection, and the private helpers IsWordRune,
 // IsSubwordBoundary, and GetLineContentRange.
-public sealed partial class Document {
+public sealed partial class TextDocument {
 
     // -------------------------------------------------------------------------
     // Word / selection operations

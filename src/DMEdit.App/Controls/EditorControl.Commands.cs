@@ -249,7 +249,7 @@ public sealed partial class EditorControl {
     private const string ColumnBlockedByWrap =
         "Column editing disabled in character-wrap mode.";
 
-    private void PerformColumnSelectVertical(Document doc, int delta) {
+    private void PerformColumnSelectVertical(TextDocument doc, int delta) {
         if (_charWrapMode) {
             StatusMessage?.Invoke(ColumnBlockedByWrap);
             return;
@@ -273,7 +273,7 @@ public sealed partial class EditorControl {
         ResetCaretBlink();
     }
 
-    private void PerformColumnSelectHorizontal(Document doc, int delta) {
+    private void PerformColumnSelectHorizontal(TextDocument doc, int delta) {
         if (_charWrapMode) {
             StatusMessage?.Invoke(ColumnBlockedByWrap);
             return;
@@ -299,7 +299,7 @@ public sealed partial class EditorControl {
     /// <summary>
     /// Plain Left/Right in column mode: collapse selection or shift carets.
     /// </summary>
-    private void PerformColumnMoveHorizontal(Document doc, int delta) {
+    private void PerformColumnMoveHorizontal(TextDocument doc, int delta) {
         if (doc.ColumnSel is not { } colSel) return;
         FlushCompound();
         if (colSel.LeftCol != colSel.RightCol) {
@@ -319,7 +319,7 @@ public sealed partial class EditorControl {
     /// Plain Up/Down in column mode: collapse any selection, then shift the
     /// entire caret group by one line.
     /// </summary>
-    private void PerformColumnMoveVertical(Document doc, int delta) {
+    private void PerformColumnMoveVertical(TextDocument doc, int delta) {
         if (doc.ColumnSel is not { } colSel) return;
         FlushCompound();
         if (colSel.LeftCol != colSel.RightCol) {
@@ -336,7 +336,7 @@ public sealed partial class EditorControl {
     /// Ctrl+Left/Right in column mode: move all carets to the next word boundary.
     /// Uses the first caret line as the reference for computing the word delta.
     /// </summary>
-    private void PerformColumnMoveWord(Document doc, int direction) {
+    private void PerformColumnMoveWord(TextDocument doc, int direction) {
         if (doc.ColumnSel is not { } colSel) return;
         FlushCompound();
         // Collapse selection first if any.
@@ -353,7 +353,7 @@ public sealed partial class EditorControl {
     /// <summary>
     /// Ctrl+Shift+Left/Right in column mode: extend selection to word boundary.
     /// </summary>
-    private void PerformColumnSelectWord(Document doc, int direction) {
+    private void PerformColumnSelectWord(TextDocument doc, int direction) {
         if (doc.ColumnSel is not { } colSel) return;
         var wordCol = ColumnSelection.FindWordBoundaryCol(doc.Table, colSel.ActiveLine, colSel.ActiveCol, direction, _indentWidth);
         doc.ColumnSel = colSel.ExtendTo(colSel.ActiveLine, wordCol);
@@ -365,7 +365,7 @@ public sealed partial class EditorControl {
     /// <summary>
     /// Returns the maximum end-of-line column across all lines in the column selection.
     /// </summary>
-    private int MaxEndColumn(Document doc, ColumnSelection colSel) {
+    private int MaxEndColumn(TextDocument doc, ColumnSelection colSel) {
         var table = doc.Table;
         var max = 0;
         for (var line = colSel.TopLine; line <= colSel.BottomLine; line++) {
@@ -379,13 +379,13 @@ public sealed partial class EditorControl {
         // Column-mode intercepts: alternative behavior for commands when column
         // selection is active. Returns true if fully handled, false to fall
         // through to normal handling (e.g. Edit.Newline exits column mode first).
-        var columnIntercepts = new Dictionary<Command, Func<Document, bool>>();
+        var columnIntercepts = new Dictionary<Command, Func<TextDocument, bool>>();
 
-        void ColIntercept(Command cmd, Func<Document, bool> handler) =>
+        void ColIntercept(Command cmd, Func<TextDocument, bool> handler) =>
             columnIntercepts[cmd] = handler;
 
         // Local helper: wraps each editor command with the standard preamble.
-        void Reg(Command cmd, Action<Document> action,
+        void Reg(Command cmd, Action<TextDocument> action,
                  bool isVerticalNav = false, bool isColumnAware = false,
                  Func<bool>? canExecute = null) {
             cmd.Wire(() => {
@@ -726,7 +726,7 @@ public sealed partial class EditorControl {
     // Caret movement helpers
     // -------------------------------------------------------------------------
 
-    private void MoveCaretHorizontal(Document doc, int delta, bool byWord, bool extend) {
+    private void MoveCaretHorizontal(TextDocument doc, int delta, bool byWord, bool extend) {
         var table = doc.Table;
         var len = table.Length;
 
@@ -1076,7 +1076,7 @@ public sealed partial class EditorControl {
     /// so preserving "visual col" (not raw <see cref="TextPosition.Col"/>)
     /// keeps the caret at the same X across rows with different indents.
     /// </remarks>
-    private void MoveCaretVertical(Document doc, int lineDelta, bool extend) {
+    private void MoveCaretVertical(TextDocument doc, int lineDelta, bool extend) {
         var layout = EnsureLayout();
         if (CaretPosition is null) return;
         var pos = CaretPosition.Value;
@@ -1199,7 +1199,7 @@ public sealed partial class EditorControl {
         return -1;
     }
 
-    private void MoveCaretToLineEdge(Document doc, bool toStart, bool extend) {
+    private void MoveCaretToLineEdge(TextDocument doc, bool toStart, bool extend) {
         var table = doc.Table;
         var caret = doc.Selection.Caret;
         var pos = CaretPosition;
@@ -1311,7 +1311,7 @@ public sealed partial class EditorControl {
         CommitPlainCaret(fallback, extend);
     }
 
-    private static long FindWordBoundaryLeft(Document doc, long caret) {
+    private static long FindWordBoundaryLeft(TextDocument doc, long caret) {
         if (caret == 0L) {
             return 0L;
         }
@@ -1336,7 +1336,7 @@ public sealed partial class EditorControl {
         }
     }
 
-    private static long FindWordBoundaryRight(Document doc, long caret) {
+    private static long FindWordBoundaryRight(TextDocument doc, long caret) {
         var len = doc.Table.Length;
         if (caret >= len) {
             return len;
@@ -1485,7 +1485,7 @@ public sealed partial class EditorControl {
     /// When the caret is inside leading whitespace on a spaces-indent document,
     /// deletes back to the previous indent stop. Returns true if handled.
     /// </summary>
-    private bool TrySmartDeindent(Core.Documents.Document doc) {
+    private bool TrySmartDeindent(Core.Documents.TextDocument doc) {
         if (doc.IndentInfo.Dominant != IndentStyle.Spaces) return false;
 
         var table = doc.Table;
@@ -1545,7 +1545,7 @@ public sealed partial class EditorControl {
     /// <paramref name="targetDepth"/>. No-op if already at that depth.
     /// </summary>
     private static void SetLineIndent(
-        Core.Documents.Document doc, Core.Documents.PieceTable table,
+        Core.Documents.TextDocument doc, Core.Documents.PieceTable table,
         long lineIdx, string lineText, int targetDepth,
         Core.Documents.IndentStyle style, int tabSize) {
         var currentDepth = MeasureIndent(lineText, tabSize);

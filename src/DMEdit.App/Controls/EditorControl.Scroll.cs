@@ -1245,7 +1245,7 @@ public sealed partial class EditorControl {
     /// coordinates on both sides, so the screen position is preserved
     /// even when the render offset changes between layouts.
     /// </remarks>
-    private void MoveCaretByPage(Document doc, int direction, bool extend) {
+    private void MoveCaretByPage(TextDocument doc, int direction, bool extend) {
         var table = doc.Table;
         var lineCount = table.LineCount;
         if (lineCount <= 0) return;
@@ -1327,8 +1327,8 @@ public sealed partial class EditorControl {
     /// operation without any intermediate frame where the layout is
     /// null. Used by auto-reload so the viewport stays visually stable.
     /// </summary>
-    public void ReplaceDocument(Document newDoc, TabState scrollState) {
-        if (Document is Document old) {
+    public void ReplaceDocument(TextDocument newDoc, TabState scrollState) {
+        if (Document is TextDocument old) {
             old.Changed -= OnDocumentChanged;
         }
         // Set the property value. OnPropertyChanged will fire but

@@ -558,14 +558,14 @@ public class PieceTableTests {
 
     [Fact]
     public void Insert_LfAfterBareCr_LineCountReflectsCurrentBehavior() {
-        // Document "abc\r" has 2 lines: ["abc\r" (4), "" (0)].
+        // TextDocument "abc\r" has 2 lines: ["abc\r" (4), "" (0)].
         var t = new PieceTable("abc\r");
         Assert.Equal(2L, t.LineCount);
 
         // Insert "\n" at the end (offset 4, right after the \r).
         t.Insert(4, "\n");
 
-        // Document is now "abc\r\n".  Two valid interpretations:
+        // TextDocument is now "abc\r\n".  Two valid interpretations:
         //   (A) CRLF merged: 2 lines [5, 0]   ← every editor in the world
         //   (B) CR + LF as separate terminators: 3 lines [4, 1, 0]
         //       where line 0 is "abc\r" (4), line 1 is "" terminated by
@@ -593,7 +593,7 @@ public class PieceTableTests {
         // Insert "\r" at offset 3 (right before the \n).
         t.Insert(3, "\r");
 
-        // Document is now "abc\r\nd".  Natural interpretation:
+        // TextDocument is now "abc\r\nd".  Natural interpretation:
         //   2 lines: ["abc\r\n" (5), "d" (1)] — sum 6.
         // Wrong interpretation if the splice doesn't peek forward:
         //   3 lines: ["abc\r" (4), "" (1, terminated by the existing \n),
@@ -783,5 +783,5 @@ public class PieceTableTests {
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static Document MakeDoc(string content) => new Document(content);
+    private static TextDocument MakeDoc(string content) => new TextDocument(content);
 }

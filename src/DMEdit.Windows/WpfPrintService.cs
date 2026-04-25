@@ -108,7 +108,7 @@ public sealed class WpfPrintService : ISystemPrintService {
         return sb.ToString();
     }
 
-    public PrintResult Print(Document doc, PrintJobTicket ticket,
+    public PrintResult Print(TextDocument doc, PrintJobTicket ticket,
         IProgress<(string Message, double Percent)>? progress = null,
         CancellationToken cancellation = default) {
         Exception? error = null;
@@ -162,7 +162,7 @@ public sealed class WpfPrintService : ISystemPrintService {
         return PrintResult.Ok();
     }
 
-    private static void PrintOnWpfThread(Document doc, PrintJobTicket ticket,
+    private static void PrintOnWpfThread(TextDocument doc, PrintJobTicket ticket,
         IProgress<(string Message, double Percent)>? progress,
         CancellationToken cancellation) {
         var server = new LocalPrintServer();
@@ -225,7 +225,7 @@ file sealed class PlainTextPaginator : DocumentPaginator {
     // below.  Used only when the ticket doesn't supply a size.
     private const double DefaultFontSizePoints = 11.0;
 
-    private readonly Document _doc;
+    private readonly TextDocument _doc;
     private readonly Typeface _typeface;
     private readonly double _fontSize;
     private readonly double _lineHeight;
@@ -273,7 +273,7 @@ file sealed class PlainTextPaginator : DocumentPaginator {
     private TimeSpan _lastReportTime = TimeSpan.FromSeconds(-1);
 
     public PlainTextPaginator(
-        Document doc,
+        TextDocument doc,
         double pageWidth, double pageHeight,
         double marginTop, double marginRight, double marginBottom, double marginLeft,
         string? fontFamily = null,

@@ -3,11 +3,11 @@ using DMEdit.Core.Documents.History;
 
 namespace DMEdit.Core.Documents;
 
-// Column (multi-cursor) edit operations partial of Document.  Owns
+// Column (multi-cursor) edit operations partial of TextDocument.  Owns
 // InsertAtCursors, DeleteBackwardAtCursors, DeleteForwardAtCursors,
 // DeleteColumnSelectionContent, GetColumnSelectedText, PasteAtCursors,
 // and ClearColumnSelection.
-public sealed partial class Document {
+public sealed partial class TextDocument {
 
     // -------------------------------------------------------------------------
     // Column (multi-cursor) edit operations

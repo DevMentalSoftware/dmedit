@@ -35,7 +35,7 @@ public class EditorControlDragScrollTests {
     /// counts.  Alternates short (1-row) and long (multi-row when wrapped)
     /// lines to maximise variance.
     /// </summary>
-    private static Document BuildMixedWrapDoc(int lineCount) {
+    private static TextDocument BuildMixedWrapDoc(int lineCount) {
         var sb = new StringBuilder();
         for (var i = 0; i < lineCount; i++) {
             var pattern = i % 4;
@@ -46,13 +46,13 @@ public class EditorControlDragScrollTests {
                 case 3: sb.Append($"line {i:D4} " + new string('b', 160) + "\n"); break;
             }
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         return doc;
     }
 
-    private static EditorControl CreateEditor(Document doc, bool wrapLines) {
+    private static EditorControl CreateEditor(TextDocument doc, bool wrapLines) {
         var editor = new EditorControl {
             Document = doc,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),

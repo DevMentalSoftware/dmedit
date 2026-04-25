@@ -31,7 +31,7 @@ public class InputSimulationTests {
     private const double VpH = 400;
 
     private static (Window window, EditorControl editor) CreateWindow(
-            Document doc, bool wrap = true) {
+            TextDocument doc, bool wrap = true) {
         var editor = new EditorControl {
             Document = doc,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
@@ -47,14 +47,14 @@ public class InputSimulationTests {
         return (window, editor);
     }
 
-    private static Document MakeDoc(int lineCount, int lineLen = 80) {
+    private static TextDocument MakeDoc(int lineCount, int lineLen = 80) {
         var sb = new StringBuilder();
         for (var i = 0; i < lineCount; i++) {
             var prefix = $"L{i:D4} ";
             sb.Append(prefix + new string('a', Math.Max(0, lineLen - prefix.Length)));
             sb.Append('\n');
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         return doc;

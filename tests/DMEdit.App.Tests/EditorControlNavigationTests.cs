@@ -19,18 +19,18 @@ public class EditorControlNavigationTests {
     private const double ViewportHeight = 400;
     private const double Tolerance = 2.0;
 
-    private static Document MakeLongDoc(int lineCount = 80) {
+    private static TextDocument MakeLongDoc(int lineCount = 80) {
         var sb = new System.Text.StringBuilder();
         for (var i = 0; i < lineCount; i++) {
             sb.Append($"line {i:D3}\n");
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
         return doc;
     }
 
-    private static EditorControl CreateEditor(Document doc) {
+    private static EditorControl CreateEditor(TextDocument doc) {
         var editor = new EditorControl {
             Document = doc,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
@@ -168,7 +168,7 @@ public class EditorControlNavigationTests {
         for (var i = 0; i < 200; i++) {
             sb.Append(i == 150 ? $"line {i:D3} banana filler\n" : $"line {i:D3} filler\n");
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
 
@@ -226,7 +226,7 @@ public class EditorControlNavigationTests {
                 sb.Append($"line {i:D3} filler\n");
             }
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
         doc.Selection = Selection.Collapsed(0);
 
@@ -328,7 +328,7 @@ public class EditorControlNavigationTests {
         for (var i = 0; i < 200; i++) {
             sb.Append(i == 20 ? $"line {i:D3} apricot filler\n" : $"line {i:D3} filler\n");
         }
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
 
         var editor = new EditorControl {
@@ -422,7 +422,7 @@ public class EditorControlNavigationTests {
         sb.Append(new string('a', 200)); // wraps into multiple rows
         sb.Append('\n');
         sb.Append("end\n");
-        var doc = new Document();
+        var doc = new TextDocument();
         doc.Insert(sb.ToString());
 
         var editor = new EditorControl {
