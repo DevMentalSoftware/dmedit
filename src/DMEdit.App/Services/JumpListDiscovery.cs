@@ -17,6 +17,13 @@ public static class JumpListDiscovery {
 #if WINDOWS
         try {
             DMEdit.Windows.WindowsJumpListService.SetAppUserModelId();
+            // Stamp our AUMID onto any existing Start Menu / pinned-taskbar
+            // shortcuts. Without this, Windows can't match the running
+            // process to the pinned button and opens a second taskbar
+            // group. Idempotent — no-ops once the property is in place.
+            var exe = Environment.ProcessPath;
+            if (exe is not null)
+                DMEdit.Windows.WindowsJumpListService.EnsureKnownShortcutsHaveAumid(exe);
             return new DMEdit.Windows.WindowsJumpListService();
         } catch (Exception ex) {
             Debug.WriteLine($"JumpList: Failed to load: {ex}");
