@@ -669,7 +669,10 @@ public static class SettingRowFactory {
         // ── Reset button ──────────────────────────────────────────────
 
         var fontResetBtn = CreateResetIconButton();
-        fontResetBtn.IsVisible = settings.EditorFontFamily != null || settings.EditorFontSize != 11;
+        // Visibility is driven entirely by UpdateFontModified (opacity +
+        // hit-test), matching every other reset button in this file. Setting
+        // IsVisible here would collapse the control and the opacity toggle
+        // could never bring it back within an open settings session.
 
         fontResetBtn.Click += (_, _) => {
             fontBox.Text = defaultFont;

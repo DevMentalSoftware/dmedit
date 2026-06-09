@@ -49,6 +49,17 @@ small one — it is the primary way a fresh session recovers context.
 
 ### Recently completed
 
+- **Editor Font reset button visibility fix** (2026-06-09) — The "reset
+  to default" button in the Editor Font settings row was stuck invisible
+  when the font was changed within a settings session that had opened on
+  the default font.  Root cause: the button's `IsVisible` was hard-set
+  once at row creation, while every change only toggled `Opacity`/
+  `IsHitTestVisible` via `UpdateFontModified` — a collapsed control can't
+  be revealed by opacity.  Fix: removed the creation-time `IsVisible`
+  assignment in `SettingRowFactory.CreateFontRow` so `UpdateFontModified`
+  fully drives the button, matching every other reset button (opacity
+  pattern).  New regression test `FontRowResetButtonTests`.
+
 - **Pinned documents** (2026-04-12) — Files can be pinned so they
   permanently stay in the recent files list, never evicted by new opens.
   Pin state lives in `RecentFilesStore` (single source of truth); tabs
