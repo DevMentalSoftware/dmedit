@@ -45,6 +45,13 @@ class Program {
         using var singleInstance = new SingleInstanceService();
         if (!singleInstance.IsOwner) {
             if (args.Length > 0 && !string.IsNullOrWhiteSpace(args[0])) {
+                // We're a freshly-launched (foreground-entitled) process, so we
+                // can grant the running instance permission to take the
+                // foreground. Without this, the owner's Activate() is denied by
+                // Windows' foreground lock and the taskbar button merely flashes.
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+                    AllowSetForegroundWindow(ASFW_ANY);
+                }
                 SingleInstanceService.SendToOwner(Path.GetFullPath(args[0]));
             }
             return;
@@ -202,6 +209,17 @@ class Program {
         await dialog.ShowDialog(owner);
         onClosed();
     }
+
+    // -----------------------------------------------------------------
+    // Foreground hand-off (Windows)
+    // -----------------------------------------------------------------
+
+    /// <summary>Special process id meaning "any process may set foreground".</summary>
+    private const uint ASFW_ANY = 0xFFFFFFFF;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AllowSetForegroundWindow(uint dwProcessId);
 
     // -----------------------------------------------------------------
     // Shell integration (context menu on Windows, .desktop on Linux)

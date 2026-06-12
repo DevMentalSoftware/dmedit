@@ -49,6 +49,19 @@ small one — it is the primary way a fresh session recovers context.
 
 ### Recently completed
 
+- **Context-menu open: foreground/restore fix** (2026-06-12) — Opening a
+  file via the Explorer context menu handed the path to the running
+  instance but only flashed the taskbar instead of focusing/restoring the
+  window.  Two causes: (1) the owner's `OpenFileFromIpc` called
+  `Activate()` without un-minimizing first, and (2) Windows' foreground
+  lock denies a background process `SetForegroundWindow`.  Fix: the
+  freshly-launched secondary instance (foreground-entitled) calls
+  `AllowSetForegroundWindow(ASFW_ANY)` before the named-pipe hand-off in
+  `Program.Main`, granting the owner permission to take focus; and
+  `OpenFileFromIpc` now restores `WindowState.Normal` when minimized
+  before `Activate()`.  Native behavior — not unit-testable; verified by
+  build + full suite (no regression).
+
 - **Editor Font reset button visibility fix** (2026-06-09) — The "reset
   to default" button in the Editor Font settings row was stuck invisible
   when the font was changed within a settings session that had opened on

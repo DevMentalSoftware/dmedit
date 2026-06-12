@@ -282,6 +282,12 @@ public partial class MainWindow {
     /// </summary>
     internal async void OpenFileFromIpc(string path) {
         await OpenFileInTabAsync(Path.GetFullPath(path));
+        // Activate() does not un-minimize a window, so restore first. The
+        // secondary instance grants us foreground rights (see Program.Main),
+        // so Activate() can take focus instead of just flashing the taskbar.
+        if (WindowState == WindowState.Minimized) {
+            WindowState = WindowState.Normal;
+        }
         Activate();
     }
 
