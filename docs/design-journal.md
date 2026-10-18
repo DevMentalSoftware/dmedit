@@ -49,6 +49,48 @@ small one — it is the primary way a fresh session recovers context.
 
 ### Recently completed
 
+- **GitHub issue batch** (2026-10-18):
+  - **#19 Consolas text above caret** — `MonoLayoutContext.Baseline` used
+    the bare ascent, but the row height comes from TextLayout, which
+    includes the font's line gap split evenly above/below.  Consolas has
+    a 350/2048 em gap (Cascadia Code/Courier New: 0), so fast-path text
+    drew ~1.2 px high at 14 px with no padding above row 0.  Baseline is
+    now ascent + gap/2, matching `TextLine.Baseline` exactly (measured
+    with real Skia metrics).  `MonoBaselineTests`.
+  - **#24 multi-line indent** — Smart Indent (Tab in Default/Emacs) over
+    several lines set every line to one depth, flattening nested code.
+    It now shifts each line one level (`PerformSimpleIndent`), preserving
+    relative indentation.  `Edit.Tab` (Tab in VS Code-style profiles)
+    over a multi-line selection now indents instead of replacing it with
+    a tab.  `MultiLineIndentTests`.
+  - **#17 dialog close keys** — `DialogCloseKeys.Attach` gives every
+    dialog Escape and Ctrl+F4 as a cancel (bubble phase, stands down if
+    already handled).  `ProgressDialog` maps them to its Cancel instead
+    of closing.  About focuses OK via a dispatcher post so keys arrive.
+    `DialogCloseKeysTests`.
+  - **#20 toolbar anchoring** — toolbar sits a fixed 16 px right of the
+    menu bar instead of centred, so it no longer slides on resize.
+    `ToolbarAnchorTests`.
+  - **#18 Keep My Version re-flag** — re-baselines file stats
+    (`SnapshotFileStats`) so window activation doesn't re-raise the
+    acknowledged change; for a missing file the baseline is cleared.
+  - **#21 char-wrap status bar** — shows `Row R Col C Ch M`.
+  - **#25 touch scrolling** — a touch drag pans the view (vertical, and
+    horizontal when not wrapping) instead of selecting; a tap that stays
+    within an 8 DIP slop places the caret on release.  Mouse and pen are
+    unchanged.  No inertia/fling yet, and no touch selection gesture
+    (long-press) — select with mouse/keyboard.  `TouchPanTests`.
+  - **Test infra** — `xunit.v3` was floating (`*`) and resolved to 4.0.2,
+    which `Avalonia.Headless.XUnit` 12.0.1 cannot load and which breaks
+    `dotnet test` on the .NET 10 SDK.  Pinned to 3.2.2 in App and
+    Rendering test projects.
+  - **#22 (undo across save) not done** — needs a design decision; see
+    the issue.  Save reloads the document from disk, and history entries
+    reference the old file's paged buffer, which re-reads evicted pages
+    from the now-overwritten path.  Also requires an unreachable save
+    point (redo branch discarded) and session persistence for
+    "undo past the save point" (today that state is dropped as clean).
+
 - **Context-menu open: foreground/restore fix** (2026-06-12) — Opening a
   file via the Explorer context menu handed the path to the running
   instance but only flashed the taskbar instead of focusing/restoring the

@@ -496,16 +496,7 @@ public sealed partial class EditorControl {
             ResetCaretBlink();
         }, isColumnAware: true);
 
-        Reg(Cmd.EditTab, doc => {
-            Coalesce("tab");
-            _editSw.Restart();
-            doc.Insert("\t");
-            ScrollCaretIntoView();
-            _editSw.Stop();
-            PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
-            InvalidateLayout();
-            ResetCaretBlink();
-        }, isColumnAware: true);
+        Reg(Cmd.EditTab, PerformTab, isColumnAware: true);
 
         // -- Navigation: horizontal --
 
@@ -1615,28 +1606,55 @@ public sealed partial class EditorControl {
                 }
             }
         } else {
-            // Multi-line: set each line's indent to one level more than the
-            // line above the selection. This is the smart indent interpretation
-            // for documents without block structure awareness.
-            var refDepth = FindPrevIndent(table, startLine, tabSize);
-            var targetDepth = refDepth + tabSize;
-            doc.BeginCompound();
-            for (var line = startLine; line <= endLine; line++) {
-                var lineText = table.GetLine(line);
-                SetLineIndent(doc, table, line, lineText, targetDepth, style, tabSize);
-            }
-            doc.EndCompound();
-            var rangeStart = table.LineStartOfs(startLine);
-            var rangeEnd = endLine + 1 < table.LineCount
-                ? table.LineStartOfs(endLine + 1)
-                : table.Length;
-            doc.Selection = new Selection(rangeStart, rangeEnd);
+            // Multi-line: shift every line one level, preserving the relative
+            // indentation within the block (GH #24).  Setting every line to a
+            // single target depth flattened nested code — lines already at
+            // that depth didn't move and deeper lines were pulled back.
+            _editSw.Stop();
+            PerformSimpleIndent();
+            return;
         }
         ScrollCaretIntoView();
         _editSw.Stop();
         PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
         InvalidateLayout();
         ResetCaretBlink();
+    }
+
+    /// <summary>
+    /// Inserts a literal tab — or, over a multi-line selection, indents
+    /// those lines rather than replacing them, as in every mainstream editor.
+    /// </summary>
+    private void PerformTab(TextDocument doc) {
+        if (SelectionSpansLines(doc)) {
+            FlushCompound();
+            PerformSimpleIndent();
+            return;
+        }
+        Coalesce("tab");
+        _editSw.Restart();
+        doc.Insert("\t");
+        ScrollCaretIntoView();
+        _editSw.Stop();
+        PerfStats.Edit.Record(_editSw.Elapsed.TotalMilliseconds);
+        InvalidateLayout();
+        ResetCaretBlink();
+    }
+
+    internal void TabForTest() => PerformTab(Document!);
+    internal void SmartIndentForTest() => PerformSmartIndent();
+
+    /// <summary>
+    /// True when the selection covers more than one line.  A selection
+    /// ending at the start of a line does not include that line.
+    /// </summary>
+    private static bool SelectionSpansLines(Core.Documents.TextDocument doc) {
+        var sel = doc.Selection;
+        if (sel.IsEmpty) {
+            return false;
+        }
+        var table = doc.Table;
+        return table.LineFromOfs(sel.Start) != table.LineFromOfs(sel.End - 1);
     }
 
     /// <summary>

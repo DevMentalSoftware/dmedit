@@ -7,6 +7,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using DMEdit.App.Services;
 
 namespace DMEdit.App;
@@ -24,6 +25,7 @@ public class AboutDialog : Window {
         CanResize = false;
         CanMinimize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        DialogCloseKeys.Attach(this);
         ShowInTaskbar = false;
 
         var root = new StackPanel {
@@ -104,6 +106,10 @@ public class AboutDialog : Window {
         };
         ok.Click += (_, _) => Close();
         root.Children.Add(ok);
+
+        // Focus OK so Escape / Ctrl+F4 reach the window.  Focus set directly
+        // in Opened is taken back when the window activates, so post it.
+        Opened += (_, _) => Dispatcher.UIThread.Post(() => ok.Focus());
 
         Content = root;
         ApplyTheme(theme);

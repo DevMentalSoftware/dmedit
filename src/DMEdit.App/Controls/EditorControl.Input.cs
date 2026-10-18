@@ -44,6 +44,18 @@ public sealed partial class EditorControl {
         if (doc == null) {
             return;
         }
+        if (e.Pointer.Type == PointerType.Touch) {
+            // Touch: dragging pans like every touch UI, rather than
+            // selecting (GH #25).  The caret is placed on release, and
+            // only if the finger didn't move — a pan never moves it.
+            _touchDown = true;
+            _touchPanning = false;
+            _touchStart = e.GetPosition(this);
+            _touchLast = _touchStart;
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            return;
+        }
         var layout = EnsureLayout();
         var pt = e.GetPosition(this);
         var layoutPt = new Point(pt.X - _gutterWidth + _scrollOffset.X, pt.Y - RenderOffsetY);
@@ -131,6 +143,10 @@ public sealed partial class EditorControl {
             ScrollBar?.UpdateExternalMiddleDrag(deltaY);
             return;
         }
+        if (_touchDown) {
+            TouchMoved(e.GetPosition(this));
+            return;
+        }
         if (!_pointerDown) {
             return; // only left-drag extends selection
         }
@@ -166,11 +182,86 @@ public sealed partial class EditorControl {
             ResetCaretBlink();
             return;
         }
+        if (_touchDown) {
+            TouchReleased(e.GetPosition(this));
+            e.Pointer.Capture(null);
+            return;
+        }
         _columnDrag = false;
         _pointerDown = false;
         e.Pointer.Capture(null);
         ResetCaretBlink();
     }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e) {
+        base.OnPointerCaptureLost(e);
+        // A cancelled touch (e.g. the OS took over the gesture) is neither
+        // a tap nor a continuing pan.
+        _touchDown = false;
+        _touchPanning = false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Touch panning
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Distance (DIPs) a touch must travel before it counts as a pan rather
+    /// than a tap.  Fingers wobble; without a slop every tap would scroll.
+    /// </summary>
+    private const double TouchSlop = 8;
+
+    private void TouchMoved(Point pt) {
+        if (!_touchPanning) {
+            var moved = pt - _touchStart;
+            if (Math.Abs(moved.X) < TouchSlop && Math.Abs(moved.Y) < TouchSlop) {
+                return;
+            }
+            _touchPanning = true;
+        }
+        // Content follows the finger: dragging up scrolls down.
+        var delta = _touchLast - pt;
+        _touchLast = pt;
+        ScrollValue += delta.Y;
+        HScrollValue += delta.X;
+    }
+
+    private void TouchReleased(Point pt) {
+        var wasTap = !_touchPanning;
+        _touchDown = false;
+        _touchPanning = false;
+        if (wasTap) {
+            PlaceCaretAtPoint(pt);
+        }
+        ResetCaretBlink();
+    }
+
+    /// <summary>Collapses the selection to the text position under <paramref name="pt"/>.</summary>
+    private void PlaceCaretAtPoint(Point pt) {
+        var doc = Document;
+        if (doc == null) {
+            return;
+        }
+        var layout = EnsureLayout();
+        var layoutPt = new Point(pt.X - _gutterWidth + _scrollOffset.X, pt.Y - RenderOffsetY);
+        var pos = _layoutEngine.HitTestPos(layoutPt, layout);
+        if (doc.ColumnSel != null) {
+            doc.ColumnSel = null;
+        }
+        doc.Selection = Selection.Collapsed(pos.CharOffset);
+        _caretPosition = pos;
+        InvalidateVisual();
+    }
+
+    internal void TouchPressForTest(Point pt) {
+        _touchDown = true;
+        _touchPanning = false;
+        _touchStart = pt;
+        _touchLast = pt;
+    }
+
+    internal void TouchMoveForTest(Point pt) => TouchMoved(pt);
+    internal void TouchReleaseForTest(Point pt) => TouchReleased(pt);
 
     protected override void OnGotFocus(FocusChangedEventArgs e) {
         base.OnGotFocus(e);

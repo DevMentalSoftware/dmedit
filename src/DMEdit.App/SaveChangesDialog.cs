@@ -57,6 +57,7 @@ public class SaveChangesDialog : Window {
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        DialogCloseKeys.Attach(this);
         WindowDecorations = WindowDecorations.Full;
 
         var message = new TextBlock {
@@ -150,6 +151,7 @@ public class MultiSaveChangesDialog : Window {
         MaxHeight = 600;
         CanResize = true;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        DialogCloseKeys.Attach(this);
         WindowDecorations = WindowDecorations.Full;
 
         var heading = new TextBlock {

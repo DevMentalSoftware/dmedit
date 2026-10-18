@@ -28,6 +28,7 @@ public class GoToLineWindow : Window {
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        DialogCloseKeys.Attach(this);
         WindowDecorations = WindowDecorations.None;
         ShowInTaskbar = false;
         Background = Brushes.Transparent;

@@ -58,13 +58,18 @@ public class ProgressDialog : Window {
                 MinWidth = 90,
                 HorizontalAlignment = HorizontalAlignment.Right,
             };
-            cancelBtn.Click += (_, _) => {
-                WasCancelled = true;
-                _cts.Cancel();
-                _message.Text = "Cancelling\u2026";
-                cancelBtn.IsEnabled = false;
-            };
+            cancelBtn.Click += (_, _) => RequestCancel(cancelBtn);
             panel.Children.Add(cancelBtn);
+
+            // Escape / Ctrl+F4 cancel the operation rather than closing the
+            // window \u2014 the caller closes it once the work has wound down.
+            AddHandler(KeyDownEvent, (_, e) => {
+                if (e.Handled || !DialogCloseKeys.IsCloseGesture(e.Key, e.KeyModifiers)) {
+                    return;
+                }
+                e.Handled = true;
+                RequestCancel(cancelBtn);
+            });
         }
 
         Content = panel;
@@ -76,6 +81,16 @@ public class ProgressDialog : Window {
                 ? Avalonia.Styling.ThemeVariant.Dark
                 : Avalonia.Styling.ThemeVariant.Light;
         }
+    }
+
+    private void RequestCancel(Button cancelBtn) {
+        if (!cancelBtn.IsEnabled) {
+            return;
+        }
+        WasCancelled = true;
+        _cts.Cancel();
+        _message.Text = "Cancelling…";
+        cancelBtn.IsEnabled = false;
     }
 
     /// <summary>

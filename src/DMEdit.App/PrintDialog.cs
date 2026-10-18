@@ -68,6 +68,7 @@ public class PrintDialog : Window {
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        DialogCloseKeys.Attach(this);
         WindowDecorations = WindowDecorations.Full;
         ShowInTaskbar = false;
 

@@ -361,6 +361,17 @@ public partial class MainWindow {
                 _ = ReloadFileInPlaceAsync(tab);
                 break;
             case FileConflictChoice.KeepMyVersion:
+                // Re-baseline so the window-activation recheck doesn't
+                // re-flag the change the user just acknowledged.  A further
+                // external change still differs from the new baseline.
+                if (tab.Conflict.Kind == FileConflictKind.Missing) {
+                    // No file to snapshot — clear the baseline so rechecks
+                    // stand down until the next save re-establishes it.
+                    tab.BaseLastWriteTimeUtc = default;
+                    tab.BaseFileSize = 0;
+                } else {
+                    SnapshotFileStats(tab);
+                }
                 tab.Conflict = null;
                 UpdateTabBar();
                 break;

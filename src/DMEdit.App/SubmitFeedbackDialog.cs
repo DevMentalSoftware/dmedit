@@ -44,6 +44,7 @@ public class SubmitFeedbackDialog : Window {
         MinHeight = 360;
         CanResize = true;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        DialogCloseKeys.Attach(this);
         ShowInTaskbar = false;
 
         var root = new DockPanel { Margin = new Thickness(12), LastChildFill = true };

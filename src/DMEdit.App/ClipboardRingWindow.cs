@@ -41,6 +41,7 @@ public class ClipboardRingWindow : Window {
         Height = Math.Min(40 + ring.Count * 36, 420);
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        DialogCloseKeys.Attach(this);
         WindowDecorations = WindowDecorations.BorderOnly;
         ShowInTaskbar = false;
         Focusable = true;

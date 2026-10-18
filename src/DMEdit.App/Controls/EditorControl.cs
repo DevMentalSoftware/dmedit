@@ -259,6 +259,13 @@ public sealed partial class EditorControl : Control, ILogicalScrollable, IScroll
     private bool _middleDrag;
     private bool _columnDrag;
     private double _middleDragStartY;
+
+    // Touch: a drag pans the view; a tap (no movement past the slop)
+    // places the caret on release.  See EditorControl.Input.cs.
+    private bool _touchDown;
+    private bool _touchPanning;
+    private Point _touchStart;
+    private Point _touchLast;
     private bool _overwriteMode;
 
     // Clipboard ring — shared by PasteMore (inline cycling) and ClipboardRing (popup).

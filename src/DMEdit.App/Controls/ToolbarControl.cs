@@ -37,6 +37,7 @@ public sealed class ToolbarControl : Control {
     private const double ButtonSize = 26;
     private const double ButtonGap = 2;
     private const double OverflowBtnWidth = 24;
+    private const double MenuGap = 16;
     private const double IconFontSize = 18;
     private const double CheckFontSize = 8;
     private const double CornerRadius = 4;
@@ -78,7 +79,7 @@ public sealed class ToolbarControl : Control {
     private IReadOnlyList<ToolbarItem> _items = Array.Empty<ToolbarItem>();
     private int _visibleCount;     // how many buttons fit (left-to-right)
     private bool _showOverflow;    // true when some buttons are hidden
-    private double _contentOffsetX; // horizontal offset to center buttons
+    private double _contentOffsetX; // horizontal offset of the first button
 
     // Snapshot of last-painted (IsEnabled, IsChecked) per item, packed as
     // two bits per slot.  Used by Refresh() to skip InvalidateVisual when
@@ -114,6 +115,8 @@ public sealed class ToolbarControl : Control {
             return new Rect(x, 0, OverflowBtnWidth, Bounds.Height);
         }
     }
+
+    internal double ContentOffsetXForTest => _contentOffsetX;
 
     /// <summary>
     /// Returns items that are not visible (overflow items).
@@ -188,22 +191,21 @@ public sealed class ToolbarControl : Control {
             return;
         }
 
-        var available = Bounds.Width;
+        // Anchor the buttons a fixed distance right of the menu bar (the
+        // control's left edge) so they stay put when the window is resized
+        // — centering made them slide, defeating muscle memory (GH #20).
+        _contentOffsetX = MenuGap;
+        var available = Bounds.Width - MenuGap;
         var totalNeeded = _items.Count * (ButtonSize + ButtonGap) - ButtonGap;
 
         if (totalNeeded <= available) {
             _visibleCount = _items.Count;
             _showOverflow = false;
-            // Center the buttons within the available width
-            _contentOffsetX = Math.Floor((available - totalNeeded) / 2);
         } else {
             // Reserve space for overflow button
             var usable = available - OverflowBtnWidth - ButtonGap;
             _visibleCount = Math.Max(0, (int)((usable + ButtonGap) / (ButtonSize + ButtonGap)));
             _showOverflow = true;
-            // Center the visible buttons + overflow within available width
-            var usedWidth = _visibleCount * (ButtonSize + ButtonGap) + OverflowBtnWidth;
-            _contentOffsetX = Math.Floor((available - usedWidth) / 2);
         }
     }
 

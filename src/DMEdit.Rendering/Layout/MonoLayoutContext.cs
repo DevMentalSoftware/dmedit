@@ -64,7 +64,17 @@ public sealed class MonoLayoutContext {
         // design em units.  Sign convention varies (positive in OpenType,
         // negative in some Y-down graphics conventions).  We just want the
         // positive pixel distance from row top to baseline, so Math.Abs.
-        Baseline = Math.Abs((double)glyphTypeface.Metrics.Ascent) / emHeight * fontSize;
+        //
+        // The row height comes from TextLayout, which includes the font's
+        // line gap and splits it evenly above and below the glyphs — so the
+        // baseline sits half a gap below the ascent.  Omitting that drew
+        // fonts with a non-zero gap (Consolas: 350/2048 em) higher than the
+        // caret and the slow path, with no padding above the first row
+        // (GH #19).  Fonts with no gap (Cascadia Code) were unaffected.
+        var metrics = glyphTypeface.Metrics;
+        var ascent = Math.Abs((double)metrics.Ascent);
+        var halfGap = Math.Max(0, (double)metrics.LineGap) / 2;
+        Baseline = (ascent + halfGap) / emHeight * fontSize;
 
         // Char width from the space glyph's advance (design em units → pixels).
         // Avalonia 12: TryGetGlyph moved to CharacterToGlyphMap,

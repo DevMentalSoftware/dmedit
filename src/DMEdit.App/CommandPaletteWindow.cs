@@ -59,6 +59,7 @@ public class CommandPaletteWindow : Window {
         Height = 420;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        DialogCloseKeys.Attach(this);
         WindowDecorations = WindowDecorations.None;
         ShowInTaskbar = false;
         Background = Brushes.Transparent;

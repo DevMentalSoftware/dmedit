@@ -264,7 +264,10 @@ public partial class MainWindow {
             // During loading, line-start lookups can fail (pages not in memory).
             if (!stillLoading) {
                 if (Editor.CharWrapMode && Editor.CharsPerRow > 0) {
-                    // Character-wrapping mode: show Row / Col.
+                    // Character-wrapping mode: show Row / Col / Ch.  Ch is
+                    // the 1-based character offset — for a huge single-line
+                    // file it is the one coordinate that external tools
+                    // (parsers, compilers) report, so always show it.
                     var caret = Math.Min(doc.Selection.Caret, table.Length);
                     var cpr = Editor.CharsPerRow;
                     var row = caret / cpr + 1;
@@ -272,7 +275,9 @@ public partial class MainWindow {
                     var rowText = $"{row:N0}".PadLeft(lcWidth);
                     var colWidth = $"{cpr:N0}".Length;
                     var colText = $"{col:N0}".PadLeft(colWidth);
-                    lineCol = $"Row {rowText} Col {colText}";
+                    var chWidth = $"{table.Length + 1:N0}".Length;
+                    var chText = $"{caret + 1:N0}".PadLeft(chWidth);
+                    lineCol = $"Row {rowText} Col {colText} Ch {chText}";
                 } else {
                     var caret = Math.Min(doc.Selection.Caret, table.Length);
                     var lineIdx = table.LineFromOfs(caret);
